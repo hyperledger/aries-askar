@@ -15,8 +15,8 @@ mod types;
 mod wql;
 
 use types::{
-    ClientId, KvFetchOptions, KvKeySelect, KvLockOperation, KvLockToken, KvRecord, KvScanToken,
-    KvUpdateRecord,
+    ClientId, KvEntry, KvFetchOptions, KvKeySelect, KvLockOperation, KvLockToken, KvScanToken,
+    KvUpdateEntry,
 };
 
 pub trait KvProvisionStore {
@@ -47,7 +47,7 @@ pub trait KvStore {
         category: &[u8],
         name: &[u8],
         options: KvFetchOptions,
-    ) -> KvResult<Option<KvRecord>>;
+    ) -> KvResult<Option<KvEntry>>;
 
     /// Start a new query for particular `client_id` and `category`
     ///
@@ -71,7 +71,7 @@ pub trait KvStore {
     async fn scan_next(
         &self,
         scan_token: Self::ScanToken,
-    ) -> KvResult<(Vec<KvRecord>, Option<Self::ScanToken>)>;
+    ) -> KvResult<(Vec<KvEntry>, Option<Self::ScanToken>)>;
 
     /// Atomically set multiple values with optional expiry times
     ///
@@ -84,8 +84,8 @@ pub trait KvStore {
     /// Returns false if the lock was lost or one of the keys could not be assigned
     async fn update(
         &self,
-        entries: &[KvUpdateRecord],
-        with_lock: KvLockOperation<Self::LockToken>,
+        entries: Vec<KvUpdateEntry>,
+        with_lock: Option<KvLockOperation<Self::LockToken>>,
     ) -> KvResult<()>;
 
     /// Establish an advisory lock on a particular record identifier
@@ -105,7 +105,7 @@ pub trait KvStore {
         name: &[u8],
         max_duration_ms: Option<u64>,
         acquire_timeout_ms: Option<u64>,
-    ) -> KvResult<(Self::LockToken, Option<KvRecord>)>;
+    ) -> KvResult<(Self::LockToken, Option<KvEntry>)>;
 
     /// Verify an existing lock and optionally extend the duration
     async fn refresh_lock(

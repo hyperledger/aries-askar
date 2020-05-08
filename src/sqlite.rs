@@ -3,14 +3,12 @@ use async_trait::async_trait;
 
 use r2d2;
 use r2d2_sqlite::SqliteConnectionManager;
-use rusqlite::{params, Connection};
-
-use std::thread;
+use rusqlite::params;
 
 use super::error::{KvError, KvResult};
 use super::types::{
-    ClientId, Enclave, EnclaveHandle, KeyId, KvFetchOptions, KvKeySelect, KvLockOperation,
-    KvLockToken, KvRecord, KvScanToken, KvTag, KvUpdateRecord,
+    ClientId, Enclave, EnclaveHandle, KeyId, KvEntry, KvFetchOptions, KvKeySelect, KvLockOperation,
+    KvLockToken, KvScanToken, KvTag, KvUpdateEntry,
 };
 use super::wql;
 use super::{KvProvisionStore, KvStore};
@@ -131,7 +129,7 @@ impl KvStore for KvSqlite {
         category: &[u8],
         name: &[u8],
         options: KvFetchOptions,
-    ) -> KvResult<Option<KvRecord>> {
+    ) -> KvResult<Option<KvEntry>> {
         let pool = self.conn_pool.clone();
         let key_id = get_key_id(client_key).await;
         let category = category.to_vec();
@@ -179,7 +177,7 @@ impl KvStore for KvSqlite {
                 } else {
                     None
                 };
-                Ok(Some(KvRecord {
+                Ok(Some(KvEntry {
                     category,
                     name,
                     value,
@@ -213,15 +211,82 @@ impl KvStore for KvSqlite {
     async fn scan_next(
         &self,
         scan_token: Self::ScanToken,
-    ) -> KvResult<(Vec<KvRecord>, Option<Self::ScanToken>)> {
+    ) -> KvResult<(Vec<KvEntry>, Option<Self::ScanToken>)> {
         Ok((vec![], None))
     }
 
     async fn update(
         &self,
-        entries: &[KvUpdateRecord],
-        with_lock: KvLockOperation<Self::LockToken>,
+        entries: Vec<KvUpdateEntry>,
+        with_lock: Option<KvLockOperation<Self::LockToken>>,
     ) -> KvResult<()> {
+        let mut updates = vec![];
+        for entry in entries {
+            let key_id = get_key_id(entry.client_key.clone()).await;
+            updates.push((key_id, vec![], entry))
+        }
+
+        let pool = self.conn_pool.clone();
+        async_std::task::spawn_blocking(move || {
+            let mut conn = pool.get().expect("Error getting pool instance");
+            let mut txn = conn.transaction()?; // rusqlite::TransactionBehavior::Deferred
+            {
+                let mut fetch_id = txn.prepare_cached(
+                    "SELECT id FROM items WHERE key_id=?1 AND category=?2 AND name=?3",
+                )?;
+                let mut add_item = txn.prepare_cached(
+                    "INSERT INTO items(key_id, category, name, value, value_key)
+                    VALUES(?1, ?2, ?3, ?4, ?5)",
+                )?;
+                let mut upd_item =
+                    txn.prepare_cached("UPDATE items SET value=?1, value_key=?2 WHERE id=?3")?;
+                let mut add_enc_tag = txn.prepare_cached(
+                    "INSERT INTO tags_encrypted(item_id, name, value)
+                        VALUES(?1, ?2, ?3)",
+                )?;
+                let mut add_plain_tag = txn.prepare_cached(
+                    "INSERT INTO tags_plaintext(item_id, name, value)
+                        VALUES(?1, ?2, ?3)",
+                )?;
+                for (key_id, value_key, entry) in updates {
+                    let row: Result<i64, rusqlite::Error> = fetch_id
+                        .query_row(&[&key_id, &entry.category, &entry.name], |row| row.get(0));
+                    let row_id = match row {
+                        Ok(row_id) => {
+                            upd_item.execute(params![&row_id, &entry.value, &value_key])?;
+                            txn.execute("DELETE FROM tags_encrypted WHERE item_id=?1", &[&row_id])?;
+                            txn.execute("DELETE FROM tags_plaintext WHERE item_id=?1", &[&row_id])?;
+                            row_id
+                        }
+                        Err(rusqlite::Error::QueryReturnedNoRows) => {
+                            add_item.execute(&[
+                                &key_id,
+                                &entry.category,
+                                &entry.name,
+                                &entry.value,
+                                &value_key,
+                            ])?;
+                            txn.last_insert_rowid()
+                        }
+                        Err(err) => return Err(err.into()),
+                    };
+                    if let Some(tags) = entry.tags.as_ref() {
+                        for tag in tags {
+                            match tag {
+                                KvTag::Encrypted(name, value) => {
+                                    add_enc_tag.execute(params![&row_id, name, value])?;
+                                }
+                                KvTag::Plaintext(name, value) => {
+                                    add_plain_tag.execute(params![&row_id, name, value])?;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            txn.commit()
+        })
+        .await?;
         Ok(())
     }
 
@@ -232,7 +297,7 @@ impl KvStore for KvSqlite {
         name: &[u8],
         max_duration_ms: Option<u64>,
         acquire_timeout_ms: Option<u64>,
-    ) -> KvResult<(Self::LockToken, Option<KvRecord>)> {
+    ) -> KvResult<(Self::LockToken, Option<KvEntry>)> {
         Ok((Lock {}, None))
     }
 
@@ -254,11 +319,94 @@ mod tests {
     fn test_init() {
         let db = KvSqlite::open_in_memory(EnclaveHandle {}).unwrap();
         db.provision().unwrap();
+    }
+
+    #[test]
+    fn test_fetch_fail() {
+        let db = KvSqlite::open_in_memory(EnclaveHandle {}).unwrap();
+        db.provision().unwrap();
 
         let client_key = KvKeySelect::ForClient(vec![]);
         let options = KvFetchOptions::default();
         let row = db.fetch(client_key, b"cat", b"name", options);
         let result = block_on(row).unwrap();
         assert!(result.is_none())
+    }
+
+    #[test]
+    fn test_add_fetch() {
+        let db = KvSqlite::open_in_memory(EnclaveHandle {}).unwrap();
+        db.provision().unwrap();
+
+        let client_key = KvKeySelect::ForClient(vec![]);
+        let options = KvFetchOptions::new(true, true);
+
+        let test_row = KvEntry {
+            category: b"cat".to_vec(),
+            name: b"name".to_vec(),
+            value: b"value".to_vec(),
+            tags: None,
+        };
+
+        let updates = vec![KvUpdateEntry {
+            client_key: client_key.clone(),
+            category: test_row.category.clone(),
+            name: test_row.name.clone(),
+            value: test_row.value.clone(),
+            tags: None,
+            expiry: None,
+        }];
+        block_on(db.update(updates, None)).unwrap();
+
+        let row = db.fetch(
+            client_key.clone(),
+            &test_row.category,
+            &test_row.name,
+            options,
+        );
+        let result = block_on(row).unwrap();
+        assert!(result.is_some());
+        let found = result.unwrap();
+        assert_eq!(found, test_row)
+    }
+
+    #[test]
+    fn test_add_fetch_tags() {
+        let db = KvSqlite::open_in_memory(EnclaveHandle {}).unwrap();
+        db.provision().unwrap();
+
+        let client_key = KvKeySelect::ForClient(vec![]);
+        let options = KvFetchOptions::new(true, true);
+
+        let test_row = KvEntry {
+            category: b"cat".to_vec(),
+            name: b"name".to_vec(),
+            value: b"value".to_vec(),
+            tags: Some(vec![
+                KvTag::Encrypted(b"t1".to_vec(), b"v1".to_vec()),
+                KvTag::Plaintext(b"t2".to_vec(), b"v2".to_vec()),
+            ]),
+        };
+
+        let updates = vec![KvUpdateEntry {
+            client_key: client_key.clone(),
+            category: test_row.category.clone(),
+            name: test_row.name.clone(),
+            value: test_row.value.clone(),
+            tags: test_row.tags.clone(),
+            expiry: None,
+        }];
+        block_on(db.update(updates, None)).unwrap();
+
+        let row = db.fetch(
+            client_key.clone(),
+            &test_row.category,
+            &test_row.name,
+            options,
+        );
+        let result = block_on(row).unwrap();
+        assert!(result.is_some());
+        let found = result.unwrap();
+        assert_eq!(found, test_row)
     }
 }

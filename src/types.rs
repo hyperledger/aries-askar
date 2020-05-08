@@ -10,7 +10,6 @@ pub trait KvScanToken: Clone + std::fmt::Debug + Send {}
 pub enum KvLockOperation<T: KvLockToken> {
     Verify(T),
     Release(T),
-    Ignore,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Zeroize)]
@@ -19,16 +18,42 @@ pub enum KvKeySelect {
     ForClientKey(ClientId, KeyId),
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Zeroize)]
-pub struct KvRecord {
+#[derive(Clone, Debug, Eq, Zeroize)]
+pub struct KvEntry {
     pub category: Vec<u8>,
     pub name: Vec<u8>,
     pub value: Vec<u8>,
     pub tags: Option<Vec<KvTag>>,
 }
 
+impl KvEntry {
+    pub fn sorted_tags(&self) -> Option<Vec<&KvTag>> {
+        if self.tags.is_some() {
+            let tags = self.tags.as_ref().unwrap();
+            if tags.len() > 0 {
+                let mut tags = tags.iter().collect::<Vec<&KvTag>>();
+                tags.sort();
+                Some(tags)
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    }
+}
+
+impl PartialEq for KvEntry {
+    fn eq(&self, rhs: &Self) -> bool {
+        self.category == rhs.category
+            && self.name == rhs.name
+            && self.value == rhs.value
+            && self.sorted_tags() == rhs.sorted_tags()
+    }
+}
+
 #[derive(Debug, PartialEq, Eq, Zeroize)]
-pub struct KvUpdateRecord {
+pub struct KvUpdateEntry {
     pub client_key: KvKeySelect,
     pub category: Vec<u8>,
     pub name: Vec<u8>,
@@ -37,15 +62,25 @@ pub struct KvUpdateRecord {
     pub expiry: Option<u64>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Zeroize)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Zeroize)]
 pub enum KvTag {
     Encrypted(Vec<u8>, Vec<u8>),
     Plaintext(Vec<u8>, Vec<u8>),
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct KvFetchOptions {
     pub retrieve_tags: bool,
     pub retrieve_value: bool,
+}
+
+impl KvFetchOptions {
+    pub fn new(retrieve_tags: bool, retrieve_value: bool) -> Self {
+        Self {
+            retrieve_tags,
+            retrieve_value,
+        }
+    }
 }
 
 impl Default for KvFetchOptions {
