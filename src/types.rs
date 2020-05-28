@@ -20,6 +20,7 @@ pub enum KvKeySelect {
 
 #[derive(Clone, Debug, Eq, Zeroize)]
 pub struct KvEntry {
+    pub key_id: KeyId,
     pub category: Vec<u8>,
     pub name: Vec<u8>,
     pub value: Vec<u8>,
@@ -45,7 +46,8 @@ impl KvEntry {
 
 impl PartialEq for KvEntry {
     fn eq(&self, rhs: &Self) -> bool {
-        self.category == rhs.category
+        self.key_id == rhs.key_id
+            && self.category == rhs.category
             && self.name == rhs.name
             && self.value == rhs.value
             && self.sorted_tags() == rhs.sorted_tags()

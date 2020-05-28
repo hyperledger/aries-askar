@@ -1,9 +1,16 @@
-use async_std;
 use async_trait::async_trait;
+
+use piper::Arc;
+use smol::{blocking, Task};
 
 use r2d2;
 use r2d2_sqlite::SqliteConnectionManager;
 use rusqlite::params;
+
+use std::sync::{
+    mpsc::{sync_channel, Receiver, SyncSender},
+    Mutex,
+};
 
 use super::error::{KvError, KvResult};
 use super::types::{
@@ -12,6 +19,16 @@ use super::types::{
 };
 use super::wql;
 use super::{KvProvisionStore, KvStore};
+
+const FETCH_QUERY: &'static str = "SELECT id, value, value_key FROM items
+    WHERE key_id = ?1 AND category = ?2 AND name = ?3
+    AND (expiry IS NULL OR expiry > CURRENT_TIME)";
+const SCAN_QUERY: &'static str = "SELECT name, value, value_key FROM items WHERE key_id = ?1
+    AND category = ?2 AND (expiry IS NULL OR expiry > CURRENT_TIME)";
+const TAG_QUERY: &'static str =
+    "SELECT 0 as encrypted, name, value FROM tags_plaintext WHERE item_id = ?1
+    UNION ALL
+    SELECT 1 as encrypted, name, value FROM tags_encrypted WHERE item_id = ?1";
 
 pub struct KvSqlite {
     conn_pool: r2d2::Pool<SqliteConnectionManager>,
@@ -29,6 +46,12 @@ impl KvSqlite {
 impl From<rusqlite::Error> for KvError {
     fn from(err: rusqlite::Error) -> Self {
         KvError::BackendError(err.to_string())
+    }
+}
+
+impl<T> From<std::sync::mpsc::SendError<T>> for KvError {
+    fn from(_err: std::sync::mpsc::SendError<T>) -> Self {
+        KvError::Disconnected
     }
 }
 
@@ -88,9 +111,84 @@ async fn get_key_id(k: KvKeySelect) -> KeyId {
     b"1".to_vec()
 }
 
-#[derive(Clone, Debug)]
-pub struct Scan {}
-impl KvScanToken for Scan {}
+fn run_scan(
+    sender: SyncSender<KvResult<KvEntry>>,
+    pool: r2d2::Pool<SqliteConnectionManager>,
+    key_id: KeyId,
+    category: Vec<u8>,
+    options: KvFetchOptions,
+    tag_filter: Option<wql::Query>,
+    max_rows: Option<u64>,
+) -> KvResult<()> {
+    let mut conn = pool.get().expect("Error getting pool instance");
+    let mut qstmt = conn.prepare_cached(SCAN_QUERY)?;
+    let result = qstmt.query_map(&[&key_id, &category], |row| {
+        Ok((row.get(0)?, row.get(1)? /* row.get(2)?*/))
+    })?;
+    let idx = 0u32;
+    for row in result {
+        match row {
+            Ok((name, value /*, value_key*/)) => {
+                sender.send(Ok(KvEntry {
+                    key_id: key_id.clone(),
+                    category: category.clone(),
+                    name,
+                    value,
+                    tags: None,
+                }))?;
+            }
+            Err(e) => {
+                sender.send(Err(e.into()))?;
+                return Ok(());
+            }
+        }
+    }
+    Ok(())
+}
+
+#[derive(Debug)]
+pub struct Scan {
+    receiver: Receiver<KvResult<KvEntry>>,
+    task: Task<KvResult<()>>,
+}
+impl Scan {
+    pub fn new(
+        pool: r2d2::Pool<SqliteConnectionManager>,
+        key_id: KeyId,
+        category: &[u8],
+        options: KvFetchOptions,
+        tag_filter: Option<wql::Query>,
+        max_rows: Option<u64>,
+    ) -> KvResult<Self> {
+        let (sender, receiver) = sync_channel::<KvResult<KvEntry>>(100);
+        let category = category.to_vec();
+        let task = Task::blocking(async move {
+            let result = run_scan(
+                sender.clone(),
+                pool,
+                key_id,
+                category,
+                options,
+                tag_filter,
+                max_rows,
+            );
+            match result {
+                Ok(r) => r,
+                Err(e) => sender.send(Err(e.into()))?,
+            }
+            Ok(())
+        });
+        Ok(Self { receiver, task })
+    }
+
+    pub fn next(&self) -> KvResult<Option<KvEntry>> {
+        match self.receiver.recv() {
+            Ok(row) => row.map(Option::Some),
+            Err(_) => Ok(None),
+        }
+    }
+}
+impl KvScanToken for Arc<Mutex<Scan>> {}
 
 #[derive(Clone, Debug)]
 pub struct Lock {}
@@ -98,7 +196,7 @@ impl KvLockToken for Lock {}
 
 #[async_trait]
 impl KvStore for KvSqlite {
-    type ScanToken = Scan;
+    type ScanToken = Arc<Mutex<Scan>>;
     type LockToken = Lock;
 
     async fn count(
@@ -110,15 +208,16 @@ impl KvStore for KvSqlite {
         let pool = self.conn_pool.clone();
         let key_id = get_key_id(client_key).await;
         let category = category.to_vec();
-        let count: i64 = async_std::task::spawn_blocking(move || {
+        let count: i64 = blocking!(async move {
             let conn = pool.get().expect("Error getting pool instance");
-            conn.query_row(
+            let count = conn.query_row(
                 "SELECT COUNT(*) FROM items where key_id = ?1 AND category = ?2 AND (expiry IS NULL OR expiry > CURRENT_TIME())",
                 &[&key_id, &category],
                 |row| {
                     Ok(row.get(0)?)
                 },
-            )
+            )?;
+            KvResult::Ok(count)
         }).await?;
         Ok(count as u64)
     }
@@ -134,31 +233,20 @@ impl KvStore for KvSqlite {
         let key_id = get_key_id(client_key).await;
         let category = category.to_vec();
         let name = name.to_vec();
+        let q_key_id = key_id.clone();
         let q_category = category.clone();
         let q_name = name.clone();
-        let result: rusqlite::Result<(i64, Vec<u8>, Vec<u8>)> =
-            async_std::task::spawn_blocking(move || {
-                let conn = pool.get().expect("Error getting pool instance");
-                let mut stmt = conn.prepare_cached(
-                    "SELECT id, value, value_key FROM items
-                    WHERE key_id = ?1 AND category = ?2 AND name = ?3
-                    AND (expiry IS NULL OR expiry > CURRENT_TIME)",
-                )?;
-                stmt.query_row(&[&key_id, &q_category, &q_name], |row| {
+        blocking!(async move {
+            let conn = pool.get().expect("Error getting pool instance");
+            let mut stmt = conn.prepare_cached(FETCH_QUERY)?;
+            let result: rusqlite::Result<(i64, Vec<u8>, Vec<u8>)> = stmt
+                .query_row(&[&q_key_id, &q_category, &q_name], |row| {
                     Ok((row.get(0)?, row.get(1)?, row.get(2)?))
-                })
-            })
-            .await;
-        match result {
-            Ok((row_id, value, value_key)) => {
-                let tags = if options.retrieve_tags {
-                    let pool = self.conn_pool.clone();
-                    async_std::task::spawn_blocking(move || {
-                        let conn = pool.get().expect("Error getting pool instance");
-                        let mut stmt = conn.prepare_cached(
-                            "SELECT 0 as encrypted, name, value FROM tags_plaintext WHERE item_id = ?1
-                            UNION ALL
-                            SELECT 1 as encrypted, name, value FROM tags_encrypted WHERE item_id = ?1")?;
+                });
+            match result {
+                Ok((row_id, value, value_key)) => {
+                    let tags = if options.retrieve_tags {
+                        let mut stmt = conn.prepare_cached(TAG_QUERY)?;
                         let rows = stmt
                             .query_map(&[&row_id], |row| {
                                 let enc: i32 = row.get(0)?;
@@ -172,21 +260,23 @@ impl KvStore for KvSqlite {
                                 v.push(tag?);
                                 KvResult::Ok(v)
                             })?;
-                        KvResult::Ok(Some(rows))
-                    }).await?
-                } else {
-                    None
-                };
-                Ok(Some(KvEntry {
-                    category,
-                    name,
-                    value,
-                    tags,
-                }))
+                        Some(rows)
+                    } else {
+                        None
+                    };
+                    Ok(Some(KvEntry {
+                        key_id,
+                        category,
+                        name,
+                        value,
+                        tags,
+                    }))
+                }
+                Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+                Err(err) => Err(err.into()),
             }
-            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
-            Err(err) => Err(err.into()),
-        }
+        })
+        .await
     }
 
     async fn scan_start(
@@ -195,24 +285,50 @@ impl KvStore for KvSqlite {
         category: &[u8],
         options: KvFetchOptions,
         tag_filter: Option<wql::Query>,
+        // offset
         max_rows: Option<u64>,
     ) -> KvResult<Self::ScanToken> {
-        /*let key_id = get_key_id(client_key).await;
-        let result = self.conn.query_row(
-            "SELECT id, value, value_key FROM items where key_id = ?1 AND category = ?2 AND name = ?3 AND (expiry IS NULL OR expiry > CURRENT_TIME())",
-            &[&key_id, &category, &name],
-            |row| {
-                Ok((row.get(0)?, row.get(1)?, row.get(2)?))
-            },
-        );*/
-        Ok(Scan {})
+        let key_id = get_key_id(client_key).await;
+        let scan = Scan::new(
+            self.conn_pool.clone(),
+            key_id,
+            category,
+            options,
+            tag_filter,
+            max_rows,
+        )?;
+        Ok(Arc::new(Mutex::new(scan)))
     }
 
     async fn scan_next(
         &self,
         scan_token: Self::ScanToken,
     ) -> KvResult<(Vec<KvEntry>, Option<Self::ScanToken>)> {
-        Ok((vec![], None))
+        blocking!(async move {
+            let (rows, done) = {
+                let mut done = false;
+                let mut rows = vec![];
+                let scan = match scan_token.lock() {
+                    Ok(lock) => lock,
+                    Err(_) => return Err(KvError::Disconnected),
+                };
+                for _ in 0..20 {
+                    match scan.next() {
+                        Ok(Some(row)) => {
+                            rows.push(row);
+                        }
+                        Ok(None) => {
+                            done = true;
+                            break;
+                        }
+                        Err(e) => return Err(e),
+                    }
+                }
+                (rows, done)
+            };
+            Ok((rows, if done { None } else { Some(scan_token) }))
+        })
+        .await
     }
 
     async fn update(
@@ -227,7 +343,7 @@ impl KvStore for KvSqlite {
         }
 
         let pool = self.conn_pool.clone();
-        async_std::task::spawn_blocking(move || {
+        blocking!(async move {
             let mut conn = pool.get().expect("Error getting pool instance");
             let mut txn = conn.transaction()?; // rusqlite::TransactionBehavior::Deferred
             {
@@ -238,6 +354,8 @@ impl KvStore for KvSqlite {
                     "INSERT INTO items(key_id, category, name, value, value_key)
                     VALUES(?1, ?2, ?3, ?4, ?5)",
                 )?;
+                // FIXME - might be faster to delete the row
+                // (and its associated tags through cascade), and insert a new row
                 let mut upd_item =
                     txn.prepare_cached("UPDATE items SET value=?1, value_key=?2 WHERE id=?3")?;
                 let mut add_enc_tag = txn.prepare_cached(
@@ -284,10 +402,10 @@ impl KvStore for KvSqlite {
                     }
                 }
             }
-            txn.commit()
+            txn.commit()?;
+            Ok(())
         })
-        .await?;
-        Ok(())
+        .await
     }
 
     async fn create_lock(
@@ -313,7 +431,7 @@ impl KvStore for KvSqlite {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use async_std::task::block_on;
+    use smol::block_on;
 
     #[test]
     fn test_init() {
@@ -342,6 +460,7 @@ mod tests {
         let options = KvFetchOptions::new(true, true);
 
         let test_row = KvEntry {
+            key_id: b"1".to_vec(),
             category: b"cat".to_vec(),
             name: b"name".to_vec(),
             value: b"value".to_vec(),
@@ -379,6 +498,7 @@ mod tests {
         let options = KvFetchOptions::new(true, true);
 
         let test_row = KvEntry {
+            key_id: b"1".to_vec(),
             category: b"cat".to_vec(),
             name: b"name".to_vec(),
             value: b"value".to_vec(),
@@ -408,5 +528,44 @@ mod tests {
         assert!(result.is_some());
         let found = result.unwrap();
         assert_eq!(found, test_row)
+    }
+
+    #[test]
+    fn test_scan() {
+        let db = KvSqlite::open_in_memory(EnclaveHandle {}).unwrap();
+        db.provision().unwrap();
+
+        let category = b"cat".to_vec();
+        let test_rows = vec![KvEntry {
+            key_id: b"1".to_vec(),
+            category: category.clone(),
+            name: b"name".to_vec(),
+            value: b"value".to_vec(),
+            tags: None,
+        }];
+
+        let client_key = KvKeySelect::ForClient(vec![]);
+        let updates = test_rows
+            .iter()
+            .map(|row| KvUpdateEntry {
+                client_key: client_key.clone(),
+                category: row.category.clone(),
+                name: row.name.clone(),
+                value: row.value.clone(),
+                tags: row.tags.clone(),
+                expiry: None,
+            })
+            .collect();
+        block_on(db.update(updates, None)).unwrap();
+
+        let options = KvFetchOptions::default();
+        let tag_filter = None;
+        let max_rows = None;
+        let scan_token =
+            block_on(db.scan_start(client_key.clone(), &category, options, tag_filter, max_rows))
+                .unwrap();
+        let (rows, scan_next) = block_on(db.scan_next(scan_token)).unwrap();
+        assert_eq!(rows, test_rows);
+        assert!(scan_next.is_none());
     }
 }
