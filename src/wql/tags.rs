@@ -20,6 +20,13 @@ impl TagQuery {
         // FIXME only equality comparison supported for encrypted keys
         Ok(())
     }
+
+    pub fn encode<V, E>(&self, enc: &mut E) -> KvResult<V>
+    where
+        E: TagQueryEncoder<Clause = V>,
+    {
+        encode_tag_query(self, enc, false)
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -54,15 +61,15 @@ pub trait TagQueryEncoder {
     fn encode_op_clause(
         &mut self,
         op: CompareOp,
-        name: Self::Arg,
-        value: Self::Arg,
+        enc_name: Self::Arg,
+        enc_value: Self::Arg,
         is_plaintext: bool,
     ) -> KvResult<Self::Clause>;
 
     fn encode_in_clause(
         &mut self,
-        name: Self::Arg,
-        values: &[Self::Arg],
+        enc_name: Self::Arg,
+        enc_values: Vec<Self::Arg>,
         is_plaintext: bool,
         negate: bool,
     ) -> KvResult<Self::Clause>;
@@ -70,19 +77,8 @@ pub trait TagQueryEncoder {
     fn encode_conj_clause(
         &mut self,
         op: ConjunctionOp,
-        clauses: &[Self::Clause],
+        clauses: Vec<Self::Clause>,
     ) -> KvResult<Self::Clause>;
-}
-
-fn replace_psql_args(query: &str, offset: i32) -> String {
-    let mut index = offset;
-    let mut s: String = query.to_owned();
-    while s.find("$$") != None {
-        let arg_str = format!("${}", index);
-        s = s.replacen("$$", &arg_str, 1);
-        index = index + 1;
-    }
-    s
 }
 
 pub enum CompareOp {
@@ -145,14 +141,7 @@ impl ConjunctionOp {
     }
 }
 
-pub fn encode_tag_query<V, E>(query: &TagQuery, enc: &mut E) -> KvResult<V>
-where
-    E: TagQueryEncoder<Clause = V>,
-{
-    _encode_tag_query(query, enc, false)
-}
-
-fn _encode_tag_query<V, E>(query: &TagQuery, enc: &mut E, negate: bool) -> KvResult<V>
+fn encode_tag_query<V, E>(query: &TagQuery, enc: &mut E, negate: bool) -> KvResult<V>
 where
     E: TagQueryEncoder<Clause = V>,
 {
@@ -183,7 +172,7 @@ where
         }
         TagQuery::And(subqueries) => encode_tag_conj(ConjunctionOp::And, subqueries, enc, negate),
         TagQuery::Or(subqueries) => encode_tag_conj(ConjunctionOp::Or, subqueries, enc, negate),
-        TagQuery::Not(subquery) => _encode_tag_query(subquery, enc, !negate),
+        TagQuery::Not(subquery) => encode_tag_query(subquery, enc, !negate),
     }
 }
 
@@ -204,19 +193,6 @@ where
     let enc_name = enc.encode_name(name)?;
     let enc_value = enc.encode_value(value, is_plaintext)?;
     let op = if negate { op.negate() } else { op };
-
-    // let table = if is_plaintext {
-    //     "tags_plaintext"
-    // } else {
-    //     "tags_encrypted"
-    // };
-    // let query = format!(
-    //     "i.id IN (SELECT item_id FROM {} WHERE name = $$ AND value {} $$)",
-    //     table,
-    //     op.as_sql_str()
-    // );
-    // arguments.push(enc_name);
-    // arguments.push(enc_value);
 
     enc.encode_op_clause(op, enc_name, enc_value, is_plaintext)
 }
@@ -240,23 +216,7 @@ where
         KvResult::Ok(v)
     })?;
 
-    // let table = if is_plaintext {
-    //     "tags_plaintext"
-    // } else {
-    //     "tags_encrypted"
-    // };
-    // let args_in = std::iter::repeat("$$")
-    //     .take(enc_values.len())
-    //     .intersperse(", ")
-    //     .collect::<String>();
-    // let query = format!(
-    //     "i.id IN (SELECT item_id FROM {} WHERE name = $$ AND value IN ({}))",
-    //     table, args_in
-    // );
-    // arguments.push(enc_name);
-    // arguments.extend(enc_values);
-
-    enc.encode_in_clause(enc_name, enc_values.as_slice(), is_plaintext, negate)
+    enc.encode_in_clause(enc_name, enc_values, is_plaintext, negate)
 }
 
 fn encode_tag_conj<V, E>(
@@ -270,54 +230,12 @@ where
 {
     let op = if negate { op.negate() } else { op };
     let clauses = subqueries.into_iter().try_fold(vec![], |mut v, q| {
-        v.push(_encode_tag_query(q, enc, negate)?);
+        v.push(encode_tag_query(q, enc, negate)?);
         KvResult::Ok(v)
     })?;
 
-    enc.encode_conj_clause(op, clauses.as_slice())
+    enc.encode_conj_clause(op, clauses)
 }
-
-// fn and_to_sql<V, E>(subqueries: &[TagQuery], enc: &mut E, arguments: &mut Vec<V>) -> KvResult<V>
-// where
-//     E: TagQueryEncoder<Clause = V>,
-// {
-//     enc
-//     join_tag_queries(subqueries, " AND ", enc, arguments)
-// }
-
-// fn or_to_sql<V, E>(subqueries: &[TagQuery], enc: &mut E, arguments: &mut Vec<V>) -> KvResult<String>
-// where
-//     E: TagEncoder<V>,
-// {
-//     join_tag_queries(subqueries, " OR ", enc, arguments)
-// }
-
-// fn join_tag_queries<V, E>(
-//     queries: &[TagQuery],
-//     join_str: &str,
-//     enc: &mut E,
-//     arguments: &mut Vec<V>,
-// ) -> KvResult<String>
-// where
-//     E: TagEncoder<V>,
-// {
-//     let mut s = String::new();
-//     let qc = queries.len();
-//     if qc > 1 {
-//         s.push('(');
-//     }
-//     for (index, operator) in queries.into_iter().enumerate() {
-//         if index > 0 {
-//             s.push_str(join_str);
-//         }
-//         let operator_string = tag_query_to_sql(operator, enc, arguments)?;
-//         s.push_str(&operator_string);
-//     }
-//     if qc > 1 {
-//         s.push(')');
-//     }
-//     Ok(s)
-// }
 
 #[cfg(test)]
 mod tests {
@@ -353,7 +271,7 @@ mod tests {
         fn encode_in_clause(
             &mut self,
             name: Self::Arg,
-            values: &[Self::Arg],
+            values: Vec<Self::Arg>,
             _is_plaintext: bool,
             negate: bool,
         ) -> KvResult<Self::Clause> {
@@ -369,13 +287,13 @@ mod tests {
         fn encode_conj_clause(
             &mut self,
             op: ConjunctionOp,
-            clauses: &[Self::Clause],
+            clauses: Vec<Self::Clause>,
         ) -> KvResult<Self::Clause> {
             let mut r = String::new();
             r.push_str("(");
             r.extend(
                 clauses
-                    .into_iter()
+                    .iter()
                     .map(String::as_str)
                     .intersperse(op.as_sql_str()),
             );
@@ -426,19 +344,7 @@ mod tests {
     }
 
     #[test]
-    fn simple_and_convert_args_works() {
-        assert_eq!(
-            "This $1 is $2 a $3 string!",
-            replace_psql_args("This $$ is $$ a $$ string!", 1)
-        );
-        assert_eq!(
-            "This is a string!",
-            replace_psql_args("This is a string!", 1)
-        );
-    }
-
-    #[test]
-    fn simple_and() {
+    fn test_simple_and() {
         let condition_1 = TagQuery::And(vec![
             TagQuery::Eq(
                 TagName::Encrypted("enctag".to_string()),
@@ -461,12 +367,12 @@ mod tests {
         ]);
         let query = TagQuery::Or(vec![condition_1, condition_2]);
         let mut enc = TestEncoder {};
-        let query_str = encode_tag_query(&query, &mut enc).unwrap();
+        let query_str = query.encode(&mut enc).unwrap();
         assert_eq!(query_str, "((enctag = encval AND ~plaintag = plainval) OR (enctag = encval AND ~plaintag != eggs))")
     }
 
     #[test]
-    fn negate_conj() {
+    fn test_negate_conj() {
         let condition_1 = TagQuery::And(vec![
             TagQuery::Eq(
                 TagName::Encrypted("enctag".to_string()),
@@ -489,7 +395,7 @@ mod tests {
         ]);
         let query = TagQuery::Not(Box::new(TagQuery::Or(vec![condition_1, condition_2])));
         let mut enc = TestEncoder {};
-        let query_str = encode_tag_query(&query, &mut enc).unwrap();
+        let query_str = query.encode(&mut enc).unwrap();
         assert_eq!(query_str, "((enctag != encval OR ~plaintag != plainval) AND (enctag != encval OR ~plaintag = eggs))")
     }
 }

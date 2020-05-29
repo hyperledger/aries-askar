@@ -5,7 +5,7 @@ use smol::{blocking, Task};
 
 use r2d2;
 use r2d2_sqlite::SqliteConnectionManager;
-use rusqlite::params;
+use rusqlite::{params, ToSql};
 
 use std::sync::{
     mpsc::{sync_channel, Receiver, SyncSender},
@@ -17,18 +17,113 @@ use super::types::{
     ClientId, Enclave, EnclaveHandle, KeyId, KvEntry, KvFetchOptions, KvKeySelect, KvLockOperation,
     KvLockToken, KvScanToken, KvTag, KvUpdateEntry,
 };
-use super::wql;
+use super::wql::{self, sql::TagSqlEncoder, tags::TagQuery};
 use super::{KvProvisionStore, KvStore};
 
-const FETCH_QUERY: &'static str = "SELECT id, value, value_key FROM items
+const COUNT_QUERY: &'static str = "SELECT COUNT(*) FROM items i
+    WHERE key_id = ?1 AND category = ?2
+    AND (expiry IS NULL OR expiry > CURRENT_TIME)";
+const FETCH_QUERY: &'static str = "SELECT id, value, value_key FROM items i
     WHERE key_id = ?1 AND category = ?2 AND name = ?3
     AND (expiry IS NULL OR expiry > CURRENT_TIME)";
-const SCAN_QUERY: &'static str = "SELECT id, name, value, value_key FROM items WHERE key_id = ?1
-    AND category = ?2 AND (expiry IS NULL OR expiry > CURRENT_TIME) LIMIT ?3, ?4";
+const SCAN_QUERY: &'static str = "SELECT id, name, value, value_key FROM items i WHERE key_id = ?1
+    AND category = ?2 AND (expiry IS NULL OR expiry > CURRENT_TIME)";
 const TAG_QUERY: &'static str =
     "SELECT 0 as encrypted, name, value FROM tags_plaintext WHERE item_id = ?1
     UNION ALL
     SELECT 1 as encrypted, name, value FROM tags_encrypted WHERE item_id = ?1";
+
+fn replace_arg_placeholders(filter: &str, start_index: i64) -> (String, i64) {
+    let mut index = start_index;
+    let mut s: String = filter.to_owned();
+    while s.find("$$") != None {
+        let arg_str = format!("?{}", index);
+        s = s.replacen("$$", &arg_str, 1);
+        index = index + 1;
+    }
+    (s, index)
+}
+
+fn extend_query<'a>(
+    query: &str,
+    params: &mut SqlParams,
+    tag_filter: Option<wql::Query>,
+    limit: Option<(i64, i64)>,
+) -> KvResult<String> {
+    let mut query = query.to_string();
+    let mut last_idx = params.len() as i64 + 1;
+
+    if let Some(tag_filter) = tag_filter {
+        let tag_query = TagQuery::from_query(tag_filter)?;
+        let mut enc = TagSqlEncoder::new();
+        let filter = tag_query.encode(&mut enc)?;
+        let (filter, next_idx) = replace_arg_placeholders(&filter, last_idx);
+        last_idx = next_idx;
+        params.extend(enc.arguments);
+        query.push_str(" AND "); // assumes WHERE already occurs
+        query.push_str(&filter);
+    };
+    if let Some((offs, limit)) = limit {
+        params.push(offs);
+        params.push(limit);
+        let (limit, next_idx) = replace_arg_placeholders(" LIMIT $$, $$", last_idx);
+        last_idx = next_idx;
+        query.push_str(&limit);
+    };
+    Ok(query)
+}
+
+pub struct SqlParams<'a> {
+    items: Vec<Box<dyn ToSql + 'a>>,
+}
+
+impl<'a> SqlParams<'a> {
+    pub fn new() -> Self {
+        Self { items: vec![] }
+    }
+
+    pub fn from_iter<I, T>(items: I) -> Self
+    where
+        I: IntoIterator<Item = T>,
+        T: ToSql + 'a,
+    {
+        let mut s = Self::new();
+        s.extend(items);
+        s
+    }
+
+    pub fn push<T>(&mut self, item: T)
+    where
+        T: ToSql + 'a,
+    {
+        self.items.push(Box::new(item))
+    }
+
+    pub fn extend<I, T>(&mut self, items: I)
+    where
+        I: IntoIterator<Item = T>,
+        T: ToSql + 'a,
+    {
+        self.items.extend(
+            items
+                .into_iter()
+                .map(|item| Box::new(item) as Box<dyn ToSql>),
+        )
+    }
+
+    pub fn len(&self) -> usize {
+        self.items.len()
+    }
+}
+
+impl<'a> IntoIterator for SqlParams<'a> {
+    type Item = Box<dyn ToSql + 'a>;
+    type IntoIter = std::vec::IntoIter<Self::Item>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.items.into_iter()
+    }
+}
 
 pub struct KvSqlite {
     conn_pool: r2d2::Pool<SqliteConnectionManager>,
@@ -121,11 +216,12 @@ fn run_scan(
     max_rows: Option<u64>,
 ) -> KvResult<()> {
     let conn = pool.get().expect("Error getting pool instance");
-    let mut scan_q = conn.prepare_cached(SCAN_QUERY)?;
+    let limit = Some((0i64, max_rows.map(|r| r as i64).unwrap_or(-1)));
+    let mut params = SqlParams::from_iter(vec![&key_id, &category]);
+    let query = extend_query(SCAN_QUERY, &mut params, tag_filter, limit)?;
+    //println!("query: {}, arglen: {}", query, params.len());
+    let mut scan_q = conn.prepare_cached(query.as_str())?;
     let mut tag_q = conn.prepare_cached(TAG_QUERY)?;
-    let offset = 0;
-    let limit = max_rows.map(|r| r as i64).unwrap_or(-1);
-    let params = params![key_id, category, offset, limit];
     let result = scan_q.query_map(params, |row| {
         Ok((
             row.get::<_, i64>(0)?,
@@ -235,16 +331,13 @@ impl KvStore for KvSqlite {
         let key_id = get_key_id(client_key).await;
         let category = category.to_vec();
         let count: i64 = blocking!(async move {
+            let mut params = SqlParams::from_iter(vec![&key_id, &category]);
+            let query = extend_query(COUNT_QUERY, &mut params, tag_filter, None)?;
             let conn = pool.get().expect("Error getting pool instance");
-            let count = conn.query_row(
-                "SELECT COUNT(*) FROM items where key_id = ?1 AND category = ?2 AND (expiry IS NULL OR expiry > CURRENT_TIME())",
-                &[&key_id, &category],
-                |row| {
-                    Ok(row.get(0)?)
-                },
-            )?;
+            let count = conn.query_row(query.as_str(), params, |row| Ok(row.get(0)?))?;
             KvResult::Ok(count)
-        }).await?;
+        })
+        .await?;
         Ok(count as u64)
     }
 
@@ -374,7 +467,7 @@ impl KvStore for KvSqlite {
         let pool = self.conn_pool.clone();
         blocking!(async move {
             let mut conn = pool.get().expect("Error getting pool instance");
-            let mut txn = conn.transaction()?; // rusqlite::TransactionBehavior::Deferred
+            let txn = conn.transaction()?; // rusqlite::TransactionBehavior::Deferred
             {
                 let mut fetch_id = txn.prepare_cached(
                     "SELECT id FROM items WHERE key_id=?1 AND category=?2 AND name=?3",
@@ -560,6 +653,43 @@ mod tests {
     }
 
     #[test]
+    fn test_count() {
+        let db = KvSqlite::open_in_memory(EnclaveHandle {}).unwrap();
+        db.provision().unwrap();
+
+        let category = b"cat".to_vec();
+        let test_rows = vec![KvEntry {
+            key_id: b"1".to_vec(),
+            category: category.clone(),
+            name: b"name".to_vec(),
+            value: b"value".to_vec(),
+            tags: None,
+        }];
+
+        let client_key = KvKeySelect::ForClient(vec![]);
+        let updates = test_rows
+            .iter()
+            .map(|row| KvUpdateEntry {
+                client_key: client_key.clone(),
+                category: row.category.clone(),
+                name: row.name.clone(),
+                value: row.value.clone(),
+                tags: row.tags.clone(),
+                expiry: None,
+            })
+            .collect();
+        block_on(db.update(updates, None)).unwrap();
+
+        let tag_filter = None;
+        let count = block_on(db.count(client_key.clone(), &category, tag_filter)).unwrap();
+        assert_eq!(count, 1);
+
+        let tag_filter = Some(wql::Query::Eq("sometag".to_string(), "someval".to_string()));
+        let count = block_on(db.count(client_key.clone(), &category, tag_filter)).unwrap();
+        assert_eq!(count, 0);
+    }
+
+    #[test]
     fn test_scan() {
         let db = KvSqlite::open_in_memory(EnclaveHandle {}).unwrap();
         db.provision().unwrap();
@@ -596,5 +726,26 @@ mod tests {
         let (rows, scan_next) = block_on(db.scan_next(scan_token)).unwrap();
         assert_eq!(rows, test_rows);
         assert!(scan_next.is_none());
+
+        let options = KvFetchOptions::default();
+        let tag_filter = Some(wql::Query::Eq("sometag".to_string(), "someval".to_string()));
+        let scan_token =
+            block_on(db.scan_start(client_key.clone(), &category, options, tag_filter, max_rows))
+                .unwrap();
+        let (rows, scan_next) = block_on(db.scan_next(scan_token)).unwrap();
+        assert_eq!(rows, vec![]);
+        assert!(scan_next.is_none());
+    }
+
+    #[test]
+    fn test_simple_and_convert_args_works() {
+        assert_eq!(
+            replace_arg_placeholders("This $$ is $$ a $$ string!", 3),
+            ("This ?3 is ?4 a ?5 string!".to_string(), 6),
+        );
+        assert_eq!(
+            replace_arg_placeholders("This is a string!", 1),
+            ("This is a string!".to_string(), 1),
+        );
     }
 }
