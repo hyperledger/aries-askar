@@ -118,24 +118,24 @@ impl<K, V> AbstractQuery<K, V> {
                 Ok(AbstractQuery::<RK, RV>::Like(kf(tag_name)?, tag_value))
             }
             Self::In(tag_name, tag_values) => {
-                let tag_values = tag_values.into_iter().try_fold(vec![], |mut v, value| {
-                    v.push(vf(&tag_name, value)?);
-                    KvResult::Ok(v)
-                })?;
+                let tag_values = tag_values
+                    .into_iter()
+                    .map(|value| vf(&tag_name, value))
+                    .collect::<Result<Vec<_>, _>>()?;
                 Ok(AbstractQuery::<RK, RV>::In(kf(tag_name)?, tag_values))
             }
             Self::And(subqueries) => {
-                let subqueries = subqueries.into_iter().try_fold(vec![], |mut v, query| {
-                    v.push(query.map(kf, vf)?);
-                    KvResult::Ok(v)
-                })?;
+                let subqueries = subqueries
+                    .into_iter()
+                    .map(|query| query.map(kf, vf))
+                    .collect::<Result<Vec<_>, _>>()?;
                 Ok(AbstractQuery::<RK, RV>::And(subqueries))
             }
             Self::Or(subqueries) => {
-                let subqueries = subqueries.into_iter().try_fold(vec![], |mut v, query| {
-                    v.push(query.map(kf, vf)?);
-                    KvResult::Ok(v)
-                })?;
+                let subqueries = subqueries
+                    .into_iter()
+                    .map(|query| query.map(kf, vf))
+                    .collect::<Result<Vec<_>, _>>()?;
                 Ok(AbstractQuery::<RK, RV>::Or(subqueries))
             }
             Self::Not(boxed_query) => Ok(AbstractQuery::<RK, RV>::Not(Box::new(

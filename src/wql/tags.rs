@@ -211,10 +211,10 @@ where
         _ => false,
     };
     let enc_name = enc.encode_name(name)?;
-    let enc_values = values.into_iter().try_fold(vec![], |mut v, val| {
-        v.push(enc.encode_value(val, is_plaintext)?);
-        KvResult::Ok(v)
-    })?;
+    let enc_values = values
+        .into_iter()
+        .map(|val| enc.encode_value(val, is_plaintext))
+        .collect::<Result<Vec<_>, _>>()?;
 
     enc.encode_in_clause(enc_name, enc_values, is_plaintext, negate)
 }
@@ -229,10 +229,10 @@ where
     E: TagQueryEncoder<Clause = V>,
 {
     let op = if negate { op.negate() } else { op };
-    let clauses = subqueries.into_iter().try_fold(vec![], |mut v, q| {
-        v.push(encode_tag_query(q, enc, negate)?);
-        KvResult::Ok(v)
-    })?;
+    let clauses = subqueries
+        .into_iter()
+        .map(|q| encode_tag_query(q, enc, negate))
+        .collect::<Result<Vec<_>, _>>()?;
 
     enc.encode_conj_clause(op, clauses)
 }

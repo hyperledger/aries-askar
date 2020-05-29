@@ -234,20 +234,7 @@ fn run_scan(
         match row {
             Ok((row_id, name, value, value_key)) => {
                 let tags = if options.retrieve_tags {
-                    let rows = tag_q
-                        .query_map(&[&row_id], |row| {
-                            let enc: i32 = row.get(0)?;
-                            if enc == 1 {
-                                Ok(KvTag::Encrypted(row.get(1)?, row.get(2)?))
-                            } else {
-                                Ok(KvTag::Plaintext(row.get(1)?, row.get(2)?))
-                            }
-                        })?
-                        .try_fold(vec![], |mut v, tag| {
-                            v.push(tag?);
-                            KvResult::Ok(v)
-                        })?;
-                    Some(rows)
+                    Some(retrieve_tags(&conn, row_id)?)
                 } else {
                     None
                 };
@@ -266,6 +253,21 @@ fn run_scan(
         }
     }
     Ok(())
+}
+
+fn retrieve_tags(conn: &rusqlite::Connection, row_id: i64) -> KvResult<Vec<KvTag>> {
+    let mut tag_q = conn.prepare_cached(TAG_QUERY)?;
+    let rows = tag_q
+        .query_map(&[&row_id], |row| {
+            let enc: i32 = row.get(0)?;
+            if enc == 1 {
+                Ok(KvTag::Encrypted(row.get(1)?, row.get(2)?))
+            } else {
+                Ok(KvTag::Plaintext(row.get(1)?, row.get(2)?))
+            }
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(rows)
 }
 
 #[derive(Debug)]
@@ -368,21 +370,7 @@ impl KvStore for KvSqlite {
             match result {
                 Ok((row_id, value, value_key)) => {
                     let tags = if options.retrieve_tags {
-                        let mut tag_q = conn.prepare_cached(TAG_QUERY)?;
-                        let rows = tag_q
-                            .query_map(&[&row_id], |row| {
-                                let enc: i32 = row.get(0)?;
-                                if enc == 1 {
-                                    Ok(KvTag::Encrypted(row.get(1)?, row.get(2)?))
-                                } else {
-                                    Ok(KvTag::Plaintext(row.get(1)?, row.get(2)?))
-                                }
-                            })?
-                            .try_fold(vec![], |mut v, tag| {
-                                v.push(tag?);
-                                KvResult::Ok(v)
-                            })?;
-                        Some(rows)
+                        Some(retrieve_tags(&conn, row_id)?)
                     } else {
                         None
                     };
