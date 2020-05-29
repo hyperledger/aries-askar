@@ -464,4 +464,32 @@ mod tests {
         let query_str = encode_tag_query(&query, &mut enc).unwrap();
         assert_eq!(query_str, "((enctag = encval AND ~plaintag = plainval) OR (enctag = encval AND ~plaintag != eggs))")
     }
+
+    #[test]
+    fn negate_conj() {
+        let condition_1 = TagQuery::And(vec![
+            TagQuery::Eq(
+                TagName::Encrypted("enctag".to_string()),
+                "encval".to_string(),
+            ),
+            TagQuery::Eq(
+                TagName::Plaintext("plaintag".to_string()),
+                "plainval".to_string(),
+            ),
+        ]);
+        let condition_2 = TagQuery::And(vec![
+            TagQuery::Eq(
+                TagName::Encrypted("enctag".to_string()),
+                "encval".to_string(),
+            ),
+            TagQuery::Not(Box::new(TagQuery::Eq(
+                TagName::Plaintext("plaintag".to_string()),
+                "eggs".to_string(),
+            ))),
+        ]);
+        let query = TagQuery::Not(Box::new(TagQuery::Or(vec![condition_1, condition_2])));
+        let mut enc = TestEncoder {};
+        let query_str = encode_tag_query(&query, &mut enc).unwrap();
+        assert_eq!(query_str, "((enctag != encval OR ~plaintag != plainval) AND (enctag != encval OR ~plaintag = eggs))")
+    }
 }
