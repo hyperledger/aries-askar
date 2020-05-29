@@ -2,25 +2,160 @@ use std::string;
 
 use serde::ser::{Serialize, Serializer};
 use serde::{de, Deserialize, Deserializer};
-use serde_json;
-use serde_json::Value;
+use serde_json::{self, Value};
+
+use crate::error::KvResult;
 
 #[derive(Debug, Hash, Clone, PartialEq, Eq)]
-pub enum Query {
-    And(Vec<Query>),
-    Or(Vec<Query>),
-    Not(Box<Query>),
-    Eq(String, String),
-    Neq(String, String),
-    Gt(String, String),
-    Gte(String, String),
-    Lt(String, String),
-    Lte(String, String),
-    Like(String, String),
-    In(String, Vec<String>),
+pub enum AbstractQuery<K, V> {
+    And(Vec<Self>),
+    Or(Vec<Self>),
+    Not(Box<Self>),
+    Eq(K, V),
+    Neq(K, V),
+    Gt(K, V),
+    Gte(K, V),
+    Lt(K, V),
+    Lte(K, V),
+    Like(K, V),
+    In(K, Vec<V>),
 }
 
-impl Serialize for Query {
+pub type Query = AbstractQuery<String, String>;
+
+impl<K, V> AbstractQuery<K, V> {
+    pub fn optimise(self) -> Option<Self> {
+        match self {
+            Self::Not(boxed_query) => {
+                if let Self::Not(nested_query) = *boxed_query {
+                    Some(*nested_query)
+                } else {
+                    Some(Self::Not(boxed_query))
+                }
+            }
+            Self::And(subqueries) if subqueries.len() == 0 => None,
+            Self::And(mut subqueries) if subqueries.len() == 1 => subqueries.remove(0).optimise(),
+            Self::And(subqueries) => {
+                let mut subqueries: Vec<Self> = subqueries
+                    .into_iter()
+                    .flat_map(|query| query.optimise())
+                    .collect();
+
+                match subqueries.len() {
+                    0 => None,
+                    1 => Some(subqueries.remove(0)),
+                    _ => Some(Self::And(subqueries)),
+                }
+            }
+            Self::Or(subqueries) if subqueries.len() == 0 => None,
+            Self::Or(mut subqueries) if subqueries.len() == 1 => subqueries.remove(0).optimise(),
+            Self::Or(subqueries) => {
+                let mut subqueries: Vec<Self> = subqueries
+                    .into_iter()
+                    .flat_map(|query| query.optimise())
+                    .collect();
+
+                match subqueries.len() {
+                    0 => None,
+                    1 => Some(subqueries.remove(0)),
+                    _ => Some(Self::Or(subqueries)),
+                }
+            }
+            Self::In(key, mut targets) if targets.len() == 1 => {
+                Some(Self::Eq(key, targets.remove(0)))
+            }
+            Self::In(key, targets) => Some(Self::In(key, targets)),
+            _ => Some(self),
+        }
+    }
+
+    pub fn map_names<RK, F>(self, f: &mut F) -> KvResult<AbstractQuery<RK, V>>
+    where
+        F: FnMut(K) -> KvResult<RK>,
+    {
+        self.map(f, &mut |_k, v| Ok(v))
+    }
+
+    pub fn map_values<RV, F>(self, f: &mut F) -> KvResult<AbstractQuery<K, RV>>
+    where
+        F: FnMut(&K, V) -> KvResult<RV>,
+    {
+        self.map(&mut |k| Ok(k), f)
+    }
+
+    pub fn map<RK, RV, KF, VF>(self, kf: &mut KF, vf: &mut VF) -> KvResult<AbstractQuery<RK, RV>>
+    where
+        KF: FnMut(K) -> KvResult<RK>,
+        VF: FnMut(&K, V) -> KvResult<RV>,
+    {
+        match self {
+            Self::Eq(tag_name, tag_value) => {
+                let tag_value = vf(&tag_name, tag_value)?;
+                Ok(AbstractQuery::<RK, RV>::Eq(kf(tag_name)?, tag_value))
+            }
+            Self::Neq(tag_name, tag_value) => {
+                let tag_value = vf(&tag_name, tag_value)?;
+                Ok(AbstractQuery::<RK, RV>::Neq(kf(tag_name)?, tag_value))
+            }
+            Self::Gt(tag_name, tag_value) => {
+                let tag_value = vf(&tag_name, tag_value)?;
+                Ok(AbstractQuery::<RK, RV>::Gt(kf(tag_name)?, tag_value))
+            }
+            Self::Gte(tag_name, tag_value) => {
+                let tag_value = vf(&tag_name, tag_value)?;
+                Ok(AbstractQuery::<RK, RV>::Gte(kf(tag_name)?, tag_value))
+            }
+            Self::Lt(tag_name, tag_value) => {
+                let tag_value = vf(&tag_name, tag_value)?;
+                Ok(AbstractQuery::<RK, RV>::Lt(kf(tag_name)?, tag_value))
+            }
+            Self::Lte(tag_name, tag_value) => {
+                let tag_value = vf(&tag_name, tag_value)?;
+                Ok(AbstractQuery::<RK, RV>::Lte(kf(tag_name)?, tag_value))
+            }
+            Self::Like(tag_name, tag_value) => {
+                let tag_value = vf(&tag_name, tag_value)?;
+                Ok(AbstractQuery::<RK, RV>::Like(kf(tag_name)?, tag_value))
+            }
+            Self::In(tag_name, tag_values) => {
+                let tag_values = tag_values.into_iter().try_fold(vec![], |mut v, value| {
+                    v.push(vf(&tag_name, value)?);
+                    KvResult::Ok(v)
+                })?;
+                Ok(AbstractQuery::<RK, RV>::In(kf(tag_name)?, tag_values))
+            }
+            Self::And(subqueries) => {
+                let subqueries = subqueries.into_iter().try_fold(vec![], |mut v, query| {
+                    v.push(query.map(kf, vf)?);
+                    KvResult::Ok(v)
+                })?;
+                Ok(AbstractQuery::<RK, RV>::And(subqueries))
+            }
+            Self::Or(subqueries) => {
+                let subqueries = subqueries.into_iter().try_fold(vec![], |mut v, query| {
+                    v.push(query.map(kf, vf)?);
+                    KvResult::Ok(v)
+                })?;
+                Ok(AbstractQuery::<RK, RV>::Or(subqueries))
+            }
+            Self::Not(boxed_query) => Ok(AbstractQuery::<RK, RV>::Not(Box::new(
+                boxed_query.map(kf, vf)?,
+            ))),
+        }
+    }
+}
+
+impl<K, V> Default for AbstractQuery<K, V> {
+    fn default() -> Self {
+        Self::And(Vec::new())
+    }
+}
+
+impl<K, V> Serialize for AbstractQuery<K, V>
+where
+    for<'a> &'a K: Into<String>,
+    V: Serialize,
+{
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -69,92 +204,41 @@ impl<'de> Deserialize<'de> for Query {
     }
 }
 
-impl Query {
-    pub fn optimise(self) -> Option<Query> {
-        match self {
-            Query::Not(boxed_operator) => {
-                if let Query::Not(nested_operator) = *boxed_operator {
-                    Some(*nested_operator)
-                } else {
-                    Some(Query::Not(boxed_operator))
-                }
-            }
-            Query::And(suboperators) if suboperators.len() == 0 => None,
-            Query::And(mut suboperators) if suboperators.len() == 1 => {
-                suboperators.remove(0).optimise()
-            }
-            Query::And(suboperators) => {
-                let mut suboperators: Vec<Query> = suboperators
-                    .into_iter()
-                    .flat_map(|operator| operator.optimise())
-                    .collect();
-
-                match suboperators.len() {
-                    0 => None,
-                    1 => Some(suboperators.remove(0)),
-                    _ => Some(Query::And(suboperators)),
-                }
-            }
-            Query::Or(suboperators) if suboperators.len() == 0 => None,
-            Query::Or(mut suboperators) if suboperators.len() == 1 => {
-                suboperators.remove(0).optimise()
-            }
-            Query::Or(suboperators) => {
-                let mut suboperators: Vec<Query> = suboperators
-                    .into_iter()
-                    .flat_map(|operator| operator.optimise())
-                    .collect();
-
-                match suboperators.len() {
-                    0 => None,
-                    1 => Some(suboperators.remove(0)),
-                    _ => Some(Query::Or(suboperators)),
-                }
-            }
-            Query::In(key, mut targets) if targets.len() == 1 => {
-                Some(Query::Eq(key, targets.remove(0)))
-            }
-            Query::In(key, targets) => Some(Query::In(key, targets)),
-            _ => Some(self),
-        }
-    }
-
+impl<K, V> AbstractQuery<K, V>
+where
+    for<'a> &'a K: Into<String>,
+    V: Serialize,
+{
     fn to_value(&self) -> serde_json::Value {
-        match *self {
-            Query::Eq(ref tag_name, ref tag_value) => json!({ tag_name: tag_value }),
-            Query::Neq(ref tag_name, ref tag_value) => json!({tag_name: {"$neq": tag_value}}),
-            Query::Gt(ref tag_name, ref tag_value) => json!({tag_name: {"$gt": tag_value}}),
-            Query::Gte(ref tag_name, ref tag_value) => json!({tag_name: {"$gte": tag_value}}),
-            Query::Lt(ref tag_name, ref tag_value) => json!({tag_name: {"$lt": tag_value}}),
-            Query::Lte(ref tag_name, ref tag_value) => json!({tag_name: {"$lte": tag_value}}),
-            Query::Like(ref tag_name, ref tag_value) => json!({tag_name: {"$like": tag_value}}),
-            Query::In(ref tag_name, ref tag_values) => json!({tag_name: {"$in": tag_values}}),
-            Query::And(ref operators) => {
-                if !operators.is_empty() {
+        match self {
+            Self::Eq(ref tag_name, ref tag_value) => json!({ tag_name: tag_value }),
+            Self::Neq(ref tag_name, ref tag_value) => json!({tag_name: {"$neq": tag_value}}),
+            Self::Gt(ref tag_name, ref tag_value) => json!({tag_name: {"$gt": tag_value}}),
+            Self::Gte(ref tag_name, ref tag_value) => json!({tag_name: {"$gte": tag_value}}),
+            Self::Lt(ref tag_name, ref tag_value) => json!({tag_name: {"$lt": tag_value}}),
+            Self::Lte(ref tag_name, ref tag_value) => json!({tag_name: {"$lte": tag_value}}),
+            Self::Like(ref tag_name, ref tag_value) => json!({tag_name: {"$like": tag_value}}),
+            Self::In(ref tag_name, ref tag_values) => json!({tag_name: {"$in":tag_values}}),
+            Self::And(ref queries) => {
+                if !queries.is_empty() {
                     json!({
-                        "$and": operators.iter().map(|q: &Query| q.to_value()).collect::<Vec<serde_json::Value>>()
+                        "$and": queries.iter().map(|q| q.to_value()).collect::<Vec<serde_json::Value>>()
                     })
                 } else {
                     json!({})
                 }
             }
-            Query::Or(ref operators) => {
-                if !operators.is_empty() {
+            Self::Or(ref queries) => {
+                if !queries.is_empty() {
                     json!({
-                        "$or": operators.iter().map(|q: &Query| q.to_value()).collect::<Vec<serde_json::Value>>()
+                        "$or": queries.iter().map(|q| q.to_value()).collect::<Vec<serde_json::Value>>()
                     })
                 } else {
                     json!({})
                 }
             }
-            Query::Not(ref stmt) => json!({"$not": stmt.to_value()}),
+            Self::Not(ref query) => json!({"$not": query.to_value()}),
         }
-    }
-}
-
-impl Default for Query {
-    fn default() -> Self {
-        Query::And(Vec::new())
     }
 }
 
@@ -219,8 +303,8 @@ fn parse_list_operators(operators: Vec<serde_json::Value>) -> Result<Vec<Query>,
 
     for value in operators.into_iter() {
         if let serde_json::Value::Object(map) = value {
-            let suboperator = parse_query(map)?;
-            out_operators.push(suboperator);
+            let subquery = parse_query(map)?;
+            out_operators.push(subquery);
         } else {
             return Err("operator must be array of JSON objects");
         }

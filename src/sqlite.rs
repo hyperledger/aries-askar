@@ -23,8 +23,8 @@ use super::{KvProvisionStore, KvStore};
 const FETCH_QUERY: &'static str = "SELECT id, value, value_key FROM items
     WHERE key_id = ?1 AND category = ?2 AND name = ?3
     AND (expiry IS NULL OR expiry > CURRENT_TIME)";
-const SCAN_QUERY: &'static str = "SELECT name, value, value_key FROM items WHERE key_id = ?1
-    AND category = ?2 AND (expiry IS NULL OR expiry > CURRENT_TIME)";
+const SCAN_QUERY: &'static str = "SELECT id, name, value, value_key FROM items WHERE key_id = ?1
+    AND category = ?2 AND (expiry IS NULL OR expiry > CURRENT_TIME) LIMIT ?3, ?4";
 const TAG_QUERY: &'static str =
     "SELECT 0 as encrypted, name, value FROM tags_plaintext WHERE item_id = ?1
     UNION ALL
@@ -120,21 +120,47 @@ fn run_scan(
     tag_filter: Option<wql::Query>,
     max_rows: Option<u64>,
 ) -> KvResult<()> {
-    let mut conn = pool.get().expect("Error getting pool instance");
-    let mut qstmt = conn.prepare_cached(SCAN_QUERY)?;
-    let result = qstmt.query_map(&[&key_id, &category], |row| {
-        Ok((row.get(0)?, row.get(1)? /* row.get(2)?*/))
+    let conn = pool.get().expect("Error getting pool instance");
+    let mut scan_q = conn.prepare_cached(SCAN_QUERY)?;
+    let mut tag_q = conn.prepare_cached(TAG_QUERY)?;
+    let offset = 0;
+    let limit = max_rows.map(|r| r as i64).unwrap_or(-1);
+    let params = params![key_id, category, offset, limit];
+    let result = scan_q.query_map(params, |row| {
+        Ok((
+            row.get::<_, i64>(0)?,
+            row.get(1)?,
+            row.get(2)?,
+            row.get::<_, Vec<u8>>(2)?,
+        ))
     })?;
-    let idx = 0u32;
     for row in result {
         match row {
-            Ok((name, value /*, value_key*/)) => {
+            Ok((row_id, name, value, value_key)) => {
+                let tags = if options.retrieve_tags {
+                    let rows = tag_q
+                        .query_map(&[&row_id], |row| {
+                            let enc: i32 = row.get(0)?;
+                            if enc == 1 {
+                                Ok(KvTag::Encrypted(row.get(1)?, row.get(2)?))
+                            } else {
+                                Ok(KvTag::Plaintext(row.get(1)?, row.get(2)?))
+                            }
+                        })?
+                        .try_fold(vec![], |mut v, tag| {
+                            v.push(tag?);
+                            KvResult::Ok(v)
+                        })?;
+                    Some(rows)
+                } else {
+                    None
+                };
                 sender.send(Ok(KvEntry {
                     key_id: key_id.clone(),
                     category: category.clone(),
                     name,
                     value,
-                    tags: None,
+                    tags,
                 }))?;
             }
             Err(e) => {
@@ -238,16 +264,19 @@ impl KvStore for KvSqlite {
         let q_name = name.clone();
         blocking!(async move {
             let conn = pool.get().expect("Error getting pool instance");
-            let mut stmt = conn.prepare_cached(FETCH_QUERY)?;
-            let result: rusqlite::Result<(i64, Vec<u8>, Vec<u8>)> = stmt
-                .query_row(&[&q_key_id, &q_category, &q_name], |row| {
-                    Ok((row.get(0)?, row.get(1)?, row.get(2)?))
-                });
+            let mut fetch_q = conn.prepare_cached(FETCH_QUERY)?;
+            let result = fetch_q.query_row(&[&q_key_id, &q_category, &q_name], |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get(1)?,
+                    row.get::<_, Vec<u8>>(2)?,
+                ))
+            });
             match result {
                 Ok((row_id, value, value_key)) => {
                     let tags = if options.retrieve_tags {
-                        let mut stmt = conn.prepare_cached(TAG_QUERY)?;
-                        let rows = stmt
+                        let mut tag_q = conn.prepare_cached(TAG_QUERY)?;
+                        let rows = tag_q
                             .query_map(&[&row_id], |row| {
                                 let enc: i32 = row.get(0)?;
                                 if enc == 1 {
