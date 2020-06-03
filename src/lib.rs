@@ -8,6 +8,8 @@ use async_trait::async_trait;
 mod error;
 use error::KvResult;
 
+mod resource;
+
 #[cfg(feature = "sqlite")]
 mod sqlite;
 

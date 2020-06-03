@@ -1,3 +1,5 @@
+mod pool;
+
 use async_trait::async_trait;
 
 use piper::Arc;
@@ -66,8 +68,8 @@ fn extend_query<'a>(
     if let Some((offs, limit)) = limit {
         params.push(offs);
         params.push(limit);
-        let (limit, next_idx) = replace_arg_placeholders(" LIMIT $$, $$", last_idx);
-        last_idx = next_idx;
+        let (limit, _next_idx) = replace_arg_placeholders(" LIMIT $$, $$", last_idx);
+        // last_idx = next_idx;
         query.push_str(&limit);
     };
     Ok(query)
@@ -219,9 +221,7 @@ fn run_scan(
     let limit = Some((0i64, max_rows.map(|r| r as i64).unwrap_or(-1)));
     let mut params = SqlParams::from_iter(vec![&key_id, &category]);
     let query = extend_query(SCAN_QUERY, &mut params, tag_filter, limit)?;
-    //println!("query: {}, arglen: {}", query, params.len());
     let mut scan_q = conn.prepare_cached(query.as_str())?;
-    let mut tag_q = conn.prepare_cached(TAG_QUERY)?;
     let result = scan_q.query_map(params, |row| {
         Ok((
             row.get::<_, i64>(0)?,
@@ -234,6 +234,7 @@ fn run_scan(
         match row {
             Ok((row_id, name, value, value_key)) => {
                 let tags = if options.retrieve_tags {
+                    // FIXME fetch tags in batches
                     Some(retrieve_tags(&conn, row_id)?)
                 } else {
                     None

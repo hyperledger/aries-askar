@@ -15,6 +15,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "env_logger",
+ "futures-channel",
  "itertools",
  "lazy_static",
  "log",
@@ -193,6 +194,15 @@ name = "fallible-streaming-iterator"
 version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7360491ce676a36bf9bb3c56c1aa791658183a54d2744120f27285738d90465a"
+
+[[package]]
+name = "futures-channel"
+version = "0.3.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f366ad74c28cca6ba456d95e6422883cfb4b252a83bed929c83abfdbbf2967d5"
+dependencies = [
+ "futures-core",
+]
 
 [[package]]
 name = "futures-core"
