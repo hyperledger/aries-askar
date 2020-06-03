@@ -1,7 +1,7 @@
 use super::manager::ResourceManager;
 use super::ResourceInfo;
 
-pub trait ResourcePoolWorker<M: ResourceManager> {
+pub trait PoolWorker<M: ResourceManager> {
     fn create(&mut self, f: Box<dyn FnOnce(Result<M::Resource, M::Error>)>);
 
     fn verify(
@@ -24,7 +24,7 @@ impl<M: ResourceManager> BlockingWorker<M> {
     }
 }
 
-impl<M: ResourceManager> ResourcePoolWorker<M> for BlockingWorker<M> {
+impl<M: ResourceManager> PoolWorker<M> for BlockingWorker<M> {
     fn create(&mut self, f: Box<dyn FnOnce(Result<M::Resource, M::Error>)>) {
         let result = self.manager.create();
         f(result)

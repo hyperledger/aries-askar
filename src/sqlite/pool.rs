@@ -5,7 +5,7 @@ use lazy_static::lazy_static;
 
 use rusqlite::{Connection, Error, OpenFlags};
 
-use crate::resource::{ResourceInfo, ResourceManager};
+use crate::pool::{ResourceInfo, ResourceManager};
 
 lazy_static! {
     static ref INMEM_SEQ: AtomicUsize = AtomicUsize::default();
