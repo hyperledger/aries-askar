@@ -2,6 +2,7 @@ use std::time::Instant;
 
 mod manager;
 mod pool;
+mod sentinel;
 mod worker;
 
 pub use manager::ResourceManager;

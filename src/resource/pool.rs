@@ -1,11 +1,16 @@
 use std::collections::VecDeque;
+use std::fmt::{Debug, Display, Formatter};
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::{Arc, Condvar, Mutex};
+use std::task;
 use std::thread;
 use std::time::Instant;
 
 use futures_channel::oneshot;
 
 use super::manager::ResourceManager;
+use super::sentinel::Sentinel;
 use super::worker::{BlockingWorker, ResourcePoolWorker};
 use super::ResourceInfo;
 
@@ -21,11 +26,32 @@ pub enum PoolWorkerFlag {
 pub struct PoolResource<M: ResourceManager> {
     inner: Option<M::Resource>,
     info: ResourceInfo,
-    state: PoolSentinel<M>,
+    state: PoolThreadState<M>,
+}
+
+impl<M: ResourceManager> Debug for PoolResource<M>
+where
+    M::Resource: Debug,
+{
+    fn fmt(&self, fmt: &mut Formatter<'_>) -> std::fmt::Result {
+        fmt.debug_struct("PoolResource")
+            .field("inner", &self.inner.as_ref().unwrap())
+            .field("info", &self.info)
+            .finish()
+    }
+}
+
+impl<M: ResourceManager> Display for PoolResource<M>
+where
+    M::Resource: Display,
+{
+    fn fmt(&self, fmt: &mut Formatter<'_>) -> std::fmt::Result {
+        Display::fmt(self.inner.as_ref().unwrap(), fmt)
+    }
 }
 
 impl<M: ResourceManager> PoolResource<M> {
-    fn new(res: M::Resource, info: Option<ResourceInfo>, state: PoolSentinel<M>) -> Self {
+    fn new(res: M::Resource, info: Option<ResourceInfo>, state: PoolThreadState<M>) -> Self {
         let info = info.unwrap_or_else(|| ResourceInfo {
             created: Instant::now(),
             use_count: 0,
@@ -78,19 +104,22 @@ impl<M: ResourceManager> Drop for PoolResource<M> {
 }
 
 #[derive(Debug)]
-pub enum AcquireError<E: std::fmt::Debug + Send> {
+pub enum AcquireError<E: Debug + Send> {
     Init,
     Busy,
     Stopped,
     ResourceError(E),
 }
 
+#[derive(Debug)]
+pub struct InitError();
+
 enum WorkerMessage<M: ResourceManager> {
     Acquire(oneshot::Sender<Result<PoolResource<M>, AcquireError<M::Error>>>),
     Release(M::Resource, ResourceInfo),
 }
 
-struct PoolState<M: ResourceManager> {
+struct PoolSharedState<M: ResourceManager> {
     inner: Mutex<PoolInnerState<M>>,
     resources: Mutex<VecDeque<(M::Resource, ResourceInfo)>>,
     cvar: Condvar,
@@ -104,50 +133,14 @@ struct PoolInnerState<M: ResourceManager> {
     min_count: usize,
     max_count: Option<usize>,
     max_waiters: Option<usize>,
+    ready_wakers: Vec<task::Waker>,
+    done_wakers: Vec<task::Waker>,
 }
 
-struct PoolSentinel<M: ResourceManager>(Arc<PoolState<M>>);
+type PoolThreadState<M> = Sentinel<PoolSharedState<M>>;
 
-impl<M: ResourceManager> PoolSentinel<M> {
-    fn ref_count(&self) -> usize {
-        Arc::strong_count(&self.0)
-    }
-}
-
-impl<M: ResourceManager> Clone for PoolSentinel<M> {
-    fn clone(&self) -> Self {
-        Self(self.0.clone())
-    }
-}
-
-impl<M: ResourceManager> std::ops::Deref for PoolSentinel<M> {
-    type Target = PoolState<M>;
-    fn deref(&self) -> &Self::Target {
-        &*self.0
-    }
-}
-
-impl<M: ResourceManager> Drop for PoolSentinel<M> {
-    fn drop(&mut self) {
-        // FIXME check thread::is_panicking and enable logging
-        // this would indicate either a worker or the pool main thread is panicking
-
-        if Arc::strong_count(&self.0) == 1 {
-            // this is the last copy
-            if let Ok(mut inner) = self.0.inner.lock() {
-                inner.flag = PoolWorkerFlag::Done;
-            }
-        } else {
-            // notify main thread every time a reference is dropped
-            // this avoids a deadlock during the shutdown procedure
-            self.0.cvar.notify_all();
-        }
-    }
-}
-
-#[derive(Clone)]
 pub struct ResourcePool<M: ResourceManager> {
-    state: Arc<PoolState<M>>,
+    state: Sentinel<PoolSharedState<M>>,
 }
 
 impl<M: ResourceManager> ResourcePool<M> {
@@ -156,7 +149,7 @@ impl<M: ResourceManager> ResourcePool<M> {
         let max_count = manager.max_count();
         let max_waiters = manager.max_waiters();
 
-        let state = Arc::new(PoolState {
+        let state = Arc::new(PoolSharedState {
             inner: Mutex::new(PoolInnerState {
                 flag: PoolWorkerFlag::Init,
                 queue: VecDeque::new(),
@@ -165,18 +158,54 @@ impl<M: ResourceManager> ResourcePool<M> {
                 min_count,
                 max_count,
                 max_waiters,
+                ready_wakers: Vec::new(),
+                done_wakers: Vec::new(),
             }),
             resources: Mutex::new(VecDeque::<(M::Resource, ResourceInfo)>::new()),
             cvar: Condvar::new(),
         });
         let scopy = state.clone();
         thread::spawn(move || Self::run(manager, scopy));
-        Self { state }
+        Self {
+            state: Sentinel::new(state, |state, remain| {
+                if remain == 0 {
+                    if let Ok(mut inner) = state.inner.lock() {
+                        if inner.flag != PoolWorkerFlag::Done {
+                            inner.flag = PoolWorkerFlag::Shutdown;
+                            state.cvar.notify_all();
+                        }
+                    }
+                }
+            }),
+        }
     }
 
-    fn run(mut manager: M, state: Arc<PoolState<M>>) -> Result<(), M::Error> {
+    fn run(mut manager: M, state: Arc<PoolSharedState<M>>) -> Result<(), M::Error> {
         // detect thread panic and change state to Done
-        let state = PoolSentinel(state);
+        let state = PoolThreadState::new(state, |state, remain| {
+            // FIXME check thread::is_panicking and enable logging
+            // this would indicate either a worker or the pool main thread is panicking
+            // cache the main thread ID to compare
+
+            if remain == 0 {
+                // this is the last copy
+                if let Ok(mut inner) = state.inner.lock() {
+                    inner.flag = PoolWorkerFlag::Done;
+                    for waker in inner.ready_wakers.drain(..) {
+                        // alert ready waiter so it can receive an InitError
+                        waker.wake();
+                    }
+                    for waker in inner.done_wakers.drain(..) {
+                        // alert done waiter
+                        waker.wake();
+                    }
+                }
+            } else {
+                // notify main thread every time a reference is dropped
+                // this avoids a deadlock during the shutdown procedure
+                state.cvar.notify_all();
+            }
+        });
 
         // run initializer in this thread, queueing requests until finished
         manager.init()?;
@@ -185,8 +214,12 @@ impl<M: ResourceManager> ResourcePool<M> {
         let mut worker = Box::new(BlockingWorker::new(manager)) as Box<dyn ResourcePoolWorker<M>>;
 
         let mut inner = state.inner.lock().unwrap();
-        inner.flag = PoolWorkerFlag::Ready;
-        state.cvar.notify_all();
+        if inner.flag == PoolWorkerFlag::Init {
+            inner.flag = PoolWorkerFlag::Ready;
+        }
+        for waker in inner.ready_wakers.drain(..) {
+            waker.wake();
+        }
 
         loop {
             if inner.flag == PoolWorkerFlag::Shutdown {
@@ -281,11 +314,13 @@ impl<M: ResourceManager> ResourcePool<M> {
             // FIXME create workers up to min_count while accepting new requests
             // with small delay in between?
 
-            if inner.queue.is_empty() {
+            if inner.queue.is_empty() && inner.flag != PoolWorkerFlag::Shutdown {
                 // FIXME max wait until next keepalive timeout
                 inner = state.cvar.wait(inner).unwrap();
             }
         }
+
+        // entered shutdown state
 
         // drop any senders in wait queue
         inner.waiters.clear();
@@ -366,15 +401,132 @@ impl<M: ResourceManager> ResourcePool<M> {
         }
     }
 
-    // FIXME add method to wait for init, giving clients the choice
-    // to avoid AcquireError::Init
+    // note: will block until all clones are dropped
+    pub fn shutdown(self) -> PoolShutdown<M> {
+        PoolShutdown {
+            state: self.state.unwrap(),
+        }
+    }
 }
 
-impl<M: ResourceManager> Drop for ResourcePool<M> {
-    fn drop(&mut self) {
-        if let Ok(mut inner) = self.state.inner.lock() {
-            inner.flag = PoolWorkerFlag::Shutdown;
-            self.state.cvar.notify_all();
+impl<M: ResourceManager> Clone for ResourcePool<M> {
+    fn clone(&self) -> Self {
+        Self {
+            state: self.state.clone(),
         }
+    }
+}
+
+// wait for init to complete
+impl<M: ResourceManager> Future for ResourcePool<M> {
+    type Output = Result<Self, InitError>;
+    fn poll(self: Pin<&mut Self>, cx: &mut task::Context<'_>) -> task::Poll<Self::Output> {
+        if let Ok(mut inner) = self.state.inner.lock() {
+            match inner.flag {
+                PoolWorkerFlag::Init => {
+                    let waker = cx.waker().clone();
+                    inner.ready_wakers.retain(|w| !waker.will_wake(w));
+                    inner.ready_wakers.push(waker);
+                    task::Poll::Pending
+                }
+                PoolWorkerFlag::Ready | PoolWorkerFlag::Busy => task::Poll::Ready(Ok(self.clone())),
+                _ => {
+                    if inner.flag == PoolWorkerFlag::Done {}
+                    task::Poll::Ready(Err(InitError {}))
+                }
+            }
+        } else {
+            task::Poll::Ready(Err(InitError {}))
+        }
+    }
+}
+
+pub struct PoolShutdown<M: ResourceManager> {
+    state: Arc<PoolSharedState<M>>,
+}
+
+impl<M: ResourceManager> Future for PoolShutdown<M> {
+    type Output = ();
+    fn poll(self: Pin<&mut Self>, cx: &mut task::Context<'_>) -> task::Poll<Self::Output> {
+        // note: will panic if the mutex was poisoned by another thread
+        let mut inner = self.state.inner.lock().unwrap();
+        match inner.flag {
+            PoolWorkerFlag::Done => task::Poll::Ready(()),
+            _ => {
+                let waker = cx.waker().clone();
+                inner.done_wakers.retain(|w| !waker.will_wake(w));
+                inner.done_wakers.push(waker);
+                task::Poll::Pending
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use smol::{block_on, blocking};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::thread::sleep;
+    use std::time::Duration;
+
+    #[derive(Default)]
+    struct TestResourceManager {
+        idx: AtomicUsize,
+    }
+
+    impl ResourceManager for TestResourceManager {
+        type Resource = String;
+        type Error = String;
+
+        fn init(&mut self) -> Result<(), String> {
+            println!("init");
+            sleep(Duration::from_millis(10));
+            Ok(())
+        }
+
+        fn create(&self) -> Result<String, String> {
+            let idx = self.idx.fetch_add(1, Ordering::SeqCst);
+            Ok(idx.to_string())
+        }
+    }
+
+    // test that two ready wakers on separate clones of the pool are supported
+    #[test]
+    fn pool_ready_wakers() {
+        let p1 = ResourcePool::new(TestResourceManager::default());
+        let p2 = p1.clone();
+        let th = thread::spawn(move || {
+            block_on(async move {
+                let result = p2.await;
+                println!("done thread 2");
+                result
+            })
+        });
+        block_on(async move {
+            let result = p1.await;
+            println!("done thread 1");
+            result
+        })
+        .unwrap();
+        th.join().unwrap().unwrap();
+    }
+
+    // test pool shutdown waiter
+    #[test]
+    fn pool_done_waker() {
+        let p1 = ResourcePool::new(TestResourceManager::default());
+        let p2 = p1.clone();
+        let th = thread::spawn(move || {
+            block_on(async move {
+                p2.shutdown().await;
+                println!("done shutdown");
+            })
+        });
+        block_on(async move {
+            println!("val: {}", p1.acquire().await.unwrap());
+            println!("done p1");
+        });
+        th.join().unwrap();
     }
 }
