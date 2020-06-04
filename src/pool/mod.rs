@@ -10,6 +10,7 @@ use std::time::Instant;
 use futures_channel::oneshot;
 
 mod manager;
+mod queue;
 mod resource;
 mod sentinel;
 mod worker;

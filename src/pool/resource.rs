@@ -12,6 +12,17 @@ pub struct ResourceInfo {
     pub last_verified: Option<Instant>,
 }
 
+impl Default for ResourceInfo {
+    fn default() -> Self {
+        Self {
+            created: Instant::now(),
+            use_count: 0,
+            last_used: None,
+            last_verified: None,
+        }
+    }
+}
+
 pub struct PoolResource<M: ResourceManager> {
     inner: Option<M::Resource>,
     info: ResourceInfo,
@@ -49,12 +60,7 @@ impl<M: ResourceManager> PoolResource<M> {
         info: Option<ResourceInfo>,
         state: PoolThreadState<M>,
     ) -> Self {
-        let info = info.unwrap_or_else(|| ResourceInfo {
-            created: Instant::now(),
-            use_count: 0,
-            last_used: None,
-            last_verified: None,
-        });
+        let info = info.unwrap_or_default();
         Self {
             inner: Some(res),
             info,
