@@ -1,82 +1,117 @@
-use std::collections::VecDeque;
-use std::sync::{Arc, Condvar, Mutex, MutexGuard};
+use std::sync::{Arc, Condvar, LockResult, Mutex, MutexGuard, WaitTimeoutResult};
+use std::task::Waker;
+use std::time::{Duration, Instant};
 
-use super::ResourceInfo;
+use super::resource::{Managed, ResourceFuture, ResourceInfo};
+use super::util::{TimedDeque, TimedMap, Timer};
 
-pub struct QueueState<R: Send> {
-    idle: VecDeque<(R, ResourceInfo)>,
+type Guard<'a, R> = MutexGuard<'a, QueueInner<R>>;
+
+pub struct QueueConfig {
+    pub acquire_timeout: Option<Duration>,
+    pub idle_timeout: Option<Duration>,
+    pub max_waiters: Option<usize>,
+    pub min_count: usize,
+    pub max_count: Option<usize>,
 }
 
-pub struct QueueInternal<R: Send> {
-    state: Mutex<QueueState<R>>,
-    cvar: Condvar,
-}
-
-pub struct Queue<R: Send> {
-    inner: Arc<QueueInternal<R>>,
-}
-
-impl<R: Send> Clone for Queue<R> {
-    fn clone(&self) -> Self {
+impl Default for QueueConfig {
+    fn default() -> Self {
         Self {
-            inner: self.inner.clone(),
+            acquire_timeout: None,
+            idle_timeout: None,
+            max_waiters: None,
+            min_count: 0,
+            max_count: None,
         }
     }
 }
 
-pub enum QueueError {
-    Empty,
-    Poisoned,
+pub struct QueueInner<R> {
+    pub idle: TimedDeque<(R, ResourceInfo)>,
+    pub release: TimedDeque<(R, ResourceInfo)>,
+    pub running: bool,
+    pub timers: TimedMap<Arc<Timer>>,
+    pub total_count: usize,
+    pub update_count: usize,
+    pub verify: TimedDeque<(R, ResourceInfo)>,
+    pub wait_count: usize,
+}
+
+pub struct Queue<R> {
+    pub(super) config: Arc<QueueConfig>,
+    cvar: Arc<Condvar>,
+    inner: Arc<Mutex<QueueInner<R>>>,
+}
+
+impl<R> Clone for Queue<R> {
+    fn clone(&self) -> Self {
+        Self {
+            config: self.config.clone(),
+            inner: self.inner.clone(),
+            cvar: self.cvar.clone(),
+        }
+    }
+}
+
+impl<R: Send> Default for Queue<R> {
+    fn default() -> Self {
+        Self::new(QueueConfig::default())
+    }
 }
 
 impl<R: Send> Queue<R> {
-    pub fn new() -> Self {
-        Self {
-            inner: Arc::new(QueueInternal {
-                state: Mutex::new(QueueState {
-                    idle: VecDeque::new(),
-                }),
-                cvar: Condvar::new(),
-            }),
-        }
+    pub fn new(config: QueueConfig) -> Self {
+        let queue = Self {
+            config: Arc::new(config),
+            inner: Arc::new(Mutex::new(QueueInner {
+                idle: TimedDeque::default(),
+                release: TimedDeque::default(),
+                running: false,
+                timers: TimedMap::default(),
+                total_count: 0,
+                update_count: 0,
+                verify: TimedDeque::default(),
+                wait_count: 0,
+            })),
+            cvar: Arc::new(Condvar::new()),
+        };
+        queue
     }
 
-    #[inline]
-    pub fn lock(&self) -> Result<MutexGuard<QueueState<R>>, QueueError> {
-        self.inner.state.lock().map_err(|_| QueueError::Poisoned)
+    pub fn lock(&self) -> LockResult<Guard<R>> {
+        self.inner.lock()
     }
 
-    #[inline]
     pub fn notify(&self) {
-        self.inner.cvar.notify_all()
+        self.cvar.notify_all()
     }
 
-    pub fn wait<'a>(
-        &'a self,
-        guard: MutexGuard<'a, QueueState<R>>,
-    ) -> Result<MutexGuard<QueueState<R>>, QueueError> {
-        self.inner
-            .cvar
-            .wait(guard)
-            .map_err(|_| QueueError::Poisoned)
-    }
-
-    pub fn acquire(mut state: MutexGuard<QueueState<R>>) -> Result<(R, ResourceInfo), QueueError> {
-        if let Some(resinfo) = state.idle.pop_front() {
-            Ok(resinfo)
-        } else {
-            Err(QueueError::Empty)
-        }
-    }
-
-    pub fn release(&self, res: R, info: ResourceInfo) -> Result<(), (R, ResourceInfo, QueueError)> {
-        match self.lock() {
-            Ok(mut inner) => {
-                inner.idle.push_front((res, info));
-                self.notify();
-                Ok(())
+    pub fn release(&self, res: Option<R>, info: ResourceInfo) -> Option<R> {
+        if let Ok(mut queue) = self.inner.lock() {
+            if let Some(res) = res {
+                queue.release.push_timed((res, info), None);
+            } else {
+                queue.total_count -= 1;
             }
-            Err(e) => Err((res, info, e)),
+            queue.update_count += 1;
+            drop(queue);
+            self.cvar.notify_all();
+            None
+        } else {
+            res
         }
+    }
+
+    pub fn wait<'a>(&'a self, guard: Guard<'a, R>) -> LockResult<Guard<R>> {
+        self.cvar.wait(guard)
+    }
+
+    pub fn wait_timeout<'a>(
+        &'a self,
+        guard: Guard<'a, R>,
+        timeout: Duration,
+    ) -> LockResult<(Guard<R>, WaitTimeoutResult)> {
+        self.cvar.wait_timeout(guard, timeout)
     }
 }
