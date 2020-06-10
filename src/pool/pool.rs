@@ -33,7 +33,7 @@ pub struct PoolConfig<R, E: Debug> {
 }
 
 impl<R: Send + 'static, E: Debug + Send + 'static> PoolConfig<R, E> {
-    fn new<F, O>(create: F) -> Self
+    pub fn new<F, O>(create: F) -> Self
     where
         F: Fn() -> O + Send + Sync + 'static,
         O: Future<Output = Result<R, E>> + Send + 'static,
@@ -49,7 +49,7 @@ impl<R: Send + 'static, E: Debug + Send + 'static> PoolConfig<R, E> {
         }
     }
 
-    fn dispose<F, O>(mut self, dispose: F) -> Self
+    pub fn dispose<F, O>(mut self, dispose: F) -> Self
     where
         F: Fn(R, ResourceInfo) -> O + Send + Sync + 'static,
         O: Future<Output = Result<(), E>> + Send + 'static,
@@ -58,7 +58,7 @@ impl<R: Send + 'static, E: Debug + Send + 'static> PoolConfig<R, E> {
         self
     }
 
-    fn build(self) -> Pool<R, E> {
+    pub fn build(self) -> Pool<R, E> {
         let queue = Queue::default();
         let exec = Executor::new(self.create, self.dispose);
         Pool::new(queue, exec)
@@ -119,7 +119,7 @@ impl<R: Send + 'static, E: Send + 'static> Pool<R, E> {
             mem::swap(&mut process_release, &mut guard.release);
 
             // release lock to allow idle resource return and timer registration
-            drop(queue);
+            drop(guard);
 
             // move expired idle resources to verify or dispose queues
             if let Some((expired_res, next_time)) = expired {
@@ -280,7 +280,7 @@ mod tests {
     use smol::block_on;
     use std::cell::Cell;
 
-    fn test_counter_pool() -> PoolConfig<usize, ()> {
+    fn counter_pool() -> PoolConfig<usize, ()> {
         let source = Arc::new(AtomicCounter::default());
         PoolConfig::<usize, ()>::new(move || {
             let s = source.clone();
@@ -290,7 +290,7 @@ mod tests {
 
     #[test]
     fn test_pool_acquire_order() {
-        let pool = test_counter_pool().build();
+        let pool = counter_pool().build();
         let next = || pool.acquire();
         block_on(async move {
             let fst = next().await.unwrap();
@@ -308,7 +308,7 @@ mod tests {
     fn test_pool_dispose() {
         let disposed = Arc::new(AtomicCounter::default());
         let dcopy = disposed.clone();
-        let pool = test_counter_pool()
+        let pool = counter_pool()
             .dispose(move |res, _| {
                 let d = dcopy.clone();
                 println!("dispose!");

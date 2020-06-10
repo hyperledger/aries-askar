@@ -2,9 +2,9 @@ pub type ClientId = Vec<u8>;
 
 pub type KeyId = Vec<u8>;
 
-pub trait KvLockToken: Clone + std::fmt::Debug + Send {}
+pub trait KvLockToken: Send {}
 
-pub trait KvScanToken: Clone + std::fmt::Debug + Send {}
+pub trait KvScanToken: Send {}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum KvLockOperation<T: KvLockToken> {

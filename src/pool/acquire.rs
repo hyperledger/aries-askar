@@ -11,7 +11,6 @@ use super::resource::{Managed, ResourceFuture, ResourceInfo};
 use super::util::Timer;
 
 pub enum AcquireError<E> {
-    Init,
     Busy,
     ResourceError(E),
     Stopped,
@@ -21,7 +20,6 @@ pub enum AcquireError<E> {
 impl<E: Debug> Debug for AcquireError<E> {
     fn fmt(&self, fmt: &mut Formatter<'_>) -> std::fmt::Result {
         match &self {
-            Self::Init => write!(fmt, "AcquireError::Init"),
             Self::Busy => write!(fmt, "AcquireError::Busy"),
             Self::ResourceError(err) => write!(fmt, "AcquireError::ResourceError({:?})", err),
             Self::Stopped => write!(fmt, "AcquireError::Stopped"),

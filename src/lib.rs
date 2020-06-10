@@ -21,8 +21,9 @@ use types::{
     KvUpdateEntry,
 };
 
+#[async_trait]
 pub trait KvProvisionStore {
-    fn provision(&self) -> KvResult<()>;
+    async fn provision(&self) -> KvResult<()>;
 }
 
 /// Common trait for all key-value storage backends
