@@ -5,8 +5,7 @@ use std::thread::{self, JoinHandle};
 
 use crossbeam_channel::{bounded, Receiver, Sender, TryRecvError, TrySendError};
 use futures_channel::{mpsc, oneshot};
-use futures_core::Stream;
-use futures_util::task::AtomicWaker;
+use futures_util::{stream::Stream, task::AtomicWaker};
 use rusqlite::{Connection, Error, OpenFlags, Row, Rows, ToSql};
 
 use crate::error::KvResult;

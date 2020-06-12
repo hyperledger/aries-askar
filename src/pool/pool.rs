@@ -79,11 +79,14 @@ impl<R: Send + 'static, E: Send + 'static> Pool<R, E> {
     }
 
     fn run(self) {
+        // FIXME add sentinel
+
         let exec = self.exec;
-        let config = &self.queue.config;
-        let queue = &self.queue;
+        let queue = self.queue;
+        let config = &queue.config;
         let mut next_check;
         let mut process_idle;
+        let mut process_expired;
         let mut process_release;
         let mut process_timers = TimedMap::new();
         let mut prev_count;
@@ -125,26 +128,19 @@ impl<R: Send + 'static, E: Send + 'static> Pool<R, E> {
             if let Some((expired_res, next_time)) = expired {
                 // FIXME if neither keepalive or dispose are defined, just drop resource
                 // define perform_keepalive on config
-
-                let mut keepalive_count = config
-                    .min_count
-                    .saturating_sub(prev_count - expired_res.len());
-                for ((res, info), _) in expired_res {
-                    let fut =
-                        ResourceFuture::<R, E>::new(Some(res), info, self.queue.clone(), None);
-                    if keepalive_count > 0 {
-                        // exec.keepalive(fut);
-                        keepalive_count -= 1;
-                    } else {
-                        exec.dispose(fut);
-                    }
-                }
-
+                process_expired = expired_res;
                 if let Some(next_time) = next_time {
                     next_check =
                         Some(next_check.map_or(next_time, |c| std::cmp::min(c, next_time)));
                 }
+            } else {
+                process_expired = TimedDeque::new();
             }
+
+            // current resource count
+            let total_count =
+                prev_count.saturating_sub(process_expired.len() + process_release.len());
+            let mut keepalive_count = config.min_count.saturating_sub(total_count);
 
             // process release queue
             for (res, idle_start) in process_release {
@@ -159,7 +155,18 @@ impl<R: Send + 'static, E: Send + 'static> Pool<R, E> {
                 // }
             }
 
-            // remove expired waiters
+            // process expired queue
+            for ((res, info), _) in process_expired {
+                let fut = ResourceFuture::<R, E>::new(Some(res), info, queue.clone(), None);
+                if keepalive_count > 0 {
+                    // exec.keepalive(fut);
+                    keepalive_count -= 1;
+                } else {
+                    exec.dispose(fut);
+                }
+            }
+
+            // remove and process expired waiters
             if let Some(acquire_timeout) = config.acquire_timeout.as_ref() {
                 let min_time = Instant::now() - *acquire_timeout;
                 let (removed, next_time) = process_timers.remove_before(min_time);

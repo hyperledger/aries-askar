@@ -1,9 +1,5 @@
 use std::pin::Pin;
-use std::sync::{
-    // mpsc::{sync_channel, Receiver, SyncSender},
-    Arc,
-    Mutex,
-};
+use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
 
 use async_trait::async_trait;
@@ -257,6 +253,7 @@ fn retrieve_tags(conn: &Connection, row_id: i64) -> KvResult<Vec<KvTag>> {
 pub struct Scan {
     // FIXME only holding on to ctx to prevent it from being released
     // back to the pool while the query is pending
+    // the real fix is to detect active connections during pool.on_release
     ctx: Managed<ConnectionContext>,
     query: QueryResults<(Vec<KvEntry>, bool)>,
 }
@@ -266,7 +263,7 @@ impl Scan {
     }
 }
 
-impl KvScanToken for Scan {} //Arc<Mutex<Scan>> {}
+impl KvScanToken for Scan {}
 
 #[derive(Clone, Debug)]
 pub struct Lock {}
@@ -274,7 +271,7 @@ impl KvLockToken for Lock {}
 
 #[async_trait]
 impl KvStore for KvSqlite {
-    type ScanToken = Scan; // Arc<Mutex<Scan>>;
+    type ScanToken = Scan;
     type LockToken = Lock;
 
     async fn count(
