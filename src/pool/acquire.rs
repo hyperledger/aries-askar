@@ -5,7 +5,7 @@ use std::sync::{atomic::Ordering, Arc};
 use std::task::{Context, Poll, Waker};
 use std::time::Instant;
 
-use super::executor::Executor;
+use super::manager::Manager;
 use super::queue::Queue;
 use super::resource::{Managed, ResourceFuture, ResourceInfo};
 use super::util::Timer;
@@ -37,7 +37,7 @@ pub enum TryAcquire<R: Send, E: Send> {
 }
 
 enum AcquireState<R: Send, E: Send> {
-    Init(Queue<R>, Executor<R, E>),
+    Init(Queue<R>, Manager<R, E>),
     Active(ResourceFuture<R, E>, Option<Arc<Timer>>),
     Wait(Arc<Timer>),
 }
@@ -49,9 +49,9 @@ pub struct Acquire<R: Send, E: Send> {
 }
 
 impl<R: Send, E: Send> Acquire<R, E> {
-    pub(crate) fn new(queue: Queue<R>, exec: Executor<R, E>) -> Self {
+    pub(crate) fn new(queue: Queue<R>, mgr: Manager<R, E>) -> Self {
         Self {
-            inner: Some(AcquireState::Init(queue, exec)),
+            inner: Some(AcquireState::Init(queue, mgr)),
         }
     }
 }
@@ -70,8 +70,8 @@ impl<R: Send, E: Send> Future for Acquire<R, E> {
 
         loop {
             state = match state {
-                AcquireState::Init(queue, exec) => {
-                    match try_acquire(&queue, &exec, Some(cx.waker())) {
+                AcquireState::Init(queue, mgr) => {
+                    match try_acquire(&queue, &mgr, Some(cx.waker())) {
                         TryAcquire::Busy => {
                             return Poll::Ready(Err(AcquireError::Busy));
                         }
@@ -123,17 +123,15 @@ impl<R: Send, E: Send> Future for Acquire<R, E> {
 
 pub fn try_acquire<R: Send, E: Send>(
     queue: &Queue<R>,
-    exec: &Executor<R, E>,
+    mgr: &Manager<R, E>,
     waker: Option<&Waker>,
 ) -> TryAcquire<R, E> {
     let time_start = Instant::now();
 
-    // FIXME check running state
-
     let mut guard = match queue.lock() {
-        Ok(guard) => guard,
-        Err(_) => {
-            // mutex poisoned
+        Ok(guard) if guard.status.is_running() => guard,
+        _ => {
+            // stopped or mutex poisoned
             return TryAcquire::Stopped;
         }
     };
@@ -186,7 +184,7 @@ pub fn try_acquire<R: Send, E: Send>(
         drop(guard);
         queue.notify();
 
-        let result = exec.create(fut);
+        let result = mgr.create(fut);
         return TryAcquire::Future(
             result,
             timer.map(|t| {

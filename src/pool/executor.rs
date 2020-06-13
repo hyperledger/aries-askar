@@ -1,69 +1,100 @@
-use std::sync::Arc;
+use std::future::Future;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
+use std::thread;
 
-use super::resource::{ApplyUpdate, ResourceFuture};
+use async_channel::{unbounded, Receiver, Sender};
 
-pub struct ExecutorInner<R, E> {
-    create: Box<dyn ApplyUpdate<R, E> + Send + Sync>,
-    dispose: Option<Box<dyn ApplyUpdate<R, E> + Send + Sync>>,
-    // handle_error
-    //keepalive: Option<ResourceVerifyFn<'a, R, E>>,
-    // verify: Option<Mutex<Box<dyn VerifyResource<'a, R, E>>>,
-    // dispose: Option<Mutex<Box<dyn DisposeResource<'a, R, E>>>,
+use futures_util::future::{BoxFuture, FutureExt};
+
+use super::sentinel::Sentinel;
+
+pub struct Executor {
+    inner: Option<Arc<ExecutorInner>>,
+    panicked: Arc<AtomicBool>,
 }
 
-pub struct Executor<R, E> {
-    inner: Arc<ExecutorInner<R, E>>,
+pub struct ExecutorInner {
+    sender: Sender<BoxFuture<'static, ()>>,
+    workers: Vec<thread::JoinHandle<()>>,
 }
 
-impl<R, E> Clone for Executor<R, E> {
+impl Clone for Executor {
     fn clone(&self) -> Self {
         Self {
             inner: self.inner.clone(),
+            panicked: self.panicked.clone(),
         }
     }
 }
 
-impl<R: Send, E: Send> Executor<R, E> {
-    pub fn new(
-        create: Box<dyn ApplyUpdate<R, E> + Send + Sync>,
-        dispose: Option<Box<dyn ApplyUpdate<R, E> + Send + Sync>>,
-        // keepalive: Option<ResourceDisposeFn<'e, R, E>>,
-    ) -> Self {
+impl Executor {
+    pub fn new(thread_count: usize) -> Self {
+        let mut workers = vec![];
+        let (sender, receiver) = unbounded();
+        let panicked = Arc::new(AtomicBool::new(false));
+        let sentinel = Sentinel::new(panicked.clone(), |state, _| {
+            if thread::panicking() {
+                state.store(true, Ordering::Relaxed);
+            }
+        });
+        for i in 0..thread_count {
+            let wk_recv = receiver.clone();
+            let wk_sentinel = sentinel.clone();
+            workers.push(thread::spawn(move || {
+                smol::run(Self::work(wk_recv, wk_sentinel))
+            }));
+        }
         Self {
-            inner: Arc::new(ExecutorInner {
-                create,
-                dispose,
-                //keepalive,
-            }),
+            inner: Some(Arc::new(ExecutorInner { sender, workers })),
+            panicked,
         }
     }
 
-    fn run(self) {}
-
-    // pub fn have_keepalive(&self) -> bool {
-    //     self.keepalive.is_some()
-    // }
-
-    pub fn create(&self, mut target: ResourceFuture<R, E>) -> ResourceFuture<R, E> {
-        self.inner.create.apply(&mut target);
-        target
+    pub fn spawn_ok(&self, fut: impl Future<Output = ()> + Send + 'static) {
+        if self.panicked.load(Ordering::Relaxed) {
+            panic!("Worker thread panicked");
+        }
+        self.inner
+            .as_ref()
+            .unwrap()
+            .sender
+            .try_send(fut.boxed())
+            .expect("error spawning task into executor")
     }
 
-    pub fn handle_error(&self, err: E) {}
-
-    pub fn verify_acquire(&self, fut: ResourceFuture<R, E>) -> ResourceFuture<R, E> {
-        fut
+    pub async fn work(receiver: Receiver<BoxFuture<'static, ()>>, sentinel: Sentinel<AtomicBool>) {
+        loop {
+            match receiver.recv().await {
+                Ok(fut) => {
+                    smol::Task::local(fut).await;
+                }
+                Err(_) => {
+                    // exit loop once sender is dropped
+                    drop(sentinel);
+                    break;
+                }
+            }
+        }
     }
+}
 
-    pub fn verify_release(&self, fut: ResourceFuture<R, E>) -> ResourceFuture<R, E> {
-        fut
-    }
-
-    pub fn dispose(&self, mut target: ResourceFuture<R, E>) {
-        println!("dispose");
-        if let Some(dispose) = self.inner.dispose.as_ref() {
-            dispose.apply(&mut target);
-            // self.spawn(target)
+impl Drop for Executor {
+    fn drop(&mut self) {
+        if let Some(inner) = self.inner.take() {
+            // block on threads if the last instance of the executor
+            if let Ok(ExecutorInner {
+                mut workers,
+                sender,
+            }) = Arc::try_unwrap(inner)
+            {
+                drop(sender);
+                for worker in workers.drain(..) {
+                    worker.join().unwrap()
+                }
+            }
         }
     }
 }

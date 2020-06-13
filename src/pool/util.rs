@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::{btree_map, BTreeMap, VecDeque};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::task::Waker;
 use std::time::Instant;
@@ -82,6 +82,12 @@ impl<R> TimedMap<R> {
         Self::default()
     }
 
+    pub fn remove_all(&mut self) -> BTreeMap<(Instant, usize), R> {
+        let mut result = BTreeMap::new();
+        std::mem::swap(&mut self.inner, &mut result);
+        result
+    }
+
     pub fn remove_before(
         &mut self,
         min_time: Instant,
@@ -96,6 +102,36 @@ impl<R> TimedMap<R> {
         let time_start = time_start.unwrap_or_else(|| Instant::now());
         let id = self.id_source.fetch_add(1, Ordering::SeqCst);
         self.inner.insert((time_start, id), res);
+    }
+
+    pub fn drain(&mut self) -> DrainMap<'_, (Instant, usize), R> {
+        DrainMap {
+            inner: &mut self.inner,
+        }
+    }
+}
+
+impl<R> IntoIterator for TimedMap<R> {
+    type Item = ((Instant, usize), R);
+    type IntoIter = btree_map::IntoIter<(Instant, usize), R>;
+    fn into_iter(self) -> btree_map::IntoIter<(Instant, usize), R> {
+        self.inner.into_iter()
+    }
+}
+
+pub struct DrainMap<'a, K, V> {
+    inner: &'a mut BTreeMap<K, V>,
+}
+
+impl<'a, K: Ord + Copy, V> Iterator for DrainMap<'a, K, V> {
+    type Item = (K, V);
+    fn next(&mut self) -> Option<Self::Item> {
+        // FIXME not very efficient, better options coming in rust nightly
+        if let Some(k) = self.inner.keys().next().copied() {
+            self.inner.remove(&k).map(|v| (k, v))
+        } else {
+            None
+        }
     }
 }
 
@@ -137,6 +173,12 @@ impl<R> TimedDeque<R> {
         Self {
             inner: VecDeque::new(),
         }
+    }
+
+    pub fn remove_all(&mut self) -> Self {
+        let mut result = VecDeque::new();
+        std::mem::swap(&mut self.inner, &mut result);
+        Self { inner: result }
     }
 
     pub fn remove_before(&mut self, min_time: Instant) -> (Self, Option<Instant>) {

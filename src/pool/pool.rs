@@ -1,25 +1,20 @@
-use std::fmt::{Debug, Display, Formatter};
+use std::fmt::Debug;
 use std::future::Future;
 use std::mem;
-use std::ops::{Deref, DerefMut};
-use std::pin::Pin;
-use std::sync::{
-    atomic::{AtomicBool, Ordering},
-    Arc, Condvar, Mutex,
-};
-use std::task::{self, Poll, Waker};
+use std::sync::{atomic::Ordering, Arc};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use futures_util::future::{BoxFuture, FutureExt};
-use futures_util::task::AtomicWaker;
+use futures_channel::oneshot;
 
 use super::acquire::Acquire;
 use super::executor::Executor;
-use super::queue::Queue;
+use super::manager::Manager;
+use super::queue::{Queue, QueueInner, QueueStatus};
 use super::resource::{
     resource_create, resource_dispose, ApplyUpdate, ResourceFuture, ResourceInfo,
 };
+use super::sentinel::Sentinel;
 use super::util::{TimedDeque, TimedMap};
 
 pub struct PoolConfig<R, E: Debug> {
@@ -28,6 +23,7 @@ pub struct PoolConfig<R, E: Debug> {
     min_count: usize,
     max_count: Option<usize>,
     max_waiters: Option<usize>,
+    thread_count: Option<usize>,
     create: Box<dyn ApplyUpdate<R, E> + Send + Sync>,
     dispose: Option<Box<dyn ApplyUpdate<R, E> + Send + Sync>>,
 }
@@ -44,6 +40,7 @@ impl<R: Send + 'static, E: Debug + Send + 'static> PoolConfig<R, E> {
             min_count: 0,
             max_count: None,
             max_waiters: None,
+            thread_count: None,
             create: Box::new(resource_create(create)),
             dispose: None,
         }
@@ -60,29 +57,54 @@ impl<R: Send + 'static, E: Debug + Send + 'static> PoolConfig<R, E> {
 
     pub fn build(self) -> Pool<R, E> {
         let queue = Queue::default();
-        let exec = Executor::new(self.create, self.dispose);
-        Pool::new(queue, exec)
+        let mgr = Manager::new(self.create, self.dispose, None);
+        let exec = Executor::new(self.thread_count.unwrap_or(1));
+        Pool::new(queue, mgr, exec)
     }
 }
 
-pub struct Pool<R, E> {
+pub struct Pool<R: Send, E> {
     queue: Queue<R>,
-    exec: Executor<R, E>,
+    mgr: Manager<R, E>,
+    exec: Executor,
+}
+
+impl<R: Send, E> Clone for Pool<R, E> {
+    fn clone(&self) -> Self {
+        Self {
+            queue: self.queue.clone(),
+            mgr: self.mgr.clone(),
+            exec: self.exec.clone(),
+        }
+    }
 }
 
 impl<R: Send + 'static, E: Send + 'static> Pool<R, E> {
-    pub(crate) fn new<'e>(queue: Queue<R>, exec: Executor<R, E>) -> Self {
-        let pool = Self { queue, exec };
-        let runner = pool.clone();
-        thread::spawn(move || runner.run());
+    pub(crate) fn new<'e>(queue: Queue<R>, mgr: Manager<R, E>, exec: Executor) -> Self {
+        let (qcopy, mcopy, ecopy) = (queue.clone(), mgr.clone(), exec.clone());
+        let pool = Self { queue, mgr, exec };
+        thread::spawn(move || Self::run(qcopy, mcopy, ecopy));
         pool
     }
 
-    fn run(self) {
-        // FIXME add sentinel
+    fn run(queue: Queue<R>, mgr: Manager<R, E>, exec: Executor) {
+        let cleanup = Sentinel::new(Arc::new(queue.clone()), |queue, _| {
+            if let Ok(mut guard) = queue.lock() {
+                guard.status = QueueStatus::Stopped;
+                let mut timers = TimedMap::new();
+                mem::swap(&mut timers, &mut guard.timers);
+                drop(guard);
+                // notify any waiters of the new status
+                queue.notify();
 
-        let exec = self.exec;
-        let queue = self.queue;
+                // ensure all wakers are called when the run loop has ended
+                for (_, timer) in timers {
+                    timer.completed.store(true, Ordering::SeqCst);
+                    timer.waker.wake();
+                }
+            }
+        });
+
         let config = &queue.config;
         let mut next_check;
         let mut process_idle;
@@ -93,152 +115,190 @@ impl<R: Send + 'static, E: Send + 'static> Pool<R, E> {
         let mut prev_update_count;
         let mut waiters_removed;
         let mut updated;
+        let mut disposed_count;
         let idle_timeout = config.idle_timeout.as_ref().copied().unwrap_or_default();
         let can_idle = idle_timeout.as_millis() > 0;
 
         let mut guard = queue.lock().unwrap();
-        guard.running = true;
+        if guard.status != QueueStatus::Init {
+            return;
+        }
+        guard.status = QueueStatus::Running;
+        queue.notify();
 
-        while guard.running {
+        loop {
             next_check = None;
             prev_count = guard.total_count;
             prev_update_count = guard.update_count;
+            // FIXME avoid this allocation while mutex is held
             process_idle = TimedDeque::new();
             process_release = TimedDeque::new();
             waiters_removed = 0usize;
+            disposed_count = 0;
             updated = false;
 
+            let drain = guard.status == QueueStatus::Draining;
+
             // remove expired resources
-            let expired = if can_idle {
+            let expired = if guard.idle.is_empty() || !can_idle {
+                None
+            } else if drain {
+                Some((guard.idle.remove_all(), None))
+            } else {
                 let min_time = Instant::now() - idle_timeout;
                 Some(guard.idle.remove_before(min_time))
-            } else {
-                None
             };
 
-            // swap timer queue and release queue while processing
-            // FIXME if there are no timers and no expired, we can skip all of this
-            mem::swap(&mut process_timers, &mut guard.timers);
-            mem::swap(&mut process_release, &mut guard.release);
+            if expired.is_some() || !guard.timers.is_empty() || !guard.release.is_empty() {
+                // swap timer queue and release queue while processing
+                mem::swap(&mut process_timers, &mut guard.timers);
+                mem::swap(&mut process_release, &mut guard.release);
 
-            // release lock to allow idle resource return and timer registration
-            drop(guard);
+                // release lock to allow idle resource return and timer registration
+                drop(guard);
 
-            // move expired idle resources to verify or dispose queues
-            if let Some((expired_res, next_time)) = expired {
-                // FIXME if neither keepalive or dispose are defined, just drop resource
-                // define perform_keepalive on config
-                process_expired = expired_res;
-                if let Some(next_time) = next_time {
-                    next_check =
-                        Some(next_check.map_or(next_time, |c| std::cmp::min(c, next_time)));
-                }
-            } else {
-                process_expired = TimedDeque::new();
-            }
-
-            // current resource count
-            let total_count =
-                prev_count.saturating_sub(process_expired.len() + process_release.len());
-            let mut keepalive_count = config.min_count.saturating_sub(total_count);
-
-            // process release queue
-            for (res, idle_start) in process_release {
-                // if we don't have an idle timeout, call dispose
-                process_idle.push_timed(res, Some(idle_start));
-                // FIXME send to executor if dispose is given or verify is needed
-                // need to check count
-                // otherwise drop here
-                // for (res, _) in expired_res {
-                //     let (res, info) = res.unwrap();
-                //     state.resmgr.lock().unwrap().dispose(res, info);
-                // }
-            }
-
-            // process expired queue
-            for ((res, info), _) in process_expired {
-                let fut = ResourceFuture::<R, E>::new(Some(res), info, queue.clone(), None);
-                if keepalive_count > 0 {
-                    // exec.keepalive(fut);
-                    keepalive_count -= 1;
+                // move expired idle resources to verify or dispose queues
+                if let Some((expired_res, next_time)) = expired {
+                    process_expired = expired_res;
+                    if let Some(next_time) = next_time {
+                        next_check =
+                            Some(next_check.map_or(next_time, |c| std::cmp::min(c, next_time)));
+                    }
                 } else {
-                    exec.dispose(fut);
+                    process_expired = TimedDeque::new();
                 }
-            }
 
-            // remove and process expired waiters
-            if let Some(acquire_timeout) = config.acquire_timeout.as_ref() {
-                let min_time = Instant::now() - *acquire_timeout;
-                let (removed, next_time) = process_timers.remove_before(min_time);
-                for (_, timer) in removed {
-                    if !timer.busy.load(Ordering::Acquire) {
-                        waiters_removed += 1;
-                    }
-                    timer.completed.store(true, Ordering::SeqCst);
-                    timer.waker.wake();
-                }
-                if let Some(next_time) = next_time {
-                    next_check =
-                        Some(next_check.map_or(next_time, |c| std::cmp::min(c, next_time)));
-                }
-            }
+                // current resource count, at least until the lock was released
+                let total_count =
+                    prev_count.saturating_sub(process_expired.len() + process_release.len());
+                let mut keepalive_count = if drain {
+                    0
+                } else {
+                    config.min_count.saturating_sub(total_count)
+                };
 
-            // wake timers awaiting acquire
-            // only if we have max_count
-            let mut extra_count = 0; // max_count - count;
-            if extra_count > 0 {
-                let wake = process_timers
-                    .iter()
-                    .flat_map(|(key, timer)| {
-                        if !timer.busy.load(Ordering::Relaxed) {
-                            Some(*key)
-                        } else {
-                            None
-                        }
-                    })
-                    .take(extra_count)
-                    .collect::<Vec<_>>();
-                for key in wake {
-                    waiters_removed += 1;
-                    if config.acquire_timeout.is_none() {
-                        if let Some(timer) = process_timers.remove(&key) {
-                            // timer no longer required
-                            timer.completed.store(true, Ordering::SeqCst);
-                            timer.waker.wake();
-                        }
+                // process release queue
+                for (res, idle_start) in process_release {
+                    if !drain
+                        && can_idle
+                        && Instant::now().saturating_duration_since(idle_start) < idle_timeout
+                    {
+                        process_idle.push_timed(res, Some(idle_start));
                     } else {
-                        if let Some(timer) = process_timers.get_mut(&key) {
-                            // timer transitions to a busy timer
-                            timer.busy.store(true, Ordering::Relaxed);
-                            timer.waker.wake();
+                        process_expired.push_timed(res, Some(idle_start));
+                    }
+                }
+
+                // process expired queue
+                for ((res, info), _) in process_expired {
+                    let fut = ResourceFuture::<R, E>::new(Some(res), info, queue.clone(), None);
+                    if !drain && can_idle && keepalive_count > 0 {
+                        if !spawn_or_cancel(mgr.keepalive(fut), &mgr, &exec) {
+                            disposed_count += 1;
+                        }
+                        keepalive_count -= 1;
+                    } else {
+                        if !spawn_or_cancel(mgr.dispose(fut), &mgr, &exec) {
+                            disposed_count += 1;
                         }
                     }
                 }
-            }
 
-            // reacquire lock
-            guard = queue.lock().unwrap();
-
-            // subtract idle waiters that were removed, allowing more waiters
-            guard.wait_count -= waiters_removed;
-
-            // merge any timers registered during processing
-            if !guard.timers.is_empty() {
-                updated = true;
-                if let Some((next_time, _)) = guard.timers.keys().next().copied() {
-                    next_check =
-                        Some(next_check.map_or(next_time, |c| std::cmp::min(c, next_time)));
+                // remove and process expired waiters
+                let clear_timers = if drain {
+                    Some(process_timers.remove_all())
+                } else if let Some(acquire_timeout) = config.acquire_timeout.as_ref() {
+                    let min_time = Instant::now() - *acquire_timeout;
+                    let (removed, next_time) = process_timers.remove_before(min_time);
+                    if let Some(next_time) = next_time {
+                        next_check =
+                            Some(next_check.map_or(next_time, |c| std::cmp::min(c, next_time)));
+                    }
+                    Some(removed)
+                } else {
+                    None
+                };
+                if let Some(clear_timers) = clear_timers {
+                    for (_, timer) in clear_timers {
+                        if !timer.busy.load(Ordering::Acquire) {
+                            waiters_removed += 1;
+                        }
+                        timer.completed.store(true, Ordering::SeqCst);
+                        timer.waker.wake();
+                    }
                 }
-                process_timers.append(&mut guard.timers);
-            }
-            mem::swap(&mut process_timers, &mut guard.timers);
 
-            if guard.update_count != prev_update_count {
-                updated = true;
+                // wake timers awaiting acquire
+                // only if we have max_count
+                let mut extra_count = 0; // max_count - count;
+                if extra_count > 0 {
+                    let wake = process_timers
+                        .iter()
+                        .flat_map(|(key, timer)| {
+                            if !timer.busy.load(Ordering::Relaxed) {
+                                Some(*key)
+                            } else {
+                                None
+                            }
+                        })
+                        .take(extra_count)
+                        .collect::<Vec<_>>();
+                    for key in wake {
+                        waiters_removed += 1;
+                        if config.acquire_timeout.is_none() {
+                            if let Some(timer) = process_timers.remove(&key) {
+                                // timer no longer required
+                                timer.completed.store(true, Ordering::SeqCst);
+                                timer.waker.wake();
+                            }
+                        } else {
+                            if let Some(timer) = process_timers.get_mut(&key) {
+                                // timer transitions to a busy timer
+                                timer.busy.store(true, Ordering::Relaxed);
+                                timer.waker.wake();
+                            }
+                        }
+                    }
+                }
+
+                // reacquire lock
+                guard = queue.lock().unwrap();
+
+                // subtract idle waiters that were removed, allowing more waiters
+                guard.wait_count -= waiters_removed;
+
+                // subtract disposed resources
+                guard.total_count -= disposed_count;
+
+                // merge any timers registered during processing
+                if !guard.timers.is_empty() {
+                    updated = true;
+                    if let Some((next_time, _)) = guard.timers.keys().next().copied() {
+                        next_check =
+                            Some(next_check.map_or(next_time, |c| std::cmp::min(c, next_time)));
+                    }
+                    process_timers.append(&mut guard.timers);
+                }
+                mem::swap(&mut process_timers, &mut guard.timers);
+
+                // merge new idle resources
+                if !process_idle.is_empty() {
+                    guard.idle.append(&mut process_idle);
+                }
+
+                if guard.update_count != prev_update_count {
+                    updated = true;
+                }
+
+                // FIXME re-check queue status
             }
 
-            // abort if queue was dropped
-            if !guard.running {
+            println!(
+                "count: {} {:?} {} {}",
+                guard.total_count, guard.status, drain, updated
+            );
+
+            if guard.status == QueueStatus::Draining && guard.total_count == 0 {
                 break;
             }
 
@@ -260,23 +320,63 @@ impl<R: Send + 'static, E: Send + 'static> Pool<R, E> {
             }
         }
 
-        guard.running = false;
-
-        // FIXME remove idle resources and run dispose
-        // set all timers to completed and wake
+        guard.status = QueueStatus::Shutdown;
+        drop(guard);
+        queue.notify();
     }
 
     pub fn acquire(&self) -> Acquire<R, E> {
-        Acquire::new(self.queue.clone(), self.exec.clone())
+        Acquire::new(self.queue.clone(), self.mgr.clone())
+    }
+
+    pub async fn clear(&self) {}
+
+    pub async fn drain(self) -> Self {
+        let queue = self.queue.clone();
+        let (send, recv) = oneshot::channel();
+        self.exec.spawn_ok(async move {
+            drain_blocking(&queue);
+            send.send(()).unwrap_or(());
+        });
+        recv.await.unwrap_or(());
+        self
     }
 }
 
-impl<R, E> Clone for Pool<R, E> {
-    fn clone(&self) -> Self {
-        Self {
-            queue: self.queue.clone(),
-            exec: self.exec.clone(),
+impl<R: Send, E> Drop for Pool<R, E> {
+    fn drop(&mut self) {
+        // FIXME how best to detect when there's only one pool instance
+        drain_blocking(&self.queue);
+    }
+}
+
+fn drain_blocking<R: Send>(queue: &Queue<R>) {
+    if let Ok(mut guard) = queue.lock() {
+        if guard.status == QueueStatus::Running {
+            guard.status = QueueStatus::Draining;
+            queue.notify();
+            loop {
+                guard = queue.wait(guard).unwrap();
+                if guard.status == QueueStatus::Stopped {
+                    break;
+                }
+            }
         }
+    }
+}
+
+fn spawn_or_cancel<R: Send + 'static, E: Send + 'static>(
+    fut: ResourceFuture<R, E>,
+    mgr: &Manager<R, E>,
+    exec: &Executor,
+) -> bool {
+    if !fut.is_complete() {
+        let mgr = mgr.clone();
+        exec.spawn_ok(fut.to_task(move |err| mgr.handle_error(err)));
+        true
+    } else {
+        fut.cancel();
+        false
     }
 }
 
@@ -325,15 +425,17 @@ mod tests {
                 }
             })
             .build();
+        thread::spawn(|| smol::run(futures_util::future::pending::<()>()));
         block_on(async move {
             pool.acquire().await.unwrap();
+            //pool.drain().await;
         });
         assert_eq!(disposed.value(), 1);
     }
 
     #[test]
     // demonstrate a resource type that is Send but !Sync
-    fn test_not_sync() {
+    fn test_pool_not_sync() {
         let source = Arc::new(AtomicCounter::default());
         let pool = PoolConfig::<Cell<usize>, ()>::new(move || {
             let s = source.clone();

@@ -1,5 +1,6 @@
 mod acquire;
 mod executor;
+mod manager;
 mod pool;
 mod queue;
 mod resource;

@@ -119,11 +119,11 @@ impl<R: Send, E> ResourceFuture<R, E> {
     }
 
     pub fn apply(&mut self, update: ResourceUpdate<R, E>) {
-        assert!(self.complete());
+        assert!(self.is_complete());
         self.update.replace(update);
     }
 
-    pub fn complete(&self) -> bool {
+    pub fn is_complete(&self) -> bool {
         self.update.is_none()
     }
 
@@ -137,6 +137,21 @@ impl<R: Send, E> ResourceFuture<R, E> {
         // note: queue is taken here, so now the Managed is responsible
         // for decrementing the count by calling queue.release
         Managed::new(value, self.info, self.queue.take().unwrap())
+    }
+
+    pub fn to_task(self, handler: impl Fn(E) + Send + Sync + 'static) -> ResourceTask<R, E>
+    where
+        E: Send,
+    {
+        ResourceTask {
+            fut: Some(self),
+            handler: Box::new(handler),
+        }
+    }
+
+    pub fn cancel(mut self) -> Option<R> {
+        self.queue.take();
+        self.value.take()
     }
 }
 
@@ -165,7 +180,7 @@ impl<R: Send, E: Send> Future for ResourceFuture<R, E> {
     type Output = Result<ResourceFuture<R, E>, E>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        if self.complete() {
+        if self.is_complete() {
             return Poll::Ready(Ok(ResourceFuture::new(
                 self.value.take(),
                 self.info,
@@ -180,6 +195,35 @@ impl<R: Send, E: Send> Future for ResourceFuture<R, E> {
             Poll::Ready(result) => Poll::Ready(
                 result.map(|r| ResourceFuture::new(r, self.info, self.queue.take().unwrap(), None)),
             ),
+        }
+    }
+}
+
+// wrap `ResourceFuture` to intercept any errors
+pub struct ResourceTask<R: Send, E: Send> {
+    fut: Option<ResourceFuture<R, E>>,
+    handler: Box<dyn Fn(E) + Send + Sync>,
+}
+
+impl<R: Send, E: Send> Future for ResourceTask<R, E> {
+    type Output = ();
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let mut fut = match self.fut.as_mut() {
+            Some(fut) => fut,
+            None => {
+                return Poll::Ready(());
+            }
+        };
+
+        match Pin::new(&mut fut).poll(cx) {
+            Poll::Pending => Poll::Pending,
+            Poll::Ready(result) => {
+                // result is released back to queue as future is dropped
+                result.map_err(&self.handler).unwrap();
+                self.fut.take();
+                Poll::Ready(())
+            }
         }
     }
 }

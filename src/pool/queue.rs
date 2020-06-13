@@ -1,8 +1,7 @@
 use std::sync::{Arc, Condvar, LockResult, Mutex, MutexGuard, WaitTimeoutResult};
-use std::task::Waker;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
-use super::resource::{Managed, ResourceFuture, ResourceInfo};
+use super::resource::ResourceInfo;
 use super::util::{TimedDeque, TimedMap, Timer};
 
 type Guard<'a, R> = MutexGuard<'a, QueueInner<R>>;
@@ -27,14 +26,32 @@ impl Default for QueueConfig {
     }
 }
 
+#[derive(Copy, Clone, Debug, PartialOrd, Ord, PartialEq, Eq)]
+pub enum QueueStatus {
+    Init,
+    Running,
+    Draining,
+    Shutdown,
+    Stopped,
+}
+
+impl QueueStatus {
+    pub fn is_running(&self) -> bool {
+        *self == Self::Init || *self == Self::Running
+    }
+
+    pub fn is_shutdown(&self) -> bool {
+        *self == Self::Shutdown || *self == Self::Stopped
+    }
+}
+
 pub struct QueueInner<R> {
     pub idle: TimedDeque<(R, ResourceInfo)>,
     pub release: TimedDeque<(R, ResourceInfo)>,
-    pub running: bool,
+    pub status: QueueStatus,
     pub timers: TimedMap<Arc<Timer>>,
     pub total_count: usize,
     pub update_count: usize,
-    pub verify: TimedDeque<(R, ResourceInfo)>,
     pub wait_count: usize,
 }
 
@@ -67,11 +84,10 @@ impl<R: Send> Queue<R> {
             inner: Arc::new(Mutex::new(QueueInner {
                 idle: TimedDeque::default(),
                 release: TimedDeque::default(),
-                running: false,
+                status: QueueStatus::Init,
                 timers: TimedMap::default(),
                 total_count: 0,
                 update_count: 0,
-                verify: TimedDeque::default(),
                 wait_count: 0,
             })),
             cvar: Arc::new(Condvar::new()),
@@ -88,19 +104,22 @@ impl<R: Send> Queue<R> {
     }
 
     pub fn release(&self, res: Option<R>, info: ResourceInfo) -> Option<R> {
-        if let Ok(mut queue) = self.inner.lock() {
-            if let Some(res) = res {
-                queue.release.push_timed((res, info), None);
-            } else {
-                queue.total_count -= 1;
+        // FIXME use atomic for counts
+        // if value is none, mutex is not needed
+        if let Ok(mut guard) = self.inner.lock() {
+            if !guard.status.is_shutdown() {
+                if let Some(res) = res {
+                    guard.release.push_timed((res, info), None);
+                } else {
+                    guard.total_count -= 1;
+                }
+                guard.update_count += 1;
+                drop(guard);
+                self.notify();
+                return None;
             }
-            queue.update_count += 1;
-            drop(queue);
-            self.cvar.notify_all();
-            None
-        } else {
-            res
         }
+        res
     }
 
     pub fn wait<'a>(&'a self, guard: Guard<'a, R>) -> LockResult<Guard<R>> {
