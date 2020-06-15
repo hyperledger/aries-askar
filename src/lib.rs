@@ -11,10 +11,10 @@ use error::KvResult;
 mod pool;
 
 #[cfg(feature = "postgres")]
-mod postgres;
+pub mod postgres;
 
 #[cfg(feature = "sqlite")]
-mod sqlite;
+pub mod sqlite;
 
 mod types;
 mod wql;

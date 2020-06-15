@@ -40,7 +40,7 @@ impl Executor {
                 state.store(true, Ordering::Relaxed);
             }
         });
-        for i in 0..thread_count {
+        for _ in 0..thread_count {
             let wk_recv = receiver.clone();
             let wk_sentinel = sentinel.clone();
             workers.push(thread::spawn(move || {

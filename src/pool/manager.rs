@@ -36,12 +36,6 @@ impl<R: Send, E: Send> Manager<R, E> {
         }
     }
 
-    fn run(self) {}
-
-    // pub fn have_keepalive(&self) -> bool {
-    //     self.keepalive.is_some()
-    // }
-
     pub fn create(&self, mut target: ResourceFuture<R, E>) -> ResourceFuture<R, E> {
         self.inner.create.apply(&mut target);
         target
@@ -59,13 +53,13 @@ impl<R: Send, E: Send> Manager<R, E> {
 
     pub fn handle_error(&self, err: E) {}
 
-    pub fn verify_acquire(&self, fut: ResourceFuture<R, E>) -> ResourceFuture<R, E> {
-        fut
-    }
+    // pub fn verify_acquire(&self, fut: ResourceFuture<R, E>) -> ResourceFuture<R, E> {
+    //     fut
+    // }
 
-    pub fn verify_release(&self, fut: ResourceFuture<R, E>) -> ResourceFuture<R, E> {
-        fut
-    }
+    // pub fn verify_release(&self, fut: ResourceFuture<R, E>) -> ResourceFuture<R, E> {
+    //     fut
+    // }
 
     pub fn dispose(&self, mut target: ResourceFuture<R, E>) -> ResourceFuture<R, E> {
         println!("dispose");
@@ -75,15 +69,15 @@ impl<R: Send, E: Send> Manager<R, E> {
         target
     }
 
-    #[inline]
-    fn apply(
-        &self,
-        handler: &Option<Box<dyn ApplyUpdate<R, E> + Send + Sync>>,
-        mut target: ResourceFuture<R, E>,
-    ) -> ResourceFuture<R, E> {
-        if let Some(handler) = handler.as_ref() {
-            handler.apply(&mut target);
-        }
-        target
-    }
+    // #[inline]
+    // fn apply(
+    //     &self,
+    //     handler: &Option<Box<dyn ApplyUpdate<R, E> + Send + Sync>>,
+    //     mut target: ResourceFuture<R, E>,
+    // ) -> ResourceFuture<R, E> {
+    //     if let Some(handler) = handler.as_ref() {
+    //         handler.apply(&mut target);
+    //     }
+    //     target
+    // }
 }

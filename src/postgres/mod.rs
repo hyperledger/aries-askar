@@ -177,7 +177,7 @@ impl KvPostgres {
 #[async_trait]
 impl KvProvisionStore for KvPostgres {
     async fn provision(&self) -> KvResult<()> {
-        let mut client = self.conn_pool.acquire().await?;
+        let client = self.conn_pool.acquire().await?;
         client
             .batch_execute(
                 r#"
@@ -282,7 +282,7 @@ impl KvStore for KvPostgres {
     ) -> KvResult<u64> {
         let key_id = get_key_id(client_key).await;
         let category = category.to_vec();
-        let mut client = self.conn_pool.acquire().await?;
+        let client = self.conn_pool.acquire().await?;
         let mut params = SqlParams::from_iter(vec![&key_id, &category]);
         let query = extend_query(COUNT_QUERY, &mut params, tag_filter, None)?;
         let stmt = client.prepare(&query).await?;
@@ -303,9 +303,9 @@ impl KvStore for KvPostgres {
         let key_id = get_key_id(client_key).await;
         let category = category.to_vec();
         let name = name.to_vec();
-        let mut client = self.conn_pool.acquire().await?;
+        let client = self.conn_pool.acquire().await?;
+        let fetch_q = client.prepare(&FETCH_QUERY).await?;
 
-        let mut fetch_q = client.prepare(&FETCH_QUERY).await?;
         let result = client.query(&fetch_q, &[&key_id, &category, &name]).await?;
         if let Some(row) = result.iter().next() {
             let (row_id, value, value_key) = (
