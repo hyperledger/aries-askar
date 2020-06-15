@@ -38,15 +38,10 @@ impl TagQueryEncoder for TagSqlEncoder {
         enc_value: Self::Arg,
         is_plaintext: bool,
     ) -> KvResult<Self::Clause> {
-        let table = if is_plaintext {
-            "tags_plaintext"
-        } else {
-            "tags_encrypted"
-        };
         let query = format!(
-            "i.id IN (SELECT item_id FROM {} WHERE name = $$ AND value {} $$)",
-            table,
-            op.as_sql_str()
+            "i.id IN (SELECT item_id FROM items_tags WHERE name = $$ AND value {} $$ AND plaintext = {})",
+            op.as_sql_str(),
+            if is_plaintext { 1 } else { 0 }
         );
         self.arguments.push(enc_name);
         self.arguments.push(enc_value);
@@ -60,20 +55,15 @@ impl TagQueryEncoder for TagSqlEncoder {
         is_plaintext: bool,
         negate: bool,
     ) -> KvResult<Self::Clause> {
-        let table = if is_plaintext {
-            "tags_plaintext"
-        } else {
-            "tags_encrypted"
-        };
         let args_in = std::iter::repeat("$$")
             .take(enc_values.len())
             .intersperse(", ")
             .collect::<String>();
         let query = format!(
-            "i.id IN (SELECT item_id FROM {} WHERE name = $$ AND value {} ({}))",
-            table,
+            "i.id IN (SELECT item_id FROM items_tags WHERE name = $$ AND value {} ({}) AND plaintext = {})",
             if negate { "NOT IN" } else { "IN" },
-            args_in
+            args_in,
+            if is_plaintext { 1 } else { 0 }
         );
         self.arguments.push(enc_name);
         self.arguments.extend(enc_values);
@@ -133,7 +123,7 @@ mod tests {
         let query = TagQuery::Or(vec![condition_1, condition_2]);
         let mut enc = TagSqlEncoder::new();
         let query_str = query.encode(&mut enc).unwrap();
-        assert_eq!(query_str, "((i.id IN (SELECT item_id FROM tags_encrypted WHERE name = $$ AND value = $$) AND i.id IN (SELECT item_id FROM tags_plaintext WHERE name = $$ AND value = $$)) OR (i.id IN (SELECT item_id FROM tags_encrypted WHERE name = $$ AND value = $$) AND i.id IN (SELECT item_id FROM tags_plaintext WHERE name = $$ AND value != $$)))");
+        assert_eq!(query_str, "((i.id IN (SELECT item_id FROM items_tags WHERE name = $$ AND value = $$ AND plaintext = 0) AND i.id IN (SELECT item_id FROM items_tags WHERE name = $$ AND value = $$ AND plaintext = 1)) OR (i.id IN (SELECT item_id FROM items_tags WHERE name = $$ AND value = $$ AND plaintext = 0) AND i.id IN (SELECT item_id FROM items_tags WHERE name = $$ AND value != $$ AND plaintext = 1)))");
         let args = enc.arguments;
         assert_eq!(
             args,

@@ -32,10 +32,7 @@ const FETCH_QUERY: &'static str = "SELECT id, value, value_key FROM items i
     AND (expiry IS NULL OR expiry > CURRENT_TIME)";
 const SCAN_QUERY: &'static str = "SELECT id, name, value, value_key FROM items i WHERE key_id = ?1
     AND category = ?2 AND (expiry IS NULL OR expiry > CURRENT_TIME)";
-const TAG_QUERY: &'static str =
-    "SELECT 0 as encrypted, name, value FROM tags_plaintext WHERE item_id = ?1
-    UNION ALL
-    SELECT 1 as encrypted, name, value FROM tags_encrypted WHERE item_id = ?1";
+const TAG_QUERY: &'static str = "SELECT name, value, plaintext FROM items_tags WHERE item_id = ?1";
 
 struct ScanQuery {
     key_id: KeyId,
@@ -198,30 +195,20 @@ impl KvProvisionStore for KvSqlite {
             );
             CREATE UNIQUE INDEX ux_items_uniq ON items(key_id, category, name);
 
-            CREATE TABLE tags_encrypted(
+            CREATE TABLE items_tags(
+                item_id INTEGER NOT NULL,
                 name NOT NULL,
                 value NOT NULL,
-                item_id INTEGER NOT NULL,
-                PRIMARY KEY(name, item_id),
+                plaintext BOOLEAN NOT NULL,
+                PRIMARY KEY(name, item_id, plaintext),
                 FOREIGN KEY(item_id)
                     REFERENCES items(id)
                     ON DELETE CASCADE
                     ON UPDATE CASCADE
             );
-            CREATE INDEX ix_tags_encrypted_item_id ON tags_encrypted(item_id);
-    
-            CREATE TABLE tags_plaintext(
-                name NOT NULL,
-                value NOT NULL,
-                item_id INTEGER NOT NULL,
-                PRIMARY KEY(name, item_id),
-                FOREIGN KEY(item_id)
-                    REFERENCES items(id)
-                    ON DELETE CASCADE
-                    ON UPDATE CASCADE
-            );
-            CREATE INDEX ix_tags_plaintext_value ON tags_plaintext(value);
-            CREATE INDEX ix_tags_plaintext_item_id ON tags_plaintext(item_id);
+            CREATE INDEX ix_items_tags_item_id ON items_tags(item_id);
+            CREATE INDEX ix_items_tags_value ON items_tags(value) WHERE plaintext;
+
             END TRANSACTION;
         "#,
             )?;
@@ -239,11 +226,12 @@ fn retrieve_tags(conn: &Connection, row_id: i64) -> KvResult<Vec<KvTag>> {
     let mut tag_q = conn.prepare_cached(TAG_QUERY)?;
     let rows = tag_q
         .query_map(&[&row_id], |row| {
-            let enc: i32 = row.get(0)?;
-            if enc == 1 {
-                Ok(KvTag::Encrypted(row.get(1)?, row.get(2)?))
-            } else {
-                Ok(KvTag::Plaintext(row.get(1)?, row.get(2)?))
+            let name = row.get(0)?;
+            let value = row.get(1)?;
+            let plaintext = row.get(2)?;
+            match plaintext {
+                0 => Ok(KvTag::Encrypted(name, value)),
+                _ => Ok(KvTag::Plaintext(name, value)),
             }
         })?
         .collect::<Result<Vec<_>, _>>()?;
@@ -404,13 +392,9 @@ impl KvStore for KvSqlite {
                 // (and its associated tags through cascade), and insert a new row
                 let mut upd_item =
                     txn.prepare_cached("UPDATE items SET value=?1, value_key=?2 WHERE id=?3")?;
-                let mut add_enc_tag = txn.prepare_cached(
-                    "INSERT INTO tags_encrypted(item_id, name, value)
-                        VALUES(?1, ?2, ?3)",
-                )?;
-                let mut add_plain_tag = txn.prepare_cached(
-                    "INSERT INTO tags_plaintext(item_id, name, value)
-                        VALUES(?1, ?2, ?3)",
+                let mut add_item_tag = txn.prepare_cached(
+                    "INSERT INTO items_tags(item_id, name, value, plaintext)
+                        VALUES(?1, ?2, ?3, ?4)",
                 )?;
                 for (key_id, value_key, entry) in updates {
                     let row: Result<i64, rusqlite::Error> = fetch_id
@@ -418,8 +402,7 @@ impl KvStore for KvSqlite {
                     let row_id = match row {
                         Ok(row_id) => {
                             upd_item.execute(params![&row_id, &entry.value, &value_key])?;
-                            txn.execute("DELETE FROM tags_encrypted WHERE item_id=?1", &[&row_id])?;
-                            txn.execute("DELETE FROM tags_plaintext WHERE item_id=?1", &[&row_id])?;
+                            txn.execute("DELETE FROM items_tags WHERE item_id=?1", &[&row_id])?;
                             row_id
                         }
                         Err(rusqlite::Error::QueryReturnedNoRows) => {
@@ -436,14 +419,11 @@ impl KvStore for KvSqlite {
                     };
                     if let Some(tags) = entry.tags.as_ref() {
                         for tag in tags {
-                            match tag {
-                                KvTag::Encrypted(name, value) => {
-                                    add_enc_tag.execute(params![&row_id, name, value])?;
-                                }
-                                KvTag::Plaintext(name, value) => {
-                                    add_plain_tag.execute(params![&row_id, name, value])?;
-                                }
-                            }
+                            let (name, value, plaintext) = match tag {
+                                KvTag::Encrypted(name, value) => (name, value, 0),
+                                KvTag::Plaintext(name, value) => (name, value, 1),
+                            };
+                            add_item_tag.execute(params![&row_id, name, value, plaintext])?;
                         }
                     }
                 }
