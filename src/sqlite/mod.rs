@@ -27,10 +27,10 @@ use pool::{SqlitePool, SqlitePoolConfig};
 const COUNT_QUERY: &'static str = "SELECT COUNT(*) FROM items i
     WHERE key_id = ?1 AND category = ?2
     AND (expiry IS NULL OR expiry > CURRENT_TIME)";
-const FETCH_QUERY: &'static str = "SELECT id, value, value_key FROM items i
+const FETCH_QUERY: &'static str = "SELECT id, value FROM items i
     WHERE key_id = ?1 AND category = ?2 AND name = ?3
     AND (expiry IS NULL OR expiry > CURRENT_TIME)";
-const SCAN_QUERY: &'static str = "SELECT id, name, value, value_key FROM items i WHERE key_id = ?1
+const SCAN_QUERY: &'static str = "SELECT id, name, value FROM items i WHERE key_id = ?1
     AND category = ?2 AND (expiry IS NULL OR expiry > CURRENT_TIME)";
 const TAG_QUERY: &'static str = "SELECT name, value, plaintext FROM items_tags WHERE item_id = ?1";
 
@@ -41,14 +41,14 @@ struct ScanQuery {
 }
 
 impl BatchProcessor for ScanQuery {
-    type Row = (i64, Vec<u8>, Vec<u8>, Vec<u8>);
+    type Row = (i64, Vec<u8>, Vec<u8>);
     type Result = Vec<KvEntry>;
     fn process_row(&mut self, row: &Row) -> KvResult<Self::Row> {
-        Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(2)?))
+        Ok((row.get(0)?, row.get(1)?, row.get(2)?))
     }
     fn process_batch(&mut self, rows: Vec<Self::Row>, conn: &Connection) -> KvResult<Self::Result> {
         let mut result = vec![];
-        for (row_id, name, value, value_key) in rows {
+        for (row_id, name, value) in rows {
             let tags = if self.retrieve_tags {
                 // FIXME fetch tags in batches for efficiency
                 Some(retrieve_tags(&conn, row_id)?)
@@ -189,7 +189,6 @@ impl KvProvisionStore for KvSqlite {
                 category NOT NULL,
                 name NOT NULL,
                 value NOT NULL,
-                value_key NULL,
                 expiry NULL,
                 PRIMARY KEY(id)
             );
@@ -300,14 +299,10 @@ impl KvStore for KvSqlite {
 
             let mut fetch_q = conn.prepare_cached(FETCH_QUERY)?;
             let result = fetch_q.query_row(&[&q_key_id, &q_category, &q_name], |row| {
-                Ok((
-                    row.get::<_, i64>(0)?,
-                    row.get(1)?,
-                    row.get::<_, Vec<u8>>(2)?,
-                ))
+                Ok((row.get::<_, i64>(0)?, row.get(1)?))
             });
             match result {
-                Ok((row_id, value, value_key)) => {
+                Ok((row_id, value)) => {
                     let tags = if options.retrieve_tags {
                         Some(retrieve_tags(&conn, row_id)?)
                     } else {
@@ -374,7 +369,7 @@ impl KvStore for KvSqlite {
         let mut updates = vec![];
         for entry in entries {
             let key_id = get_key_id(entry.client_key.clone()).await;
-            updates.push((key_id, vec![], entry))
+            updates.push((key_id, entry))
         }
 
         let mut ctx = self.conn_pool.acquire().await?;
@@ -385,23 +380,22 @@ impl KvStore for KvSqlite {
                     "SELECT id FROM items WHERE key_id=?1 AND category=?2 AND name=?3",
                 )?;
                 let mut add_item = txn.prepare_cached(
-                    "INSERT INTO items(key_id, category, name, value, value_key)
-                    VALUES(?1, ?2, ?3, ?4, ?5)",
+                    "INSERT INTO items(key_id, category, name, value)
+                    VALUES(?1, ?2, ?3, ?4)",
                 )?;
-                // FIXME - might be faster to delete the row
+                // FIXME - might well be faster to delete the row
                 // (and its associated tags through cascade), and insert a new row
-                let mut upd_item =
-                    txn.prepare_cached("UPDATE items SET value=?1, value_key=?2 WHERE id=?3")?;
+                let mut upd_item = txn.prepare_cached("UPDATE items SET value=?1 WHERE id=?2")?;
                 let mut add_item_tag = txn.prepare_cached(
                     "INSERT INTO items_tags(item_id, name, value, plaintext)
                         VALUES(?1, ?2, ?3, ?4)",
                 )?;
-                for (key_id, value_key, entry) in updates {
+                for (key_id, entry) in updates {
                     let row: Result<i64, rusqlite::Error> = fetch_id
                         .query_row(&[&key_id, &entry.category, &entry.name], |row| row.get(0));
                     let row_id = match row {
                         Ok(row_id) => {
-                            upd_item.execute(params![&row_id, &entry.value, &value_key])?;
+                            upd_item.execute(params![&row_id, &entry.value])?;
                             txn.execute("DELETE FROM items_tags WHERE item_id=?1", &[&row_id])?;
                             row_id
                         }
@@ -411,7 +405,6 @@ impl KvStore for KvSqlite {
                                 &entry.category,
                                 &entry.name,
                                 &entry.value,
-                                &value_key,
                             ])?;
                             txn.last_insert_rowid()
                         }
