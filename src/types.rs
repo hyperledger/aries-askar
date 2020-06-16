@@ -1,3 +1,5 @@
+use super::error::KvResult;
+
 pub type ClientId = Vec<u8>;
 
 pub type KeyId = Vec<u8>;
@@ -96,22 +98,70 @@ impl Default for KvFetchOptions {
 
 // temporary types
 
-pub struct EnclaveHandle();
+pub trait EntryEncryptor {
+    fn encrypt_category(&self, category: Vec<u8>) -> KvResult<Vec<u8>>;
+    fn encrypt_name(&self, name: Vec<u8>) -> KvResult<Vec<u8>>;
+    fn encrypt_value(&self, value: Vec<u8>) -> KvResult<Vec<u8>>;
+    fn encrypt_tags(&self, tags: Vec<KvTag>) -> KvResult<Vec<KvTag>>;
 
-pub trait Enclave {
-    fn encrypt_category(category: Vec<u8>) -> Vec<u8>;
-    fn encrypt_name(name: Vec<u8>) -> Vec<u8>;
-    fn encrypt_value(value: Vec<u8>) -> Vec<u8>;
+    fn decrypt_category(&self, enc_category: Vec<u8>) -> KvResult<Vec<u8>>;
+    fn decrypt_name(&self, enc_name: Vec<u8>) -> KvResult<Vec<u8>>;
+    fn decrypt_value(&self, enc_value: Vec<u8>) -> KvResult<Vec<u8>>;
+    fn decrypt_tags(&self, enc_tags: Vec<KvTag>) -> KvResult<Vec<KvTag>>;
+
+    fn encrypt_entry(&self, entry: KvEntry) -> KvResult<KvEntry> {
+        Ok(KvEntry {
+            key_id: entry.key_id,
+            category: self.encrypt_category(entry.category)?,
+            name: self.encrypt_name(entry.name)?,
+            value: self.encrypt_value(entry.value)?,
+            tags: entry.tags.map(|t| self.encrypt_tags(t)).transpose()?,
+        })
+    }
+
+    fn decrypt_entry(&self, enc_entry: KvEntry) -> KvResult<KvEntry> {
+        Ok(KvEntry {
+            key_id: enc_entry.key_id,
+            category: self.decrypt_category(enc_entry.category)?,
+            name: self.decrypt_name(enc_entry.name)?,
+            value: self.decrypt_value(enc_entry.value)?,
+            tags: enc_entry.tags.map(|t| self.decrypt_tags(t)).transpose()?,
+        })
+    }
 }
 
-impl Enclave for EnclaveHandle {
-    fn encrypt_category(category: Vec<u8>) -> Vec<u8> {
-        category
+pub struct NullEncryptor;
+
+impl EntryEncryptor for NullEncryptor {
+    fn encrypt_category(&self, category: Vec<u8>) -> KvResult<Vec<u8>> {
+        Ok(category)
     }
-    fn encrypt_name(name: Vec<u8>) -> Vec<u8> {
-        name
+    fn encrypt_name(&self, name: Vec<u8>) -> KvResult<Vec<u8>> {
+        Ok(name)
     }
-    fn encrypt_value(value: Vec<u8>) -> Vec<u8> {
-        value
+    fn encrypt_value(&self, value: Vec<u8>) -> KvResult<Vec<u8>> {
+        Ok(value)
+    }
+    fn encrypt_tags(&self, tags: Vec<KvTag>) -> KvResult<Vec<KvTag>> {
+        Ok(tags)
+    }
+    fn encrypt_entry(&self, entry: KvEntry) -> KvResult<KvEntry> {
+        Ok(entry)
+    }
+
+    fn decrypt_category(&self, enc_category: Vec<u8>) -> KvResult<Vec<u8>> {
+        Ok(enc_category)
+    }
+    fn decrypt_name(&self, enc_name: Vec<u8>) -> KvResult<Vec<u8>> {
+        Ok(enc_name)
+    }
+    fn decrypt_value(&self, enc_value: Vec<u8>) -> KvResult<Vec<u8>> {
+        Ok(enc_value)
+    }
+    fn decrypt_tags(&self, enc_tags: Vec<KvTag>) -> KvResult<Vec<KvTag>> {
+        Ok(enc_tags)
+    }
+    fn decrypt_entry(&self, enc_entry: KvEntry) -> KvResult<KvEntry> {
+        Ok(enc_entry)
     }
 }

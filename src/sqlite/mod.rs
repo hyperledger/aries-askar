@@ -12,8 +12,8 @@ use rusqlite::{params, Connection, Row, ToSql};
 use super::error::{KvError, KvResult};
 use super::pool::Managed;
 use super::types::{
-    ClientId, Enclave, EnclaveHandle, KeyId, KvEntry, KvFetchOptions, KvKeySelect, KvLockOperation,
-    KvLockToken, KvScanToken, KvTag, KvUpdateEntry,
+    ClientId, KeyId, KvEntry, KvFetchOptions, KvKeySelect, KvLockOperation, KvLockToken,
+    KvScanToken, KvTag, KvUpdateEntry,
 };
 use super::wql::{self, sql::TagSqlEncoder, tags::TagQuery};
 use super::{KvProvisionStore, KvStore};
@@ -161,14 +161,13 @@ impl<'a> IntoIterator for SqlParams<'a> {
 
 pub struct KvSqlite {
     conn_pool: SqlitePool,
-    enclave: EnclaveHandle,
 }
 
 impl KvSqlite {
-    pub fn open_in_memory(enclave: EnclaveHandle) -> KvResult<Self> {
+    pub fn open_in_memory() -> KvResult<Self> {
         let config = SqlitePoolConfig::in_memory();
         let conn_pool = config.into_pool(0, 5);
-        Ok(Self { conn_pool, enclave })
+        Ok(Self { conn_pool })
     }
 }
 
@@ -454,13 +453,13 @@ mod tests {
 
     #[test]
     fn sqlite_init() {
-        let db = KvSqlite::open_in_memory(EnclaveHandle {}).unwrap();
+        let db = KvSqlite::open_in_memory().unwrap();
         block_on(db.provision()).unwrap();
     }
 
     #[test]
     fn sqlite_fetch_fail() {
-        let db = KvSqlite::open_in_memory(EnclaveHandle {}).unwrap();
+        let db = KvSqlite::open_in_memory().unwrap();
         block_on(db.provision()).unwrap();
 
         let client_key = KvKeySelect::ForClient(vec![]);
@@ -472,7 +471,7 @@ mod tests {
 
     #[test]
     fn sqlite_add_fetch() {
-        let db = KvSqlite::open_in_memory(EnclaveHandle {}).unwrap();
+        let db = KvSqlite::open_in_memory().unwrap();
         block_on(db.provision()).unwrap();
 
         let client_key = KvKeySelect::ForClient(vec![]);
@@ -510,7 +509,7 @@ mod tests {
 
     #[test]
     fn sqlite_add_fetch_tags() {
-        let db = KvSqlite::open_in_memory(EnclaveHandle {}).unwrap();
+        let db = KvSqlite::open_in_memory().unwrap();
         block_on(db.provision()).unwrap();
 
         let client_key = KvKeySelect::ForClient(vec![]);
@@ -551,7 +550,7 @@ mod tests {
 
     #[test]
     fn sqlite_count() {
-        let db = KvSqlite::open_in_memory(EnclaveHandle {}).unwrap();
+        let db = KvSqlite::open_in_memory().unwrap();
         block_on(db.provision()).unwrap();
 
         let category = b"cat".to_vec();
@@ -588,7 +587,7 @@ mod tests {
 
     #[test]
     fn sqlite_scan() {
-        let db = KvSqlite::open_in_memory(EnclaveHandle {}).unwrap();
+        let db = KvSqlite::open_in_memory().unwrap();
         block_on(db.provision()).unwrap();
 
         let category = b"cat".to_vec();

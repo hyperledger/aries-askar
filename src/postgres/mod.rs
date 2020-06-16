@@ -13,8 +13,8 @@ use tokio_postgres::{Connection, Row};
 use super::error::{KvError, KvResult};
 use super::pool::Managed;
 use super::types::{
-    ClientId, Enclave, EnclaveHandle, KeyId, KvEntry, KvFetchOptions, KvKeySelect, KvLockOperation,
-    KvLockToken, KvScanToken, KvTag, KvUpdateEntry,
+    ClientId, KeyId, KvEntry, KvFetchOptions, KvKeySelect, KvLockOperation, KvLockToken,
+    KvScanToken, KvTag, KvUpdateEntry,
 };
 use super::wql::{self, sql::TagSqlEncoder, tags::TagQuery};
 use super::{KvProvisionStore, KvStore};
@@ -163,14 +163,13 @@ impl<'a> SqlParams<'a> {
 
 pub struct KvPostgres {
     conn_pool: PostgresPool,
-    enclave: EnclaveHandle,
 }
 
 impl KvPostgres {
-    pub fn open(config: String, enclave: EnclaveHandle) -> KvResult<Self> {
+    pub fn open(config: String) -> KvResult<Self> {
         let config = PostgresPoolConfig::new(config);
         let conn_pool = config.into_pool(0, 5);
-        Ok(Self { conn_pool, enclave })
+        Ok(Self { conn_pool })
     }
 }
 

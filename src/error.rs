@@ -7,9 +7,12 @@ pub enum KvError {
     Busy,
     BackendError(String),
     Disconnected,
+    DecryptionError,
+    EncryptionError,
     LockFailure,
     Timeout,
     UnknownKey,
+    Unexpected,
 }
 
 impl<T> From<AcquireError<T>> for KvError

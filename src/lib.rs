@@ -1,4 +1,6 @@
 #[macro_use]
+extern crate serde_derive;
+#[macro_use]
 extern crate serde_json;
 #[macro_use]
 extern crate zeroize;
@@ -16,6 +18,7 @@ pub mod postgres;
 #[cfg(feature = "sqlite")]
 pub mod sqlite;
 
+mod kms;
 mod types;
 mod wql;
 
