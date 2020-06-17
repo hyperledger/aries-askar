@@ -223,7 +223,7 @@ mod tests {
 
     #[test]
     fn test_indy_key_non_searchable() {
-        let input = "hello".as_bytes().to_vec();
+        let input = b"hello".to_vec();
         let key = Key32::new().unwrap();
         let enc = encrypt_non_searchable(&key, input.clone()).unwrap();
         assert_eq!(
@@ -245,15 +245,12 @@ mod tests {
         let key = IndyWalletKey::new().unwrap();
         let test_record = KvEntry {
             key_id: vec![],
-            category: "category".as_bytes().to_vec(),
-            name: "name".as_bytes().to_vec(),
-            value: "value".as_bytes().to_vec(),
+            category: b"category".to_vec(),
+            name: b"name".to_vec(),
+            value: b"value".to_vec(),
             tags: Some(vec![
-                KvTag::Plaintext("plain".as_bytes().to_vec(), "tag".as_bytes().to_vec()),
-                KvTag::Encrypted(
-                    "enctag".as_bytes().to_vec(),
-                    "envtagval".as_bytes().to_vec(),
-                ),
+                KvTag::Plaintext(b"plain".to_vec(), b"tag".to_vec()),
+                KvTag::Encrypted(b"enctag".to_vec(), b"envtagval".to_vec()),
             ]),
             locked: None,
         };
