@@ -18,7 +18,7 @@ pub mod postgres;
 #[cfg(feature = "sqlite")]
 pub mod sqlite;
 
-mod kms;
+mod keys;
 mod types;
 mod wql;
 
