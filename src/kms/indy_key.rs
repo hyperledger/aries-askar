@@ -255,6 +255,7 @@ mod tests {
                     "envtagval".as_bytes().to_vec(),
                 ),
             ]),
+            locked: None,
         };
         let enc_record = key.encrypt_entry(test_record.clone()).unwrap();
         assert_ne!(test_record, enc_record);

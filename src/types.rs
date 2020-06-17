@@ -1,6 +1,6 @@
 use super::error::KvResult;
 
-pub type ClientId = Vec<u8>;
+pub type ProfileId = Vec<u8>;
 
 pub type KeyId = Vec<u8>;
 
@@ -16,8 +16,14 @@ pub enum KvLockOperation<T: KvLockToken> {
 
 #[derive(Clone, Debug, PartialEq, Eq, Zeroize)]
 pub enum KvKeySelect {
-    ForClient(ClientId),
-    ForClientKey(ClientId, KeyId),
+    ForProfile(ProfileId),
+    ForProfileKey(ProfileId, KeyId),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Zeroize)]
+pub enum KvLockStatus {
+    Locked,
+    Unlocked,
 }
 
 #[derive(Clone, Debug, Eq, Zeroize)]
@@ -27,6 +33,7 @@ pub struct KvEntry {
     pub name: Vec<u8>,
     pub value: Vec<u8>,
     pub tags: Option<Vec<KvTag>>,
+    pub locked: Option<KvLockStatus>,
 }
 
 impl KvEntry {
@@ -44,6 +51,10 @@ impl KvEntry {
             None
         }
     }
+
+    pub fn is_locked(&self) -> bool {
+        return self.locked == Some(KvLockStatus::Locked);
+    }
 }
 
 impl PartialEq for KvEntry {
@@ -58,7 +69,7 @@ impl PartialEq for KvEntry {
 
 #[derive(Debug, PartialEq, Eq, Zeroize)]
 pub struct KvUpdateEntry {
-    pub client_key: KvKeySelect,
+    pub profile_key: KvKeySelect,
     pub category: Vec<u8>,
     pub name: Vec<u8>,
     pub value: Vec<u8>,
@@ -76,13 +87,15 @@ pub enum KvTag {
 pub struct KvFetchOptions {
     pub retrieve_tags: bool,
     pub retrieve_value: bool,
+    pub check_lock: bool,
 }
 
 impl KvFetchOptions {
-    pub fn new(retrieve_tags: bool, retrieve_value: bool) -> Self {
+    pub fn new(retrieve_tags: bool, retrieve_value: bool, check_lock: bool) -> Self {
         Self {
             retrieve_tags,
             retrieve_value,
+            check_lock,
         }
     }
 }
@@ -92,6 +105,7 @@ impl Default for KvFetchOptions {
         return Self {
             retrieve_tags: true,
             retrieve_value: true,
+            check_lock: false,
         };
     }
 }
@@ -116,6 +130,7 @@ pub trait EntryEncryptor {
             name: self.encrypt_name(entry.name)?,
             value: self.encrypt_value(entry.value)?,
             tags: entry.tags.map(|t| self.encrypt_tags(t)).transpose()?,
+            locked: entry.locked,
         })
     }
 
@@ -126,6 +141,7 @@ pub trait EntryEncryptor {
             name: self.decrypt_name(enc_entry.name)?,
             value: self.decrypt_value(enc_entry.value)?,
             tags: enc_entry.tags.map(|t| self.decrypt_tags(t)).transpose()?,
+            locked: enc_entry.locked,
         })
     }
 }

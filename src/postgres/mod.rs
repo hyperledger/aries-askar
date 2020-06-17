@@ -13,8 +13,8 @@ use tokio_postgres::{Connection, Row};
 use super::error::{KvError, KvResult};
 use super::pool::Managed;
 use super::types::{
-    ClientId, KeyId, KvEntry, KvFetchOptions, KvKeySelect, KvLockOperation, KvLockToken,
-    KvScanToken, KvTag, KvUpdateEntry,
+    KeyId, KvEntry, KvFetchOptions, KvKeySelect, KvLockOperation, KvLockToken, KvScanToken, KvTag,
+    KvUpdateEntry, ProfileId,
 };
 use super::wql::{self, sql::TagSqlEncoder, tags::TagQuery};
 use super::{KvProvisionStore, KvStore};
@@ -323,6 +323,7 @@ impl KvStore for KvPostgres {
                 name,
                 value,
                 tags,
+                locked: None,
             }))
         } else {
             Ok(None)
@@ -335,7 +336,7 @@ impl KvStore for KvPostgres {
         category: &[u8],
         options: KvFetchOptions,
         tag_filter: Option<wql::Query>,
-        // offset
+        offset: Option<u64>,
         max_rows: Option<u64>,
     ) -> KvResult<Self::ScanToken> {
         /*let category = category.to_vec();
@@ -376,7 +377,7 @@ impl KvStore for KvPostgres {
     ) -> KvResult<()> {
         let mut updates: Vec<(Vec<u8>, Vec<u8>, _)> = vec![];
         for entry in entries {
-            let key_id = get_key_id(entry.client_key.clone()).await;
+            let key_id = get_key_id(entry.profile_key.clone()).await;
             updates.push((key_id, vec![], entry))
         }
 
@@ -457,21 +458,10 @@ impl KvStore for KvPostgres {
 
     async fn create_lock(
         &self,
-        client_id: ClientId,
-        category: &[u8],
-        name: &[u8],
-        max_duration_ms: Option<u64>,
-        acquire_timeout_ms: Option<u64>,
-    ) -> KvResult<(Self::LockToken, Option<KvEntry>)> {
-        Ok((Lock {}, None))
-    }
-
-    async fn refresh_lock(
-        &self,
-        token: Self::LockToken,
-        max_duration_ms: Option<u64>,
-    ) -> KvResult<Self::LockToken> {
-        Ok(token)
+        _entry: KvUpdateEntry,
+        _acquire_timeout_ms: Option<u64>,
+    ) -> KvResult<(Option<Self::LockToken>, KvEntry)> {
+        Err(KvError::Unsupported)
     }
 }
 

@@ -12,8 +12,8 @@ use rusqlite::{params, Connection, Row, ToSql};
 use super::error::{KvError, KvResult};
 use super::pool::Managed;
 use super::types::{
-    ClientId, KeyId, KvEntry, KvFetchOptions, KvKeySelect, KvLockOperation, KvLockToken,
-    KvScanToken, KvTag, KvUpdateEntry,
+    KeyId, KvEntry, KvFetchOptions, KvKeySelect, KvLockOperation, KvLockStatus, KvLockToken,
+    KvScanToken, KvTag, KvUpdateEntry, ProfileId,
 };
 use super::wql::{self, sql::TagSqlEncoder, tags::TagQuery};
 use super::{KvProvisionStore, KvStore};
@@ -30,6 +30,8 @@ const COUNT_QUERY: &'static str = "SELECT COUNT(*) FROM items i
 const FETCH_QUERY: &'static str = "SELECT id, value FROM items i
     WHERE key_id = ?1 AND category = ?2 AND name = ?3
     AND (expiry IS NULL OR expiry > CURRENT_TIME)";
+const INSERT_QUERY: &'static str = "INSERT INTO items(key_id, category, name, value, expiry)
+    VALUES(?1, ?2, ?3, ?4, ?5)";
 const SCAN_QUERY: &'static str = "SELECT id, name, value FROM items i WHERE key_id = ?1
     AND category = ?2 AND (expiry IS NULL OR expiry > CURRENT_TIME)";
 const TAG_QUERY: &'static str = "SELECT name, value, plaintext FROM items_tags WHERE item_id = ?1";
@@ -61,6 +63,7 @@ impl BatchProcessor for ScanQuery {
                 name,
                 value,
                 tags,
+                locked: None,
             });
         }
         Ok(result)
@@ -188,7 +191,7 @@ impl KvProvisionStore for KvSqlite {
                 category NOT NULL,
                 name NOT NULL,
                 value NOT NULL,
-                expiry NULL,
+                expiry DATETIME NULL,
                 PRIMARY KEY(id)
             );
             CREATE UNIQUE INDEX ux_items_uniq ON items(key_id, category, name);
@@ -206,6 +209,16 @@ impl KvProvisionStore for KvSqlite {
             );
             CREATE INDEX ix_items_tags_item_id ON items_tags(item_id);
             CREATE INDEX ix_items_tags_value ON items_tags(value) WHERE plaintext;
+
+            CREATE TABLE items_locks(
+                item_id INTEGER NOT NULL,
+                expiry DATETIME NOT NULL,
+                PRIMARY KEY(item_id),
+                FOREIGN KEY(item_id)
+                    REFERENCES items(id)
+                    ON DELETE CASCADE
+                    ON UPDATE CASCADE
+            );
 
             END TRANSACTION;
         "#,
@@ -251,9 +264,18 @@ impl Scan {
 
 impl KvScanToken for Scan {}
 
-#[derive(Clone, Debug)]
-pub struct Lock {}
+#[derive(Debug)]
+pub struct Lock {
+    ctx: Managed<ConnectionContext>,
+    value: Vec<u8>,
+}
 impl KvLockToken for Lock {}
+
+impl Drop for Lock {
+    fn drop(&mut self) {
+        // remove the lock
+    }
+}
 
 #[async_trait]
 impl KvStore for KvSqlite {
@@ -313,6 +335,7 @@ impl KvStore for KvSqlite {
                         name,
                         value,
                         tags,
+                        locked: None,
                     }))
                 }
                 Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
@@ -328,7 +351,7 @@ impl KvStore for KvSqlite {
         category: &[u8],
         options: KvFetchOptions,
         tag_filter: Option<wql::Query>,
-        // offset
+        offset: Option<u64>,
         max_rows: Option<u64>,
     ) -> KvResult<Self::ScanToken> {
         let category = category.to_vec();
@@ -367,7 +390,7 @@ impl KvStore for KvSqlite {
     ) -> KvResult<()> {
         let mut updates = vec![];
         for entry in entries {
-            let key_id = get_key_id(entry.client_key.clone()).await;
+            let key_id = get_key_id(entry.profile_key.clone()).await;
             updates.push((key_id, entry))
         }
 
@@ -375,13 +398,8 @@ impl KvStore for KvSqlite {
         ctx.enter(move |conn| {
             let txn = conn.transaction()?; // rusqlite::TransactionBehavior::Deferred
             {
-                let mut fetch_id = txn.prepare_cached(
-                    "SELECT id FROM items WHERE key_id=?1 AND category=?2 AND name=?3",
-                )?;
-                let mut add_item = txn.prepare_cached(
-                    "INSERT INTO items(key_id, category, name, value)
-                    VALUES(?1, ?2, ?3, ?4)",
-                )?;
+                let mut fetch_item = txn.prepare_cached(FETCH_QUERY)?;
+                let mut add_item = txn.prepare_cached(INSERT_QUERY)?;
                 // FIXME - might well be faster to delete the row
                 // (and its associated tags through cascade), and insert a new row
                 let mut upd_item = txn.prepare_cached("UPDATE items SET value=?1 WHERE id=?2")?;
@@ -390,7 +408,7 @@ impl KvStore for KvSqlite {
                         VALUES(?1, ?2, ?3, ?4)",
                 )?;
                 for (key_id, entry) in updates {
-                    let row: Result<i64, rusqlite::Error> = fetch_id
+                    let row: Result<i64, rusqlite::Error> = fetch_item
                         .query_row(&[&key_id, &entry.category, &entry.name], |row| row.get(0));
                     let row_id = match row {
                         Ok(row_id) => {
@@ -428,21 +446,83 @@ impl KvStore for KvSqlite {
 
     async fn create_lock(
         &self,
-        client_id: ClientId,
-        category: &[u8],
-        name: &[u8],
-        max_duration_ms: Option<u64>,
+        lock_info: KvUpdateEntry,
         acquire_timeout_ms: Option<u64>,
-    ) -> KvResult<(Self::LockToken, Option<KvEntry>)> {
-        Ok((Lock {}, None))
-    }
+    ) -> KvResult<(Option<Self::LockToken>, KvEntry)> {
+        let key_id = get_key_id(lock_info.profile_key.clone()).await;
+        let mut ctx = self.conn_pool.acquire().await?;
+        let (lock_value, entry) = ctx
+            .enter(move |conn| {
+                // start a write transaction to ensure we have only the latest state
+                let txn =
+                    conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+                let result = {
+                    let mut fetch_lock = txn.prepare_cached(
+                        "SELECT COUNT(*) FROM items_locks
+                    WHERE key_id = ?1 AND category = ?2 AND name = ?3
+                    AND expiry > CURRENT_TIME",
+                    )?;
+                    let locked: i64 = fetch_lock
+                        .query_row(&[&key_id, &lock_info.category, &lock_info.name], |row| {
+                            row.get(0)
+                        })?;
 
-    async fn refresh_lock(
-        &self,
-        token: Self::LockToken,
-        max_duration_ms: Option<u64>,
-    ) -> KvResult<Self::LockToken> {
-        Ok(token)
+                    let mut fetch_item = txn.prepare_cached(FETCH_QUERY)?;
+                    let mut add_item = txn.prepare_cached(INSERT_QUERY)?;
+                    let row: Result<(i64, Vec<u8>), rusqlite::Error> = fetch_item
+                        .query_row(&[&key_id, &lock_info.category, &lock_info.name], |row| {
+                            Ok((row.get(0)?, row.get(1)?))
+                        });
+                    let mut entry = match row {
+                        Ok((_row_id, value)) => {
+                            Ok(KvEntry {
+                                key_id: key_id.clone(),
+                                category: lock_info.category.clone(),
+                                name: lock_info.name.clone(),
+                                value: value,
+                                tags: None, // FIXME optionally fetch tags
+                                locked: Some(if locked > 0 {
+                                    KvLockStatus::Locked
+                                } else {
+                                    KvLockStatus::Unlocked
+                                }),
+                            })
+                        }
+                        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(KvEntry {
+                            key_id: key_id.clone(),
+                            category: lock_info.category.clone(),
+                            name: lock_info.name.clone(),
+                            value: lock_info.value.clone(),
+                            tags: lock_info.tags.clone(),
+                            locked: Some(KvLockStatus::Unlocked),
+                        }),
+                        Err(err) => Err(err),
+                    }?;
+                    let lock_value = if !entry.is_locked() {
+                        let mut create_lock = txn.prepare_cached(
+                            "INSERT INTO items_locks
+                        (key_id, category, name, value, expiry) VALUES (?1, ?2, ?3, ?4, ?5)",
+                        )?;
+                        // FIXME generate a random value
+                        let lock_value = "lock-value".as_bytes().to_vec();
+                        create_lock.execute(params![
+                            &key_id,
+                            &entry.category,
+                            &entry.name,
+                            &lock_value,
+                            lock_info.expiry.map(|i| i as i64),
+                        ])?;
+                        Some(lock_value)
+                    } else {
+                        None
+                    };
+                    KvResult::Ok((lock_value, entry))
+                };
+                txn.commit()?;
+                result
+            })
+            .await?;
+        Ok((lock_value.map(|value| Lock { ctx, value }), entry))
     }
 }
 
@@ -462,9 +542,9 @@ mod tests {
         let db = KvSqlite::open_in_memory().unwrap();
         block_on(db.provision()).unwrap();
 
-        let client_key = KvKeySelect::ForClient(vec![]);
+        let profile_key = KvKeySelect::ForProfile(vec![]);
         let options = KvFetchOptions::default();
-        let row = db.fetch(client_key, b"cat", b"name", options);
+        let row = db.fetch(profile_key, b"cat", b"name", options);
         let result = block_on(row).unwrap();
         assert!(result.is_none())
     }
@@ -474,8 +554,8 @@ mod tests {
         let db = KvSqlite::open_in_memory().unwrap();
         block_on(db.provision()).unwrap();
 
-        let client_key = KvKeySelect::ForClient(vec![]);
-        let options = KvFetchOptions::new(true, true);
+        let profile_key = KvKeySelect::ForProfile(vec![]);
+        let options = KvFetchOptions::new(true, true, false);
 
         let test_row = KvEntry {
             key_id: b"1".to_vec(),
@@ -483,10 +563,11 @@ mod tests {
             name: b"name".to_vec(),
             value: b"value".to_vec(),
             tags: None,
+            locked: None,
         };
 
         let updates = vec![KvUpdateEntry {
-            client_key: client_key.clone(),
+            profile_key: profile_key.clone(),
             category: test_row.category.clone(),
             name: test_row.name.clone(),
             value: test_row.value.clone(),
@@ -496,7 +577,7 @@ mod tests {
         block_on(db.update(updates, None)).unwrap();
 
         let row = db.fetch(
-            client_key.clone(),
+            profile_key.clone(),
             &test_row.category,
             &test_row.name,
             options,
@@ -512,8 +593,8 @@ mod tests {
         let db = KvSqlite::open_in_memory().unwrap();
         block_on(db.provision()).unwrap();
 
-        let client_key = KvKeySelect::ForClient(vec![]);
-        let options = KvFetchOptions::new(true, true);
+        let profile_key = KvKeySelect::ForProfile(vec![]);
+        let options = KvFetchOptions::new(true, true, false);
 
         let test_row = KvEntry {
             key_id: b"1".to_vec(),
@@ -524,10 +605,11 @@ mod tests {
                 KvTag::Encrypted(b"t1".to_vec(), b"v1".to_vec()),
                 KvTag::Plaintext(b"t2".to_vec(), b"v2".to_vec()),
             ]),
+            locked: None,
         };
 
         let updates = vec![KvUpdateEntry {
-            client_key: client_key.clone(),
+            profile_key: profile_key.clone(),
             category: test_row.category.clone(),
             name: test_row.name.clone(),
             value: test_row.value.clone(),
@@ -537,7 +619,7 @@ mod tests {
         block_on(db.update(updates, None)).unwrap();
 
         let row = db.fetch(
-            client_key.clone(),
+            profile_key.clone(),
             &test_row.category,
             &test_row.name,
             options,
@@ -560,13 +642,14 @@ mod tests {
             name: b"name".to_vec(),
             value: b"value".to_vec(),
             tags: None,
+            locked: None,
         }];
 
-        let client_key = KvKeySelect::ForClient(vec![]);
+        let profile_key = KvKeySelect::ForProfile(vec![]);
         let updates = test_rows
             .iter()
             .map(|row| KvUpdateEntry {
-                client_key: client_key.clone(),
+                profile_key: profile_key.clone(),
                 category: row.category.clone(),
                 name: row.name.clone(),
                 value: row.value.clone(),
@@ -577,11 +660,11 @@ mod tests {
         block_on(db.update(updates, None)).unwrap();
 
         let tag_filter = None;
-        let count = block_on(db.count(client_key.clone(), &category, tag_filter)).unwrap();
+        let count = block_on(db.count(profile_key.clone(), &category, tag_filter)).unwrap();
         assert_eq!(count, 1);
 
         let tag_filter = Some(wql::Query::Eq("sometag".to_string(), "someval".to_string()));
-        let count = block_on(db.count(client_key.clone(), &category, tag_filter)).unwrap();
+        let count = block_on(db.count(profile_key.clone(), &category, tag_filter)).unwrap();
         assert_eq!(count, 0);
     }
 
@@ -597,13 +680,14 @@ mod tests {
             name: b"name".to_vec(),
             value: b"value".to_vec(),
             tags: None,
+            locked: None,
         }];
 
-        let client_key = KvKeySelect::ForClient(vec![]);
+        let profile_key = KvKeySelect::ForProfile(vec![]);
         let updates = test_rows
             .iter()
             .map(|row| KvUpdateEntry {
-                client_key: client_key.clone(),
+                profile_key: profile_key.clone(),
                 category: row.category.clone(),
                 name: row.name.clone(),
                 value: row.value.clone(),
@@ -615,19 +699,32 @@ mod tests {
 
         let options = KvFetchOptions::default();
         let tag_filter = None;
+        let offset = None;
         let max_rows = None;
-        let scan_token =
-            block_on(db.scan_start(client_key.clone(), &category, options, tag_filter, max_rows))
-                .unwrap();
+        let scan_token = block_on(db.scan_start(
+            profile_key.clone(),
+            &category,
+            options,
+            tag_filter,
+            offset,
+            max_rows,
+        ))
+        .unwrap();
         let (rows, scan_next) = block_on(db.scan_next(scan_token)).unwrap();
         assert_eq!(rows, test_rows);
         assert!(scan_next.is_none());
 
         let options = KvFetchOptions::default();
         let tag_filter = Some(wql::Query::Eq("sometag".to_string(), "someval".to_string()));
-        let scan_token =
-            block_on(db.scan_start(client_key.clone(), &category, options, tag_filter, max_rows))
-                .unwrap();
+        let scan_token = block_on(db.scan_start(
+            profile_key.clone(),
+            &category,
+            options,
+            tag_filter,
+            offset,
+            max_rows,
+        ))
+        .unwrap();
         let (rows, scan_next) = block_on(db.scan_next(scan_token)).unwrap();
         assert_eq!(rows, vec![]);
         assert!(scan_next.is_none());

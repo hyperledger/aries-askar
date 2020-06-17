@@ -4,7 +4,7 @@ use std::task::{Context, Poll};
 use std::thread::{self, JoinHandle};
 
 use crossbeam_channel::{bounded, Receiver, Sender, TryRecvError, TrySendError};
-use futures_channel::{mpsc, oneshot};
+use futures_channel::oneshot;
 use futures_util::{stream::Stream, task::AtomicWaker};
 use rusqlite::{Connection, Error, OpenFlags, Row, Rows, ToSql};
 
@@ -12,6 +12,7 @@ use crate::error::KvResult;
 
 type Task = Box<dyn FnOnce(&mut Connection) + Send>;
 
+#[derive(Debug)]
 pub struct ConnectionContext {
     handle: Arc<JoinHandle<()>>,
     sender: Sender<Task>,

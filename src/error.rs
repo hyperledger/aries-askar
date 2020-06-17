@@ -13,6 +13,7 @@ pub enum KvError {
     Timeout,
     UnknownKey,
     Unexpected,
+    Unsupported,
 }
 
 impl<T> From<AcquireError<T>> for KvError

@@ -55,6 +55,16 @@ impl<R: Send + 'static, E: Debug + Send + 'static> PoolConfig<R, E> {
         self
     }
 
+    pub fn min_count(mut self, val: usize) -> Self {
+        self.min_count = val;
+        self
+    }
+
+    pub fn max_count(mut self, val: usize) -> Self {
+        self.max_count.replace(val);
+        self
+    }
+
     pub fn build(self) -> Pool<R, E> {
         let queue = Queue::default();
         let mgr = Manager::new(self.create, self.dispose, None);

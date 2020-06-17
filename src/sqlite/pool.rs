@@ -92,6 +92,8 @@ impl SqlitePoolConfig {
                 Ok(conn)
             }
         })
+        .min_count(min_size)
+        .max_count(max_size)
         // FIXME - on release, check that connection thread is idle (perform a task)
         // FIXME - set min count to 1 for in-memory DB to avoid dropping it
         .build()
