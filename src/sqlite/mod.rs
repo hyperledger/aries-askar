@@ -211,13 +211,12 @@ impl KvProvisionStore for KvSqlite {
             CREATE INDEX ix_items_tags_value ON items_tags(value) WHERE plaintext;
 
             CREATE TABLE items_locks(
-                item_id INTEGER NOT NULL,
-                expiry DATETIME NOT NULL,
-                PRIMARY KEY(item_id),
-                FOREIGN KEY(item_id)
-                    REFERENCES items(id)
-                    ON DELETE CASCADE
-                    ON UPDATE CASCADE
+                key_id INTEGER NOT NULL,
+                category NOT NULL,
+                name NOT NULL,
+                value NOT NULL,
+                expiry DATETIME NULL,
+                PRIMARY KEY(key_id, category, name)
             );
 
             END TRANSACTION;
@@ -229,6 +228,7 @@ impl KvProvisionStore for KvSqlite {
     }
 }
 
+// FIXME mock implementation for development
 async fn get_key_id(k: KvKeySelect) -> KeyId {
     b"1".to_vec()
 }
@@ -267,13 +267,30 @@ impl KvScanToken for Scan {}
 #[derive(Debug)]
 pub struct Lock {
     ctx: Managed<ConnectionContext>,
-    value: Vec<u8>,
+    entry: KvEntry,
 }
 impl KvLockToken for Lock {}
 
 impl Drop for Lock {
     fn drop(&mut self) {
         // remove the lock
+        let entry = self.entry.clone();
+        self.ctx.perform(move |conn| {
+            conn.prepare_cached(
+                "DELETE FROM items_locks WHERE
+                key_id = ?1 AND category = ?2 AND name = ?3 AND value = ?4",
+            )
+            .and_then(|mut del_lock| {
+                del_lock.execute(params![
+                    &entry.key_id,
+                    &entry.category,
+                    &entry.name,
+                    &entry.value
+                ])
+            })
+            .map_err(|err| eprintln!("Error removing lock: {:?}", err))
+            .unwrap_or(0);
+        })
     }
 }
 
@@ -417,11 +434,12 @@ impl KvStore for KvSqlite {
                             row_id
                         }
                         Err(rusqlite::Error::QueryReturnedNoRows) => {
-                            add_item.execute(&[
+                            add_item.execute(params![
                                 &key_id,
                                 &entry.category,
                                 &entry.name,
                                 &entry.value,
+                                &entry.expiry.map(|i| i as i64),
                             ])?;
                             txn.last_insert_rowid()
                         }
@@ -451,7 +469,7 @@ impl KvStore for KvSqlite {
     ) -> KvResult<(Option<Self::LockToken>, KvEntry)> {
         let key_id = get_key_id(lock_info.profile_key.clone()).await;
         let mut ctx = self.conn_pool.acquire().await?;
-        let (lock_value, entry) = ctx
+        let (lock_entry, entry) = ctx
             .enter(move |conn| {
                 // start a write transaction to ensure we have only the latest state
                 let txn =
@@ -459,8 +477,8 @@ impl KvStore for KvSqlite {
                 let result = {
                     let mut fetch_lock = txn.prepare_cached(
                         "SELECT COUNT(*) FROM items_locks
-                    WHERE key_id = ?1 AND category = ?2 AND name = ?3
-                    AND expiry > CURRENT_TIME",
+                        WHERE key_id = ?1 AND category = ?2 AND name = ?3
+                        AND expiry > CURRENT_TIME",
                     )?;
                     let locked: i64 = fetch_lock
                         .query_row(&[&key_id, &lock_info.category, &lock_info.name], |row| {
@@ -488,17 +506,26 @@ impl KvStore for KvSqlite {
                                 }),
                             })
                         }
-                        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(KvEntry {
-                            key_id: key_id.clone(),
-                            category: lock_info.category.clone(),
-                            name: lock_info.name.clone(),
-                            value: lock_info.value.clone(),
-                            tags: lock_info.tags.clone(),
-                            locked: Some(KvLockStatus::Unlocked),
-                        }),
+                        Err(rusqlite::Error::QueryReturnedNoRows) => {
+                            add_item.execute(params![
+                                &key_id,
+                                &lock_info.category,
+                                &lock_info.name,
+                                &lock_info.value,
+                                &lock_info.expiry.map(|i| i as i64),
+                            ])?;
+                            Ok(KvEntry {
+                                key_id: key_id.clone(),
+                                category: lock_info.category.clone(),
+                                name: lock_info.name.clone(),
+                                value: lock_info.value.clone(),
+                                tags: lock_info.tags.clone(),
+                                locked: Some(KvLockStatus::Unlocked),
+                            })
+                        }
                         Err(err) => Err(err),
                     }?;
-                    let lock_value = if !entry.is_locked() {
+                    let lock_entry = if !entry.is_locked() {
                         let mut create_lock = txn.prepare_cached(
                             "INSERT INTO items_locks
                         (key_id, category, name, value, expiry) VALUES (?1, ?2, ?3, ?4, ?5)",
@@ -512,17 +539,20 @@ impl KvStore for KvSqlite {
                             &lock_value,
                             lock_info.expiry.map(|i| i as i64),
                         ])?;
-                        Some(lock_value)
+                        entry.locked.replace(KvLockStatus::Locked);
+                        let mut lock_entry = entry.clone();
+                        lock_entry.value = lock_value;
+                        Some(lock_entry)
                     } else {
                         None
                     };
-                    KvResult::Ok((lock_value, entry))
+                    KvResult::Ok((lock_entry, entry))
                 };
                 txn.commit()?;
                 result
             })
             .await?;
-        Ok((lock_value.map(|value| Lock { ctx, value }), entry))
+        Ok((lock_entry.map(|entry| Lock { ctx, entry }), entry))
     }
 }
 
@@ -740,5 +770,28 @@ mod tests {
             replace_arg_placeholders("This is a string!", 1),
             ("This is a string!".to_string(), 1),
         );
+    }
+
+    #[test]
+    fn sqlite_create_lock_non_existing() {
+        let db = KvSqlite::open_in_memory().unwrap();
+        block_on(db.provision()).unwrap();
+
+        let update = KvUpdateEntry {
+            profile_key: KvKeySelect::ForProfile(vec![]),
+            category: b"cat".to_vec(),
+            name: b"name".to_vec(),
+            value: b"value".to_vec(),
+            tags: None,
+            expiry: None,
+        };
+        let lock_update = update.clone();
+        let (opt_lock, entry) =
+            block_on(async move { db.create_lock(lock_update, None).await }).unwrap();
+        assert!(opt_lock.is_some());
+        assert_eq!(entry.category, update.category);
+        assert_eq!(entry.name, update.name);
+        assert_eq!(entry.value, update.value);
+        assert_eq!(entry.locked, Some(KvLockStatus::Locked));
     }
 }

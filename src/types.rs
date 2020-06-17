@@ -67,7 +67,7 @@ impl PartialEq for KvEntry {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Zeroize)]
+#[derive(Clone, Debug, PartialEq, Eq, Zeroize)]
 pub struct KvUpdateEntry {
     pub profile_key: KvKeySelect,
     pub category: Vec<u8>,
