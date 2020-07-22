@@ -2,6 +2,8 @@ use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
 
+use async_resource::Managed;
+
 use async_trait::async_trait;
 
 use futures_channel::mpsc::{channel, Receiver, Sender};
@@ -11,12 +13,15 @@ use postgres_types::ToSql;
 use tokio_postgres::{Connection, Row};
 
 use super::error::{KvError, KvResult};
-use super::pool::Managed;
 use super::types::{
     KeyId, KvEntry, KvFetchOptions, KvKeySelect, KvLockOperation, KvLockToken, KvScanToken, KvTag,
     KvUpdateEntry, ProfileId,
 };
-use super::wql::{self, sql::TagSqlEncoder, tags::TagQuery};
+use super::wql::{
+    self,
+    sql::TagSqlEncoder,
+    tags::{tag_query, TagQueryEncoder},
+};
 use super::{KvProvisionStore, KvStore};
 
 mod pool;
@@ -92,9 +97,9 @@ fn extend_query<'a>(
     let mut last_idx = params.len() as i64 + 1;
 
     if let Some(tag_filter) = tag_filter {
-        let tag_query = TagQuery::from_query(tag_filter)?;
+        let tag_query = tag_query(tag_filter)?;
         let mut enc = TagSqlEncoder::new();
-        let filter = tag_query.encode(&mut enc)?;
+        let filter: String = enc.encode_query(&tag_query)?;
         let (filter, next_idx) = replace_arg_placeholders(&filter, last_idx);
         last_idx = next_idx;
         params.extend(enc.arguments);

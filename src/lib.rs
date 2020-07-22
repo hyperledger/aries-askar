@@ -1,16 +1,10 @@
 #[macro_use]
-extern crate serde_derive;
-#[macro_use]
-extern crate serde_json;
-#[macro_use]
 extern crate zeroize;
 
 use async_trait::async_trait;
 
 mod error;
 use error::KvResult;
-
-mod pool;
 
 #[cfg(feature = "postgres")]
 pub mod postgres;

@@ -1,5 +1,4 @@
-mod lang;
+pub use indy_utils::wql::{AbstractQuery, Query};
+
 pub mod sql;
 pub mod tags;
-
-pub use lang::*;

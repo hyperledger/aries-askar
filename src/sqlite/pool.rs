@@ -3,17 +3,14 @@ use std::sync::{
     Arc,
 };
 
-use lazy_static::lazy_static;
+use async_resource::{Pool, PoolConfig};
 
 use rusqlite::{Connection, Error, OpenFlags};
 
 use super::context::ConnectionContext;
 use crate::error::{KvError, KvResult};
-use crate::pool::{Pool, PoolConfig};
 
-lazy_static! {
-    static ref INMEM_SEQ: AtomicUsize = AtomicUsize::new(1);
-}
+static INMEM_SEQ: AtomicUsize = AtomicUsize::new(1);
 
 pub type SqlitePool = Pool<ConnectionContext, KvError>;
 
@@ -95,7 +92,7 @@ impl SqlitePoolConfig {
         .min_count(min_size)
         .max_count(max_size)
         // FIXME - on release, check that connection thread is idle (perform a task)
-        // FIXME - set min count to 1 for in-memory DB to avoid dropping it
         .build()
+        .unwrap()
     }
 }

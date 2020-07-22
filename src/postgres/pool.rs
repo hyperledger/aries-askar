@@ -1,6 +1,8 @@
 use std::net::TcpStream;
 use std::sync::Arc;
 
+use async_resource::{Pool, PoolConfig};
+
 use smol::Async;
 
 use tokio_postgres::{
@@ -13,7 +15,6 @@ pub use tokio_postgres::{Client, Error};
 use tokio_util::compat::FuturesAsyncReadCompatExt;
 
 use crate::error::{KvError, KvResult};
-use crate::pool::{Pool, PoolConfig};
 
 const DEFAULT_PORT: u16 = 5432;
 
@@ -74,9 +75,8 @@ impl PostgresPoolConfig {
                 Ok(client)
             }
         })
-        // FIXME - on release, check that connection thread is idle (perform a task)
-        // FIXME - set min count to 1 for in-memory DB to avoid dropping it
         .build()
+        .unwrap()
     }
 }
 

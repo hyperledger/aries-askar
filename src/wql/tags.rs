@@ -1,32 +1,25 @@
-use super::lang::{AbstractQuery, Query};
-use crate::error::KvResult;
+use super::{AbstractQuery, Query};
+use crate::error::{KvError, KvResult};
 
 pub type TagQuery = AbstractQuery<TagName, String>;
 
-impl TagQuery {
-    pub fn from_query(query: Query) -> KvResult<Self> {
-        let result = query.map_names(&mut |k| {
+pub fn tag_query(query: Query) -> KvResult<TagQuery> {
+    let result = query
+        .map_names(&mut |k| {
             if k.starts_with("~") {
                 Ok(TagName::Plaintext(k[1..].to_string()))
             } else {
                 Ok(TagName::Encrypted(k))
             }
-        })?;
-        result.validate()?;
-        Ok(result)
-    }
+        })
+        .map_err(|_| KvError::InputError)?;
+    validate_tag_query(&result)?;
+    Ok(result)
+}
 
-    pub fn validate(&self) -> KvResult<()> {
-        // FIXME only equality comparison supported for encrypted keys
-        Ok(())
-    }
-
-    pub fn encode<V, E>(&self, enc: &mut E) -> KvResult<V>
-    where
-        E: TagQueryEncoder<Clause = V>,
-    {
-        encode_tag_query(self, enc, false)
-    }
+pub fn validate_tag_query(_query: &TagQuery) -> KvResult<()> {
+    // FIXME only equality comparison supported for encrypted keys
+    Ok(())
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -53,6 +46,13 @@ impl Into<String> for &TagName {
 pub trait TagQueryEncoder {
     type Arg;
     type Clause;
+
+    fn encode_query(&mut self, query: &TagQuery) -> KvResult<Self::Clause>
+    where
+        Self: Sized,
+    {
+        encode_tag_query(query, self, false)
+    }
 
     fn encode_name(&mut self, name: &TagName) -> KvResult<Self::Arg>;
 
@@ -308,7 +308,7 @@ mod tests {
             Query::Eq("enctag".to_string(), "encval".to_string()),
             Query::Eq("~plaintag".to_string(), "plainval".to_string()),
         ]);
-        let result = TagQuery::from_query(query).unwrap();
+        let result = tag_query(query).unwrap();
         assert_eq!(
             result,
             TagQuery::And(vec![
@@ -366,8 +366,7 @@ mod tests {
             ))),
         ]);
         let query = TagQuery::Or(vec![condition_1, condition_2]);
-        let mut enc = TestEncoder {};
-        let query_str = query.encode(&mut enc).unwrap();
+        let query_str = TestEncoder {}.encode_query(&query).unwrap();
         assert_eq!(query_str, "((enctag = encval AND ~plaintag = plainval) OR (enctag = encval AND ~plaintag != eggs))")
     }
 
@@ -394,8 +393,7 @@ mod tests {
             ))),
         ]);
         let query = TagQuery::Not(Box::new(TagQuery::Or(vec![condition_1, condition_2])));
-        let mut enc = TestEncoder {};
-        let query_str = query.encode(&mut enc).unwrap();
+        let query_str = TestEncoder {}.encode_query(&query).unwrap();
         assert_eq!(query_str, "((enctag != encval OR ~plaintag != plainval) AND (enctag != encval OR ~plaintag = eggs))")
     }
 }

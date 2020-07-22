@@ -122,7 +122,7 @@ mod tests {
         ]);
         let query = TagQuery::Or(vec![condition_1, condition_2]);
         let mut enc = TagSqlEncoder::new();
-        let query_str = query.encode(&mut enc).unwrap();
+        let query_str = enc.encode_query(&query).unwrap();
         assert_eq!(query_str, "((i.id IN (SELECT item_id FROM items_tags WHERE name = $$ AND value = $$ AND plaintext = 0) AND i.id IN (SELECT item_id FROM items_tags WHERE name = $$ AND value = $$ AND plaintext = 1)) OR (i.id IN (SELECT item_id FROM items_tags WHERE name = $$ AND value = $$ AND plaintext = 0) AND i.id IN (SELECT item_id FROM items_tags WHERE name = $$ AND value != $$ AND plaintext = 1)))");
         let args = enc.arguments;
         assert_eq!(

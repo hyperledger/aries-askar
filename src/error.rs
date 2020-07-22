@@ -1,5 +1,3 @@
-use super::pool::AcquireError;
-
 pub type KvResult<T> = Result<T, KvError>;
 
 #[derive(Debug)] // FIXME
@@ -7,8 +5,8 @@ pub enum KvError {
     Busy,
     BackendError(String),
     Disconnected,
-    DecryptionError,
     EncryptionError,
+    InputError,
     LockFailure,
     Timeout,
     UnknownKey,
@@ -16,16 +14,22 @@ pub enum KvError {
     Unsupported,
 }
 
-impl<T> From<AcquireError<T>> for KvError
+impl<E> From<async_resource::AcquireError<E>> for KvError
 where
-    T: Into<KvError>,
+    E: Into<KvError>,
 {
-    fn from(err: AcquireError<T>) -> Self {
+    fn from(err: async_resource::AcquireError<E>) -> Self {
         match err {
-            AcquireError::Busy => KvError::Busy,
-            AcquireError::ResourceError(err) => err.into(),
-            AcquireError::Stopped => KvError::Disconnected,
-            AcquireError::Timeout => KvError::Timeout,
+            // AcquireError::Busy => KvError::Busy,
+            async_resource::AcquireError::PoolClosed => KvError::Disconnected,
+            async_resource::AcquireError::ResourceError(err) => err.into(),
+            async_resource::AcquireError::Timeout => KvError::Timeout,
         }
+    }
+}
+
+impl From<indy_utils::EncryptionError> for KvError {
+    fn from(_err: indy_utils::EncryptionError) -> Self {
+        KvError::EncryptionError
     }
 }
