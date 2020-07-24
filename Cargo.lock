@@ -25,15 +25,12 @@ dependencies = [
  "async-channel",
  "async-resource",
  "async-trait",
- "crossbeam-channel",
  "env_logger",
- "futures-channel",
  "futures-util",
  "hex",
  "hmac",
  "indy-utils",
  "itertools",
- "lazy_static",
  "log",
  "postgres-types",
  "rand",
@@ -42,6 +39,7 @@ dependencies = [
  "serde_derive",
  "serde_json",
  "smol",
+ "suspend",
  "tokio-postgres",
  "tokio-util",
  "zeroize",
@@ -63,9 +61,11 @@ name = "async-resource"
 version = "0.1.0"
 dependencies = [
  "concurrent-queue",
+ "dropshot",
  "futures-util",
  "multitask",
  "option-lock",
+ "suspend",
 ]
 
 [[package]]
@@ -321,6 +321,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f3d0c8c8752312f9713efd397ff63acb9f85585afbf179282e720e7704954dd5"
 dependencies = [
  "generic-array 0.12.3",
+]
+
+[[package]]
+name = "dropshot"
+version = "0.1.0"
+dependencies = [
+ "suspend",
 ]
 
 [[package]]
@@ -1091,6 +1098,13 @@ name = "subtle"
 version = "2.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "502d53007c02d7605a05df1c1a73ee436952781653da5d0bf57ad608f66932c1"
+
+[[package]]
+name = "suspend"
+version = "0.1.0"
+dependencies = [
+ "futures-util",
+]
 
 [[package]]
 name = "syn"

@@ -1,142 +1,129 @@
+use std::future::Future;
 use std::pin::Pin;
-use std::sync::Arc;
 use std::task::{Context, Poll};
-use std::thread::{self, JoinHandle};
 
-use crossbeam_channel::{bounded, Receiver, Sender, TryRecvError, TrySendError};
-use futures_channel::oneshot;
-use futures_util::{stream::Stream, task::AtomicWaker};
+use async_channel::{bounded, Receiver, SendError};
+use async_resource::thread::{Task, ThreadResource};
+use futures_util::stream::Stream;
 use rusqlite::{Connection, Error, OpenFlags, Row, Rows, ToSql};
+use suspend::Suspend;
 
-use crate::error::KvResult;
-
-type Task = Box<dyn FnOnce(&mut Connection) + Send>;
+use crate::error::{KvError, KvResult};
 
 #[derive(Debug)]
 pub struct ConnectionContext {
-    handle: Arc<JoinHandle<()>>,
-    sender: Sender<Task>,
+    res: ThreadResource<Connection>,
 }
 
 impl ConnectionContext {
     pub fn new(path: String, flags: OpenFlags, vfs: Option<String>) -> Result<Self, Error> {
-        let mut conn = if let Some(ref vfs) = vfs {
-            Connection::open_with_flags_and_vfs(path, flags, vfs.as_str())
-        } else {
-            Connection::open_with_flags(path, flags)
-        }?;
-        let (sender, receiver) = bounded::<Task>(1);
-        let handle = thread::spawn(move || {
-            for task in receiver {
-                task(&mut conn);
+        let res = ThreadResource::try_create(move || {
+            if let Some(ref vfs) = vfs {
+                Connection::open_with_flags_and_vfs(path, flags, vfs.as_str())
+            } else {
+                Connection::open_with_flags(path, flags)
             }
-        });
-        Ok(Self {
-            handle: Arc::new(handle),
-            sender,
-        })
+        })?;
+        Ok(Self { res })
     }
 
-    pub async fn enter<F, R>(&mut self, f: F) -> R
+    // pub fn enter<F, R>(&mut self, f: F) -> Task<R>
+    // where
+    //     F: FnOnce(&mut Connection) -> R + Send + 'static,
+    //     R: Send + 'static,
+    // {
+    //     self.res.enter(f)
+    // }
+
+    pub async fn perform<F, R>(&mut self, f: F) -> KvResult<R>
     where
-        F: FnOnce(&mut Connection) -> R + Send + 'static,
+        F: FnOnce(&mut Connection) -> KvResult<R> + Send + 'static,
         R: Send + 'static,
     {
-        let (sender, receiver) = oneshot::channel();
-        self.perform(|mut conn| {
-            sender.send(f(&mut conn)).ok();
-        });
-        receiver.await.unwrap()
+        match self.res.enter(f).await {
+            Err(_) => Err(KvError::Disconnected),
+            Ok(val) => val,
+        }
     }
 
-    pub fn perform<F>(&mut self, f: F)
-    where
-        F: FnOnce(&mut Connection) + Send + 'static,
-    {
-        // note: this is not expected to block because the connection
-        // is only accessed by the thread that acquired it
-        self.sender.send(Box::new(f)).unwrap();
-    }
-
-    pub async fn process_query<P, R, T>(
-        &mut self,
+    pub fn process_query<'q, P, R, T>(
+        &'q mut self,
         sql: String,
         params: P,
         mut proc: R,
-    ) -> KvResult<QueryResults<T>>
+    ) -> QueryResults<'q, T>
     where
         P: IntoIterator + Send + 'static,
         P::Item: ToSql,
         R: ResultProcessor<Item = T> + Send + 'static,
         T: Send + 'static,
     {
-        let (init_sender, init_receiver) = oneshot::channel();
-        self.perform(move |conn| {
+        let (result_send, receiver) = bounded(20);
+        let task = self.res.enter(move |conn| {
             let mut stmt = match conn.prepare(sql.as_str()) {
                 Ok(stmt) => stmt,
                 Err(err) => {
-                    init_sender.send(KvResult::Err(err.into())).ok();
+                    result_send.try_send(KvResult::Err(err.into())).ok();
                     return;
                 }
             };
             let mut rows = match stmt.query(params) {
                 Ok(rows) => rows,
                 Err(err) => {
-                    init_sender.send(KvResult::Err(err.into())).ok();
+                    result_send.try_send(KvResult::Err(err.into())).ok();
                     return;
                 }
             };
-            let (sender, receiver) = bounded(1);
-            let waker = Arc::new(AtomicWaker::default());
-            init_sender.send(Ok((receiver, waker.clone()))).ok();
+            let mut eval = Suspend::new();
             while !proc.completed() {
                 match proc.next(&mut rows, conn) {
-                    Some(mut result) => loop {
-                        result = match sender.try_send(result) {
+                    Some(result) => {
+                        match eval.block_on(result_send.send(result)) {
                             Ok(_) => break,
-                            Err(TrySendError::Full(result)) => {
-                                waker.wake();
-                                thread::park();
-                                result
-                            }
-                            Err(TrySendError::Disconnected(_)) => {
-                                return;
+                            Err(SendError(result)) => {
+                                // receiver has gone away
+                                drop(result);
+                                break;
                             }
                         }
-                    },
+                    }
                     None => {
                         break;
                     }
                 }
             }
-            waker.wake();
         });
-        let (receiver, waker) = init_receiver.await.unwrap()?;
-        Ok(QueryResults {
-            ctx: self.handle.clone(),
-            receiver,
-            waker,
-        })
+        QueryResults { receiver, task }
     }
 }
 
-pub struct QueryResults<T> {
-    ctx: Arc<JoinHandle<()>>,
+pub struct QueryResults<'q, T> {
     receiver: Receiver<KvResult<T>>,
-    waker: Arc<AtomicWaker>,
+    task: Task<'q, ()>,
 }
 
-impl<T> Stream for QueryResults<T> {
+impl<'q, T> QueryResults<'q, T> {
+    fn pin_receiver(self: Pin<&mut Self>) -> Pin<&mut Receiver<KvResult<T>>> {
+        unsafe { Pin::map_unchecked_mut(self, |slf| &mut slf.receiver) }
+    }
+
+    fn pin_task(self: Pin<&mut Self>) -> Pin<&mut Task<'q, ()>> {
+        unsafe { Pin::map_unchecked_mut(self, |slf| &mut slf.task) }
+    }
+}
+
+impl<T> Stream for QueryResults<'_, T> {
     type Item = KvResult<T>;
-    fn poll_next(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
-        match self.receiver.try_recv() {
-            Ok(val) => Poll::Ready(Some(val)),
-            Err(TryRecvError::Empty) => {
-                self.waker.register(cx.waker());
-                self.ctx.thread().unpark();
-                Poll::Pending
-            }
-            Err(TryRecvError::Disconnected) => Poll::Ready(None),
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
+        match self.as_mut().pin_receiver().poll_next(cx) {
+            Poll::Ready(None) => (),
+            Poll::Ready(val) => return Poll::Ready(val),
+            Poll::Pending => return Poll::Pending,
+        }
+        match self.pin_task().poll(cx) {
+            Poll::Ready(_) => Poll::Ready(None),
+            Poll::Pending => Poll::Pending,
         }
     }
 }

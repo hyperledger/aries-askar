@@ -1,15 +1,18 @@
+use std::collections::BTreeMap;
+use std::sync::{
+    atomic::{AtomicUsize, Ordering},
+    Arc, Mutex,
+};
+
 use async_resource::Managed;
-
 use async_trait::async_trait;
-
 use futures_util::stream::StreamExt;
-
 use rusqlite::{params, Connection, Row, ToSql};
 
-use super::error::KvResult;
+use super::error::{KvError, KvResult};
 use super::types::{
-    KeyId, KvEntry, KvFetchOptions, KvKeySelect, KvLockOperation, KvLockStatus, KvLockToken,
-    KvScanToken, KvTag, KvUpdateEntry, ProfileId,
+    KeyId, KvEntry, KvFetchOptions, KvKeySelect, KvLockOperation, KvLockStatus, KvTag,
+    KvUpdateEntry, ProfileId,
 };
 use super::wql::{
     self,
@@ -162,23 +165,29 @@ impl<'a> IntoIterator for SqlParams<'a> {
     }
 }
 
-pub struct KvSqlite {
+pub struct KvSqlite<'a> {
     conn_pool: SqlitePool,
+    scans: Arc<Mutex<BTreeMap<ScanToken, Scan<'a>>>>,
+    locks: Arc<Mutex<BTreeMap<LockToken, Lock>>>,
 }
 
-impl KvSqlite {
+impl KvSqlite<'_> {
     pub fn open_in_memory() -> KvResult<Self> {
         let config = SqlitePoolConfig::in_memory();
         let conn_pool = config.into_pool(1, 5);
-        Ok(Self { conn_pool })
+        Ok(Self {
+            conn_pool,
+            scans: Arc::new(Mutex::new(BTreeMap::new())),
+            locks: Arc::new(Mutex::new(BTreeMap::new())),
+        })
     }
 }
 
 #[async_trait]
-impl KvProvisionStore for KvSqlite {
+impl KvProvisionStore for KvSqlite<'_> {
     async fn provision(&self) -> KvResult<()> {
         let mut ctx = self.conn_pool.acquire().await?;
-        ctx.enter(|conn| {
+        ctx.perform(|conn| {
             conn.execute_batch(
                 r#"
             PRAGMA locking_mode=EXCLUSIVE;
@@ -249,55 +258,107 @@ fn retrieve_tags(conn: &Connection, row_id: i64) -> KvResult<Vec<KvTag>> {
     Ok(rows)
 }
 
-pub struct Scan {
-    // FIXME only holding on to ctx to prevent it from being released
-    // back to the pool while the query is pending
-    // the real fix is to detect active connections during pool.on_release
+pub struct Scan<'s> {
     ctx: Managed<ConnectionContext>,
-    query: QueryResults<(Vec<KvEntry>, bool)>,
+    query: Option<QueryResults<'s, (Vec<KvEntry>, bool)>>,
 }
-impl Scan {
+impl<'s> Scan<'s> {
+    fn new(
+        ctx: Managed<ConnectionContext>,
+        sql: String,
+        params: SqlParams<'static>,
+        query: ScanQuery,
+    ) -> Self {
+        let mut result = Scan { ctx, query: None };
+        // hack around lifetime issues
+        // we own the context, so this is safe
+        let ctx = unsafe {
+            std::mem::transmute::<
+                &'_ mut Managed<ConnectionContext>,
+                &'s mut Managed<ConnectionContext>,
+            >(&mut result.ctx)
+        };
+        let query = ctx.process_query(sql, params, BatchQuery::new(20, query));
+        result.query.replace(query);
+        result
+    }
+
     pub async fn next(&mut self) -> KvResult<Option<(Vec<KvEntry>, bool)>> {
-        self.query.next().await.transpose()
+        if let Some(query) = self.query.as_mut() {
+            query.next().await.transpose()
+        } else {
+            Ok(None)
+        }
     }
 }
 
-impl KvScanToken for Scan {}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ScanToken {
+    pub id: usize,
+}
+
+impl ScanToken {
+    const COUNT: AtomicUsize = AtomicUsize::new(0);
+
+    fn next() -> Self {
+        Self {
+            id: Self::COUNT.fetch_add(1, Ordering::AcqRel),
+        }
+    }
+}
 
 #[derive(Debug)]
 pub struct Lock {
-    ctx: Managed<ConnectionContext>,
     entry: KvEntry,
 }
-impl KvLockToken for Lock {}
 
-impl Drop for Lock {
-    fn drop(&mut self) {
-        // remove the lock
-        let entry = self.entry.clone();
-        self.ctx.perform(move |conn| {
-            conn.prepare_cached(
-                "DELETE FROM items_locks WHERE
-                key_id = ?1 AND category = ?2 AND name = ?3 AND value = ?4",
-            )
-            .and_then(|mut del_lock| {
-                del_lock.execute(params![
-                    &entry.key_id,
-                    &entry.category,
-                    &entry.name,
-                    &entry.value
-                ])
-            })
-            .map_err(|err| eprintln!("Error removing lock: {:?}", err))
-            .unwrap_or(0);
-        })
+// FIXME pool instance will dispose of locks itself
+// impl Drop for Lock<'_> {
+//     fn drop(&mut self) {
+//         // remove the lock
+//         let entry = self.entry.clone();
+//         self.ctx
+//             .enter(move |conn| {
+//                 conn.prepare_cached(
+//                     "DELETE FROM items_locks WHERE
+//                 key_id = ?1 AND category = ?2 AND name = ?3 AND value = ?4",
+//                 )
+//                 .and_then(|mut del_lock| {
+//                     del_lock.execute(params![
+//                         &entry.key_id,
+//                         &entry.category,
+//                         &entry.name,
+//                         &entry.value
+//                     ])
+//                 })
+//                 .map_err(|err| eprintln!("Error removing lock: {:?}", err))
+//                 .unwrap_or(0);
+//             })
+//             // FIXME ensure error is logged on failure
+//             .wait()
+//             .unwrap_or(())
+//     }
+// }
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct LockToken {
+    pub id: usize,
+}
+
+impl LockToken {
+    const COUNT: AtomicUsize = AtomicUsize::new(0);
+
+    fn next() -> Self {
+        Self {
+            id: Self::COUNT.fetch_add(1, Ordering::AcqRel),
+        }
     }
 }
 
 #[async_trait]
-impl KvStore for KvSqlite {
-    type ScanToken = Scan;
-    type LockToken = Lock;
+impl<'a> KvStore for KvSqlite<'a> {
+    type ScanToken = ScanToken;
+    type LockToken = LockToken;
 
     async fn count(
         &self,
@@ -309,7 +370,7 @@ impl KvStore for KvSqlite {
         let category = category.to_vec();
         let mut ctx = self.conn_pool.acquire().await?;
         let count: i64 = ctx
-            .enter(move |conn| {
+            .perform(move |conn| {
                 let mut params = SqlParams::from_iter(vec![&key_id, &category]);
                 let query = extend_query(COUNT_QUERY, &mut params, tag_filter, None)?;
                 let count = conn.query_row(query.as_str(), params, |row| Ok(row.get(0)?))?;
@@ -330,7 +391,7 @@ impl KvStore for KvSqlite {
         let category = category.to_vec();
         let name = name.to_vec();
         let mut ctx = self.conn_pool.acquire().await?;
-        ctx.enter(move |conn| {
+        ctx.perform(move |conn| {
             let q_key_id = key_id.clone();
             let q_category = category.clone();
             let q_name = name.clone();
@@ -373,7 +434,7 @@ impl KvStore for KvSqlite {
     ) -> KvResult<Self::ScanToken> {
         let category = category.to_vec();
         let key_id = get_key_id(client_key).await;
-        let mut ctx = self.conn_pool.acquire().await?;
+        let ctx = self.conn_pool.acquire().await?;
         let limit = Some((0i64, max_rows.map(|r| r as i64).unwrap_or(-1)));
         let mut params = SqlParams::new();
         params.push(key_id.clone());
@@ -384,19 +445,34 @@ impl KvStore for KvSqlite {
             category,
             retrieve_tags: options.retrieve_tags,
         };
-        let query = ctx
-            .process_query(sql, params, BatchQuery::new(20, scan))
-            .await?;
-        Ok(Scan { ctx, query })
+
+        let scan = Scan::new(ctx, sql, params, scan);
+        let token = ScanToken::next();
+        self.scans.lock().unwrap().insert(token, scan);
+        Ok(token)
     }
 
     async fn scan_next(
         &self,
-        mut scan_token: Self::ScanToken,
+        scan_token: Self::ScanToken,
     ) -> KvResult<(Vec<KvEntry>, Option<Self::ScanToken>)> {
-        match scan_token.next().await? {
-            Some((rows, done)) => Ok((rows, if done { None } else { Some(scan_token) })),
-            None => Ok((vec![], None)),
+        // FIXME handle lock error
+        let scan = self.scans.lock().unwrap().remove(&scan_token);
+        if let Some(mut scan) = scan {
+            match scan.next().await? {
+                Some((rows, done)) => Ok((
+                    rows,
+                    if done {
+                        None
+                    } else {
+                        self.scans.lock().unwrap().insert(scan_token, scan);
+                        Some(scan_token)
+                    },
+                )),
+                None => Ok((vec![], None)),
+            }
+        } else {
+            Err(KvError::Timeout)
         }
     }
 
@@ -412,7 +488,7 @@ impl KvStore for KvSqlite {
         }
 
         let mut ctx = self.conn_pool.acquire().await?;
-        ctx.enter(move |conn| {
+        ctx.perform(move |conn| {
             let txn = conn.transaction()?; // rusqlite::TransactionBehavior::Deferred
             {
                 let mut fetch_item = txn.prepare_cached(FETCH_QUERY)?;
@@ -470,7 +546,7 @@ impl KvStore for KvSqlite {
         let key_id = get_key_id(lock_info.profile_key.clone()).await;
         let mut ctx = self.conn_pool.acquire().await?;
         let (lock_entry, entry) = ctx
-            .enter(move |conn| {
+            .perform(move |conn| {
                 // start a write transaction to ensure we have only the latest state
                 let txn =
                     conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
@@ -552,7 +628,17 @@ impl KvStore for KvSqlite {
                 result
             })
             .await?;
-        Ok((lock_entry.map(|entry| Lock { ctx, entry }), entry))
+        let token = if let Some(lock_entry) = lock_entry {
+            let token = LockToken::next();
+            self.locks
+                .lock()
+                .unwrap()
+                .insert(token, Lock { entry: lock_entry });
+            Some(token)
+        } else {
+            None
+        };
+        Ok((token, entry))
     }
 }
 

@@ -78,7 +78,7 @@ impl SqlitePoolConfig {
             async move {
                 let mut conn = ConnectionContext::new(path, flags, vfs)?;
                 if !conn_setup.is_empty() {
-                    conn.enter(move |mut conn| {
+                    conn.perform(move |mut conn| {
                         for setup in conn_setup.iter() {
                             setup(&mut conn)?;
                         }

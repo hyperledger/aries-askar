@@ -6,7 +6,6 @@ use async_resource::Managed;
 
 use async_trait::async_trait;
 
-use futures_channel::mpsc::{channel, Receiver, Sender};
 use futures_util::stream::{Stream, StreamExt};
 
 use postgres_types::ToSql;
@@ -14,8 +13,7 @@ use tokio_postgres::{Connection, Row};
 
 use super::error::{KvError, KvResult};
 use super::types::{
-    KeyId, KvEntry, KvFetchOptions, KvKeySelect, KvLockOperation, KvLockToken, KvScanToken, KvTag,
-    KvUpdateEntry, ProfileId,
+    KeyId, KvEntry, KvFetchOptions, KvKeySelect, KvLockOperation, KvTag, KvUpdateEntry, ProfileId,
 };
 use super::wql::{
     self,
@@ -267,11 +265,8 @@ impl Scan {
     }
 }
 
-impl KvScanToken for Scan {}
-
 #[derive(Clone, Debug)]
 pub struct Lock {}
-impl KvLockToken for Lock {}
 
 #[async_trait]
 impl KvStore for KvPostgres {

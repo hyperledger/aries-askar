@@ -16,9 +16,7 @@ mod keys;
 mod types;
 mod wql;
 
-use types::{
-    KvEntry, KvFetchOptions, KvKeySelect, KvLockOperation, KvLockToken, KvScanToken, KvUpdateEntry,
-};
+use types::{KvEntry, KvFetchOptions, KvKeySelect, KvLockOperation, KvUpdateEntry};
 
 #[async_trait]
 pub trait KvProvisionStore {
@@ -28,8 +26,8 @@ pub trait KvProvisionStore {
 /// Common trait for all key-value storage backends
 #[async_trait]
 pub trait KvStore {
-    type LockToken: KvLockToken;
-    type ScanToken: KvScanToken;
+    type LockToken: Send + Sync + Sized + 'static;
+    type ScanToken: Send + Sync + Sized + 'static;
 
     /// Count the number of entries for a given record category
     async fn count(

@@ -4,12 +4,8 @@ pub type ProfileId = Vec<u8>;
 
 pub type KeyId = Vec<u8>;
 
-pub trait KvLockToken: Send {}
-
-pub trait KvScanToken: Send {}
-
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum KvLockOperation<T: KvLockToken> {
+pub enum KvLockOperation<T> {
     Verify(T),
     Release(T),
 }
