@@ -1,3 +1,5 @@
+use std::fmt::{self, Debug, Formatter};
+
 use super::error::KvResult;
 
 pub type ProfileId = Vec<u8>;
@@ -22,7 +24,7 @@ pub enum KvLockStatus {
     Unlocked,
 }
 
-#[derive(Clone, Debug, Eq, Zeroize)]
+#[derive(Clone, Eq, Zeroize)]
 pub struct KvEntry {
     pub key_id: KeyId,
     pub category: Vec<u8>,
@@ -50,6 +52,31 @@ impl KvEntry {
 
     pub fn is_locked(&self) -> bool {
         return self.locked == Some(KvLockStatus::Locked);
+    }
+}
+
+struct MaybeStr<'a>(&'a [u8]);
+
+impl Debug for MaybeStr<'_> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        if let Ok(sval) = std::str::from_utf8(self.0) {
+            write!(f, "{:?}", sval)
+        } else {
+            write!(f, "_\"{}\"", hex::encode(self.0))
+        }
+    }
+}
+
+impl Debug for KvEntry {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.debug_struct("KvEntry")
+            .field("key_id", &self.key_id)
+            .field("category", &MaybeStr(&self.category))
+            .field("name", &MaybeStr(&self.name))
+            .field("value", &MaybeStr(&self.value))
+            .field("tags", &self.tags)
+            .field("locked", &self.locked)
+            .finish()
     }
 }
 

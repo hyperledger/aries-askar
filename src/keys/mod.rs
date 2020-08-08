@@ -1,1 +1,1 @@
-mod indy_key;
+pub mod indy_key;

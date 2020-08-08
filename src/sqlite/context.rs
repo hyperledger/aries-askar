@@ -5,8 +5,9 @@ use std::task::{Context, Poll};
 use async_channel::{bounded, Receiver, SendError};
 use async_resource::thread::{Task, ThreadResource};
 use futures_util::stream::Stream;
-use rusqlite::{Connection, Error, OpenFlags, Row, Rows, ToSql};
-use suspend::Suspend;
+use suspend::block_on;
+
+pub use rusqlite::{params, Connection, Error, OpenFlags, Row, Rows, ToSql};
 
 use crate::error::{KvError, KvResult};
 
@@ -16,7 +17,8 @@ pub struct ConnectionContext {
 }
 
 impl ConnectionContext {
-    pub fn new(path: String, flags: OpenFlags, vfs: Option<String>) -> Result<Self, Error> {
+    pub fn new(path: String, flags: Option<OpenFlags>, vfs: Option<String>) -> Result<Self, Error> {
+        let flags = flags.unwrap_or_default();
         let res = ThreadResource::try_create(move || {
             if let Some(ref vfs) = vfs {
                 Connection::open_with_flags_and_vfs(path, flags, vfs.as_str())
@@ -74,11 +76,10 @@ impl ConnectionContext {
                     return;
                 }
             };
-            let mut eval = Suspend::new();
             while !proc.completed() {
                 match proc.next(&mut rows, conn) {
                     Some(result) => {
-                        match eval.block_on(result_send.send(result)) {
+                        match block_on(result_send.send(result)) {
                             Ok(_) => break,
                             Err(SendError(result)) => {
                                 // receiver has gone away
@@ -194,5 +195,57 @@ impl<P: BatchProcessor> ResultProcessor for BatchQuery<P> {
                     .map(|r| (r, self.completed)),
             )
         }
+    }
+}
+
+pub struct SqlParams<'a> {
+    items: Vec<Box<dyn ToSql + Send + 'a>>,
+}
+
+impl<'a> SqlParams<'a> {
+    pub fn new() -> Self {
+        Self { items: vec![] }
+    }
+
+    pub fn from_iter<I, T>(items: I) -> Self
+    where
+        I: IntoIterator<Item = T>,
+        T: ToSql + Send + 'a,
+    {
+        let mut s = Self::new();
+        s.extend(items);
+        s
+    }
+
+    pub fn push<T>(&mut self, item: T)
+    where
+        T: ToSql + Send + 'a,
+    {
+        self.items.push(Box::new(item))
+    }
+
+    pub fn extend<I, T>(&mut self, items: I)
+    where
+        I: IntoIterator<Item = T>,
+        T: ToSql + Send + 'a,
+    {
+        self.items.extend(
+            items
+                .into_iter()
+                .map(|item| Box::new(item) as Box<dyn ToSql + Send>),
+        )
+    }
+
+    pub fn len(&self) -> usize {
+        self.items.len()
+    }
+}
+
+impl<'a> IntoIterator for SqlParams<'a> {
+    type Item = Box<dyn ToSql + Send + 'a>;
+    type IntoIter = std::vec::IntoIter<Self::Item>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.items.into_iter()
     }
 }

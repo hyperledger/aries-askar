@@ -1,3 +1,5 @@
+use async_resource::AcquireError;
+
 pub type KvResult<T> = Result<T, KvError>;
 
 #[derive(Debug)] // FIXME
@@ -6,7 +8,7 @@ pub enum KvError {
     BackendError(String),
     Disconnected,
     EncryptionError,
-    InputError,
+    InputError(String),
     LockFailure,
     Timeout,
     UnknownKey,
@@ -14,16 +16,16 @@ pub enum KvError {
     Unsupported,
 }
 
-impl<E> From<async_resource::AcquireError<E>> for KvError
+impl<E> From<AcquireError<E>> for KvError
 where
     E: Into<KvError>,
 {
-    fn from(err: async_resource::AcquireError<E>) -> Self {
+    fn from(err: AcquireError<E>) -> Self {
         match err {
-            // AcquireError::Busy => KvError::Busy,
-            async_resource::AcquireError::PoolClosed => KvError::Disconnected,
-            async_resource::AcquireError::ResourceError(err) => err.into(),
-            async_resource::AcquireError::Timeout => KvError::Timeout,
+            AcquireError::PoolBusy => KvError::Busy,
+            AcquireError::PoolClosed => KvError::Disconnected,
+            AcquireError::ResourceError(err) => err.into(),
+            AcquireError::Timeout => KvError::Timeout,
         }
     }
 }

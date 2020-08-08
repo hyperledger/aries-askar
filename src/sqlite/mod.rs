@@ -21,10 +21,10 @@ use super::wql::{
 };
 use super::{KvProvisionStore, KvStore};
 
-mod context;
+pub(crate) mod context;
 mod pool;
 
-use context::{BatchProcessor, BatchQuery, ConnectionContext, QueryResults};
+use context::{BatchProcessor, BatchQuery, ConnectionContext, QueryResults, SqlParams};
 use pool::{SqlitePool, SqlitePoolConfig};
 
 const COUNT_QUERY: &'static str = "SELECT COUNT(*) FROM items i
@@ -111,58 +111,6 @@ fn extend_query<'a>(
         query.push_str(&limit);
     };
     Ok(query)
-}
-
-pub struct SqlParams<'a> {
-    items: Vec<Box<dyn ToSql + Send + 'a>>,
-}
-
-impl<'a> SqlParams<'a> {
-    pub fn new() -> Self {
-        Self { items: vec![] }
-    }
-
-    pub fn from_iter<I, T>(items: I) -> Self
-    where
-        I: IntoIterator<Item = T>,
-        T: ToSql + Send + 'a,
-    {
-        let mut s = Self::new();
-        s.extend(items);
-        s
-    }
-
-    pub fn push<T>(&mut self, item: T)
-    where
-        T: ToSql + Send + 'a,
-    {
-        self.items.push(Box::new(item))
-    }
-
-    pub fn extend<I, T>(&mut self, items: I)
-    where
-        I: IntoIterator<Item = T>,
-        T: ToSql + Send + 'a,
-    {
-        self.items.extend(
-            items
-                .into_iter()
-                .map(|item| Box::new(item) as Box<dyn ToSql + Send>),
-        )
-    }
-
-    pub fn len(&self) -> usize {
-        self.items.len()
-    }
-}
-
-impl<'a> IntoIterator for SqlParams<'a> {
-    type Item = Box<dyn ToSql + Send + 'a>;
-    type IntoIter = std::vec::IntoIter<Self::Item>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.items.into_iter()
-    }
 }
 
 pub struct KvSqlite<'a> {
@@ -645,7 +593,7 @@ impl<'a> KvStore for KvSqlite<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use smol::block_on;
+    use suspend::block_on;
 
     #[test]
     fn sqlite_init() {

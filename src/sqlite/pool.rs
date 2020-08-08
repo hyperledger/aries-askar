@@ -24,6 +24,7 @@ impl From<Error> for KvError {
 
 pub struct SqlitePoolConfig {
     path: String,
+    in_memory: bool,
     flags: OpenFlags,
     vfs: Option<String>,
     conn_setup: Vec<Box<ConnSetupFn>>,
@@ -33,6 +34,7 @@ impl SqlitePoolConfig {
     pub fn file<S: AsRef<str>>(path: S) -> Self {
         Self {
             path: path.as_ref().to_string(),
+            in_memory: false,
             flags: OpenFlags::default(),
             conn_setup: vec![],
             vfs: None,
@@ -43,6 +45,7 @@ impl SqlitePoolConfig {
         let seq = INMEM_SEQ.fetch_add(1, Ordering::SeqCst);
         Self {
             path: format!("file:in-mem-{}?mode=memory&cache=shared", seq),
+            in_memory: true,
             flags: OpenFlags::default(),
             conn_setup: vec![],
             vfs: None,
@@ -76,7 +79,7 @@ impl SqlitePoolConfig {
             let (path, flags, vfs, conn_setup) =
                 (path.clone(), flags.clone(), vfs.clone(), conn_setup.clone());
             async move {
-                let mut conn = ConnectionContext::new(path, flags, vfs)?;
+                let mut conn = ConnectionContext::new(path, Some(flags), vfs)?;
                 if !conn_setup.is_empty() {
                     conn.perform(move |mut conn| {
                         for setup in conn_setup.iter() {
@@ -89,7 +92,12 @@ impl SqlitePoolConfig {
                 Ok(conn)
             }
         })
-        .min_count(min_size)
+        .min_count(if self.in_memory {
+            // enforce min count - dropping all in-memory instances would erase the DB
+            std::cmp::max(1, min_size)
+        } else {
+            min_size
+        })
         .max_count(max_size)
         // FIXME - on release, check that connection thread is idle (perform a task)
         .build()

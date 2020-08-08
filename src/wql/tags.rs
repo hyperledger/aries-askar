@@ -1,5 +1,5 @@
 use super::{AbstractQuery, Query};
-use crate::error::{KvError, KvResult};
+use crate::error::KvResult;
 
 pub type TagQuery = AbstractQuery<TagName, String>;
 
@@ -12,7 +12,7 @@ pub fn tag_query(query: Query) -> KvResult<TagQuery> {
                 Ok(TagName::Encrypted(k))
             }
         })
-        .map_err(|_| KvError::InputError)?;
+        .unwrap();
     validate_tag_query(&result)?;
     Ok(result)
 }

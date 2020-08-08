@@ -1,9 +1,9 @@
-use std::net::TcpStream;
+use std::net::{TcpStream, ToSocketAddrs};
 use std::sync::Arc;
 
-use async_resource::{Pool, PoolConfig};
+use async_io::Async;
 
-use smol::Async;
+use async_resource::{Pool, PoolConfig};
 
 use tokio_postgres::{
     config::{Config, Host},
@@ -84,22 +84,28 @@ async fn connect(config: Config) -> KvResult<Client> {
     let mut ports = config.get_ports().iter().cloned();
     for host in config.get_hosts() {
         let port = ports.next().unwrap_or(DEFAULT_PORT);
-        let hostname = match host {
+        if let Some((hostname, addr)) = match host {
             #[cfg(unix)]
-            Host::Unix(path) => path.as_os_str().to_str().unwrap_or(""),
-            Host::Tcp(tcp) => tcp.as_str(),
-        };
-        let stream = match Async::<TcpStream>::connect(hostname).await {
-            Ok(s) => s,
-            Err(err) => {
-                println!("failed connect: {}", hostname);
-                continue;
-            }
-        };
-        // FIXME continue on error?
-        let (client, connection) = config.connect_raw(stream.compat(), NoTls).await?;
-        // FIXME add connection to executor
-        return Ok(client);
+            Host::Unix(path) => unimplemented!(), // path.as_os_str().to_str().unwrap_or(""),
+            Host::Tcp(hostname) => hostname
+                .as_str()
+                .to_socket_addrs()
+                .map_err(|_| KvError::Disconnected)?
+                .next()
+                .map(|addr| (hostname, addr)),
+        } {
+            let stream = match Async::<TcpStream>::connect(addr).await {
+                Ok(s) => s,
+                Err(err) => {
+                    println!("failed connect: {}", hostname);
+                    continue;
+                }
+            };
+            // FIXME continue on error?
+            let (client, connection) = config.connect_raw(stream.compat(), NoTls).await?;
+            // FIXME add connection to executor
+            return Ok(client);
+        }
     }
     Err(KvError::Disconnected)
 }

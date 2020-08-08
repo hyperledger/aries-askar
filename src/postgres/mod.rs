@@ -468,7 +468,7 @@ impl KvStore for KvPostgres {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use smol::block_on;
+    use suspend::block_on;
 
     /*
         #[test]
