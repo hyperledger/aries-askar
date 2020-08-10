@@ -30,6 +30,12 @@ where
     }
 }
 
+impl From<sqlx::Error> for KvError {
+    fn from(err: sqlx::Error) -> Self {
+        KvError::BackendError(err.to_string())
+    }
+}
+
 impl From<indy_utils::EncryptionError> for KvError {
     fn from(_err: indy_utils::EncryptionError) -> Self {
         KvError::EncryptionError

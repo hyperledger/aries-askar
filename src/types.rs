@@ -100,10 +100,27 @@ pub struct KvUpdateEntry {
     pub expiry: Option<u64>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Zeroize)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Zeroize)]
 pub enum KvTag {
     Encrypted(Vec<u8>, Vec<u8>),
     Plaintext(Vec<u8>, Vec<u8>),
+}
+
+impl Debug for KvTag {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Encrypted(name, value) => f
+                .debug_tuple("Encrypted")
+                .field(&MaybeStr(name))
+                .field(&MaybeStr(value))
+                .finish(),
+            Self::Plaintext(name, value) => f
+                .debug_tuple("Plaintext")
+                .field(&MaybeStr(name))
+                .field(&MaybeStr(value))
+                .finish(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
