@@ -4,10 +4,8 @@ use std::sync::{
     Arc, Mutex,
 };
 
-use async_resource::Managed;
 use async_trait::async_trait;
-use futures_util::stream::StreamExt;
-use rusqlite::{params, Connection, Row, ToSql};
+use futures_util::stream::{BoxStream, StreamExt};
 
 use super::error::{KvError, KvResult};
 use super::types::{
@@ -21,11 +19,62 @@ use super::wql::{
 };
 use super::{KvProvisionStore, KvStore};
 
-pub(crate) mod context;
-mod pool;
+use async_stream::try_stream;
 
-use context::{BatchProcessor, BatchQuery, ConnectionContext, QueryResults, SqlParams};
-use pool::{SqlitePool, SqlitePoolConfig};
+use sqlx::{
+    database::HasArguments,
+    sqlite::{Sqlite, SqlitePool, SqlitePoolOptions, SqliteRow},
+    Arguments, Database, IntoArguments, Row,
+};
+
+const PAGE_SIZE: usize = 5;
+
+struct QueryParams<'q, DB: Database> {
+    args: <DB as HasArguments<'q>>::Arguments,
+    count: usize,
+}
+
+impl<'q, DB: Database> QueryParams<'q, DB> {
+    pub fn new() -> Self {
+        Self {
+            args: Default::default(),
+            count: 0,
+        }
+    }
+
+    pub fn extend<I, T>(&mut self, vals: I)
+    where
+        I: IntoIterator<Item = T>,
+        T: 'q + Send + sqlx::Encode<'q, DB> + sqlx::Type<DB>,
+    {
+        for item in vals {
+            self.args.add(item);
+            self.count += 1;
+        }
+    }
+
+    pub fn push<T>(&mut self, val: T)
+    where
+        T: 'q + Send + sqlx::Encode<'q, DB> + sqlx::Type<DB>,
+    {
+        self.args.add(val);
+        self.count += 1;
+    }
+
+    pub fn len(&self) -> usize {
+        self.count
+    }
+}
+
+impl<'q, DB> IntoArguments<'q, DB> for QueryParams<'q, DB>
+where
+    DB: Database,
+    <DB as HasArguments<'q>>::Arguments: IntoArguments<'q, DB>,
+{
+    fn into_arguments(self) -> <DB as HasArguments<'q>>::Arguments {
+        self.args.into_arguments()
+    }
+}
 
 const COUNT_QUERY: &'static str = "SELECT COUNT(*) FROM items i
     WHERE key_id = ?1 AND category = ?2
@@ -38,40 +87,6 @@ const INSERT_QUERY: &'static str = "INSERT INTO items(key_id, category, name, va
 const SCAN_QUERY: &'static str = "SELECT id, name, value FROM items i WHERE key_id = ?1
     AND category = ?2 AND (expiry IS NULL OR expiry > CURRENT_TIME)";
 const TAG_QUERY: &'static str = "SELECT name, value, plaintext FROM items_tags WHERE item_id = ?1";
-
-struct ScanQuery {
-    key_id: KeyId,
-    category: Vec<u8>,
-    retrieve_tags: bool,
-}
-
-impl BatchProcessor for ScanQuery {
-    type Row = (i64, Vec<u8>, Vec<u8>);
-    type Result = Vec<KvEntry>;
-    fn process_row(&mut self, row: &Row) -> KvResult<Self::Row> {
-        Ok((row.get(0)?, row.get(1)?, row.get(2)?))
-    }
-    fn process_batch(&mut self, rows: Vec<Self::Row>, conn: &Connection) -> KvResult<Self::Result> {
-        let mut result = vec![];
-        for (row_id, name, value) in rows {
-            let tags = if self.retrieve_tags {
-                // FIXME fetch tags in batches for efficiency
-                Some(retrieve_tags(&conn, row_id)?)
-            } else {
-                None
-            };
-            result.push(KvEntry {
-                key_id: self.key_id.clone(),
-                category: self.category.clone(),
-                name,
-                value,
-                tags,
-                locked: None,
-            });
-        }
-        Ok(result)
-    }
-}
 
 fn replace_arg_placeholders(filter: &str, start_index: i64) -> (String, i64) {
     let mut index = start_index;
@@ -86,12 +101,12 @@ fn replace_arg_placeholders(filter: &str, start_index: i64) -> (String, i64) {
 
 fn extend_query<'a>(
     query: &str,
-    params: &mut SqlParams,
+    args: &mut QueryParams<'a, Sqlite>,
     tag_filter: Option<wql::Query>,
     limit: Option<(i64, i64)>,
 ) -> KvResult<String> {
     let mut query = query.to_string();
-    let mut last_idx = params.len() as i64 + 1;
+    let mut last_idx = args.len() as i64 + 1;
 
     if let Some(tag_filter) = tag_filter {
         let tag_query = tag_query(tag_filter)?;
@@ -99,13 +114,13 @@ fn extend_query<'a>(
         let filter: String = enc.encode_query(&tag_query)?;
         let (filter, next_idx) = replace_arg_placeholders(&filter, last_idx);
         last_idx = next_idx;
-        params.extend(enc.arguments);
+        args.extend(enc.arguments);
         query.push_str(" AND "); // assumes WHERE already occurs
         query.push_str(&filter);
     };
     if let Some((offs, limit)) = limit {
-        params.push(offs);
-        params.push(limit);
+        args.push(offs);
+        args.push(limit);
         let (limit, _next_idx) = replace_arg_placeholders(" LIMIT $$, $$", last_idx);
         // last_idx = next_idx;
         query.push_str(&limit);
@@ -113,16 +128,19 @@ fn extend_query<'a>(
     Ok(query)
 }
 
-pub struct KvSqlite<'a> {
+pub struct KvSqlite {
     conn_pool: SqlitePool,
-    scans: Arc<Mutex<BTreeMap<ScanToken, Scan<'a>>>>,
+    scans: Arc<Mutex<BTreeMap<ScanToken, Scan<'static>>>>,
     locks: Arc<Mutex<BTreeMap<LockToken, Lock>>>,
 }
 
-impl KvSqlite<'_> {
-    pub fn open_in_memory() -> KvResult<Self> {
-        let config = SqlitePoolConfig::in_memory();
-        let conn_pool = config.into_pool(1, 5);
+impl KvSqlite {
+    pub async fn open_in_memory() -> KvResult<Self> {
+        let conn_pool = SqlitePoolOptions::default()
+            .min_connections(1)
+            .max_connections(10)
+            .connect(":memory:")
+            .await?;
         Ok(Self {
             conn_pool,
             scans: Arc::new(Mutex::new(BTreeMap::new())),
@@ -132,12 +150,10 @@ impl KvSqlite<'_> {
 }
 
 #[async_trait]
-impl KvProvisionStore for KvSqlite<'_> {
+impl KvProvisionStore for KvSqlite {
     async fn provision(&self) -> KvResult<()> {
-        let mut ctx = self.conn_pool.acquire().await?;
-        ctx.perform(|conn| {
-            conn.execute_batch(
-                r#"
+        sqlx::query(
+            r#"
             PRAGMA locking_mode=EXCLUSIVE;
             PRAGMA foreign_keys=ON;
             BEGIN EXCLUSIVE TRANSACTION;
@@ -178,10 +194,11 @@ impl KvProvisionStore for KvSqlite<'_> {
 
             END TRANSACTION;
         "#,
-            )?;
-            Ok(())
-        })
-        .await
+        )
+        .persistent(false)
+        .execute(&self.conn_pool)
+        .await?;
+        Ok(())
     }
 }
 
@@ -190,55 +207,24 @@ async fn get_key_id(k: KvKeySelect) -> KeyId {
     b"1".to_vec()
 }
 
-fn retrieve_tags(conn: &Connection, row_id: i64) -> KvResult<Vec<KvTag>> {
-    let mut tag_q = conn.prepare_cached(TAG_QUERY)?;
-    let rows = tag_q
-        .query_map(&[&row_id], |row| {
-            let name = row.get(0)?;
-            let value = row.get(1)?;
-            let plaintext = row.get(2)?;
+async fn fetch_row_tags(pool: &SqlitePool, row_id: i64) -> KvResult<Option<Vec<KvTag>>> {
+    let tags = sqlx::query(TAG_QUERY)
+        .bind(row_id)
+        .try_map(|row: SqliteRow| {
+            let name = row.try_get(0)?;
+            let value = row.try_get(1)?;
+            let plaintext = row.try_get(2)?;
             match plaintext {
                 0 => Ok(KvTag::Encrypted(name, value)),
                 _ => Ok(KvTag::Plaintext(name, value)),
             }
-        })?
-        .collect::<Result<Vec<_>, _>>()?;
-    Ok(rows)
+        })
+        .fetch_all(pool)
+        .await?;
+    Ok(if tags.is_empty() { None } else { Some(tags) })
 }
 
-pub struct Scan<'s> {
-    ctx: Managed<ConnectionContext>,
-    query: Option<QueryResults<'s, (Vec<KvEntry>, bool)>>,
-}
-impl<'s> Scan<'s> {
-    fn new(
-        ctx: Managed<ConnectionContext>,
-        sql: String,
-        params: SqlParams<'static>,
-        query: ScanQuery,
-    ) -> Self {
-        let mut result = Scan { ctx, query: None };
-        // hack around lifetime issues
-        // we own the context, so this is safe
-        let ctx = unsafe {
-            std::mem::transmute::<
-                &'_ mut Managed<ConnectionContext>,
-                &'s mut Managed<ConnectionContext>,
-            >(&mut result.ctx)
-        };
-        let query = ctx.process_query(sql, params, BatchQuery::new(20, query));
-        result.query.replace(query);
-        result
-    }
-
-    pub async fn next(&mut self) -> KvResult<Option<(Vec<KvEntry>, bool)>> {
-        if let Some(query) = self.query.as_mut() {
-            query.next().await.transpose()
-        } else {
-            Ok(None)
-        }
-    }
-}
+type Scan<'q> = BoxStream<'q, KvResult<Vec<KvEntry>>>;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ScanToken {
@@ -304,7 +290,7 @@ impl LockToken {
 }
 
 #[async_trait]
-impl<'a> KvStore for KvSqlite<'a> {
+impl KvStore for KvSqlite {
     type ScanToken = ScanToken;
     type LockToken = LockToken;
 
@@ -316,16 +302,14 @@ impl<'a> KvStore for KvSqlite<'a> {
     ) -> KvResult<u64> {
         let key_id = get_key_id(client_key).await;
         let category = category.to_vec();
-        let mut ctx = self.conn_pool.acquire().await?;
-        let count: i64 = ctx
-            .perform(move |conn| {
-                let mut params = SqlParams::from_iter(vec![&key_id, &category]);
-                let query = extend_query(COUNT_QUERY, &mut params, tag_filter, None)?;
-                let count = conn.query_row(query.as_str(), params, |row| Ok(row.get(0)?))?;
-                KvResult::Ok(count)
-            })
+        let mut args = QueryParams::new();
+        args.push(key_id);
+        args.push(category);
+        let query = extend_query(COUNT_QUERY, &mut args, tag_filter, None)?;
+        let count = sqlx::query_with(query.as_str(), args)
+            .fetch_one(&self.conn_pool)
             .await?;
-        Ok(count as u64)
+        KvResult::Ok(count.get::<i64, _>(0) as u64)
     }
 
     async fn fetch(
@@ -338,37 +322,29 @@ impl<'a> KvStore for KvSqlite<'a> {
         let key_id = get_key_id(client_key).await;
         let category = category.to_vec();
         let name = name.to_vec();
-        let mut ctx = self.conn_pool.acquire().await?;
-        ctx.perform(move |conn| {
-            let q_key_id = key_id.clone();
-            let q_category = category.clone();
-            let q_name = name.clone();
-
-            let mut fetch_q = conn.prepare_cached(FETCH_QUERY)?;
-            let result = fetch_q.query_row(&[&q_key_id, &q_category, &q_name], |row| {
-                Ok((row.get::<_, i64>(0)?, row.get(1)?))
-            });
-            match result {
-                Ok((row_id, value)) => {
-                    let tags = if options.retrieve_tags {
-                        Some(retrieve_tags(&conn, row_id)?)
-                    } else {
-                        None
-                    };
-                    Ok(Some(KvEntry {
-                        key_id,
-                        category,
-                        name,
-                        value,
-                        tags,
-                        locked: None,
-                    }))
-                }
-                Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
-                Err(err) => Err(err.into()),
-            }
-        })
-        .await
+        if let Some(row) = sqlx::query(FETCH_QUERY)
+            .bind(key_id.clone())
+            .bind(category.clone())
+            .bind(name.clone())
+            .fetch_optional(&self.conn_pool)
+            .await?
+        {
+            let tags = if options.retrieve_tags {
+                fetch_row_tags(&self.conn_pool, row.try_get(0)?).await?
+            } else {
+                None
+            };
+            Ok(Some(KvEntry {
+                key_id,
+                category,
+                name,
+                value: row.try_get(1)?,
+                tags,
+                locked: None,
+            }))
+        } else {
+            Ok(None)
+        }
     }
 
     async fn scan_start(
@@ -380,23 +356,44 @@ impl<'a> KvStore for KvSqlite<'a> {
         offset: Option<u64>,
         max_rows: Option<u64>,
     ) -> KvResult<Self::ScanToken> {
+        let pool = self.conn_pool.clone();
         let category = category.to_vec();
         let key_id = get_key_id(client_key).await;
-        let ctx = self.conn_pool.acquire().await?;
         let limit = Some((0i64, max_rows.map(|r| r as i64).unwrap_or(-1)));
-        let mut params = SqlParams::new();
-        params.push(key_id.clone());
-        params.push(category.clone());
-        let sql = extend_query(SCAN_QUERY, &mut params, tag_filter, limit)?;
-        let scan = ScanQuery {
-            key_id,
-            category,
-            retrieve_tags: options.retrieve_tags,
+        let scan = try_stream! {
+            let mut params = QueryParams::new();
+            params.push(key_id.clone());
+            params.push(category.clone());
+            let query = extend_query(SCAN_QUERY, &mut params, tag_filter, limit)?;
+            let mut batch = Vec::with_capacity(PAGE_SIZE);
+            let mut rows = sqlx::query_with(query.as_str(), params).fetch(&pool);
+            while let Some(row) = rows.next().await {
+                let row = row?;
+                let tags = if options.retrieve_tags {
+                    // FIXME - fetch tags in batches
+                    fetch_row_tags(&pool, row.try_get(0)?).await?
+                } else {
+                    None
+                };
+                let entry = KvEntry {
+                    key_id: key_id.clone(),
+                    category: category.clone(),
+                    name: row.try_get(1)?,
+                    value: row.try_get(2)?,
+                    locked: None,
+                    tags,
+                };
+                batch.push(entry);
+                if batch.len() == PAGE_SIZE {
+                    yield batch.split_off(0);
+                }
+            }
+            if batch.len() > 0 {
+                yield batch;
+            }
         };
-
-        let scan = Scan::new(ctx, sql, params, scan);
         let token = ScanToken::next();
-        self.scans.lock().unwrap().insert(token, scan);
+        self.scans.lock().unwrap().insert(token, scan.boxed());
         Ok(token)
     }
 
@@ -407,16 +404,17 @@ impl<'a> KvStore for KvSqlite<'a> {
         // FIXME handle lock error
         let scan = self.scans.lock().unwrap().remove(&scan_token);
         if let Some(mut scan) = scan {
-            match scan.next().await? {
-                Some((rows, done)) => Ok((
-                    rows,
-                    if done {
-                        None
-                    } else {
+            match scan.next().await {
+                Some(Ok(rows)) => {
+                    let token = if rows.len() == PAGE_SIZE {
                         self.scans.lock().unwrap().insert(scan_token, scan);
                         Some(scan_token)
-                    },
-                )),
+                    } else {
+                        None
+                    };
+                    Ok((rows, token))
+                }
+                Some(Err(err)) => Err(err),
                 None => Ok((vec![], None)),
             }
         } else {
@@ -435,55 +433,56 @@ impl<'a> KvStore for KvSqlite<'a> {
             updates.push((key_id, entry))
         }
 
-        let mut ctx = self.conn_pool.acquire().await?;
-        ctx.perform(move |conn| {
-            let txn = conn.transaction()?; // rusqlite::TransactionBehavior::Deferred
-            {
-                let mut fetch_item = txn.prepare_cached(FETCH_QUERY)?;
-                let mut add_item = txn.prepare_cached(INSERT_QUERY)?;
-                // FIXME - might well be faster to delete the row
-                // (and its associated tags through cascade), and insert a new row
-                let mut upd_item = txn.prepare_cached("UPDATE items SET value=?1 WHERE id=?2")?;
-                let mut add_item_tag = txn.prepare_cached(
-                    "INSERT INTO items_tags(item_id, name, value, plaintext)
-                        VALUES(?1, ?2, ?3, ?4)",
-                )?;
-                for (key_id, entry) in updates {
-                    let row: Result<i64, rusqlite::Error> = fetch_item
-                        .query_row(&[&key_id, &entry.category, &entry.name], |row| row.get(0));
-                    let row_id = match row {
-                        Ok(row_id) => {
-                            upd_item.execute(params![&row_id, &entry.value])?;
-                            txn.execute("DELETE FROM items_tags WHERE item_id=?1", &[&row_id])?;
-                            row_id
-                        }
-                        Err(rusqlite::Error::QueryReturnedNoRows) => {
-                            add_item.execute(params![
-                                &key_id,
-                                &entry.category,
-                                &entry.name,
-                                &entry.value,
-                                &entry.expiry.map(|i| i as i64),
-                            ])?;
-                            txn.last_insert_rowid()
-                        }
-                        Err(err) => return Err(err.into()),
+        let mut txn = self.conn_pool.begin().await?; // deferred write txn
+        for (key_id, entry) in updates {
+            let row_id: Option<i64> = sqlx::query_scalar(FETCH_QUERY)
+                .bind(&key_id)
+                .bind(&entry.category)
+                .bind(&entry.name)
+                .fetch_optional(&mut txn)
+                .await?;
+            let row_id = if let Some(row_id) = row_id {
+                sqlx::query("UPDATE items SET value=?1 WHERE id=?2")
+                    .bind(row_id)
+                    .bind(entry.value)
+                    .execute(&mut txn)
+                    .await?;
+                sqlx::query("DELETE FROM items_tags WHERE item_id=?1")
+                    .bind(row_id)
+                    .execute(&mut txn)
+                    .await?;
+                row_id
+            } else {
+                sqlx::query(INSERT_QUERY)
+                    .bind(&key_id)
+                    .bind(entry.category)
+                    .bind(entry.name)
+                    .bind(entry.value)
+                    .bind(entry.expiry.map(|i| i as i64))
+                    .execute(&mut txn)
+                    .await?
+                    .last_insert_rowid()
+            };
+            if let Some(tags) = entry.tags.as_ref() {
+                for tag in tags {
+                    let (name, value, plaintext) = match tag {
+                        KvTag::Encrypted(name, value) => (name, value, 0),
+                        KvTag::Plaintext(name, value) => (name, value, 1),
                     };
-                    if let Some(tags) = entry.tags.as_ref() {
-                        for tag in tags {
-                            let (name, value, plaintext) = match tag {
-                                KvTag::Encrypted(name, value) => (name, value, 0),
-                                KvTag::Plaintext(name, value) => (name, value, 1),
-                            };
-                            add_item_tag.execute(params![&row_id, name, value, plaintext])?;
-                        }
-                    }
+                    sqlx::query(
+                        "INSERT INTO items_tags(item_id, name, value, plaintext)
+                             VALUES(?1, ?2, ?3, ?4)",
+                    )
+                    .bind(row_id)
+                    .bind(name)
+                    .bind(value)
+                    .bind(plaintext)
+                    .execute(&mut txn)
+                    .await?;
                 }
             }
-            txn.commit()?;
-            Ok(())
-        })
-        .await
+        }
+        Ok(txn.commit().await?)
     }
 
     async fn create_lock(
@@ -491,7 +490,10 @@ impl<'a> KvStore for KvSqlite<'a> {
         lock_info: KvUpdateEntry,
         acquire_timeout_ms: Option<u64>,
     ) -> KvResult<(Option<Self::LockToken>, KvEntry)> {
-        let key_id = get_key_id(lock_info.profile_key.clone()).await;
+        Err(KvError::Disconnected)
+    }
+
+    /*let key_id = get_key_id(lock_info.profile_key.clone()).await;
         let mut ctx = self.conn_pool.acquire().await?;
         let (lock_entry, entry) = ctx
             .perform(move |conn| {
@@ -587,7 +589,7 @@ impl<'a> KvStore for KvSqlite<'a> {
             None
         };
         Ok((token, entry))
-    }
+    }*/
 }
 
 #[cfg(test)]
@@ -597,30 +599,28 @@ mod tests {
 
     #[test]
     fn sqlite_init() {
-        let db = KvSqlite::open_in_memory().unwrap();
-        block_on(db.provision()).unwrap();
+        block_on(async {
+            let db = KvSqlite::open_in_memory().await?;
+            db.provision().await?;
+            KvResult::Ok(())
+        })
+        .unwrap()
     }
 
     #[test]
     fn sqlite_fetch_fail() {
-        let db = KvSqlite::open_in_memory().unwrap();
-        block_on(db.provision()).unwrap();
-
-        let profile_key = KvKeySelect::ForProfile(vec![]);
-        let options = KvFetchOptions::default();
-        let row = db.fetch(profile_key, b"cat", b"name", options);
-        let result = block_on(row).unwrap();
-        assert!(result.is_none())
+        let result = block_on(async {
+            let db = KvSqlite::open_in_memory().await?;
+            db.provision().await?;
+            let profile_key = KvKeySelect::ForProfile(vec![]);
+            let options = KvFetchOptions::default();
+            KvResult::Ok(db.fetch(profile_key, b"cat", b"name", options).await?)
+        });
+        assert!(result.unwrap().is_none())
     }
 
     #[test]
     fn sqlite_add_fetch() {
-        let db = KvSqlite::open_in_memory().unwrap();
-        block_on(db.provision()).unwrap();
-
-        let profile_key = KvKeySelect::ForProfile(vec![]);
-        let options = KvFetchOptions::new(true, true, false);
-
         let test_row = KvEntry {
             key_id: b"1".to_vec(),
             category: b"cat".to_vec(),
@@ -630,23 +630,34 @@ mod tests {
             locked: None,
         };
 
-        let updates = vec![KvUpdateEntry {
-            profile_key: profile_key.clone(),
-            category: test_row.category.clone(),
-            name: test_row.name.clone(),
-            value: test_row.value.clone(),
-            tags: None,
-            expiry: None,
-        }];
-        block_on(db.update(updates, None)).unwrap();
+        let result = block_on(async {
+            let db = KvSqlite::open_in_memory().await?;
+            db.provision().await?;
 
-        let row = db.fetch(
-            profile_key.clone(),
-            &test_row.category,
-            &test_row.name,
-            options,
-        );
-        let result = block_on(row).unwrap();
+            let profile_key = KvKeySelect::ForProfile(vec![]);
+            let options = KvFetchOptions::new(true, true, false);
+
+            let updates = vec![KvUpdateEntry {
+                profile_key: profile_key.clone(),
+                category: test_row.category.clone(),
+                name: test_row.name.clone(),
+                value: test_row.value.clone(),
+                tags: None,
+                expiry: None,
+            }];
+            db.update(updates, None).await?;
+
+            let row = db
+                .fetch(
+                    profile_key.clone(),
+                    &test_row.category,
+                    &test_row.name,
+                    options,
+                )
+                .await?;
+            KvResult::Ok(row)
+        })
+        .unwrap();
         assert!(result.is_some());
         let found = result.unwrap();
         assert_eq!(found, test_row)
@@ -654,12 +665,6 @@ mod tests {
 
     #[test]
     fn sqlite_add_fetch_tags() {
-        let db = KvSqlite::open_in_memory().unwrap();
-        block_on(db.provision()).unwrap();
-
-        let profile_key = KvKeySelect::ForProfile(vec![]);
-        let options = KvFetchOptions::new(true, true, false);
-
         let test_row = KvEntry {
             key_id: b"1".to_vec(),
             category: b"cat".to_vec(),
@@ -672,33 +677,41 @@ mod tests {
             locked: None,
         };
 
-        let updates = vec![KvUpdateEntry {
-            profile_key: profile_key.clone(),
-            category: test_row.category.clone(),
-            name: test_row.name.clone(),
-            value: test_row.value.clone(),
-            tags: test_row.tags.clone(),
-            expiry: None,
-        }];
-        block_on(db.update(updates, None)).unwrap();
+        let result = block_on(async {
+            let db = KvSqlite::open_in_memory().await?;
+            db.provision().await?;
 
-        let row = db.fetch(
-            profile_key.clone(),
-            &test_row.category,
-            &test_row.name,
-            options,
-        );
-        let result = block_on(row).unwrap();
+            let profile_key = KvKeySelect::ForProfile(vec![]);
+            let options = KvFetchOptions::new(true, true, false);
+
+            let updates = vec![KvUpdateEntry {
+                profile_key: profile_key.clone(),
+                category: test_row.category.clone(),
+                name: test_row.name.clone(),
+                value: test_row.value.clone(),
+                tags: test_row.tags.clone(),
+                expiry: None,
+            }];
+            db.update(updates, None).await?;
+
+            let row = db
+                .fetch(
+                    profile_key.clone(),
+                    &test_row.category,
+                    &test_row.name,
+                    options,
+                )
+                .await?;
+            KvResult::Ok(row)
+        })
+        .unwrap();
         assert!(result.is_some());
         let found = result.unwrap();
-        assert_eq!(found, test_row)
+        assert_eq!(found, test_row);
     }
 
     #[test]
     fn sqlite_count() {
-        let db = KvSqlite::open_in_memory().unwrap();
-        block_on(db.provision()).unwrap();
-
         let category = b"cat".to_vec();
         let test_rows = vec![KvEntry {
             key_id: b"1".to_vec(),
@@ -709,34 +722,38 @@ mod tests {
             locked: None,
         }];
 
-        let profile_key = KvKeySelect::ForProfile(vec![]);
-        let updates = test_rows
-            .iter()
-            .map(|row| KvUpdateEntry {
-                profile_key: profile_key.clone(),
-                category: row.category.clone(),
-                name: row.name.clone(),
-                value: row.value.clone(),
-                tags: row.tags.clone(),
-                expiry: None,
-            })
-            .collect();
-        block_on(db.update(updates, None)).unwrap();
+        block_on(async {
+            let db = KvSqlite::open_in_memory().await?;
+            db.provision().await?;
 
-        let tag_filter = None;
-        let count = block_on(db.count(profile_key.clone(), &category, tag_filter)).unwrap();
-        assert_eq!(count, 1);
+            let profile_key = KvKeySelect::ForProfile(vec![]);
+            let updates = test_rows
+                .iter()
+                .map(|row| KvUpdateEntry {
+                    profile_key: profile_key.clone(),
+                    category: row.category.clone(),
+                    name: row.name.clone(),
+                    value: row.value.clone(),
+                    tags: row.tags.clone(),
+                    expiry: None,
+                })
+                .collect();
+            db.update(updates, None).await?;
 
-        let tag_filter = Some(wql::Query::Eq("sometag".to_string(), "someval".to_string()));
-        let count = block_on(db.count(profile_key.clone(), &category, tag_filter)).unwrap();
-        assert_eq!(count, 0);
+            let tag_filter = None;
+            let count = db.count(profile_key.clone(), &category, tag_filter).await?;
+            assert_eq!(count, 1);
+
+            let tag_filter = Some(wql::Query::Eq("sometag".to_string(), "someval".to_string()));
+            let count = db.count(profile_key.clone(), &category, tag_filter).await?;
+            assert_eq!(count, 0);
+            KvResult::Ok(())
+        })
+        .unwrap();
     }
 
     #[test]
     fn sqlite_scan() {
-        let db = KvSqlite::open_in_memory().unwrap();
-        block_on(db.provision()).unwrap();
-
         let category = b"cat".to_vec();
         let test_rows = vec![KvEntry {
             key_id: b"1".to_vec(),
@@ -747,51 +764,58 @@ mod tests {
             locked: None,
         }];
 
-        let profile_key = KvKeySelect::ForProfile(vec![]);
-        let updates = test_rows
-            .iter()
-            .map(|row| KvUpdateEntry {
-                profile_key: profile_key.clone(),
-                category: row.category.clone(),
-                name: row.name.clone(),
-                value: row.value.clone(),
-                tags: row.tags.clone(),
-                expiry: None,
-            })
-            .collect();
-        block_on(db.update(updates, None)).unwrap();
+        block_on(async {
+            let db = KvSqlite::open_in_memory().await?;
+            db.provision().await?;
 
-        let options = KvFetchOptions::default();
-        let tag_filter = None;
-        let offset = None;
-        let max_rows = None;
-        let scan_token = block_on(db.scan_start(
-            profile_key.clone(),
-            &category,
-            options,
-            tag_filter,
-            offset,
-            max_rows,
-        ))
-        .unwrap();
-        let (rows, scan_next) = block_on(db.scan_next(scan_token)).unwrap();
-        assert_eq!(rows, test_rows);
-        assert!(scan_next.is_none());
+            let profile_key = KvKeySelect::ForProfile(vec![]);
+            let updates = test_rows
+                .iter()
+                .map(|row| KvUpdateEntry {
+                    profile_key: profile_key.clone(),
+                    category: row.category.clone(),
+                    name: row.name.clone(),
+                    value: row.value.clone(),
+                    tags: row.tags.clone(),
+                    expiry: None,
+                })
+                .collect();
+            db.update(updates, None).await?;
 
-        let options = KvFetchOptions::default();
-        let tag_filter = Some(wql::Query::Eq("sometag".to_string(), "someval".to_string()));
-        let scan_token = block_on(db.scan_start(
-            profile_key.clone(),
-            &category,
-            options,
-            tag_filter,
-            offset,
-            max_rows,
-        ))
+            let options = KvFetchOptions::default();
+            let tag_filter = None;
+            let offset = None;
+            let max_rows = None;
+            let scan_token = db
+                .scan_start(
+                    profile_key.clone(),
+                    &category,
+                    options,
+                    tag_filter,
+                    offset,
+                    max_rows,
+                )
+                .await?;
+            let (rows, scan_next) = db.scan_next(scan_token).await?;
+            assert_eq!(rows, test_rows);
+            assert!(scan_next.is_none());
+
+            let options = KvFetchOptions::default();
+            let tag_filter = Some(wql::Query::Eq("sometag".to_string(), "someval".to_string()));
+            let scan_token = block_on(db.scan_start(
+                profile_key.clone(),
+                &category,
+                options,
+                tag_filter,
+                offset,
+                max_rows,
+            ))?;
+            let (rows, scan_next) = db.scan_next(scan_token).await?;
+            assert_eq!(rows, vec![]);
+            assert!(scan_next.is_none());
+            KvResult::Ok(())
+        })
         .unwrap();
-        let (rows, scan_next) = block_on(db.scan_next(scan_token)).unwrap();
-        assert_eq!(rows, vec![]);
-        assert!(scan_next.is_none());
     }
 
     #[test]

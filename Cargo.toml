@@ -14,7 +14,7 @@ crate-type = ["staticlib", "rlib", "cdylib"]
 
 [features]
 logger = ["env_logger", "log"]
-default = ["log", "postgres"]
+default = ["log", "postgres", "sqlite"]
 postgres = ["postgres-types", "tokio-postgres", "tokio-util"]
 sqlite = ["sqlx/sqlite"]
 # sqlite_bundled = ["sqlite", "rusqlite/bundled"]
@@ -23,6 +23,7 @@ sqlite = ["sqlx/sqlite"]
 async-channel = "1.1"
 async-io = "0.1.6"
 async-resource = { version = "0.1", path = "../async-resource-rs/async-resource" }
+async-stream = "0.3"
 async-trait = "0.1.30"
 env_logger = { version = "0.7.1", optional = true }
 futures-util = "0.3"
