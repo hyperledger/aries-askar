@@ -1,16 +1,16 @@
 use std::collections::BTreeMap;
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
-    Arc, Mutex,
+    Arc,
 };
 
+use async_mutex::Mutex;
 use async_stream::try_stream;
 use async_trait::async_trait;
 use futures_util::stream::{BoxStream, StreamExt};
 
 use sqlx::{
     database::HasArguments,
-    pool::PoolConnection,
     sqlite::{Sqlite, SqlitePool, SqlitePoolOptions, SqliteRow},
     Arguments, Database, Executor, IntoArguments, Row,
 };
@@ -130,7 +130,7 @@ fn extend_query<'a>(
 
 pub struct KvSqlite {
     conn_pool: SqlitePool,
-    scans: Arc<Mutex<BTreeMap<ScanToken, Scan<'static>>>>,
+    scans: Arc<Mutex<BTreeMap<ScanToken, Scan>>>,
     locks: Arc<Mutex<BTreeMap<LockToken, Lock>>>,
 }
 
@@ -224,7 +224,7 @@ async fn fetch_row_tags(pool: &SqlitePool, row_id: i64) -> KvResult<Option<Vec<K
     Ok(if tags.is_empty() { None } else { Some(tags) })
 }
 
-type Scan<'q> = BoxStream<'q, KvResult<Vec<KvEntry>>>;
+type Scan = BoxStream<'static, KvResult<Vec<KvEntry>>>;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ScanToken {
@@ -393,7 +393,7 @@ impl KvStore for KvSqlite {
             }
         };
         let token = ScanToken::next();
-        self.scans.lock().unwrap().insert(token, scan.boxed());
+        self.scans.lock().await.insert(token, scan.boxed());
         Ok(token)
     }
 
@@ -402,12 +402,12 @@ impl KvStore for KvSqlite {
         scan_token: Self::ScanToken,
     ) -> KvResult<(Vec<KvEntry>, Option<Self::ScanToken>)> {
         // FIXME handle lock error
-        let scan = self.scans.lock().unwrap().remove(&scan_token);
+        let scan = self.scans.lock().await.remove(&scan_token);
         if let Some(mut scan) = scan {
             match scan.next().await {
                 Some(Ok(rows)) => {
                     let token = if rows.len() == PAGE_SIZE {
-                        self.scans.lock().unwrap().insert(scan_token, scan);
+                        self.scans.lock().await.insert(scan_token, scan);
                         Some(scan_token)
                     } else {
                         None
@@ -576,7 +576,7 @@ impl KvStore for KvSqlite {
             let token = LockToken::next();
             self.locks
                 .lock()
-                .unwrap()
+                .await
                 .insert(token, Lock { entry: lock_entry });
             Some(token)
         } else {
