@@ -4,8 +4,16 @@ use std::sync::{
     Arc, Mutex,
 };
 
+use async_stream::try_stream;
 use async_trait::async_trait;
 use futures_util::stream::{BoxStream, StreamExt};
+
+use sqlx::{
+    database::HasArguments,
+    pool::PoolConnection,
+    sqlite::{Sqlite, SqlitePool, SqlitePoolOptions, SqliteRow},
+    Arguments, Database, Executor, IntoArguments, Row,
+};
 
 use super::error::{KvError, KvResult};
 use super::types::{
@@ -19,13 +27,17 @@ use super::wql::{
 };
 use super::{KvProvisionStore, KvStore};
 
-use async_stream::try_stream;
-
-use sqlx::{
-    database::HasArguments,
-    sqlite::{Sqlite, SqlitePool, SqlitePoolOptions, SqliteRow},
-    Arguments, Database, IntoArguments, Row,
-};
+const COUNT_QUERY: &'static str = "SELECT COUNT(*) FROM items i
+    WHERE key_id = ?1 AND category = ?2
+    AND (expiry IS NULL OR expiry > CURRENT_TIME)";
+const FETCH_QUERY: &'static str = "SELECT id, value FROM items i
+    WHERE key_id = ?1 AND category = ?2 AND name = ?3
+    AND (expiry IS NULL OR expiry > CURRENT_TIME)";
+const INSERT_QUERY: &'static str = "INSERT INTO items(key_id, category, name, value, expiry)
+    VALUES(?1, ?2, ?3, ?4, ?5)";
+const SCAN_QUERY: &'static str = "SELECT id, name, value FROM items i WHERE key_id = ?1
+    AND category = ?2 AND (expiry IS NULL OR expiry > CURRENT_TIME)";
+const TAG_QUERY: &'static str = "SELECT name, value, plaintext FROM items_tags WHERE item_id = ?1";
 
 const PAGE_SIZE: usize = 5;
 
@@ -75,18 +87,6 @@ where
         self.args.into_arguments()
     }
 }
-
-const COUNT_QUERY: &'static str = "SELECT COUNT(*) FROM items i
-    WHERE key_id = ?1 AND category = ?2
-    AND (expiry IS NULL OR expiry > CURRENT_TIME)";
-const FETCH_QUERY: &'static str = "SELECT id, value FROM items i
-    WHERE key_id = ?1 AND category = ?2 AND name = ?3
-    AND (expiry IS NULL OR expiry > CURRENT_TIME)";
-const INSERT_QUERY: &'static str = "INSERT INTO items(key_id, category, name, value, expiry)
-    VALUES(?1, ?2, ?3, ?4, ?5)";
-const SCAN_QUERY: &'static str = "SELECT id, name, value FROM items i WHERE key_id = ?1
-    AND category = ?2 AND (expiry IS NULL OR expiry > CURRENT_TIME)";
-const TAG_QUERY: &'static str = "SELECT name, value, plaintext FROM items_tags WHERE item_id = ?1";
 
 fn replace_arg_placeholders(filter: &str, start_index: i64) -> (String, i64) {
     let mut index = start_index;
@@ -490,94 +490,88 @@ impl KvStore for KvSqlite {
         lock_info: KvUpdateEntry,
         acquire_timeout_ms: Option<u64>,
     ) -> KvResult<(Option<Self::LockToken>, KvEntry)> {
-        Err(KvError::Disconnected)
-    }
+        let key_id = get_key_id(lock_info.profile_key.clone()).await;
 
-    /*let key_id = get_key_id(lock_info.profile_key.clone()).await;
-        let mut ctx = self.conn_pool.acquire().await?;
-        let (lock_entry, entry) = ctx
-            .perform(move |conn| {
-                // start a write transaction to ensure we have only the latest state
-                let txn =
-                    conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
-                let result = {
-                    let mut fetch_lock = txn.prepare_cached(
-                        "SELECT COUNT(*) FROM items_locks
-                        WHERE key_id = ?1 AND category = ?2 AND name = ?3
-                        AND expiry > CURRENT_TIME",
-                    )?;
-                    let locked: i64 = fetch_lock
-                        .query_row(&[&key_id, &lock_info.category, &lock_info.name], |row| {
-                            row.get(0)
-                        })?;
+        let mut txn = self.conn_pool.begin().await?;
+        // start a write transaction to ensure we have only the latest state
+        // (sqlx currently has no native support for BEGIN IMMEDIATE)
+        txn.execute("DELETE FROM items_locks WHERE 0").await?;
 
-                    let mut fetch_item = txn.prepare_cached(FETCH_QUERY)?;
-                    let mut add_item = txn.prepare_cached(INSERT_QUERY)?;
-                    let row: Result<(i64, Vec<u8>), rusqlite::Error> = fetch_item
-                        .query_row(&[&key_id, &lock_info.category, &lock_info.name], |row| {
-                            Ok((row.get(0)?, row.get(1)?))
-                        });
-                    let mut entry = match row {
-                        Ok((_row_id, value)) => {
-                            Ok(KvEntry {
-                                key_id: key_id.clone(),
-                                category: lock_info.category.clone(),
-                                name: lock_info.name.clone(),
-                                value: value,
-                                tags: None, // FIXME optionally fetch tags
-                                locked: Some(if locked > 0 {
-                                    KvLockStatus::Locked
-                                } else {
-                                    KvLockStatus::Unlocked
-                                }),
-                            })
-                        }
-                        Err(rusqlite::Error::QueryReturnedNoRows) => {
-                            add_item.execute(params![
-                                &key_id,
-                                &lock_info.category,
-                                &lock_info.name,
-                                &lock_info.value,
-                                &lock_info.expiry.map(|i| i as i64),
-                            ])?;
-                            Ok(KvEntry {
-                                key_id: key_id.clone(),
-                                category: lock_info.category.clone(),
-                                name: lock_info.name.clone(),
-                                value: lock_info.value.clone(),
-                                tags: lock_info.tags.clone(),
-                                locked: Some(KvLockStatus::Unlocked),
-                            })
-                        }
-                        Err(err) => Err(err),
-                    }?;
-                    let lock_entry = if !entry.is_locked() {
-                        let mut create_lock = txn.prepare_cached(
-                            "INSERT INTO items_locks
-                        (key_id, category, name, value, expiry) VALUES (?1, ?2, ?3, ?4, ?5)",
-                        )?;
-                        // FIXME generate a random value
-                        let lock_value = "lock-value".as_bytes().to_vec();
-                        create_lock.execute(params![
-                            &key_id,
-                            &entry.category,
-                            &entry.name,
-                            &lock_value,
-                            lock_info.expiry.map(|i| i as i64),
-                        ])?;
-                        entry.locked.replace(KvLockStatus::Locked);
-                        let mut lock_entry = entry.clone();
-                        lock_entry.value = lock_value;
-                        Some(lock_entry)
+        let locked: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM items_locks
+            WHERE key_id = ?1 AND category = ?2 AND name = ?3
+            AND expiry > CURRENT_TIME",
+        )
+        .bind(&key_id)
+        .bind(&lock_info.category)
+        .bind(&lock_info.name)
+        .fetch_one(&mut txn)
+        .await?;
+
+        let mut entry = match sqlx::query(FETCH_QUERY)
+            .bind(&key_id)
+            .bind(&lock_info.category)
+            .bind(&lock_info.name)
+            .fetch_optional(&mut txn)
+            .await?
+        {
+            Some(row) => {
+                KvEntry {
+                    key_id: key_id.clone(),
+                    category: lock_info.category.clone(),
+                    name: lock_info.name.clone(),
+                    value: row.try_get(1)?,
+                    tags: None, // FIXME optionally fetch tags
+                    locked: Some(if locked > 0 {
+                        KvLockStatus::Locked
                     } else {
-                        None
-                    };
-                    KvResult::Ok((lock_entry, entry))
-                };
-                txn.commit()?;
-                result
-            })
+                        KvLockStatus::Unlocked
+                    }),
+                }
+            }
+            None => {
+                sqlx::query(INSERT_QUERY)
+                    .bind(&key_id)
+                    .bind(&lock_info.category)
+                    .bind(&lock_info.name)
+                    .bind(&lock_info.value)
+                    .bind(&lock_info.expiry.map(|i| i as i64))
+                    .execute(&mut txn)
+                    .await?;
+                KvEntry {
+                    key_id: key_id.clone(),
+                    category: lock_info.category.clone(),
+                    name: lock_info.name.clone(),
+                    value: lock_info.value.clone(),
+                    tags: lock_info.tags.clone(),
+                    locked: Some(KvLockStatus::Unlocked),
+                }
+            }
+        };
+
+        let lock_entry = if !entry.is_locked() {
+            // FIXME generate a random value
+            let lock_value = "lock-value".as_bytes().to_vec();
+            sqlx::query(
+                "INSERT INTO items_locks
+                (key_id, category, name, value, expiry) VALUES (?1, ?2, ?3, ?4, ?5)",
+            )
+            .bind(&key_id)
+            .bind(&entry.category)
+            .bind(&entry.name)
+            .bind(&lock_value)
+            .bind(lock_info.expiry.map(|i| i as i64))
+            .execute(&mut txn)
             .await?;
+            entry.locked.replace(KvLockStatus::Locked);
+            let mut lock_entry = entry.clone();
+            lock_entry.value = lock_value;
+            Some(lock_entry)
+        } else {
+            None
+        };
+        txn.commit().await?;
+
         let token = if let Some(lock_entry) = lock_entry {
             let token = LockToken::next();
             self.locks
@@ -589,7 +583,7 @@ impl KvStore for KvSqlite {
             None
         };
         Ok((token, entry))
-    }*/
+    }
 }
 
 #[cfg(test)]
@@ -830,26 +824,29 @@ mod tests {
         );
     }
 
-    // #[test]
-    // fn sqlite_create_lock_non_existing() {
-    //     let db = KvSqlite::open_in_memory().unwrap();
-    //     block_on(db.provision()).unwrap();
+    #[test]
+    fn sqlite_create_lock_non_existing() {
+        block_on(async {
+            let db = KvSqlite::open_in_memory().await?;
+            db.provision().await?;
 
-    //     let update = KvUpdateEntry {
-    //         profile_key: KvKeySelect::ForProfile(vec![]),
-    //         category: b"cat".to_vec(),
-    //         name: b"name".to_vec(),
-    //         value: b"value".to_vec(),
-    //         tags: None,
-    //         expiry: None,
-    //     };
-    //     let lock_update = update.clone();
-    //     let (opt_lock, entry) =
-    //         block_on(async move { db.create_lock(lock_update, None).await }).unwrap();
-    //     assert!(opt_lock.is_some());
-    //     assert_eq!(entry.category, update.category);
-    //     assert_eq!(entry.name, update.name);
-    //     assert_eq!(entry.value, update.value);
-    //     assert_eq!(entry.locked, Some(KvLockStatus::Locked));
-    // }
+            let update = KvUpdateEntry {
+                profile_key: KvKeySelect::ForProfile(vec![]),
+                category: b"cat".to_vec(),
+                name: b"name".to_vec(),
+                value: b"value".to_vec(),
+                tags: None,
+                expiry: None,
+            };
+            let lock_update = update.clone();
+            let (opt_lock, entry) = db.create_lock(lock_update, None).await?;
+            assert!(opt_lock.is_some());
+            assert_eq!(entry.category, update.category);
+            assert_eq!(entry.name, update.name);
+            assert_eq!(entry.value, update.value);
+            assert_eq!(entry.locked, Some(KvLockStatus::Locked));
+            KvResult::Ok(())
+        })
+        .unwrap();
+    }
 }
