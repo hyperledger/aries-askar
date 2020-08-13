@@ -1,30 +1,25 @@
 use std::collections::BTreeMap;
-use std::sync::{
-    atomic::{AtomicUsize, Ordering},
-    Arc,
-};
+use std::sync::Arc;
 
 use async_mutex::Mutex;
 use async_stream::try_stream;
 use async_trait::async_trait;
-use futures_util::stream::{BoxStream, StreamExt};
+use futures_util::stream::StreamExt;
 
 use sqlx::{
-    database::HasArguments,
     sqlite::{Sqlite, SqlitePool, SqlitePoolOptions, SqliteRow},
-    Arguments, Database, Executor, IntoArguments, Row,
+    Executor, Row,
 };
 
+use super::db_utils::{
+    extend_query, Lock, LockToken, QueryParams, QueryPrepare, Scan, ScanToken, PAGE_SIZE,
+};
 use super::error::{KvError, KvResult};
 use super::types::{
     KeyId, KvEntry, KvFetchOptions, KvKeySelect, KvLockOperation, KvLockStatus, KvTag,
     KvUpdateEntry, ProfileId,
 };
-use super::wql::{
-    self,
-    sql::TagSqlEncoder,
-    tags::{tag_query, TagQueryEncoder},
-};
+use super::wql;
 use super::{KvProvisionStore, KvStore};
 
 const COUNT_QUERY: &'static str = "SELECT COUNT(*) FROM items i
@@ -39,94 +34,7 @@ const SCAN_QUERY: &'static str = "SELECT id, name, value FROM items i WHERE key_
     AND category = ?2 AND (expiry IS NULL OR expiry > CURRENT_TIME)";
 const TAG_QUERY: &'static str = "SELECT name, value, plaintext FROM items_tags WHERE item_id = ?1";
 
-const PAGE_SIZE: usize = 5;
-
-struct QueryParams<'q, DB: Database> {
-    args: <DB as HasArguments<'q>>::Arguments,
-    count: usize,
-}
-
-impl<'q, DB: Database> QueryParams<'q, DB> {
-    pub fn new() -> Self {
-        Self {
-            args: Default::default(),
-            count: 0,
-        }
-    }
-
-    pub fn extend<I, T>(&mut self, vals: I)
-    where
-        I: IntoIterator<Item = T>,
-        T: 'q + Send + sqlx::Encode<'q, DB> + sqlx::Type<DB>,
-    {
-        for item in vals {
-            self.args.add(item);
-            self.count += 1;
-        }
-    }
-
-    pub fn push<T>(&mut self, val: T)
-    where
-        T: 'q + Send + sqlx::Encode<'q, DB> + sqlx::Type<DB>,
-    {
-        self.args.add(val);
-        self.count += 1;
-    }
-
-    pub fn len(&self) -> usize {
-        self.count
-    }
-}
-
-impl<'q, DB> IntoArguments<'q, DB> for QueryParams<'q, DB>
-where
-    DB: Database,
-    <DB as HasArguments<'q>>::Arguments: IntoArguments<'q, DB>,
-{
-    fn into_arguments(self) -> <DB as HasArguments<'q>>::Arguments {
-        self.args.into_arguments()
-    }
-}
-
-fn replace_arg_placeholders(filter: &str, start_index: i64) -> (String, i64) {
-    let mut index = start_index;
-    let mut s: String = filter.to_owned();
-    while let Some(pos) = s.find("$$") {
-        let arg_str = format!("?{}", index);
-        s.replace_range(pos..(pos + 2), &arg_str);
-        index = index + 1;
-    }
-    (s, index)
-}
-
-fn extend_query<'a>(
-    query: &str,
-    args: &mut QueryParams<'a, Sqlite>,
-    tag_filter: Option<wql::Query>,
-    limit: Option<(i64, i64)>,
-) -> KvResult<String> {
-    let mut query = query.to_string();
-    let mut last_idx = args.len() as i64 + 1;
-
-    if let Some(tag_filter) = tag_filter {
-        let tag_query = tag_query(tag_filter)?;
-        let mut enc = TagSqlEncoder::new();
-        let filter: String = enc.encode_query(&tag_query)?;
-        let (filter, next_idx) = replace_arg_placeholders(&filter, last_idx);
-        last_idx = next_idx;
-        args.extend(enc.arguments);
-        query.push_str(" AND "); // assumes WHERE already occurs
-        query.push_str(&filter);
-    };
-    if let Some((offs, limit)) = limit {
-        args.push(offs);
-        args.push(limit);
-        let (limit, _next_idx) = replace_arg_placeholders(" LIMIT $$, $$", last_idx);
-        // last_idx = next_idx;
-        query.push_str(&limit);
-    };
-    Ok(query)
-}
+impl QueryPrepare for Sqlite {}
 
 pub struct KvSqlite {
     conn_pool: SqlitePool,
@@ -135,17 +43,22 @@ pub struct KvSqlite {
 }
 
 impl KvSqlite {
-    pub async fn open_in_memory() -> KvResult<Self> {
+    pub async fn open_file(path: &str) -> KvResult<Self> {
         let conn_pool = SqlitePoolOptions::default()
+            // must maintain at least 1 connection to avoid dropping in-memory database
             .min_connections(1)
             .max_connections(10)
-            .connect(":memory:")
+            .connect(path)
             .await?;
         Ok(Self {
             conn_pool,
             scans: Arc::new(Mutex::new(BTreeMap::new())),
             locks: Arc::new(Mutex::new(BTreeMap::new())),
         })
+    }
+
+    pub async fn open_in_memory() -> KvResult<Self> {
+        Self::open_file(":memory:").await
     }
 }
 
@@ -192,7 +105,7 @@ impl KvProvisionStore for KvSqlite {
                 PRIMARY KEY(key_id, category, name)
             );
 
-            END TRANSACTION;
+            COMMIT;
         "#,
         )
         .persistent(false)
@@ -224,71 +137,6 @@ async fn fetch_row_tags(pool: &SqlitePool, row_id: i64) -> KvResult<Option<Vec<K
     Ok(if tags.is_empty() { None } else { Some(tags) })
 }
 
-type Scan = BoxStream<'static, KvResult<Vec<KvEntry>>>;
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ScanToken {
-    pub id: usize,
-}
-
-impl ScanToken {
-    const COUNT: AtomicUsize = AtomicUsize::new(0);
-
-    fn next() -> Self {
-        Self {
-            id: Self::COUNT.fetch_add(1, Ordering::AcqRel),
-        }
-    }
-}
-
-#[derive(Debug)]
-pub struct Lock {
-    entry: KvEntry,
-}
-
-// FIXME pool instance will dispose of locks itself
-// impl Drop for Lock<'_> {
-//     fn drop(&mut self) {
-//         // remove the lock
-//         let entry = self.entry.clone();
-//         self.ctx
-//             .enter(move |conn| {
-//                 conn.prepare_cached(
-//                     "DELETE FROM items_locks WHERE
-//                 key_id = ?1 AND category = ?2 AND name = ?3 AND value = ?4",
-//                 )
-//                 .and_then(|mut del_lock| {
-//                     del_lock.execute(params![
-//                         &entry.key_id,
-//                         &entry.category,
-//                         &entry.name,
-//                         &entry.value
-//                     ])
-//                 })
-//                 .map_err(|err| eprintln!("Error removing lock: {:?}", err))
-//                 .unwrap_or(0);
-//             })
-//             // FIXME ensure error is logged on failure
-//             .wait()
-//             .unwrap_or(())
-//     }
-// }
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct LockToken {
-    pub id: usize,
-}
-
-impl LockToken {
-    const COUNT: AtomicUsize = AtomicUsize::new(0);
-
-    fn next() -> Self {
-        Self {
-            id: Self::COUNT.fetch_add(1, Ordering::AcqRel),
-        }
-    }
-}
-
 #[async_trait]
 impl KvStore for KvSqlite {
     type ScanToken = ScanToken;
@@ -306,10 +154,10 @@ impl KvStore for KvSqlite {
         args.push(key_id);
         args.push(category);
         let query = extend_query(COUNT_QUERY, &mut args, tag_filter, None)?;
-        let count = sqlx::query_with(query.as_str(), args)
+        let count: i64 = sqlx::query_scalar_with(query.as_str(), args)
             .fetch_one(&self.conn_pool)
             .await?;
-        KvResult::Ok(count.get::<i64, _>(0) as u64)
+        KvResult::Ok(count as u64)
     }
 
     async fn fetch(
@@ -401,7 +249,6 @@ impl KvStore for KvSqlite {
         &self,
         scan_token: Self::ScanToken,
     ) -> KvResult<(Vec<KvEntry>, Option<Self::ScanToken>)> {
-        // FIXME handle lock error
         let scan = self.scans.lock().await.remove(&scan_token);
         if let Some(mut scan) = scan {
             match scan.next().await {
@@ -493,7 +340,7 @@ impl KvStore for KvSqlite {
         let key_id = get_key_id(lock_info.profile_key.clone()).await;
 
         let mut txn = self.conn_pool.begin().await?;
-        // start a write transaction to ensure we have only the latest state
+        // upgrade to a write transaction to ensure we have only the latest state
         // (sqlx currently has no native support for BEGIN IMMEDIATE)
         txn.execute("DELETE FROM items_locks WHERE 0").await?;
 
@@ -589,6 +436,7 @@ impl KvStore for KvSqlite {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::db_utils::replace_arg_placeholders;
     use suspend::block_on;
 
     #[test]
@@ -815,11 +663,11 @@ mod tests {
     #[test]
     fn sqlite_simple_and_convert_args_works() {
         assert_eq!(
-            replace_arg_placeholders("This $$ is $$ a $$ string!", 3),
+            replace_arg_placeholders::<Sqlite>("This $$ is $$ a $$ string!", 3),
             ("This ?3 is ?4 a ?5 string!".to_string(), 6),
         );
         assert_eq!(
-            replace_arg_placeholders("This is a string!", 1),
+            replace_arg_placeholders::<Sqlite>("This is a string!", 1),
             ("This is a string!".to_string(), 1),
         );
     }
