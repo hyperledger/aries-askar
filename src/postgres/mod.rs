@@ -13,7 +13,8 @@ use sqlx::{
 };
 
 use super::db_utils::{
-    extend_query, Lock, LockToken, QueryParams, QueryPrepare, Scan, ScanToken, PAGE_SIZE,
+    expiry_timestamp, extend_query, replace_arg_placeholders, Lock, LockToken, QueryParams,
+    QueryPrepare, Scan, ScanToken, PAGE_SIZE,
 };
 use super::error::{KvError, KvResult};
 use super::types::{
@@ -25,19 +26,41 @@ use super::{KvProvisionStore, KvStore};
 
 const COUNT_QUERY: &'static str = "SELECT COUNT(*) FROM items i
     WHERE key_id = $1 AND category = $2
-    AND (expiry IS NULL OR expiry > EXTRACT(epoch FROM CURRENT_TIMESTAMP))";
+    AND (expiry IS NULL OR expiry > CURRENT_TIMESTAMP)";
 const FETCH_QUERY: &'static str = "SELECT id, value FROM items i
     WHERE key_id = $1 AND category = $2 AND name = $3
-    AND (expiry IS NULL OR expiry > EXTRACT(epoch FROM CURRENT_TIMESTAMP))";
+    AND (expiry IS NULL OR expiry > CURRENT_TIMESTAMP)";
 const INSERT_QUERY: &'static str = "INSERT INTO items(key_id, category, name, value, expiry)
     VALUES($1, $2, $3, $4, $5) RETURNING id";
 const SCAN_QUERY: &'static str = "SELECT id, name, value FROM items i WHERE key_id = $1
-    AND category = $2 AND (expiry IS NULL OR expiry > EXTRACT(epoch FROM CURRENT_TIMESTAMP))";
+    AND category = $2 AND (expiry IS NULL OR expiry > CURRENT_TIMESTAMP)";
 const TAG_QUERY: &'static str = "SELECT name, value, plaintext FROM items_tags WHERE item_id = $1";
 
-impl QueryPrepare for Postgres {
+impl QueryPrepare for KvPostgres {
+    type DB = Postgres;
+
     fn placeholder(index: i64) -> String {
         format!("${}", index)
+    }
+
+    fn limit_query<'q>(
+        mut query: String,
+        args: &mut QueryParams<'q, Self::DB>,
+        offset: Option<i64>,
+        limit: Option<i64>,
+    ) -> String
+    where
+        i64: for<'e> sqlx::Encode<'e, Self::DB> + sqlx::Type<Self::DB>,
+    {
+        if offset.is_some() || limit.is_some() {
+            let last_idx = (args.len() + 1) as i64;
+            args.push(limit);
+            args.push(offset.unwrap_or(0));
+            let (limit, _next_idx) =
+                replace_arg_placeholders::<Self>(" LIMIT $$ OFFSET $$", last_idx);
+            query.push_str(&limit);
+        }
+        query
     }
 }
 
@@ -83,7 +106,7 @@ impl KvProvisionStore for KvPostgres {
                 category BYTEA NOT NULL,
                 name BYTEA NOT NULL,
                 value BYTEA NOT NULL,
-                expiry BIGINT NULL,
+                expiry TIMESTAMP NULL,
                 PRIMARY KEY(id)
             );
             CREATE UNIQUE INDEX ux_items_uniq ON items(key_id, category, name);
@@ -92,7 +115,7 @@ impl KvProvisionStore for KvPostgres {
                 item_id BIGINT NOT NULL,
                 name BYTEA NOT NULL,
                 value BYTEA NOT NULL,
-                plaintext SMALLINT NOT NULL,
+                plaintext INTEGER NOT NULL,
                 PRIMARY KEY(name, item_id, plaintext),
                 FOREIGN KEY(item_id)
                     REFERENCES items(id)
@@ -140,17 +163,17 @@ impl KvStore for KvPostgres {
         client_key: KvKeySelect,
         category: &[u8],
         tag_filter: Option<wql::Query>,
-    ) -> KvResult<u64> {
+    ) -> KvResult<i64> {
         let key_id = get_key_id(client_key).await;
         let category = category.to_vec();
         let mut args = QueryParams::new();
         args.push(key_id);
         args.push(category);
-        let query = extend_query(COUNT_QUERY, &mut args, tag_filter, None)?;
-        let count: i64 = sqlx::query_scalar_with(query.as_str(), args)
+        let query = extend_query::<Self>(COUNT_QUERY, &mut args, tag_filter, None, None)?;
+        let count = sqlx::query_scalar_with(query.as_str(), args)
             .fetch_one(&self.conn_pool)
             .await?;
-        KvResult::Ok(count as u64)
+        KvResult::Ok(count)
     }
 
     async fn fetch(
@@ -176,7 +199,7 @@ impl KvStore for KvPostgres {
                 None
             };
             Ok(Some(KvEntry {
-                key_id: key_id.to_le_bytes().to_vec(),
+                key_id,
                 category,
                 name,
                 value: row.try_get(1)?,
@@ -194,18 +217,17 @@ impl KvStore for KvPostgres {
         category: &[u8],
         options: KvFetchOptions,
         tag_filter: Option<wql::Query>,
-        offset: Option<u64>,
-        max_rows: Option<u64>,
+        offset: Option<i64>,
+        max_rows: Option<i64>,
     ) -> KvResult<Self::ScanToken> {
         let pool = self.conn_pool.clone();
         let category = category.to_vec();
         let key_id = get_key_id(client_key).await;
-        let limit = Some((0i64, max_rows.map(|r| r as i64).unwrap_or(-1)));
         let scan = try_stream! {
             let mut params = QueryParams::new();
             params.push(key_id);
             params.push(category.clone());
-            let query = extend_query(SCAN_QUERY, &mut params, tag_filter, limit)?;
+            let query = extend_query::<KvPostgres>(SCAN_QUERY, &mut params, tag_filter, offset, max_rows)?;
             let mut batch = Vec::with_capacity(PAGE_SIZE);
             let mut rows = sqlx::query_with(query.as_str(), params).fetch(&pool);
             while let Some(row) = rows.next().await {
@@ -217,7 +239,7 @@ impl KvStore for KvPostgres {
                     None
                 };
                 let entry = KvEntry {
-                    key_id: key_id.to_le_bytes().to_vec(),
+                    key_id,
                     category: category.clone(),
                     name: row.try_get(1)?,
                     value: row.try_get(2)?,
@@ -282,12 +304,12 @@ impl KvStore for KvPostgres {
                 .fetch_optional(&mut txn)
                 .await?;
             let row_id = if let Some(row_id) = row_id {
-                sqlx::query("UPDATE items SET value=?1 WHERE id=?2")
+                sqlx::query("UPDATE items SET value=$1 WHERE id=$2")
                     .bind(row_id)
-                    .bind(entry.value)
+                    .bind(&entry.value)
                     .execute(&mut txn)
                     .await?;
-                sqlx::query("DELETE FROM items_tags WHERE item_id=?1")
+                sqlx::query("DELETE FROM items_tags WHERE item_id=$1")
                     .bind(row_id)
                     .execute(&mut txn)
                     .await?;
@@ -295,10 +317,10 @@ impl KvStore for KvPostgres {
             } else {
                 sqlx::query_scalar(INSERT_QUERY)
                     .bind(&key_id)
-                    .bind(entry.category)
-                    .bind(entry.name)
-                    .bind(entry.value)
-                    .bind(entry.expiry.map(|i| i as i64))
+                    .bind(&entry.category)
+                    .bind(&entry.name)
+                    .bind(&entry.value)
+                    .bind(entry.expire_ms.map(expiry_timestamp))
                     .fetch_one(&mut txn)
                     .await?
             };
@@ -310,7 +332,7 @@ impl KvStore for KvPostgres {
                     };
                     sqlx::query(
                         "INSERT INTO items_tags(item_id, name, value, plaintext)
-                             VALUES(?1, ?2, ?3, ?4)",
+                             VALUES($1, $2, $3, $4)",
                     )
                     .bind(row_id)
                     .bind(name)
@@ -327,7 +349,7 @@ impl KvStore for KvPostgres {
     async fn create_lock(
         &self,
         _entry: KvUpdateEntry,
-        _acquire_timeout_ms: Option<u64>,
+        _acquire_timeout_ms: Option<i64>,
     ) -> KvResult<(Option<Self::LockToken>, KvEntry)> {
         Err(KvError::Unsupported)
     }
@@ -341,11 +363,11 @@ mod tests {
     #[test]
     fn postgres_simple_and_convert_args_works() {
         assert_eq!(
-            replace_arg_placeholders::<Postgres>("This $$ is $$ a $$ string!", 3),
+            replace_arg_placeholders::<KvPostgres>("This $$ is $$ a $$ string!", 3),
             ("This $3 is $4 a $5 string!".to_string(), 6),
         );
         assert_eq!(
-            replace_arg_placeholders::<Postgres>("This is a string!", 1),
+            replace_arg_placeholders::<KvPostgres>("This is a string!", 1),
             ("This is a string!".to_string(), 1),
         );
     }
@@ -371,7 +393,7 @@ mod live_tests {
         let result = block_on(async {
             let db = KvPostgres::open_test().await?;
             db.provision().await?;
-            let profile_key = KvKeySelect::ForProfile(vec![]);
+            let profile_key = KvKeySelect::ForProfile(1);
             let options = KvFetchOptions::default();
             KvResult::Ok(db.fetch(profile_key, b"cat", b"name", options).await?)
         });
@@ -381,7 +403,7 @@ mod live_tests {
     #[test]
     fn postgres_add_fetch() {
         let test_row = KvEntry {
-            key_id: b"1".to_vec(),
+            key_id: 1,
             category: b"cat".to_vec(),
             name: b"name".to_vec(),
             value: b"value".to_vec(),
@@ -393,7 +415,7 @@ mod live_tests {
             let db = KvPostgres::open_test().await?;
             db.provision().await?;
 
-            let profile_key = KvKeySelect::ForProfile(vec![]);
+            let profile_key = KvKeySelect::ForProfile(1);
             let options = KvFetchOptions::new(true, true, false);
 
             let updates = vec![KvUpdateEntry {
@@ -402,7 +424,7 @@ mod live_tests {
                 name: test_row.name.clone(),
                 value: test_row.value.clone(),
                 tags: None,
-                expiry: None,
+                expire_ms: None,
             }];
             db.update(updates, None).await?;
 
@@ -425,7 +447,7 @@ mod live_tests {
     #[test]
     fn postgres_add_fetch_tags() {
         let test_row = KvEntry {
-            key_id: b"1".to_vec(),
+            key_id: 1,
             category: b"cat".to_vec(),
             name: b"name".to_vec(),
             value: b"value".to_vec(),
@@ -440,7 +462,7 @@ mod live_tests {
             let db = KvPostgres::open_test().await?;
             db.provision().await?;
 
-            let profile_key = KvKeySelect::ForProfile(vec![]);
+            let profile_key = KvKeySelect::ForProfile(1);
             let options = KvFetchOptions::new(true, true, false);
 
             let updates = vec![KvUpdateEntry {
@@ -449,7 +471,7 @@ mod live_tests {
                 name: test_row.name.clone(),
                 value: test_row.value.clone(),
                 tags: test_row.tags.clone(),
-                expiry: None,
+                expire_ms: None,
             }];
             db.update(updates, None).await?;
 
@@ -473,7 +495,7 @@ mod live_tests {
     fn postgres_count() {
         let category = b"cat".to_vec();
         let test_rows = vec![KvEntry {
-            key_id: b"1".to_vec(),
+            key_id: 1,
             category: category.clone(),
             name: b"name".to_vec(),
             value: b"value".to_vec(),
@@ -485,7 +507,7 @@ mod live_tests {
             let db = KvPostgres::open_test().await?;
             db.provision().await?;
 
-            let profile_key = KvKeySelect::ForProfile(vec![]);
+            let profile_key = KvKeySelect::ForProfile(1);
             let updates = test_rows
                 .iter()
                 .map(|row| KvUpdateEntry {
@@ -494,7 +516,7 @@ mod live_tests {
                     name: row.name.clone(),
                     value: row.value.clone(),
                     tags: row.tags.clone(),
-                    expiry: None,
+                    expire_ms: None,
                 })
                 .collect();
             db.update(updates, None).await?;
@@ -515,7 +537,7 @@ mod live_tests {
     fn postgres_scan() {
         let category = b"cat".to_vec();
         let test_rows = vec![KvEntry {
-            key_id: b"1".to_vec(),
+            key_id: 1,
             category: category.clone(),
             name: b"name".to_vec(),
             value: b"value".to_vec(),
@@ -527,7 +549,7 @@ mod live_tests {
             let db = KvPostgres::open_test().await?;
             db.provision().await?;
 
-            let profile_key = KvKeySelect::ForProfile(vec![]);
+            let profile_key = KvKeySelect::ForProfile(1);
             let updates = test_rows
                 .iter()
                 .map(|row| KvUpdateEntry {
@@ -536,7 +558,7 @@ mod live_tests {
                     name: row.name.clone(),
                     value: row.value.clone(),
                     tags: row.tags.clone(),
-                    expiry: None,
+                    expire_ms: None,
                 })
                 .collect();
             db.update(updates, None).await?;
@@ -584,12 +606,12 @@ mod live_tests {
             db.provision().await?;
 
             let update = KvUpdateEntry {
-                profile_key: KvKeySelect::ForProfile(vec![]),
+                profile_key: KvKeySelect::ForProfile(1),
                 category: b"cat".to_vec(),
                 name: b"name".to_vec(),
                 value: b"value".to_vec(),
                 tags: None,
-                expiry: None,
+                expire_ms: None,
             };
             let lock_update = update.clone();
             let (opt_lock, entry) = db.create_lock(lock_update, None).await?;

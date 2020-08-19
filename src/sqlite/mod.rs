@@ -12,7 +12,8 @@ use sqlx::{
 };
 
 use super::db_utils::{
-    extend_query, Lock, LockToken, QueryParams, QueryPrepare, Scan, ScanToken, PAGE_SIZE,
+    expiry_timestamp, extend_query, Lock, LockToken, QueryParams, QueryPrepare, Scan, ScanToken,
+    PAGE_SIZE,
 };
 use super::error::{KvError, KvResult};
 use super::types::{
@@ -34,7 +35,9 @@ const SCAN_QUERY: &'static str = "SELECT id, name, value FROM items i WHERE key_
     AND category = ?2 AND (expiry IS NULL OR expiry > CURRENT_TIME)";
 const TAG_QUERY: &'static str = "SELECT name, value, plaintext FROM items_tags WHERE item_id = ?1";
 
-impl QueryPrepare for Sqlite {}
+impl QueryPrepare for KvSqlite {
+    type DB = Sqlite;
+}
 
 pub struct KvSqlite {
     conn_pool: SqlitePool,
@@ -117,7 +120,7 @@ impl KvProvisionStore for KvSqlite {
 
 // FIXME mock implementation for development
 async fn get_key_id(k: KvKeySelect) -> KeyId {
-    b"1".to_vec()
+    1
 }
 
 async fn fetch_row_tags(pool: &SqlitePool, row_id: i64) -> KvResult<Option<Vec<KvTag>>> {
@@ -147,17 +150,17 @@ impl KvStore for KvSqlite {
         client_key: KvKeySelect,
         category: &[u8],
         tag_filter: Option<wql::Query>,
-    ) -> KvResult<u64> {
+    ) -> KvResult<i64> {
         let key_id = get_key_id(client_key).await;
         let category = category.to_vec();
         let mut args = QueryParams::new();
         args.push(key_id);
         args.push(category);
-        let query = extend_query(COUNT_QUERY, &mut args, tag_filter, None)?;
-        let count: i64 = sqlx::query_scalar_with(query.as_str(), args)
+        let query = extend_query::<Self>(COUNT_QUERY, &mut args, tag_filter, None, None)?;
+        let count = sqlx::query_scalar_with(query.as_str(), args)
             .fetch_one(&self.conn_pool)
             .await?;
-        KvResult::Ok(count as u64)
+        KvResult::Ok(count)
     }
 
     async fn fetch(
@@ -201,18 +204,17 @@ impl KvStore for KvSqlite {
         category: &[u8],
         options: KvFetchOptions,
         tag_filter: Option<wql::Query>,
-        offset: Option<u64>,
-        max_rows: Option<u64>,
+        offset: Option<i64>,
+        max_rows: Option<i64>,
     ) -> KvResult<Self::ScanToken> {
         let pool = self.conn_pool.clone();
         let category = category.to_vec();
         let key_id = get_key_id(client_key).await;
-        let limit = Some((0i64, max_rows.map(|r| r as i64).unwrap_or(-1)));
         let scan = try_stream! {
             let mut params = QueryParams::new();
             params.push(key_id.clone());
             params.push(category.clone());
-            let query = extend_query(SCAN_QUERY, &mut params, tag_filter, limit)?;
+            let query = extend_query::<KvSqlite>(SCAN_QUERY, &mut params, tag_filter, offset, max_rows)?;
             let mut batch = Vec::with_capacity(PAGE_SIZE);
             let mut rows = sqlx::query_with(query.as_str(), params).fetch(&pool);
             while let Some(row) = rows.next().await {
@@ -291,7 +293,7 @@ impl KvStore for KvSqlite {
             let row_id = if let Some(row_id) = row_id {
                 sqlx::query("UPDATE items SET value=?1 WHERE id=?2")
                     .bind(row_id)
-                    .bind(entry.value)
+                    .bind(&entry.value)
                     .execute(&mut txn)
                     .await?;
                 sqlx::query("DELETE FROM items_tags WHERE item_id=?1")
@@ -302,10 +304,10 @@ impl KvStore for KvSqlite {
             } else {
                 sqlx::query(INSERT_QUERY)
                     .bind(&key_id)
-                    .bind(entry.category)
-                    .bind(entry.name)
-                    .bind(entry.value)
-                    .bind(entry.expiry.map(|i| i as i64))
+                    .bind(&entry.category)
+                    .bind(&entry.name)
+                    .bind(&entry.value)
+                    .bind(&entry.expire_ms.map(expiry_timestamp))
                     .execute(&mut txn)
                     .await?
                     .last_insert_rowid()
@@ -335,7 +337,7 @@ impl KvStore for KvSqlite {
     async fn create_lock(
         &self,
         lock_info: KvUpdateEntry,
-        acquire_timeout_ms: Option<u64>,
+        acquire_timeout_ms: Option<i64>,
     ) -> KvResult<(Option<Self::LockToken>, KvEntry)> {
         let key_id = get_key_id(lock_info.profile_key.clone()).await;
 
@@ -382,7 +384,7 @@ impl KvStore for KvSqlite {
                     .bind(&lock_info.category)
                     .bind(&lock_info.name)
                     .bind(&lock_info.value)
-                    .bind(&lock_info.expiry.map(|i| i as i64))
+                    .bind(&lock_info.expire_ms.map(expiry_timestamp))
                     .execute(&mut txn)
                     .await?;
                 KvEntry {
@@ -407,7 +409,7 @@ impl KvStore for KvSqlite {
             .bind(&entry.category)
             .bind(&entry.name)
             .bind(&lock_value)
-            .bind(lock_info.expiry.map(|i| i as i64))
+            .bind(lock_info.expire_ms.map(expiry_timestamp))
             .execute(&mut txn)
             .await?;
             entry.locked.replace(KvLockStatus::Locked);
@@ -454,7 +456,7 @@ mod tests {
         let result = block_on(async {
             let db = KvSqlite::open_in_memory().await?;
             db.provision().await?;
-            let profile_key = KvKeySelect::ForProfile(vec![]);
+            let profile_key = KvKeySelect::ForProfile(1);
             let options = KvFetchOptions::default();
             KvResult::Ok(db.fetch(profile_key, b"cat", b"name", options).await?)
         });
@@ -464,7 +466,7 @@ mod tests {
     #[test]
     fn sqlite_add_fetch() {
         let test_row = KvEntry {
-            key_id: b"1".to_vec(),
+            key_id: 1,
             category: b"cat".to_vec(),
             name: b"name".to_vec(),
             value: b"value".to_vec(),
@@ -476,7 +478,7 @@ mod tests {
             let db = KvSqlite::open_in_memory().await?;
             db.provision().await?;
 
-            let profile_key = KvKeySelect::ForProfile(vec![]);
+            let profile_key = KvKeySelect::ForProfile(1);
             let options = KvFetchOptions::new(true, true, false);
 
             let updates = vec![KvUpdateEntry {
@@ -485,7 +487,7 @@ mod tests {
                 name: test_row.name.clone(),
                 value: test_row.value.clone(),
                 tags: None,
-                expiry: None,
+                expire_ms: None,
             }];
             db.update(updates, None).await?;
 
@@ -508,7 +510,7 @@ mod tests {
     #[test]
     fn sqlite_add_fetch_tags() {
         let test_row = KvEntry {
-            key_id: b"1".to_vec(),
+            key_id: 1,
             category: b"cat".to_vec(),
             name: b"name".to_vec(),
             value: b"value".to_vec(),
@@ -523,7 +525,7 @@ mod tests {
             let db = KvSqlite::open_in_memory().await?;
             db.provision().await?;
 
-            let profile_key = KvKeySelect::ForProfile(vec![]);
+            let profile_key = KvKeySelect::ForProfile(1);
             let options = KvFetchOptions::new(true, true, false);
 
             let updates = vec![KvUpdateEntry {
@@ -532,7 +534,7 @@ mod tests {
                 name: test_row.name.clone(),
                 value: test_row.value.clone(),
                 tags: test_row.tags.clone(),
-                expiry: None,
+                expire_ms: None,
             }];
             db.update(updates, None).await?;
 
@@ -556,7 +558,7 @@ mod tests {
     fn sqlite_count() {
         let category = b"cat".to_vec();
         let test_rows = vec![KvEntry {
-            key_id: b"1".to_vec(),
+            key_id: 1,
             category: category.clone(),
             name: b"name".to_vec(),
             value: b"value".to_vec(),
@@ -568,7 +570,7 @@ mod tests {
             let db = KvSqlite::open_in_memory().await?;
             db.provision().await?;
 
-            let profile_key = KvKeySelect::ForProfile(vec![]);
+            let profile_key = KvKeySelect::ForProfile(1);
             let updates = test_rows
                 .iter()
                 .map(|row| KvUpdateEntry {
@@ -577,7 +579,7 @@ mod tests {
                     name: row.name.clone(),
                     value: row.value.clone(),
                     tags: row.tags.clone(),
-                    expiry: None,
+                    expire_ms: None,
                 })
                 .collect();
             db.update(updates, None).await?;
@@ -598,7 +600,7 @@ mod tests {
     fn sqlite_scan() {
         let category = b"cat".to_vec();
         let test_rows = vec![KvEntry {
-            key_id: b"1".to_vec(),
+            key_id: 1,
             category: category.clone(),
             name: b"name".to_vec(),
             value: b"value".to_vec(),
@@ -610,7 +612,7 @@ mod tests {
             let db = KvSqlite::open_in_memory().await?;
             db.provision().await?;
 
-            let profile_key = KvKeySelect::ForProfile(vec![]);
+            let profile_key = KvKeySelect::ForProfile(1);
             let updates = test_rows
                 .iter()
                 .map(|row| KvUpdateEntry {
@@ -619,7 +621,7 @@ mod tests {
                     name: row.name.clone(),
                     value: row.value.clone(),
                     tags: row.tags.clone(),
-                    expiry: None,
+                    expire_ms: None,
                 })
                 .collect();
             db.update(updates, None).await?;
@@ -663,11 +665,11 @@ mod tests {
     #[test]
     fn sqlite_simple_and_convert_args_works() {
         assert_eq!(
-            replace_arg_placeholders::<Sqlite>("This $$ is $$ a $$ string!", 3),
+            replace_arg_placeholders::<KvSqlite>("This $$ is $$ a $$ string!", 3),
             ("This ?3 is ?4 a ?5 string!".to_string(), 6),
         );
         assert_eq!(
-            replace_arg_placeholders::<Sqlite>("This is a string!", 1),
+            replace_arg_placeholders::<KvSqlite>("This is a string!", 1),
             ("This is a string!".to_string(), 1),
         );
     }
@@ -679,12 +681,12 @@ mod tests {
             db.provision().await?;
 
             let update = KvUpdateEntry {
-                profile_key: KvKeySelect::ForProfile(vec![]),
+                profile_key: KvKeySelect::ForProfile(1),
                 category: b"cat".to_vec(),
                 name: b"name".to_vec(),
                 value: b"value".to_vec(),
                 tags: None,
-                expiry: None,
+                expire_ms: None,
             };
             let lock_update = update.clone();
             let (opt_lock, entry) = db.create_lock(lock_update, None).await?;

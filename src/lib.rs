@@ -1,6 +1,3 @@
-#[macro_use]
-extern crate zeroize;
-
 use async_trait::async_trait;
 
 mod error;
@@ -39,7 +36,7 @@ pub trait KvStore {
         profile_key: KvKeySelect,
         category: &[u8],
         tag_filter: Option<wql::Query>,
-    ) -> KvResult<u64>;
+    ) -> KvResult<i64>;
 
     /// Query the current value for the record at `(key_id, category, name)`
     ///
@@ -65,8 +62,8 @@ pub trait KvStore {
         category: &[u8],
         options: KvFetchOptions,
         tag_filter: Option<wql::Query>,
-        offset: Option<u64>,
-        max_rows: Option<u64>,
+        offset: Option<i64>,
+        max_rows: Option<i64>,
     ) -> KvResult<Self::ScanToken>;
 
     /// Fetch results for a scan query
@@ -112,6 +109,6 @@ pub trait KvStore {
     async fn create_lock(
         &self,
         entry: KvUpdateEntry,
-        acquire_timeout_ms: Option<u64>,
+        acquire_timeout_ms: Option<i64>,
     ) -> KvResult<(Option<Self::LockToken>, KvEntry)>;
 }

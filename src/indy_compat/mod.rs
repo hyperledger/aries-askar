@@ -79,7 +79,7 @@ fn decode_row(key: &IndyWalletKey, row: DbRow) -> KvResult<(i64, KvEntry)> {
     let value = decrypt(&value_key, get_slice(&row, 3)?)?;
 
     let entry = KvEntry {
-        key_id: vec![],
+        key_id: 0,
         category: key.decrypt_category(get_slice(&row, 1)?)?,
         name: key.decrypt_name(get_slice(&row, 2)?)?,
         value,
