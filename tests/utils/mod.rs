@@ -209,3 +209,29 @@ pub async fn db_create_lock_non_existing<DB: KvStore>(db: &DB) -> KvResult<()> {
 
     Ok(())
 }
+
+pub async fn db_create_lock_timeout<DB: KvStore>(db: &DB) -> KvResult<()> {
+    let update = KvUpdateEntry {
+        profile_key: KvKeySelect::ForProfile(1),
+        category: b"cat".to_vec(),
+        name: b"name".to_vec(),
+        value: b"value".to_vec(),
+        tags: None,
+        expire_ms: None,
+    };
+    let (opt_lock, entry) = db.create_lock(update.clone(), Some(100)).await?;
+    assert!(opt_lock.is_some());
+    assert_eq!(entry.category, update.category);
+    assert_eq!(entry.name, update.name);
+    assert_eq!(entry.value, update.value);
+    assert_eq!(entry.locked, Some(KvLockStatus::Locked));
+
+    let (lock2, entry2) = db.create_lock(update.clone(), Some(100)).await?;
+    assert!(lock2.is_none());
+    assert_eq!(entry2.category, update.category);
+    assert_eq!(entry2.name, update.name);
+    assert_eq!(entry2.value, update.value);
+    assert_eq!(entry2.locked, Some(KvLockStatus::Unlocked));
+
+    Ok(())
+}

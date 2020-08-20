@@ -70,6 +70,16 @@ macro_rules! db_tests {
             })
             .unwrap()
         }
+
+        #[test]
+        fn create_lock_timeout() {
+            block_on(async {
+                let db = $init.await?;
+                super::utils::db_create_lock_timeout(&*db).await?;
+                KvResult::Ok(())
+            })
+            .unwrap()
+        }
     };
 }
 

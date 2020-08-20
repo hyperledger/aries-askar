@@ -1,4 +1,5 @@
-use std::collections::BTreeMap;
+use std::collections::{hash_map::DefaultHasher, BTreeMap};
+use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
 use async_mutex::Mutex;
@@ -13,8 +14,8 @@ use sqlx::{
 };
 
 use super::db_utils::{
-    expiry_timestamp, extend_query, replace_arg_placeholders, Lock, LockToken, QueryParams,
-    QueryPrepare, Scan, ScanToken, PAGE_SIZE,
+    expiry_timestamp, extend_query, replace_arg_placeholders, LockToken, QueryParams, QueryPrepare,
+    Scan, ScanToken, PAGE_SIZE,
 };
 use super::error::{KvError, KvResult};
 use super::types::{
@@ -64,12 +65,19 @@ impl QueryPrepare for KvPostgres {
     }
 }
 
+#[derive(Debug)]
+struct Lock {
+    txn: sqlx::Transaction<'static, Postgres>,
+}
+
+#[cfg(feature = "pg_test")]
 pub struct TestDB<'t> {
     inst: KvPostgres,
     #[allow(unused)]
     txn: sqlx::Transaction<'t, Postgres>,
 }
 
+#[cfg(feature = "pg_test")]
 impl std::ops::Deref for TestDB<'_> {
     type Target = KvPostgres;
 
@@ -94,7 +102,7 @@ impl KvPostgres {
         })
     }
 
-    //#[cfg(feature = "pg_test")]
+    #[cfg(feature = "pg_test")]
     pub async fn open_test<'t>() -> KvResult<TestDB<'t>> {
         let path = match std::env::var("POSTGRES_URL") {
             Ok(p) if !p.is_empty() => p,
@@ -376,23 +384,40 @@ impl KvStore for KvPostgres {
     ) -> KvResult<(Option<Self::LockToken>, KvEntry)> {
         let key_id = get_key_id(lock_info.profile_key.clone()).await;
 
+        let mut hasher = DefaultHasher::new();
+        Hash::hash(&key_id, &mut hasher);
+        Hash::hash_slice(&lock_info.category, &mut hasher);
+        Hash::hash_slice(&lock_info.name, &mut hasher);
+        let hash = hasher.finish() as i64;
+
+        let mut lock_txn = self.conn_pool.begin().await?;
+        if let Some(timeout) = acquire_timeout_ms {
+            if timeout > 0 {
+                let set_timeout = format!("SET LOCAL lock_timeout = {}", timeout);
+                lock_txn.execute(set_timeout.as_str()).await?;
+            }
+        }
+
+        let lock = match sqlx::query("SELECT pg_advisory_xact_lock($1)")
+            .bind(hash)
+            .execute(&mut lock_txn)
+            .await
+        {
+            Ok(_) => Some(Lock { txn: lock_txn }),
+            // assuming failure due to lock timeout
+            Err(_) => {
+                drop(lock_txn);
+                None
+            }
+        };
+        let locked = Some(if lock.is_some() {
+            KvLockStatus::Locked
+        } else {
+            KvLockStatus::Unlocked
+        });
+
         let mut txn = self.conn_pool.begin().await?;
-        // upgrade to a write transaction to ensure we have only the latest state
-        // (sqlx currently has no native support for BEGIN IMMEDIATE)
-        txn.execute("DELETE FROM items_locks WHERE 0").await?;
-
-        let locked: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM items_locks
-            WHERE key_id = ?1 AND category = ?2 AND name = ?3
-            AND expiry > CURRENT_TIME",
-        )
-        .bind(&key_id)
-        .bind(&lock_info.category)
-        .bind(&lock_info.name)
-        .fetch_one(&mut txn)
-        .await?;
-
-        let mut entry = match sqlx::query(FETCH_QUERY)
+        let entry = match sqlx::query(FETCH_QUERY)
             .bind(&key_id)
             .bind(&lock_info.category)
             .bind(&lock_info.name)
@@ -406,11 +431,7 @@ impl KvStore for KvPostgres {
                     name: lock_info.name.clone(),
                     value: row.try_get(1)?,
                     tags: None, // FIXME optionally fetch tags
-                    locked: Some(if locked > 0 {
-                        KvLockStatus::Locked
-                    } else {
-                        KvLockStatus::Unlocked
-                    }),
+                    locked,
                 }
             }
             None => {
@@ -422,46 +443,21 @@ impl KvStore for KvPostgres {
                     .bind(&lock_info.expire_ms.map(expiry_timestamp))
                     .execute(&mut txn)
                     .await?;
+                txn.commit().await?;
                 KvEntry {
                     key_id: key_id.clone(),
                     category: lock_info.category.clone(),
                     name: lock_info.name.clone(),
                     value: lock_info.value.clone(),
                     tags: lock_info.tags.clone(),
-                    locked: Some(KvLockStatus::Unlocked),
+                    locked,
                 }
             }
         };
 
-        let lock_entry = if !entry.is_locked() {
-            // FIXME generate a random value
-            let lock_value = "lock-value".as_bytes().to_vec();
-            sqlx::query(
-                "INSERT INTO items_locks
-                (key_id, category, name, value, expiry) VALUES (?1, ?2, ?3, ?4, ?5)",
-            )
-            .bind(&key_id)
-            .bind(&entry.category)
-            .bind(&entry.name)
-            .bind(&lock_value)
-            .bind(lock_info.expire_ms.map(expiry_timestamp))
-            .execute(&mut txn)
-            .await?;
-            entry.locked.replace(KvLockStatus::Locked);
-            let mut lock_entry = entry.clone();
-            lock_entry.value = lock_value;
-            Some(lock_entry)
-        } else {
-            None
-        };
-        txn.commit().await?;
-
-        let token = if let Some(lock_entry) = lock_entry {
+        let token = if let Some(lock) = lock {
             let token = LockToken::next();
-            self.locks
-                .lock()
-                .await
-                .insert(token, Lock { entry: lock_entry });
+            self.locks.lock().await.insert(token, lock);
             Some(token)
         } else {
             None
