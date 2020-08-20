@@ -64,6 +64,20 @@ impl QueryPrepare for KvPostgres {
     }
 }
 
+pub struct TestDB<'t> {
+    inst: KvPostgres,
+    #[allow(unused)]
+    txn: sqlx::Transaction<'t, Postgres>,
+}
+
+impl std::ops::Deref for TestDB<'_> {
+    type Target = KvPostgres;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inst
+    }
+}
+
 pub struct KvPostgres {
     conn_pool: PgPool,
     scans: Arc<Mutex<BTreeMap<ScanToken, Scan>>>,
@@ -80,17 +94,26 @@ impl KvPostgres {
         })
     }
 
-    #[cfg(feature = "pg_test")]
-    pub async fn open_test() -> KvResult<Self> {
+    //#[cfg(feature = "pg_test")]
+    pub async fn open_test<'t>() -> KvResult<TestDB<'t>> {
         let path = match std::env::var("POSTGRES_URL") {
             Ok(p) if !p.is_empty() => p,
             _ => panic!("'POSTGRES_URL' must be defined"),
         };
         let slf = Self::open(path.as_str()).await?;
-        let mut conn = slf.conn_pool.acquire().await?;
-        conn.execute("DROP TABLE IF EXISTS items_tags; DROP TABLE IF EXISTS items;")
+
+        // we hold a transaction open with a common advisory lock key.
+        // this will block until any existing TestDB instance is dropped
+        let mut txn = slf.conn_pool.begin().await?;
+        txn.execute("SELECT pg_advisory_xact_lock(99999);").await?;
+
+        slf.conn_pool
+            .execute(
+                "DROP TABLE IF EXISTS items_tags;
+                DROP TABLE IF EXISTS items;",
+            )
             .await?;
-        Ok(slf)
+        Ok(TestDB { inst: slf, txn })
     }
 }
 
@@ -132,7 +155,7 @@ impl KvProvisionStore for KvPostgres {
     }
 }
 
-async fn get_key_id(k: KvKeySelect) -> i64 {
+async fn get_key_id(k: KvKeySelect) -> KeyId {
     1
 }
 
@@ -348,10 +371,102 @@ impl KvStore for KvPostgres {
 
     async fn create_lock(
         &self,
-        _entry: KvUpdateEntry,
-        _acquire_timeout_ms: Option<i64>,
+        lock_info: KvUpdateEntry,
+        acquire_timeout_ms: Option<i64>,
     ) -> KvResult<(Option<Self::LockToken>, KvEntry)> {
-        Err(KvError::Unsupported)
+        let key_id = get_key_id(lock_info.profile_key.clone()).await;
+
+        let mut txn = self.conn_pool.begin().await?;
+        // upgrade to a write transaction to ensure we have only the latest state
+        // (sqlx currently has no native support for BEGIN IMMEDIATE)
+        txn.execute("DELETE FROM items_locks WHERE 0").await?;
+
+        let locked: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM items_locks
+            WHERE key_id = ?1 AND category = ?2 AND name = ?3
+            AND expiry > CURRENT_TIME",
+        )
+        .bind(&key_id)
+        .bind(&lock_info.category)
+        .bind(&lock_info.name)
+        .fetch_one(&mut txn)
+        .await?;
+
+        let mut entry = match sqlx::query(FETCH_QUERY)
+            .bind(&key_id)
+            .bind(&lock_info.category)
+            .bind(&lock_info.name)
+            .fetch_optional(&mut txn)
+            .await?
+        {
+            Some(row) => {
+                KvEntry {
+                    key_id: key_id.clone(),
+                    category: lock_info.category.clone(),
+                    name: lock_info.name.clone(),
+                    value: row.try_get(1)?,
+                    tags: None, // FIXME optionally fetch tags
+                    locked: Some(if locked > 0 {
+                        KvLockStatus::Locked
+                    } else {
+                        KvLockStatus::Unlocked
+                    }),
+                }
+            }
+            None => {
+                sqlx::query(INSERT_QUERY)
+                    .bind(&key_id)
+                    .bind(&lock_info.category)
+                    .bind(&lock_info.name)
+                    .bind(&lock_info.value)
+                    .bind(&lock_info.expire_ms.map(expiry_timestamp))
+                    .execute(&mut txn)
+                    .await?;
+                KvEntry {
+                    key_id: key_id.clone(),
+                    category: lock_info.category.clone(),
+                    name: lock_info.name.clone(),
+                    value: lock_info.value.clone(),
+                    tags: lock_info.tags.clone(),
+                    locked: Some(KvLockStatus::Unlocked),
+                }
+            }
+        };
+
+        let lock_entry = if !entry.is_locked() {
+            // FIXME generate a random value
+            let lock_value = "lock-value".as_bytes().to_vec();
+            sqlx::query(
+                "INSERT INTO items_locks
+                (key_id, category, name, value, expiry) VALUES (?1, ?2, ?3, ?4, ?5)",
+            )
+            .bind(&key_id)
+            .bind(&entry.category)
+            .bind(&entry.name)
+            .bind(&lock_value)
+            .bind(lock_info.expire_ms.map(expiry_timestamp))
+            .execute(&mut txn)
+            .await?;
+            entry.locked.replace(KvLockStatus::Locked);
+            let mut lock_entry = entry.clone();
+            lock_entry.value = lock_value;
+            Some(lock_entry)
+        } else {
+            None
+        };
+        txn.commit().await?;
+
+        let token = if let Some(lock_entry) = lock_entry {
+            let token = LockToken::next();
+            self.locks
+                .lock()
+                .await
+                .insert(token, Lock { entry: lock_entry });
+            Some(token)
+        } else {
+            None
+        };
+        Ok((token, entry))
     }
 }
 
@@ -370,258 +485,5 @@ mod tests {
             replace_arg_placeholders::<KvPostgres>("This is a string!", 1),
             ("This is a string!".to_string(), 1),
         );
-    }
-}
-
-#[cfg(all(test, feature = "pg_test"))]
-mod live_tests {
-    use super::*;
-    use suspend::block_on;
-
-    #[test]
-    fn postgres_init() {
-        block_on(async {
-            let db = KvPostgres::open_test().await?;
-            db.provision().await?;
-            KvResult::Ok(())
-        })
-        .unwrap()
-    }
-
-    #[test]
-    fn postgres_fetch_fail() {
-        let result = block_on(async {
-            let db = KvPostgres::open_test().await?;
-            db.provision().await?;
-            let profile_key = KvKeySelect::ForProfile(1);
-            let options = KvFetchOptions::default();
-            KvResult::Ok(db.fetch(profile_key, b"cat", b"name", options).await?)
-        });
-        assert!(result.unwrap().is_none())
-    }
-
-    #[test]
-    fn postgres_add_fetch() {
-        let test_row = KvEntry {
-            key_id: 1,
-            category: b"cat".to_vec(),
-            name: b"name".to_vec(),
-            value: b"value".to_vec(),
-            tags: None,
-            locked: None,
-        };
-
-        let result = block_on(async {
-            let db = KvPostgres::open_test().await?;
-            db.provision().await?;
-
-            let profile_key = KvKeySelect::ForProfile(1);
-            let options = KvFetchOptions::new(true, true, false);
-
-            let updates = vec![KvUpdateEntry {
-                profile_key: profile_key.clone(),
-                category: test_row.category.clone(),
-                name: test_row.name.clone(),
-                value: test_row.value.clone(),
-                tags: None,
-                expire_ms: None,
-            }];
-            db.update(updates, None).await?;
-
-            let row = db
-                .fetch(
-                    profile_key.clone(),
-                    &test_row.category,
-                    &test_row.name,
-                    options,
-                )
-                .await?;
-            KvResult::Ok(row)
-        })
-        .unwrap();
-        assert!(result.is_some());
-        let found = result.unwrap();
-        assert_eq!(found, test_row)
-    }
-
-    #[test]
-    fn postgres_add_fetch_tags() {
-        let test_row = KvEntry {
-            key_id: 1,
-            category: b"cat".to_vec(),
-            name: b"name".to_vec(),
-            value: b"value".to_vec(),
-            tags: Some(vec![
-                KvTag::Encrypted(b"t1".to_vec(), b"v1".to_vec()),
-                KvTag::Plaintext(b"t2".to_vec(), b"v2".to_vec()),
-            ]),
-            locked: None,
-        };
-
-        let result = block_on(async {
-            let db = KvPostgres::open_test().await?;
-            db.provision().await?;
-
-            let profile_key = KvKeySelect::ForProfile(1);
-            let options = KvFetchOptions::new(true, true, false);
-
-            let updates = vec![KvUpdateEntry {
-                profile_key: profile_key.clone(),
-                category: test_row.category.clone(),
-                name: test_row.name.clone(),
-                value: test_row.value.clone(),
-                tags: test_row.tags.clone(),
-                expire_ms: None,
-            }];
-            db.update(updates, None).await?;
-
-            let row = db
-                .fetch(
-                    profile_key.clone(),
-                    &test_row.category,
-                    &test_row.name,
-                    options,
-                )
-                .await?;
-            KvResult::Ok(row)
-        })
-        .unwrap();
-        assert!(result.is_some());
-        let found = result.unwrap();
-        assert_eq!(found, test_row);
-    }
-
-    #[test]
-    fn postgres_count() {
-        let category = b"cat".to_vec();
-        let test_rows = vec![KvEntry {
-            key_id: 1,
-            category: category.clone(),
-            name: b"name".to_vec(),
-            value: b"value".to_vec(),
-            tags: None,
-            locked: None,
-        }];
-
-        block_on(async {
-            let db = KvPostgres::open_test().await?;
-            db.provision().await?;
-
-            let profile_key = KvKeySelect::ForProfile(1);
-            let updates = test_rows
-                .iter()
-                .map(|row| KvUpdateEntry {
-                    profile_key: profile_key.clone(),
-                    category: row.category.clone(),
-                    name: row.name.clone(),
-                    value: row.value.clone(),
-                    tags: row.tags.clone(),
-                    expire_ms: None,
-                })
-                .collect();
-            db.update(updates, None).await?;
-
-            let tag_filter = None;
-            let count = db.count(profile_key.clone(), &category, tag_filter).await?;
-            assert_eq!(count, 1);
-
-            let tag_filter = Some(wql::Query::Eq("sometag".to_string(), "someval".to_string()));
-            let count = db.count(profile_key.clone(), &category, tag_filter).await?;
-            assert_eq!(count, 0);
-            KvResult::Ok(())
-        })
-        .unwrap();
-    }
-
-    #[test]
-    fn postgres_scan() {
-        let category = b"cat".to_vec();
-        let test_rows = vec![KvEntry {
-            key_id: 1,
-            category: category.clone(),
-            name: b"name".to_vec(),
-            value: b"value".to_vec(),
-            tags: None,
-            locked: None,
-        }];
-
-        block_on(async {
-            let db = KvPostgres::open_test().await?;
-            db.provision().await?;
-
-            let profile_key = KvKeySelect::ForProfile(1);
-            let updates = test_rows
-                .iter()
-                .map(|row| KvUpdateEntry {
-                    profile_key: profile_key.clone(),
-                    category: row.category.clone(),
-                    name: row.name.clone(),
-                    value: row.value.clone(),
-                    tags: row.tags.clone(),
-                    expire_ms: None,
-                })
-                .collect();
-            db.update(updates, None).await?;
-
-            let options = KvFetchOptions::default();
-            let tag_filter = None;
-            let offset = None;
-            let max_rows = None;
-            let scan_token = db
-                .scan_start(
-                    profile_key.clone(),
-                    &category,
-                    options,
-                    tag_filter,
-                    offset,
-                    max_rows,
-                )
-                .await?;
-            let (rows, scan_next) = db.scan_next(scan_token).await?;
-            assert_eq!(rows, test_rows);
-            assert!(scan_next.is_none());
-
-            let options = KvFetchOptions::default();
-            let tag_filter = Some(wql::Query::Eq("sometag".to_string(), "someval".to_string()));
-            let scan_token = block_on(db.scan_start(
-                profile_key.clone(),
-                &category,
-                options,
-                tag_filter,
-                offset,
-                max_rows,
-            ))?;
-            let (rows, scan_next) = db.scan_next(scan_token).await?;
-            assert_eq!(rows, vec![]);
-            assert!(scan_next.is_none());
-            KvResult::Ok(())
-        })
-        .unwrap();
-    }
-
-    #[test]
-    fn postgres_create_lock_non_existing() {
-        block_on(async {
-            let db = KvPostgres::open_test().await?;
-            db.provision().await?;
-
-            let update = KvUpdateEntry {
-                profile_key: KvKeySelect::ForProfile(1),
-                category: b"cat".to_vec(),
-                name: b"name".to_vec(),
-                value: b"value".to_vec(),
-                tags: None,
-                expire_ms: None,
-            };
-            let lock_update = update.clone();
-            let (opt_lock, entry) = db.create_lock(lock_update, None).await?;
-            assert!(opt_lock.is_some());
-            assert_eq!(entry.category, update.category);
-            assert_eq!(entry.name, update.name);
-            assert_eq!(entry.value, update.value);
-            assert_eq!(entry.locked, Some(KvLockStatus::Locked));
-            KvResult::Ok(())
-        })
-        .unwrap();
     }
 }

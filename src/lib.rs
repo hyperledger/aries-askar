@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 
 mod error;
-use error::KvResult;
+pub use self::error::{KvError, KvResult};
 
 pub(crate) mod db_utils;
 
@@ -14,10 +14,13 @@ pub mod postgres;
 pub mod sqlite;
 
 mod keys;
-mod types;
-mod wql;
 
-use types::{KvEntry, KvFetchOptions, KvKeySelect, KvLockOperation, KvUpdateEntry};
+mod types;
+pub use self::types::{
+    KvEntry, KvFetchOptions, KvKeySelect, KvLockOperation, KvLockStatus, KvTag, KvUpdateEntry,
+};
+
+pub mod wql;
 
 #[async_trait]
 pub trait KvProvisionStore {
