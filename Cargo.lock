@@ -47,6 +47,7 @@ dependencies = [
  "serde_bytes",
  "serde_derive",
  "serde_json",
+ "smol",
  "sqlx",
  "suspend",
  "zeroize",

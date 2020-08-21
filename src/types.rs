@@ -10,22 +10,10 @@ pub type KeyId = i64;
 
 pub type Expiry = chrono::DateTime<chrono::Utc>;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum KvLockOperation<T> {
-    Verify(T),
-    Release(T),
-}
-
 #[derive(Clone, Debug, PartialEq, Eq, Zeroize)]
 pub enum KvKeySelect {
     ForProfile(ProfileId),
     ForProfileKey(ProfileId, KeyId),
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Zeroize)]
-pub enum KvLockStatus {
-    Locked,
-    Unlocked,
 }
 
 #[derive(Clone, Eq, Zeroize)]
@@ -35,7 +23,6 @@ pub struct KvEntry {
     pub name: Vec<u8>,
     pub value: Vec<u8>,
     pub tags: Option<Vec<KvTag>>,
-    pub locked: Option<KvLockStatus>,
 }
 
 impl KvEntry {
@@ -53,10 +40,6 @@ impl KvEntry {
             None
         }
     }
-
-    pub fn is_locked(&self) -> bool {
-        return self.locked == Some(KvLockStatus::Locked);
-    }
 }
 
 impl Debug for KvEntry {
@@ -67,7 +50,6 @@ impl Debug for KvEntry {
             .field("name", &MaybeStr(&self.name))
             .field("value", &MaybeStr(&self.value))
             .field("tags", &self.tags)
-            .field("locked", &self.locked)
             .finish()
     }
 }
@@ -140,15 +122,13 @@ impl Debug for KvTag {
 pub struct KvFetchOptions {
     pub retrieve_tags: bool,
     pub retrieve_value: bool,
-    pub check_lock: bool,
 }
 
 impl KvFetchOptions {
-    pub fn new(retrieve_tags: bool, retrieve_value: bool, check_lock: bool) -> Self {
+    pub fn new(retrieve_tags: bool, retrieve_value: bool) -> Self {
         Self {
             retrieve_tags,
             retrieve_value,
-            check_lock,
         }
     }
 }
@@ -158,7 +138,6 @@ impl Default for KvFetchOptions {
         return Self {
             retrieve_tags: true,
             retrieve_value: true,
-            check_lock: false,
         };
     }
 }

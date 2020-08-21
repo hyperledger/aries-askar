@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use async_mutex::Mutex;
 use async_stream::try_stream;
@@ -8,35 +9,56 @@ use futures_util::stream::StreamExt;
 
 use sqlx::{
     sqlite::{Sqlite, SqlitePool, SqlitePoolOptions, SqliteRow},
-    Executor, Row,
+    Done, Row,
 };
 
 use super::db_utils::{
-    expiry_timestamp, extend_query, Lock, LockToken, QueryParams, QueryPrepare, Scan, ScanToken,
-    PAGE_SIZE,
+    expiry_timestamp, extend_query, hash_lock_info, LockToken, QueryParams, QueryPrepare, Scan,
+    ScanToken, PAGE_SIZE,
 };
 use super::error::{KvError, KvResult};
-use super::types::{
-    KeyId, KvEntry, KvFetchOptions, KvKeySelect, KvLockOperation, KvLockStatus, KvTag,
-    KvUpdateEntry, ProfileId,
-};
+use super::types::{KeyId, KvEntry, KvFetchOptions, KvKeySelect, KvTag, KvUpdateEntry, ProfileId};
 use super::wql;
 use super::{KvProvisionStore, KvStore};
 
+const LOCK_EXPIRY: i64 = 120000; // 2 minutes
 const COUNT_QUERY: &'static str = "SELECT COUNT(*) FROM items i
     WHERE key_id = ?1 AND category = ?2
-    AND (expiry IS NULL OR expiry > CURRENT_TIME)";
+    AND (expiry IS NULL OR expiry > datetime('now'))";
 const FETCH_QUERY: &'static str = "SELECT id, value FROM items i
     WHERE key_id = ?1 AND category = ?2 AND name = ?3
-    AND (expiry IS NULL OR expiry > CURRENT_TIME)";
+    AND (expiry IS NULL OR expiry > datetime('now'))";
 const INSERT_QUERY: &'static str = "INSERT INTO items(key_id, category, name, value, expiry)
     VALUES(?1, ?2, ?3, ?4, ?5)";
 const SCAN_QUERY: &'static str = "SELECT id, name, value FROM items i WHERE key_id = ?1
-    AND category = ?2 AND (expiry IS NULL OR expiry > CURRENT_TIME)";
+    AND category = ?2 AND (expiry IS NULL OR expiry > datetime('now'))";
 const TAG_QUERY: &'static str = "SELECT name, value, plaintext FROM items_tags WHERE item_id = ?1";
 
-impl QueryPrepare for KvSqlite {
-    type DB = Sqlite;
+// FIXME mock implementation for development
+async fn get_key_id(k: KvKeySelect) -> KeyId {
+    1
+}
+
+async fn fetch_row_tags(pool: &SqlitePool, row_id: i64) -> KvResult<Option<Vec<KvTag>>> {
+    let tags = sqlx::query(TAG_QUERY)
+        .bind(row_id)
+        .try_map(|row: SqliteRow| {
+            let name = row.try_get(0)?;
+            let value = row.try_get(1)?;
+            let plaintext = row.try_get(2)?;
+            match plaintext {
+                0 => Ok(KvTag::Encrypted(name, value)),
+                _ => Ok(KvTag::Plaintext(name, value)),
+            }
+        })
+        .fetch_all(pool)
+        .await?;
+    Ok(if tags.is_empty() { None } else { Some(tags) })
+}
+
+#[derive(Debug)]
+pub struct Lock {
+    pub id: i64,
 }
 
 pub struct KvSqlite {
@@ -63,6 +85,10 @@ impl KvSqlite {
     pub async fn open_in_memory() -> KvResult<Self> {
         Self::open_file(":memory:").await
     }
+}
+
+impl QueryPrepare for KvSqlite {
+    type DB = Sqlite;
 }
 
 #[async_trait]
@@ -100,12 +126,9 @@ impl KvProvisionStore for KvSqlite {
             CREATE INDEX ix_items_tags_value ON items_tags(value) WHERE plaintext;
 
             CREATE TABLE items_locks(
-                key_id INTEGER NOT NULL,
-                category NOT NULL,
-                name NOT NULL,
-                value NOT NULL,
-                expiry DATETIME NULL,
-                PRIMARY KEY(key_id, category, name)
+                id INTEGER NOT NULL,
+                expiry DATETIME NOT NULL,
+                PRIMARY KEY(id)
             );
 
             COMMIT;
@@ -116,28 +139,6 @@ impl KvProvisionStore for KvSqlite {
         .await?;
         Ok(())
     }
-}
-
-// FIXME mock implementation for development
-async fn get_key_id(k: KvKeySelect) -> KeyId {
-    1
-}
-
-async fn fetch_row_tags(pool: &SqlitePool, row_id: i64) -> KvResult<Option<Vec<KvTag>>> {
-    let tags = sqlx::query(TAG_QUERY)
-        .bind(row_id)
-        .try_map(|row: SqliteRow| {
-            let name = row.try_get(0)?;
-            let value = row.try_get(1)?;
-            let plaintext = row.try_get(2)?;
-            match plaintext {
-                0 => Ok(KvTag::Encrypted(name, value)),
-                _ => Ok(KvTag::Plaintext(name, value)),
-            }
-        })
-        .fetch_all(pool)
-        .await?;
-    Ok(if tags.is_empty() { None } else { Some(tags) })
 }
 
 #[async_trait]
@@ -191,7 +192,6 @@ impl KvStore for KvSqlite {
                 name,
                 value: row.try_get(1)?,
                 tags,
-                locked: None,
             }))
         } else {
             Ok(None)
@@ -230,7 +230,6 @@ impl KvStore for KvSqlite {
                     category: category.clone(),
                     name: row.try_get(1)?,
                     value: row.try_get(2)?,
-                    locked: None,
                     tags,
                 };
                 batch.push(entry);
@@ -274,7 +273,7 @@ impl KvStore for KvSqlite {
     async fn update(
         &self,
         entries: Vec<KvUpdateEntry>,
-        with_lock: Option<KvLockOperation<Self::LockToken>>,
+        with_lock: Option<Self::LockToken>,
     ) -> KvResult<()> {
         let mut updates = vec![];
         for entry in entries {
@@ -337,27 +336,43 @@ impl KvStore for KvSqlite {
     async fn create_lock(
         &self,
         lock_info: KvUpdateEntry,
+        options: KvFetchOptions,
         acquire_timeout_ms: Option<i64>,
-    ) -> KvResult<(Option<Self::LockToken>, KvEntry)> {
+    ) -> KvResult<Option<(Self::LockToken, KvEntry)>> {
         let key_id = get_key_id(lock_info.profile_key.clone()).await;
+        let hash = hash_lock_info(key_id, &lock_info);
 
         let mut txn = self.conn_pool.begin().await?;
-        // upgrade to a write transaction to ensure we have only the latest state
-        // (sqlx currently has no native support for BEGIN IMMEDIATE)
-        txn.execute("DELETE FROM items_locks WHERE 0").await?;
 
-        let locked: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM items_locks
-            WHERE key_id = ?1 AND category = ?2 AND name = ?3
-            AND expiry > CURRENT_TIME",
-        )
-        .bind(&key_id)
-        .bind(&lock_info.category)
-        .bind(&lock_info.name)
-        .fetch_one(&mut txn)
-        .await?;
+        let interval = 10;
+        let expire = acquire_timeout_ms.map(|offs| {
+            Instant::now() + Duration::from_millis(std::cmp::max(0, offs - interval) as u64)
+        });
+        loop {
+            let upserted = sqlx::query(
+                "INSERT INTO items_locks (id, expiry) VALUES (?1, ?2)
+                ON CONFLICT (id) DO UPDATE SET expiry=excluded.expiry
+                WHERE expiry <= datetime('now')",
+            )
+            .bind(hash)
+            .bind(expiry_timestamp(LOCK_EXPIRY))
+            .execute(&mut txn)
+            .await?
+            .rows_affected();
+            if upserted > 0 {
+                println!("upserted: {}", upserted);
+                break;
+            }
+            if expire
+                .map(|exp| Instant::now().checked_duration_since(exp).is_some())
+                .unwrap_or(false)
+            {
+                return Ok(None);
+            }
+            smol::Timer::after(Duration::from_millis(interval as u64)).await;
+        }
 
-        let mut entry = match sqlx::query(FETCH_QUERY)
+        let entry = match sqlx::query(FETCH_QUERY)
             .bind(&key_id)
             .bind(&lock_info.category)
             .bind(&lock_info.name)
@@ -371,11 +386,6 @@ impl KvStore for KvSqlite {
                     name: lock_info.name.clone(),
                     value: row.try_get(1)?,
                     tags: None, // FIXME optionally fetch tags
-                    locked: Some(if locked > 0 {
-                        KvLockStatus::Locked
-                    } else {
-                        KvLockStatus::Unlocked
-                    }),
                 }
             }
             None => {
@@ -393,45 +403,14 @@ impl KvStore for KvSqlite {
                     name: lock_info.name.clone(),
                     value: lock_info.value.clone(),
                     tags: lock_info.tags.clone(),
-                    locked: Some(KvLockStatus::Unlocked),
                 }
             }
         };
-
-        let lock_entry = if !entry.is_locked() {
-            // FIXME generate a random value
-            let lock_value = "lock-value".as_bytes().to_vec();
-            sqlx::query(
-                "INSERT INTO items_locks
-                (key_id, category, name, value, expiry) VALUES (?1, ?2, ?3, ?4, ?5)",
-            )
-            .bind(&key_id)
-            .bind(&entry.category)
-            .bind(&entry.name)
-            .bind(&lock_value)
-            .bind(lock_info.expire_ms.map(expiry_timestamp))
-            .execute(&mut txn)
-            .await?;
-            entry.locked.replace(KvLockStatus::Locked);
-            let mut lock_entry = entry.clone();
-            lock_entry.value = lock_value;
-            Some(lock_entry)
-        } else {
-            None
-        };
         txn.commit().await?;
 
-        let token = if let Some(lock_entry) = lock_entry {
-            let token = LockToken::next();
-            self.locks
-                .lock()
-                .await
-                .insert(token, Lock { entry: lock_entry });
-            Some(token)
-        } else {
-            None
-        };
-        Ok((token, entry))
+        let token = LockToken::next();
+        self.locks.lock().await.insert(token, Lock { id: hash });
+        Ok(Some((token, entry)))
     }
 }
 
@@ -439,6 +418,26 @@ impl KvStore for KvSqlite {
 mod tests {
     use super::*;
     use crate::db_utils::replace_arg_placeholders;
+
+    #[test]
+    fn sqlite_check_expiry_timestamp() {
+        suspend::block_on(async {
+            let db = KvSqlite::open_in_memory().await?;
+            let ts = expiry_timestamp(LOCK_EXPIRY);
+            let check = sqlx::query("SELECT datetime('now'), ?1, ?1 > datetime('now')")
+                .bind(ts)
+                .fetch_one(&db.conn_pool)
+                .await?;
+            let now: String = check.try_get(0)?;
+            let cmp_ts: String = check.try_get(1)?;
+            let cmp: bool = check.try_get(2)?;
+            if !cmp {
+                panic!("now ({}) > expiry timestamp ({})", now, cmp_ts);
+            }
+            KvResult::Ok(())
+        })
+        .unwrap();
+    }
 
     #[test]
     fn sqlite_simple_and_convert_args_works() {

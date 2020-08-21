@@ -1,3 +1,5 @@
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use futures_util::stream::BoxStream;
@@ -5,7 +7,7 @@ use futures_util::stream::BoxStream;
 use sqlx::{database::HasArguments, Arguments, Database, Encode, IntoArguments, Type};
 
 use super::error::KvResult;
-use super::types::{Expiry, KvEntry};
+use super::types::{Expiry, KvEntry, KvUpdateEntry};
 use super::wql::{
     self,
     sql::TagSqlEncoder,
@@ -133,6 +135,14 @@ where
     Ok(query)
 }
 
+pub fn hash_lock_info(key_id: i64, lock_info: &KvUpdateEntry) -> i64 {
+    let mut hasher = DefaultHasher::new();
+    Hash::hash(&key_id, &mut hasher);
+    Hash::hash_slice(&lock_info.category, &mut hasher);
+    Hash::hash_slice(&lock_info.name, &mut hasher);
+    hasher.finish() as i64
+}
+
 pub type Scan = BoxStream<'static, KvResult<Vec<KvEntry>>>;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -149,39 +159,6 @@ impl ScanToken {
         }
     }
 }
-
-#[derive(Debug)]
-pub struct Lock {
-    pub entry: KvEntry,
-}
-
-// FIXME pool instance will dispose of locks itself
-// impl Drop for Lock<'_> {
-//     fn drop(&mut self) {
-//         // remove the lock
-//         let entry = self.entry.clone();
-//         self.ctx
-//             .enter(move |conn| {
-//                 conn.prepare_cached(
-//                     "DELETE FROM items_locks WHERE
-//                 key_id = ?1 AND category = ?2 AND name = ?3 AND value = ?4",
-//                 )
-//                 .and_then(|mut del_lock| {
-//                     del_lock.execute(params![
-//                         &entry.key_id,
-//                         &entry.category,
-//                         &entry.name,
-//                         &entry.value
-//                     ])
-//                 })
-//                 .map_err(|err| eprintln!("Error removing lock: {:?}", err))
-//                 .unwrap_or(0);
-//             })
-//             // FIXME ensure error is logged on failure
-//             .wait()
-//             .unwrap_or(())
-//     }
-// }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct LockToken {

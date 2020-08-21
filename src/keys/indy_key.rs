@@ -139,7 +139,6 @@ mod tests {
                 KvTag::Plaintext(b"plain".to_vec(), b"tag".to_vec()),
                 KvTag::Encrypted(b"enctag".to_vec(), b"envtagval".to_vec()),
             ]),
-            locked: None,
         };
         let enc_record = key.encrypt_entry(test_record.clone()).unwrap();
         assert_ne!(test_record, enc_record);

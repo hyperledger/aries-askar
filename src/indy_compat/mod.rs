@@ -84,7 +84,6 @@ fn decode_row(key: &IndyWalletKey, row: DbRow) -> KvResult<(i64, KvEntry)> {
         name: key.decrypt_name(get_slice(&row, 2)?)?,
         value,
         tags: None,
-        locked: None,
     };
     Ok((row.try_get(0)?, entry))
 }

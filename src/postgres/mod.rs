@@ -1,5 +1,4 @@
-use std::collections::{hash_map::DefaultHasher, BTreeMap};
-use std::hash::{Hash, Hasher};
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use async_mutex::Mutex;
@@ -14,14 +13,11 @@ use sqlx::{
 };
 
 use super::db_utils::{
-    expiry_timestamp, extend_query, replace_arg_placeholders, LockToken, QueryParams, QueryPrepare,
-    Scan, ScanToken, PAGE_SIZE,
+    expiry_timestamp, extend_query, hash_lock_info, replace_arg_placeholders, LockToken,
+    QueryParams, QueryPrepare, Scan, ScanToken, PAGE_SIZE,
 };
 use super::error::{KvError, KvResult};
-use super::types::{
-    KeyId, KvEntry, KvFetchOptions, KvKeySelect, KvLockOperation, KvLockStatus, KvTag,
-    KvUpdateEntry, ProfileId,
-};
+use super::types::{KeyId, KvEntry, KvFetchOptions, KvKeySelect, KvTag, KvUpdateEntry, ProfileId};
 use super::wql::{self};
 use super::{KvProvisionStore, KvStore};
 
@@ -235,7 +231,6 @@ impl KvStore for KvPostgres {
                 name,
                 value: row.try_get(1)?,
                 tags,
-                locked: None,
             }))
         } else {
             Ok(None)
@@ -274,7 +269,6 @@ impl KvStore for KvPostgres {
                     category: category.clone(),
                     name: row.try_get(1)?,
                     value: row.try_get(2)?,
-                    locked: None,
                     tags,
                 };
                 batch.push(entry);
@@ -318,7 +312,7 @@ impl KvStore for KvPostgres {
     async fn update(
         &self,
         entries: Vec<KvUpdateEntry>,
-        with_lock: Option<KvLockOperation<Self::LockToken>>,
+        with_lock: Option<Self::LockToken>,
     ) -> KvResult<()> {
         let mut updates = vec![];
         for entry in entries {
@@ -380,15 +374,11 @@ impl KvStore for KvPostgres {
     async fn create_lock(
         &self,
         lock_info: KvUpdateEntry,
+        options: KvFetchOptions,
         acquire_timeout_ms: Option<i64>,
-    ) -> KvResult<(Option<Self::LockToken>, KvEntry)> {
+    ) -> KvResult<Option<(Self::LockToken, KvEntry)>> {
         let key_id = get_key_id(lock_info.profile_key.clone()).await;
-
-        let mut hasher = DefaultHasher::new();
-        Hash::hash(&key_id, &mut hasher);
-        Hash::hash_slice(&lock_info.category, &mut hasher);
-        Hash::hash_slice(&lock_info.name, &mut hasher);
-        let hash = hasher.finish() as i64;
+        let hash = hash_lock_info(key_id, &lock_info);
 
         let mut lock_txn = self.conn_pool.begin().await?;
         if let Some(timeout) = acquire_timeout_ms {
@@ -403,18 +393,12 @@ impl KvStore for KvPostgres {
             .execute(&mut lock_txn)
             .await
         {
-            Ok(_) => Some(Lock { txn: lock_txn }),
+            Ok(_) => Lock { txn: lock_txn },
             // assuming failure due to lock timeout
             Err(_) => {
-                drop(lock_txn);
-                None
+                return Ok(None);
             }
         };
-        let locked = Some(if lock.is_some() {
-            KvLockStatus::Locked
-        } else {
-            KvLockStatus::Unlocked
-        });
 
         let mut txn = self.conn_pool.begin().await?;
         let entry = match sqlx::query(FETCH_QUERY)
@@ -431,7 +415,6 @@ impl KvStore for KvPostgres {
                     name: lock_info.name.clone(),
                     value: row.try_get(1)?,
                     tags: None, // FIXME optionally fetch tags
-                    locked,
                 }
             }
             None => {
@@ -450,19 +433,13 @@ impl KvStore for KvPostgres {
                     name: lock_info.name.clone(),
                     value: lock_info.value.clone(),
                     tags: lock_info.tags.clone(),
-                    locked,
                 }
             }
         };
 
-        let token = if let Some(lock) = lock {
-            let token = LockToken::next();
-            self.locks.lock().await.insert(token, lock);
-            Some(token)
-        } else {
-            None
-        };
-        Ok((token, entry))
+        let token = LockToken::next();
+        self.locks.lock().await.insert(token, lock);
+        Ok(Some((token, entry)))
     }
 }
 

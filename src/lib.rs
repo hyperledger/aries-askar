@@ -16,9 +16,7 @@ pub mod sqlite;
 mod keys;
 
 mod types;
-pub use self::types::{
-    KvEntry, KvFetchOptions, KvKeySelect, KvLockOperation, KvLockStatus, KvTag, KvUpdateEntry,
-};
+pub use self::types::{KvEntry, KvFetchOptions, KvKeySelect, KvTag, KvUpdateEntry};
 
 pub mod wql;
 
@@ -90,13 +88,13 @@ pub trait KvStore {
     async fn update(
         &self,
         entries: Vec<KvUpdateEntry>,
-        with_lock: Option<KvLockOperation<Self::LockToken>>,
+        with_lock: Option<Self::LockToken>,
     ) -> KvResult<()>;
 
     /// Establish an advisory lock on a particular record
     ///
-    /// The `entry` parameter defines the `category` and `name` of the record, as well
-    /// as its key information. If the record does not exist, then it will be created
+    /// The `lock_info` parameter defines the `category` and `name` of the record, as well
+    /// as its key information. If the record does not exist then it will be created
     /// with the default `value`, `tags`, and `expiry` provided.
     ///
     /// The maximum duration of a lock is defined by the backend and its configuration
@@ -111,7 +109,8 @@ pub trait KvStore {
     /// also try to obtain a lock.
     async fn create_lock(
         &self,
-        entry: KvUpdateEntry,
+        lock_info: KvUpdateEntry,
+        options: KvFetchOptions,
         acquire_timeout_ms: Option<i64>,
-    ) -> KvResult<(Option<Self::LockToken>, KvEntry)>;
+    ) -> KvResult<Option<(Self::LockToken, KvEntry)>>;
 }

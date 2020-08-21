@@ -1,6 +1,5 @@
 use aries_store_kv::{
-    wql, KvEntry, KvFetchOptions, KvKeySelect, KvLockStatus, KvResult, KvStore, KvTag,
-    KvUpdateEntry,
+    wql, KvEntry, KvFetchOptions, KvKeySelect, KvResult, KvStore, KvTag, KvUpdateEntry,
 };
 
 pub async fn db_fetch_fail<DB: KvStore>(db: &DB) -> KvResult<()> {
@@ -18,11 +17,10 @@ pub async fn db_add_fetch<DB: KvStore>(db: &DB) -> KvResult<()> {
         name: b"name".to_vec(),
         value: b"value".to_vec(),
         tags: None,
-        locked: None,
     };
 
     let profile_key = KvKeySelect::ForProfile(1);
-    let options = KvFetchOptions::new(true, true, false);
+    let options = KvFetchOptions::new(true, true);
 
     let updates = vec![KvUpdateEntry {
         profile_key: profile_key.clone(),
@@ -60,11 +58,10 @@ pub async fn db_add_fetch_tags<DB: KvStore>(db: &DB) -> KvResult<()> {
             KvTag::Encrypted(b"t1".to_vec(), b"v1".to_vec()),
             KvTag::Plaintext(b"t2".to_vec(), b"v2".to_vec()),
         ]),
-        locked: None,
     };
 
     let profile_key = KvKeySelect::ForProfile(1);
-    let options = KvFetchOptions::new(true, true, false);
+    let options = KvFetchOptions::new(true, true);
 
     let updates = vec![KvUpdateEntry {
         profile_key: profile_key.clone(),
@@ -100,7 +97,6 @@ pub async fn db_count<DB: KvStore>(db: &DB) -> KvResult<()> {
         name: b"name".to_vec(),
         value: b"value".to_vec(),
         tags: None,
-        locked: None,
     }];
 
     let profile_key = KvKeySelect::ForProfile(1);
@@ -136,7 +132,6 @@ pub async fn db_scan<DB: KvStore>(db: &DB) -> KvResult<()> {
         name: b"name".to_vec(),
         value: b"value".to_vec(),
         tags: None,
-        locked: None,
     }];
 
     let profile_key = KvKeySelect::ForProfile(1);
@@ -200,12 +195,14 @@ pub async fn db_create_lock_non_existing<DB: KvStore>(db: &DB) -> KvResult<()> {
         expire_ms: None,
     };
     let lock_update = update.clone();
-    let (opt_lock, entry) = db.create_lock(lock_update, None).await?;
+    let opt_lock = db
+        .create_lock(lock_update, KvFetchOptions::default(), None)
+        .await?;
     assert!(opt_lock.is_some());
+    let (_lock_info, entry) = opt_lock.unwrap();
     assert_eq!(entry.category, update.category);
     assert_eq!(entry.name, update.name);
     assert_eq!(entry.value, update.value);
-    assert_eq!(entry.locked, Some(KvLockStatus::Locked));
 
     Ok(())
 }
@@ -219,19 +216,19 @@ pub async fn db_create_lock_timeout<DB: KvStore>(db: &DB) -> KvResult<()> {
         tags: None,
         expire_ms: None,
     };
-    let (opt_lock, entry) = db.create_lock(update.clone(), Some(100)).await?;
+    let opt_lock = db
+        .create_lock(update.clone(), KvFetchOptions::default(), Some(100))
+        .await?;
     assert!(opt_lock.is_some());
+    let (_lock_token, entry) = opt_lock.unwrap();
     assert_eq!(entry.category, update.category);
     assert_eq!(entry.name, update.name);
     assert_eq!(entry.value, update.value);
-    assert_eq!(entry.locked, Some(KvLockStatus::Locked));
 
-    let (lock2, entry2) = db.create_lock(update.clone(), Some(100)).await?;
-    assert!(lock2.is_none());
-    assert_eq!(entry2.category, update.category);
-    assert_eq!(entry2.name, update.name);
-    assert_eq!(entry2.value, update.value);
-    assert_eq!(entry2.locked, Some(KvLockStatus::Unlocked));
+    let opt_lock2 = db
+        .create_lock(update.clone(), KvFetchOptions::default(), Some(100))
+        .await?;
+    assert!(opt_lock2.is_none());
 
     Ok(())
 }
