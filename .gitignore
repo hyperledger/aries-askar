@@ -1,1 +1,4 @@
+.vscode
 target
+*.db-shm
+*.db-wal

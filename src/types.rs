@@ -2,7 +2,7 @@ use std::fmt::{self, Debug, Formatter};
 
 use zeroize::Zeroize;
 
-use super::error::KvResult;
+use super::error::Result;
 
 pub type ProfileId = i64;
 
@@ -157,17 +157,17 @@ impl Debug for MaybeStr<'_> {
 // temporary types
 
 pub trait EntryEncryptor {
-    fn encrypt_category(&self, category: &[u8]) -> KvResult<Vec<u8>>;
-    fn encrypt_name(&self, name: &[u8]) -> KvResult<Vec<u8>>;
-    fn encrypt_value(&self, value: &[u8]) -> KvResult<Vec<u8>>;
-    fn encrypt_tags(&self, tags: Vec<KvTag>) -> KvResult<Vec<KvTag>>;
+    fn encrypt_category(&self, category: &[u8]) -> Result<Vec<u8>>;
+    fn encrypt_name(&self, name: &[u8]) -> Result<Vec<u8>>;
+    fn encrypt_value(&self, value: &[u8]) -> Result<Vec<u8>>;
+    fn encrypt_tags(&self, tags: Vec<KvTag>) -> Result<Vec<KvTag>>;
 
-    fn decrypt_category(&self, enc_category: &[u8]) -> KvResult<Vec<u8>>;
-    fn decrypt_name(&self, enc_name: &[u8]) -> KvResult<Vec<u8>>;
-    fn decrypt_value(&self, enc_value: &[u8]) -> KvResult<Vec<u8>>;
-    fn decrypt_tags(&self, enc_tags: Vec<KvTag>) -> KvResult<Vec<KvTag>>;
+    fn decrypt_category(&self, enc_category: &[u8]) -> Result<Vec<u8>>;
+    fn decrypt_name(&self, enc_name: &[u8]) -> Result<Vec<u8>>;
+    fn decrypt_value(&self, enc_value: &[u8]) -> Result<Vec<u8>>;
+    fn decrypt_tags(&self, enc_tags: Vec<KvTag>) -> Result<Vec<KvTag>>;
 
-    fn encrypt_entry(&self, mut entry: KvEntry) -> KvResult<KvEntry> {
+    fn encrypt_entry(&self, mut entry: KvEntry) -> Result<KvEntry> {
         entry.category = self.encrypt_category(&entry.category)?;
         entry.name = self.encrypt_name(&entry.name)?;
         entry.value = self.encrypt_value(&entry.value)?;
@@ -179,7 +179,7 @@ pub trait EntryEncryptor {
         Ok(entry)
     }
 
-    fn decrypt_entry(&self, mut enc_entry: KvEntry) -> KvResult<KvEntry> {
+    fn decrypt_entry(&self, mut enc_entry: KvEntry) -> Result<KvEntry> {
         enc_entry.category = self.decrypt_category(&enc_entry.category)?;
         enc_entry.name = self.decrypt_name(&enc_entry.name)?;
         enc_entry.value = self.decrypt_value(&enc_entry.value)?;
@@ -195,35 +195,35 @@ pub trait EntryEncryptor {
 pub struct NullEncryptor;
 
 impl EntryEncryptor for NullEncryptor {
-    fn encrypt_category(&self, category: &[u8]) -> KvResult<Vec<u8>> {
+    fn encrypt_category(&self, category: &[u8]) -> Result<Vec<u8>> {
         Ok(category.to_vec())
     }
-    fn encrypt_name(&self, name: &[u8]) -> KvResult<Vec<u8>> {
+    fn encrypt_name(&self, name: &[u8]) -> Result<Vec<u8>> {
         Ok(name.to_vec())
     }
-    fn encrypt_value(&self, value: &[u8]) -> KvResult<Vec<u8>> {
+    fn encrypt_value(&self, value: &[u8]) -> Result<Vec<u8>> {
         Ok(value.to_vec())
     }
-    fn encrypt_tags(&self, tags: Vec<KvTag>) -> KvResult<Vec<KvTag>> {
+    fn encrypt_tags(&self, tags: Vec<KvTag>) -> Result<Vec<KvTag>> {
         Ok(tags)
     }
-    fn encrypt_entry(&self, entry: KvEntry) -> KvResult<KvEntry> {
+    fn encrypt_entry(&self, entry: KvEntry) -> Result<KvEntry> {
         Ok(entry)
     }
 
-    fn decrypt_category(&self, enc_category: &[u8]) -> KvResult<Vec<u8>> {
+    fn decrypt_category(&self, enc_category: &[u8]) -> Result<Vec<u8>> {
         Ok(enc_category.to_vec())
     }
-    fn decrypt_name(&self, enc_name: &[u8]) -> KvResult<Vec<u8>> {
+    fn decrypt_name(&self, enc_name: &[u8]) -> Result<Vec<u8>> {
         Ok(enc_name.to_vec())
     }
-    fn decrypt_value(&self, enc_value: &[u8]) -> KvResult<Vec<u8>> {
+    fn decrypt_value(&self, enc_value: &[u8]) -> Result<Vec<u8>> {
         Ok(enc_value.to_vec())
     }
-    fn decrypt_tags(&self, enc_tags: Vec<KvTag>) -> KvResult<Vec<KvTag>> {
+    fn decrypt_tags(&self, enc_tags: Vec<KvTag>) -> Result<Vec<KvTag>> {
         Ok(enc_tags)
     }
-    fn decrypt_entry(&self, enc_entry: KvEntry) -> KvResult<KvEntry> {
+    fn decrypt_entry(&self, enc_entry: KvEntry) -> Result<KvEntry> {
         Ok(enc_entry)
     }
 }

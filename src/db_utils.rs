@@ -1,12 +1,11 @@
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
-use std::sync::atomic::{AtomicUsize, Ordering};
 
 use futures_util::stream::BoxStream;
 
 use sqlx::{database::HasArguments, Arguments, Database, Encode, IntoArguments, Type};
 
-use super::error::KvResult;
+use super::error::Result as KvResult;
 use super::types::{Expiry, KvEntry, KvUpdateEntry};
 use super::wql::{
     self,
@@ -144,33 +143,3 @@ pub fn hash_lock_info(key_id: i64, lock_info: &KvUpdateEntry) -> i64 {
 }
 
 pub type Scan = BoxStream<'static, KvResult<Vec<KvEntry>>>;
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ScanToken {
-    pub id: usize,
-}
-
-impl ScanToken {
-    const COUNT: AtomicUsize = AtomicUsize::new(0);
-
-    pub fn next() -> Self {
-        Self {
-            id: Self::COUNT.fetch_add(1, Ordering::AcqRel),
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct LockToken {
-    pub id: usize,
-}
-
-impl LockToken {
-    const COUNT: AtomicUsize = AtomicUsize::new(0);
-
-    pub fn next() -> Self {
-        Self {
-            id: Self::COUNT.fetch_add(1, Ordering::AcqRel),
-        }
-    }
-}

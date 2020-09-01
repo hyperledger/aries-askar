@@ -1,4 +1,4 @@
-use aries_store_kv::{KvProvisionStore, KvResult};
+use aries_store_kv::{KvProvisionStore, Result as KvResult};
 
 mod utils;
 
@@ -86,15 +86,31 @@ macro_rules! db_tests {
 #[cfg(feature = "sqlite")]
 mod sqlite {
     use super::*;
-    use aries_store_kv::sqlite::KvSqlite;
+    use aries_store_kv::sqlite::{KvSqlite, KvSqliteOptions};
 
     async fn init_db() -> KvResult<Box<KvSqlite>> {
-        let db = KvSqlite::open_in_memory().await?;
-        db.provision().await?;
+        let db = KvSqliteOptions::in_memory().provision_store().await?;
         Ok(Box::new(db))
     }
 
     db_tests!(init_db());
+
+    #[test]
+    fn provision_from_str() {
+        suspend::block_on(async {
+            let db_url = "sqlite://:memory:";
+            let _db = db_url.provision_store().await?;
+            KvResult::Ok(())
+        })
+        .unwrap();
+
+        assert!(suspend::block_on(async {
+            let db_url = "not-sqlite://test-db";
+            let _db = db_url.provision_store().await?;
+            KvResult::Ok(())
+        })
+        .is_err());
+    }
 }
 
 #[cfg(all(feature = "pg_test", feature = "postgres"))]
@@ -103,8 +119,7 @@ mod postgres {
     use aries_store_kv::postgres::{KvPostgres, TestDB};
 
     async fn init_db<'t>() -> KvResult<TestDB<'t>> {
-        let db = KvPostgres::open_test().await?;
-        db.provision().await?;
+        let db = KvPostgres::provision_test_db().await?;
         Ok(db)
     }
 

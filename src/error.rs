@@ -1,14 +1,15 @@
-use async_resource::AcquireError;
+// use async_resource::AcquireError;
 
-pub type KvResult<T> = Result<T, KvError>;
+pub type Result<T> = std::result::Result<T, Error>;
 
-#[derive(Debug)] // FIXME
-pub enum KvError {
+#[derive(Debug, PartialEq, Eq)]
+pub enum Error {
     Busy,
     BackendError(String),
     Disconnected,
     EncryptionError,
     InputError(String),
+    KeyError(String),
     LockFailure,
     Timeout,
     UnknownKey,
@@ -16,28 +17,49 @@ pub enum KvError {
     Unsupported,
 }
 
-impl<E> From<AcquireError<E>> for KvError
-where
-    E: Into<KvError>,
-{
-    fn from(err: AcquireError<E>) -> Self {
-        match err {
-            AcquireError::PoolBusy => KvError::Busy,
-            AcquireError::PoolClosed => KvError::Disconnected,
-            AcquireError::ResourceError(err) => err.into(),
-            AcquireError::Timeout => KvError::Timeout,
-        }
-    }
-}
+// impl<E> From<AcquireError<E>> for Error
+// where
+//     E: Into<Error>,
+// {
+//     fn from(err: AcquireError<E>) -> Self {
+//         match err {
+//             AcquireError::PoolBusy => Error::Busy,
+//             AcquireError::PoolClosed => Error::Disconnected,
+//             AcquireError::ResourceError(err) => err.into(),
+//             AcquireError::Timeout => Error::Timeout,
+//         }
+//     }
+// }
 
-impl From<sqlx::Error> for KvError {
+impl From<sqlx::Error> for Error {
     fn from(err: sqlx::Error) -> Self {
-        KvError::BackendError(err.to_string())
+        Error::BackendError(err.to_string())
     }
 }
 
-impl From<indy_utils::EncryptionError> for KvError {
+impl From<indy_utils::EncryptionError> for Error {
     fn from(_err: indy_utils::EncryptionError) -> Self {
-        KvError::EncryptionError
+        Error::EncryptionError
     }
+}
+
+impl From<indy_utils::ValidationError> for Error {
+    fn from(err: indy_utils::ValidationError) -> Self {
+        Error::InputError(err.to_string())
+    }
+}
+
+macro_rules! err_msg {
+    (Backend, $($args:tt)+) => {
+        $crate::error::Error::BackendError(format!($($args)+))
+    };
+    (Key, $($args:tt)+) => {
+        $crate::error::Error::KeyError(format!($($args)+))
+    };
+    (Input, $($args:tt)+) => {
+        $crate::error::Error::InputError(format!($($args)+))
+    };
+    ($($args:tt)+) => {
+        $crate::error::Error::InputError(format!($($args)+))
+    };
 }

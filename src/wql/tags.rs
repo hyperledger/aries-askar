@@ -1,5 +1,5 @@
 use super::{AbstractQuery, Query};
-use crate::error::KvResult;
+use crate::error::Result as KvResult;
 
 pub type TagQuery = AbstractQuery<TagName, String>;
 

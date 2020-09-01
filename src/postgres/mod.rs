@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
@@ -13,13 +14,14 @@ use sqlx::{
 };
 
 use super::db_utils::{
-    expiry_timestamp, extend_query, hash_lock_info, replace_arg_placeholders, LockToken,
-    QueryParams, QueryPrepare, Scan, ScanToken, PAGE_SIZE,
+    expiry_timestamp, extend_query, hash_lock_info, replace_arg_placeholders, QueryParams,
+    QueryPrepare, Scan, PAGE_SIZE,
 };
-use super::error::{KvError, KvResult};
+use super::error::{Error, Result as KvResult};
+use super::options::IntoOptions;
+use super::store::{KvProvisionStore, KvStore, LockToken, ScanToken};
 use super::types::{KeyId, KvEntry, KvFetchOptions, KvKeySelect, KvTag, KvUpdateEntry, ProfileId};
 use super::wql::{self};
-use super::{KvProvisionStore, KvStore};
 
 const COUNT_QUERY: &'static str = "SELECT COUNT(*) FROM items i
     WHERE key_id = $1 AND category = $2
@@ -33,31 +35,55 @@ const SCAN_QUERY: &'static str = "SELECT id, name, value FROM items i WHERE key_
     AND category = $2 AND (expiry IS NULL OR expiry > CURRENT_TIMESTAMP)";
 const TAG_QUERY: &'static str = "SELECT name, value, plaintext FROM items_tags WHERE item_id = $1";
 
-impl QueryPrepare for KvPostgres {
-    type DB = Postgres;
+pub struct KvPostgresOptions {
+    uri: String,
+    admin_uri: Option<String>,
+}
 
-    fn placeholder(index: i64) -> String {
-        format!("${}", index)
-    }
-
-    fn limit_query<'q>(
-        mut query: String,
-        args: &mut QueryParams<'q, Self::DB>,
-        offset: Option<i64>,
-        limit: Option<i64>,
-    ) -> String
+impl KvPostgresOptions {
+    pub fn new<'a, O>(options: O) -> KvResult<Self>
     where
-        i64: for<'e> sqlx::Encode<'e, Self::DB> + sqlx::Type<Self::DB>,
+        O: IntoOptions<'a>,
     {
-        if offset.is_some() || limit.is_some() {
-            let last_idx = (args.len() + 1) as i64;
-            args.push(limit);
-            args.push(offset.unwrap_or(0));
-            let (limit, _next_idx) =
-                replace_arg_placeholders::<Self>(" LIMIT $$ OFFSET $$", last_idx);
-            query.push_str(&limit);
+        let mut opts = options.into_options()?;
+        let admin_user = opts.query.remove("admin_username");
+        let admin_pass = opts.query.remove("admin_password");
+        let uri = opts.clone().into_uri();
+        let admin_uri = if admin_user.is_some() || admin_pass.is_some() {
+            if let Some(admin_user) = admin_user {
+                opts.user = Cow::Owned(admin_user);
+            }
+            if let Some(admin_pass) = admin_pass {
+                opts.password = Cow::Owned(admin_pass);
+            }
+            Some(opts.into_uri())
+        } else {
+            None
+        };
+        Ok(Self { uri, admin_uri })
+    }
+}
+
+#[async_trait]
+impl KvProvisionStore for KvPostgresOptions {
+    type Store = KvPostgres;
+
+    async fn provision_store(self) -> KvResult<Self::Store> {
+        let mut conn_pool = PgPool::connect(
+            self.admin_uri
+                .as_ref()
+                .map(String::as_str)
+                .unwrap_or_else(|| self.uri.as_str()),
+        )
+        .await?;
+
+        KvPostgres::init_db(&conn_pool, false).await?;
+
+        if self.admin_uri.is_some() {
+            conn_pool = PgPool::connect(self.uri.as_str()).await?;
         }
-        query
+
+        Ok(KvPostgres::new(conn_pool))
     }
 }
 
@@ -88,48 +114,78 @@ pub struct KvPostgres {
     locks: Arc<Mutex<BTreeMap<LockToken, Lock>>>,
 }
 
+impl QueryPrepare for KvPostgres {
+    type DB = Postgres;
+
+    fn placeholder(index: i64) -> String {
+        format!("${}", index)
+    }
+
+    fn limit_query<'q>(
+        mut query: String,
+        args: &mut QueryParams<'q, Self::DB>,
+        offset: Option<i64>,
+        limit: Option<i64>,
+    ) -> String
+    where
+        i64: for<'e> sqlx::Encode<'e, Self::DB> + sqlx::Type<Self::DB>,
+    {
+        if offset.is_some() || limit.is_some() {
+            let last_idx = (args.len() + 1) as i64;
+            args.push(limit);
+            args.push(offset.unwrap_or(0));
+            let (limit, _next_idx) =
+                replace_arg_placeholders::<Self>(" LIMIT $$ OFFSET $$", last_idx);
+            query.push_str(&limit);
+        }
+        query
+    }
+}
+
 impl KvPostgres {
-    pub async fn open(config: &str) -> KvResult<Self> {
-        let conn_pool = PgPool::connect(config).await?;
-        Ok(Self {
+    pub(crate) fn new(conn_pool: PgPool) -> Self {
+        Self {
             conn_pool,
             scans: Arc::new(Mutex::new(BTreeMap::new())),
             locks: Arc::new(Mutex::new(BTreeMap::new())),
-        })
+        }
     }
 
     #[cfg(feature = "pg_test")]
-    pub async fn open_test<'t>() -> KvResult<TestDB<'t>> {
+    pub async fn provision_test_db<'t>() -> KvResult<TestDB<'t>> {
         let path = match std::env::var("POSTGRES_URL") {
             Ok(p) if !p.is_empty() => p,
             _ => panic!("'POSTGRES_URL' must be defined"),
         };
-        let slf = Self::open(path.as_str()).await?;
+        let conn_pool = PgPool::connect(path.as_str()).await?;
 
         // we hold a transaction open with a common advisory lock key.
         // this will block until any existing TestDB instance is dropped
-        let mut txn = slf.conn_pool.begin().await?;
+        let mut txn = conn_pool.begin().await?;
         txn.execute("SELECT pg_advisory_xact_lock(99999);").await?;
 
-        slf.conn_pool
-            .execute(
-                "DROP TABLE IF EXISTS items_tags;
-                DROP TABLE IF EXISTS items;",
-            )
-            .await?;
-        Ok(TestDB { inst: slf, txn })
-    }
-}
+        Self::init_db(&conn_pool, true).await?;
+        let inst = Self::new(conn_pool);
 
-#[async_trait]
-impl KvProvisionStore for KvPostgres {
-    async fn provision(&self) -> KvResult<()> {
-        let mut txn = self.conn_pool.begin().await?;
+        Ok(TestDB { inst, txn })
+    }
+
+    pub(crate) async fn init_db(conn_pool: &PgPool, reset: bool) -> KvResult<()> {
+        if reset {
+            conn_pool
+                .execute(
+                    "DROP TABLE IF EXISTS items_tags;
+                    DROP TABLE IF EXISTS items;",
+                )
+                .await?;
+        }
+
+        let mut txn = conn_pool.begin().await?;
         txn.execute(
             r#"
             CREATE TABLE items(
                 id BIGSERIAL,
-                key_id INTEGER NOT NULL,
+                key_id BIGINT NOT NULL,
                 category BYTEA NOT NULL,
                 name BYTEA NOT NULL,
                 value BYTEA NOT NULL,
@@ -142,7 +198,7 @@ impl KvProvisionStore for KvPostgres {
                 item_id BIGINT NOT NULL,
                 name BYTEA NOT NULL,
                 value BYTEA NOT NULL,
-                plaintext INTEGER NOT NULL,
+                plaintext SMALLINT NOT NULL,
                 PRIMARY KEY(name, item_id, plaintext),
                 FOREIGN KEY(item_id)
                     REFERENCES items(id)
@@ -182,9 +238,6 @@ async fn fetch_row_tags(pool: &PgPool, row_id: i64) -> KvResult<Option<Vec<KvTag
 
 #[async_trait]
 impl KvStore for KvPostgres {
-    type ScanToken = ScanToken;
-    type LockToken = LockToken;
-
     async fn count(
         &self,
         client_key: KvKeySelect,
@@ -245,7 +298,7 @@ impl KvStore for KvPostgres {
         tag_filter: Option<wql::Query>,
         offset: Option<i64>,
         max_rows: Option<i64>,
-    ) -> KvResult<Self::ScanToken> {
+    ) -> KvResult<ScanToken> {
         let pool = self.conn_pool.clone();
         let category = category.to_vec();
         let key_id = get_key_id(client_key).await;
@@ -287,8 +340,8 @@ impl KvStore for KvPostgres {
 
     async fn scan_next(
         &self,
-        scan_token: Self::ScanToken,
-    ) -> KvResult<(Vec<KvEntry>, Option<Self::ScanToken>)> {
+        scan_token: ScanToken,
+    ) -> KvResult<(Vec<KvEntry>, Option<ScanToken>)> {
         let scan = self.scans.lock().await.remove(&scan_token);
         if let Some(mut scan) = scan {
             match scan.next().await {
@@ -305,14 +358,14 @@ impl KvStore for KvPostgres {
                 None => Ok((vec![], None)),
             }
         } else {
-            Err(KvError::Timeout)
+            Err(Error::Timeout)
         }
     }
 
     async fn update(
         &self,
         entries: Vec<KvUpdateEntry>,
-        with_lock: Option<Self::LockToken>,
+        with_lock: Option<LockToken>,
     ) -> KvResult<()> {
         let mut updates = vec![];
         for entry in entries {
@@ -376,7 +429,7 @@ impl KvStore for KvPostgres {
         lock_info: KvUpdateEntry,
         options: KvFetchOptions,
         acquire_timeout_ms: Option<i64>,
-    ) -> KvResult<Option<(Self::LockToken, KvEntry)>> {
+    ) -> KvResult<Option<(LockToken, KvEntry)>> {
         let key_id = get_key_id(lock_info.profile_key.clone()).await;
         let hash = hash_lock_info(key_id, &lock_info);
 
@@ -457,6 +510,17 @@ mod tests {
         assert_eq!(
             replace_arg_placeholders::<KvPostgres>("This is a string!", 1),
             ("This is a string!".to_string(), 1),
+        );
+    }
+
+    #[test]
+    fn postgres_parse_uri() {
+        let uri = "postgres://user:pass@host?admin_username=user2&admin_password=pass2&test=1";
+        let opts = KvPostgresOptions::new(uri).unwrap();
+        assert_eq!(opts.uri, "postgres://user:pass@host?test=1");
+        assert_eq!(
+            opts.admin_uri,
+            Some("postgres://user2:pass2@host?test=1".to_owned())
         );
     }
 }

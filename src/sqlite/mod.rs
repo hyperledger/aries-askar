@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -13,13 +14,14 @@ use sqlx::{
 };
 
 use super::db_utils::{
-    expiry_timestamp, extend_query, hash_lock_info, LockToken, QueryParams, QueryPrepare, Scan,
-    ScanToken, PAGE_SIZE,
+    expiry_timestamp, extend_query, hash_lock_info, QueryParams, QueryPrepare, Scan, PAGE_SIZE,
 };
-use super::error::{KvError, KvResult};
+use super::error::{Error, Result as KvResult};
+use super::options::IntoOptions;
+use super::store::{KvStore, LockToken, ScanToken};
 use super::types::{KeyId, KvEntry, KvFetchOptions, KvKeySelect, KvTag, KvUpdateEntry, ProfileId};
 use super::wql;
-use super::{KvProvisionStore, KvStore};
+use super::KvProvisionStore;
 
 const LOCK_EXPIRY: i64 = 120000; // 2 minutes
 const COUNT_QUERY: &'static str = "SELECT COUNT(*) FROM items i
@@ -61,6 +63,122 @@ pub struct Lock {
     pub id: i64,
 }
 
+pub struct KvSqliteOptions<'a> {
+    path: Cow<'a, str>,
+    options: SqlitePoolOptions,
+}
+
+impl<'a> KvSqliteOptions<'a> {
+    pub fn new<O>(options: O) -> KvResult<Self>
+    where
+        O: IntoOptions<'a>,
+    {
+        let opts = options.into_options()?;
+        Ok(Self {
+            path: opts.host,
+            options: SqlitePoolOptions::default()
+                // must maintain at least 1 connection to avoid dropping in-memory database
+                .min_connections(1)
+                .max_connections(10),
+        })
+    }
+
+    pub fn in_memory() -> Self {
+        Self::new(":memory:").unwrap()
+    }
+}
+
+#[async_trait]
+impl<'a> KvProvisionStore for KvSqliteOptions<'a> {
+    type Store = KvSqlite;
+
+    async fn provision_store(self) -> KvResult<Self::Store> {
+        let conn_pool = self.options.connect(self.path.as_ref()).await?;
+
+        let wallet_id = uuid::Uuid::new_v4().to_string();
+        sqlx::query(
+            r#"
+            BEGIN EXCLUSIVE TRANSACTION;
+
+            CREATE TABLE config (
+                name TEXT NOT NULL,
+                value TEXT,
+                PRIMARY KEY(name)
+            );
+            INSERT INTO config (name, value) VALUES
+                ("uniq_id", ?1),
+                ("version", "1");
+
+            CREATE TABLE keys (
+                id INTEGER NOT NULL,
+                parent_id INTEGER NULL,
+                profile_id INTEGER NOT NULL,
+                reference TEXT NULL,
+                value BLOB NULL,
+                PRIMARY KEY(id),
+                FOREIGN KEY(parent_id) REFERENCES keys(id)
+                    ON DELETE CASCADE ON UPDATE CASCADE,
+                FOREIGN KEY(profile_id) REFERENCES profiles(id)
+                    ON DELETE CASCADE ON UPDATE CASCADE
+            );
+
+            CREATE TABLE profiles (
+                id INTEGER NOT NULL,
+                items_key_id INTEGER NULL,
+                reference TEXT NULL,
+                PRIMARY KEY(id),
+                FOREIGN KEY(items_key_id) REFERENCES keys(id)
+                    ON DELETE CASCADE ON UPDATE CASCADE
+            );
+
+            CREATE TABLE items (
+                id INTEGER NOT NULL,
+                key_id INTEGER NOT NULL,
+                category NOT NULL,
+                name NOT NULL,
+                value NOT NULL,
+                expiry DATETIME NULL,
+                PRIMARY KEY(id),
+                FOREIGN KEY(key_id) REFERENCES keys(id)
+                    ON DELETE CASCADE ON UPDATE CASCADE
+            );
+            CREATE UNIQUE INDEX ux_items_uniq ON items(key_id, category, name);
+
+            CREATE TABLE items_tags (
+                item_id INTEGER NOT NULL,
+                name NOT NULL,
+                value NOT NULL,
+                plaintext BOOLEAN NOT NULL,
+                PRIMARY KEY(name, item_id, plaintext),
+                FOREIGN KEY(item_id) REFERENCES items(id)
+                    ON DELETE CASCADE ON UPDATE CASCADE
+            );
+            CREATE INDEX ix_items_tags_item_id ON items_tags(item_id);
+            CREATE INDEX ix_items_tags_value ON items_tags(value) WHERE plaintext;
+
+            CREATE TABLE items_locks (
+                id INTEGER NOT NULL,
+                expiry DATETIME NOT NULL,
+                PRIMARY KEY(id)
+            );
+
+            COMMIT;
+
+            -- for testing only
+            INSERT INTO profiles (items_key_id) VALUES (NULL);
+            INSERT INTO keys (profile_id) VALUES (1);
+
+        "#,
+        )
+        .persistent(false)
+        .bind(wallet_id)
+        .execute(&conn_pool)
+        .await?;
+
+        Ok(KvSqlite::new(conn_pool))
+    }
+}
+
 pub struct KvSqlite {
     conn_pool: SqlitePool,
     scans: Arc<Mutex<BTreeMap<ScanToken, Scan>>>,
@@ -68,22 +186,12 @@ pub struct KvSqlite {
 }
 
 impl KvSqlite {
-    pub async fn open_file(path: &str) -> KvResult<Self> {
-        let conn_pool = SqlitePoolOptions::default()
-            // must maintain at least 1 connection to avoid dropping in-memory database
-            .min_connections(1)
-            .max_connections(10)
-            .connect(path)
-            .await?;
-        Ok(Self {
+    pub(crate) fn new(conn_pool: SqlitePool) -> Self {
+        Self {
             conn_pool,
             scans: Arc::new(Mutex::new(BTreeMap::new())),
             locks: Arc::new(Mutex::new(BTreeMap::new())),
-        })
-    }
-
-    pub async fn open_in_memory() -> KvResult<Self> {
-        Self::open_file(":memory:").await
+        }
     }
 }
 
@@ -92,60 +200,7 @@ impl QueryPrepare for KvSqlite {
 }
 
 #[async_trait]
-impl KvProvisionStore for KvSqlite {
-    async fn provision(&self) -> KvResult<()> {
-        sqlx::query(
-            r#"
-            PRAGMA locking_mode=EXCLUSIVE;
-            PRAGMA foreign_keys=ON;
-            BEGIN EXCLUSIVE TRANSACTION;
-
-            CREATE TABLE items(
-                id INTEGER NOT NULL,
-                key_id INTEGER NOT NULL,
-                category NOT NULL,
-                name NOT NULL,
-                value NOT NULL,
-                expiry DATETIME NULL,
-                PRIMARY KEY(id)
-            );
-            CREATE UNIQUE INDEX ux_items_uniq ON items(key_id, category, name);
-
-            CREATE TABLE items_tags(
-                item_id INTEGER NOT NULL,
-                name NOT NULL,
-                value NOT NULL,
-                plaintext BOOLEAN NOT NULL,
-                PRIMARY KEY(name, item_id, plaintext),
-                FOREIGN KEY(item_id)
-                    REFERENCES items(id)
-                    ON DELETE CASCADE
-                    ON UPDATE CASCADE
-            );
-            CREATE INDEX ix_items_tags_item_id ON items_tags(item_id);
-            CREATE INDEX ix_items_tags_value ON items_tags(value) WHERE plaintext;
-
-            CREATE TABLE items_locks(
-                id INTEGER NOT NULL,
-                expiry DATETIME NOT NULL,
-                PRIMARY KEY(id)
-            );
-
-            COMMIT;
-        "#,
-        )
-        .persistent(false)
-        .execute(&self.conn_pool)
-        .await?;
-        Ok(())
-    }
-}
-
-#[async_trait]
 impl KvStore for KvSqlite {
-    type ScanToken = ScanToken;
-    type LockToken = LockToken;
-
     async fn count(
         &self,
         client_key: KvKeySelect,
@@ -206,7 +261,7 @@ impl KvStore for KvSqlite {
         tag_filter: Option<wql::Query>,
         offset: Option<i64>,
         max_rows: Option<i64>,
-    ) -> KvResult<Self::ScanToken> {
+    ) -> KvResult<ScanToken> {
         let pool = self.conn_pool.clone();
         let category = category.to_vec();
         let key_id = get_key_id(client_key).await;
@@ -248,8 +303,8 @@ impl KvStore for KvSqlite {
 
     async fn scan_next(
         &self,
-        scan_token: Self::ScanToken,
-    ) -> KvResult<(Vec<KvEntry>, Option<Self::ScanToken>)> {
+        scan_token: ScanToken,
+    ) -> KvResult<(Vec<KvEntry>, Option<ScanToken>)> {
         let scan = self.scans.lock().await.remove(&scan_token);
         if let Some(mut scan) = scan {
             match scan.next().await {
@@ -266,14 +321,14 @@ impl KvStore for KvSqlite {
                 None => Ok((vec![], None)),
             }
         } else {
-            Err(KvError::Timeout)
+            Err(Error::Timeout)
         }
     }
 
     async fn update(
         &self,
         entries: Vec<KvUpdateEntry>,
-        with_lock: Option<Self::LockToken>,
+        with_lock: Option<LockToken>,
     ) -> KvResult<()> {
         let mut updates = vec![];
         for entry in entries {
@@ -338,7 +393,7 @@ impl KvStore for KvSqlite {
         lock_info: KvUpdateEntry,
         options: KvFetchOptions,
         acquire_timeout_ms: Option<i64>,
-    ) -> KvResult<Option<(Self::LockToken, KvEntry)>> {
+    ) -> KvResult<Option<(LockToken, KvEntry)>> {
         let key_id = get_key_id(lock_info.profile_key.clone()).await;
         let hash = hash_lock_info(key_id, &lock_info);
 
@@ -422,7 +477,7 @@ mod tests {
     #[test]
     fn sqlite_check_expiry_timestamp() {
         suspend::block_on(async {
-            let db = KvSqlite::open_in_memory().await?;
+            let db = KvSqliteOptions::in_memory().provision_store().await?;
             let ts = expiry_timestamp(LOCK_EXPIRY);
             let check = sqlx::query("SELECT datetime('now'), ?1, ?1 > datetime('now')")
                 .bind(ts)

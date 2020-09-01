@@ -1,12 +1,12 @@
 use serde::Deserialize;
 
 use indy_utils::base58;
-pub use indy_utils::keys::wallet::{decrypt, EncKey, HmacKey, WalletKey as IndyWalletKey};
+pub use indy_utils::keys::wallet::{decrypt, EncKey, HmacKey, WalletKey as StorageKey};
 
-use crate::error::{KvError, KvResult};
+use crate::error::{Error, Result as KvResult};
 use crate::types::{EntryEncryptor, KvTag};
 
-impl EntryEncryptor for IndyWalletKey {
+impl EntryEncryptor for StorageKey {
     fn encrypt_category(&self, category: &[u8]) -> KvResult<Vec<u8>> {
         Ok(self.encrypt_category(&category)?)
     }
@@ -60,18 +60,18 @@ impl EntryEncryptor for IndyWalletKey {
 }
 
 #[derive(Deserialize, Debug)]
-struct EncWalletKey {
+struct EncStorageKey {
     keys: Vec<u8>,
     master_key_salt: Vec<u8>,
 }
 
-pub fn decode_wallet_key(enc_key: &[u8], password: &str) -> KvResult<IndyWalletKey> {
-    let key = serde_json::from_slice::<EncWalletKey>(enc_key)
-        .map_err(|e| KvError::InputError(format!("Invalid wallet key: {}", e.to_string())))?;
+pub fn decode_wallet_key(enc_key: &[u8], password: &str) -> KvResult<StorageKey> {
+    let key = serde_json::from_slice::<EncStorageKey>(enc_key)
+        .map_err(|e| Error::InputError(format!("Invalid wallet key: {}", e.to_string())))?;
 
     let keys = decrypt_key(key, password)?;
     let data = rmp_serde::from_slice::<[serde_bytes::ByteBuf; 7]>(keys.as_slice()).unwrap();
-    let wallet_key = IndyWalletKey {
+    let wallet_key = StorageKey {
         category_key: EncKey::from_slice(&data[0]),
         name_key: EncKey::from_slice(&data[1]),
         value_key: EncKey::from_slice(&data[2]),
@@ -84,7 +84,7 @@ pub fn decode_wallet_key(enc_key: &[u8], password: &str) -> KvResult<IndyWalletK
     Ok(wallet_key)
 }
 
-fn decrypt_key(key: EncWalletKey, password: &str) -> KvResult<Vec<u8>> {
+fn decrypt_key(key: EncStorageKey, password: &str) -> KvResult<Vec<u8>> {
     // check for a raw key in base58 format
     if let Ok(raw_key) = base58::decode(password) {
         if raw_key.len() == 32 {
@@ -129,7 +129,7 @@ mod tests {
 
     #[test]
     fn test_indy_key_round_trip() {
-        let key = IndyWalletKey::new().unwrap();
+        let key = StorageKey::new().unwrap();
         let test_record = KvEntry {
             key_id: 1,
             category: b"category".to_vec(),

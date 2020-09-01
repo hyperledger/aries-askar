@@ -1,7 +1,7 @@
 use itertools::Itertools;
 
 use super::tags::{CompareOp, ConjunctionOp, TagName, TagQueryEncoder};
-use crate::error::KvResult;
+use crate::error::Result as KvResult;
 
 pub struct TagSqlEncoder {
     pub arguments: Vec<Vec<u8>>,

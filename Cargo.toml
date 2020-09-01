@@ -13,15 +13,15 @@ path = "src/lib.rs"
 crate-type = ["staticlib", "rlib", "cdylib"]
 
 [features]
-logger = ["env_logger", "log"]
 default = ["log", "postgres", "sqlite"]
+logger = ["env_logger", "log"]
 postgres = ["sqlx/postgres"]
 sqlite = ["sqlx/sqlite"]
-pg_test = []
+pg_test = ["postgres"]
 
 [dependencies]
 async-mutex = "1.1"
-async-resource = { version = "0.1", path = "../async-resource-rs/async-resource" }
+# async-resource = { version = "0.1", path = "../async-resource-rs/async-resource" }
 async-stream = "0.3"
 async-trait = "0.1.30"
 chrono = "0.4"
@@ -32,6 +32,7 @@ hmac = "0.7"
 indy-utils = { version = "0.3.1", path = "../indy-shared-rs/indy-utils", default-features = false, features = ["serde_support", "wallet_key", "wql"] }
 itertools = "0.9"
 log = { version = "0.4.8", optional = true }
+percent-encoding = "2.0"
 rmp-serde = "0.14"
 rust-argon2 = "0.8"
 serde = "1.0"
@@ -45,7 +46,13 @@ smol = "0.1"
 
 sqlx = { version = "0.4.0-beta.1", default-features = false, features = ["chrono", "runtime-async-std", "tls"], path = "../sqlx" }
 suspend = { version = "0.1.3", path = "../async-resource-rs/suspend" }
+url = { version = "2.1", default-features = false }
+uuid = { version = "0.8", features = ["v4"] }
 zeroize = { version = "1.1.0", features = ["zeroize_derive"] }
+
+# [target.'cfg(target_os = "macos")'.dependencies]
+# keychain-services = { path = "../keychain-services.rs" }
+# keychain-services = { git = "https://github.com/iqlusioninc/keychain-services.rs", rev = "7410fb8baf4ecdf04cdcd7d06d02658f4f158d77" }
 
 [dev-dependencies]
 rand = "0.7"

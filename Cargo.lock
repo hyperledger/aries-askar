@@ -29,7 +29,6 @@ name = "aries-store-kv"
 version = "0.1.0"
 dependencies = [
  "async-mutex",
- "async-resource",
  "async-stream",
  "async-trait",
  "chrono",
@@ -40,6 +39,7 @@ dependencies = [
  "indy-utils",
  "itertools",
  "log",
+ "percent-encoding",
  "rand",
  "rmp-serde",
  "rust-argon2",
@@ -50,6 +50,8 @@ dependencies = [
  "smol",
  "sqlx",
  "suspend",
+ "url",
+ "uuid",
  "zeroize",
 ]
 
@@ -84,17 +86,6 @@ dependencies = [
  "native-tls",
  "thiserror",
  "url",
-]
-
-[[package]]
-name = "async-resource"
-version = "0.1.0"
-dependencies = [
- "concurrent-queue",
- "futures-util",
- "multitask",
- "option-lock",
- "suspend",
 ]
 
 [[package]]
@@ -887,17 +878,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3728d817d99e5ac407411fa471ff9800a778d88a24685968b36824eaf4bee400"
 
 [[package]]
-name = "multitask"
-version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c09c35271e7dcdb5f709779111f2c8e8ab8e06c1b587c1c6a9e179d865aaa5b4"
-dependencies = [
- "async-task",
- "concurrent-queue",
- "fastrand",
-]
-
-[[package]]
 name = "native-tls"
 version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -994,10 +974,6 @@ dependencies = [
  "pkg-config",
  "vcpkg",
 ]
-
-[[package]]
-name = "option-lock"
-version = "0.1.1"
 
 [[package]]
 name = "parking"
@@ -1694,6 +1670,15 @@ dependencies = [
  "serde",
  "sha2 0.8.2",
  "zeroize",
+]
+
+[[package]]
+name = "uuid"
+version = "0.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9fde2f6a4bea1d6e007c4ad38c6839fa71cbb63b6dbf5b595aa38dc9b1093c11"
+dependencies = [
+ "rand",
 ]
 
 [[package]]

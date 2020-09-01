@@ -1,5 +1,5 @@
 use aries_store_kv::{
-    wql, KvEntry, KvFetchOptions, KvKeySelect, KvResult, KvStore, KvTag, KvUpdateEntry,
+    wql, KvEntry, KvFetchOptions, KvKeySelect, Result as KvResult, KvStore, KvTag, KvUpdateEntry,
 };
 
 pub async fn db_fetch_fail<DB: KvStore>(db: &DB) -> KvResult<()> {
