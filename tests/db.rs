@@ -87,9 +87,11 @@ macro_rules! db_tests {
 mod sqlite {
     use super::*;
     use aries_store_kv::sqlite::{KvSqlite, KvSqliteOptions};
+    use aries_store_kv::KvProvisionSpec;
 
     async fn init_db() -> KvResult<Box<KvSqlite>> {
-        let db = KvSqliteOptions::in_memory().provision_store().await?;
+        let spec = KvProvisionSpec::create_default().await?;
+        let db = KvSqliteOptions::in_memory().provision_store(spec).await?;
         Ok(Box::new(db))
     }
 
@@ -99,14 +101,16 @@ mod sqlite {
     fn provision_from_str() {
         suspend::block_on(async {
             let db_url = "sqlite://:memory:";
-            let _db = db_url.provision_store().await?;
+            let spec = KvProvisionSpec::create_default().await?;
+            let _db = db_url.provision_store(spec).await?;
             KvResult::Ok(())
         })
         .unwrap();
 
         assert!(suspend::block_on(async {
             let db_url = "not-sqlite://test-db";
-            let _db = db_url.provision_store().await?;
+            let spec = KvProvisionSpec::create_default().await?;
+            let _db = db_url.provision_store(spec).await?;
             KvResult::Ok(())
         })
         .is_err());

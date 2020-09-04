@@ -137,8 +137,8 @@ where
 pub fn hash_lock_info(key_id: i64, lock_info: &KvUpdateEntry) -> i64 {
     let mut hasher = DefaultHasher::new();
     Hash::hash(&key_id, &mut hasher);
-    Hash::hash_slice(&lock_info.category, &mut hasher);
-    Hash::hash_slice(&lock_info.name, &mut hasher);
+    Hash::hash_slice(&lock_info.entry.category, &mut hasher);
+    Hash::hash_slice(&lock_info.entry.name, &mut hasher);
     hasher.finish() as i64
 }
 

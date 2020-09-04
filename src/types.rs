@@ -10,15 +10,8 @@ pub type KeyId = i64;
 
 pub type Expiry = chrono::DateTime<chrono::Utc>;
 
-#[derive(Clone, Debug, PartialEq, Eq, Zeroize)]
-pub enum KvKeySelect {
-    ForProfile(ProfileId),
-    ForProfileKey(ProfileId, KeyId),
-}
-
 #[derive(Clone, Eq, Zeroize)]
 pub struct KvEntry {
-    pub key_id: KeyId,
     pub category: Vec<u8>,
     pub name: Vec<u8>,
     pub value: Vec<u8>,
@@ -45,7 +38,6 @@ impl KvEntry {
 impl Debug for KvEntry {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         f.debug_struct("KvEntry")
-            .field("key_id", &self.key_id)
             .field("category", &MaybeStr(&self.category))
             .field("name", &MaybeStr(&self.name))
             .field("value", &MaybeStr(&self.value))
@@ -62,8 +54,7 @@ impl Drop for KvEntry {
 
 impl PartialEq for KvEntry {
     fn eq(&self, rhs: &Self) -> bool {
-        self.key_id == rhs.key_id
-            && self.category == rhs.category
+        self.category == rhs.category
             && self.name == rhs.name
             && self.value == rhs.value
             && self.sorted_tags() == rhs.sorted_tags()
@@ -72,12 +63,9 @@ impl PartialEq for KvEntry {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct KvUpdateEntry {
-    pub profile_key: KvKeySelect,
-    pub category: Vec<u8>,
-    pub name: Vec<u8>,
-    pub value: Vec<u8>,
-    pub tags: Option<Vec<KvTag>>,
+    pub entry: KvEntry,
     pub expire_ms: Option<i64>,
+    pub profile_id: Option<ProfileId>,
 }
 
 impl Drop for KvUpdateEntry {
@@ -88,10 +76,7 @@ impl Drop for KvUpdateEntry {
 
 impl Zeroize for KvUpdateEntry {
     fn zeroize(&mut self) {
-        self.category.zeroize();
-        self.name.zeroize();
-        self.value.zeroize();
-        self.tags.zeroize();
+        self.entry.zeroize();
     }
 }
 

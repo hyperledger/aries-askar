@@ -43,6 +43,12 @@ impl From<indy_utils::EncryptionError> for Error {
     }
 }
 
+impl From<indy_utils::UnexpectedError> for Error {
+    fn from(_err: indy_utils::UnexpectedError) -> Self {
+        Error::Unexpected
+    }
+}
+
 impl From<indy_utils::ValidationError> for Error {
     fn from(err: indy_utils::ValidationError) -> Self {
         Error::InputError(err.to_string())

@@ -17,32 +17,34 @@ use super::db_utils::{
     expiry_timestamp, extend_query, hash_lock_info, QueryParams, QueryPrepare, Scan, PAGE_SIZE,
 };
 use super::error::{Error, Result as KvResult};
+use super::keys::store_key::StoreKey;
 use super::options::IntoOptions;
-use super::store::{KvStore, LockToken, ScanToken};
-use super::types::{KeyId, KvEntry, KvFetchOptions, KvKeySelect, KvTag, KvUpdateEntry, ProfileId};
+use super::store::{KeyCache, KvProvisionSpec, KvStore, LockToken, ScanToken};
+use super::types::{
+    EntryEncryptor, KeyId, KvEntry, KvFetchOptions, KvTag, KvUpdateEntry, ProfileId,
+};
 use super::wql;
 use super::KvProvisionStore;
 
 const LOCK_EXPIRY: i64 = 120000; // 2 minutes
 const COUNT_QUERY: &'static str = "SELECT COUNT(*) FROM items i
-    WHERE key_id = ?1 AND category = ?2
+    WHERE store_key_id = ?1 AND category = ?2
     AND (expiry IS NULL OR expiry > datetime('now'))";
 const FETCH_QUERY: &'static str = "SELECT id, value FROM items i
-    WHERE key_id = ?1 AND category = ?2 AND name = ?3
+    WHERE store_key_id = ?1 AND category = ?2 AND name = ?3
     AND (expiry IS NULL OR expiry > datetime('now'))";
-const INSERT_QUERY: &'static str = "INSERT INTO items(key_id, category, name, value, expiry)
+const INSERT_QUERY: &'static str = "INSERT INTO items(store_key_id, category, name, value, expiry)
     VALUES(?1, ?2, ?3, ?4, ?5)";
-const SCAN_QUERY: &'static str = "SELECT id, name, value FROM items i WHERE key_id = ?1
+const SCAN_QUERY: &'static str = "SELECT id, name, value FROM items i WHERE store_key_id = ?1
     AND category = ?2 AND (expiry IS NULL OR expiry > datetime('now'))";
 const TAG_QUERY: &'static str = "SELECT name, value, plaintext FROM items_tags WHERE item_id = ?1";
 
-// FIXME mock implementation for development
-async fn get_key_id(k: KvKeySelect) -> KeyId {
-    1
-}
-
-async fn fetch_row_tags(pool: &SqlitePool, row_id: i64) -> KvResult<Option<Vec<KvTag>>> {
-    let tags = sqlx::query(TAG_QUERY)
+async fn fetch_row_tags(
+    pool: &SqlitePool,
+    row_id: i64,
+    key: Option<Arc<StoreKey>>,
+) -> KvResult<Option<Vec<KvTag>>> {
+    let mut tags = sqlx::query(TAG_QUERY)
         .bind(row_id)
         .try_map(|row: SqliteRow| {
             let name = row.try_get(0)?;
@@ -55,6 +57,9 @@ async fn fetch_row_tags(pool: &SqlitePool, row_id: i64) -> KvResult<Option<Vec<K
         })
         .fetch_all(pool)
         .await?;
+    if let Some(key) = key {
+        tags = key.decrypt_tags(tags)?;
+    }
     Ok(if tags.is_empty() { None } else { Some(tags) })
 }
 
@@ -92,10 +97,10 @@ impl<'a> KvSqliteOptions<'a> {
 impl<'a> KvProvisionStore for KvSqliteOptions<'a> {
     type Store = KvSqlite;
 
-    async fn provision_store(self) -> KvResult<Self::Store> {
+    async fn provision_store(self, spec: KvProvisionSpec) -> KvResult<Self::Store> {
         let conn_pool = self.options.connect(self.path.as_ref()).await?;
+        let mut conn = conn_pool.acquire().await?;
 
-        let wallet_id = uuid::Uuid::new_v4().to_string();
         sqlx::query(
             r#"
             BEGIN EXCLUSIVE TRANSACTION;
@@ -106,43 +111,55 @@ impl<'a> KvProvisionStore for KvSqliteOptions<'a> {
                 PRIMARY KEY(name)
             );
             INSERT INTO config (name, value) VALUES
-                ("uniq_id", ?1),
+                ("default_profile", ?1),
+                ("wrap_key", ?2),
                 ("version", "1");
 
-            CREATE TABLE keys (
+            CREATE TABLE profiles (
                 id INTEGER NOT NULL,
-                parent_id INTEGER NULL,
-                profile_id INTEGER NOT NULL,
+                active_key_id INTEGER NULL,
+                name TEXT NOT NULL,
                 reference TEXT NULL,
+                PRIMARY KEY(id),
+                FOREIGN KEY(active_key_id) REFERENCES store_keys(id)
+                    ON DELETE SET NULL ON UPDATE CASCADE
+            );
+            CREATE UNIQUE INDEX ux_profile_name ON profiles(name);
+
+            CREATE TABLE store_keys (
+                id INTEGER NOT NULL,
+                profile_id INTEGER NOT NULL,
                 value BLOB NULL,
                 PRIMARY KEY(id),
-                FOREIGN KEY(parent_id) REFERENCES keys(id)
-                    ON DELETE CASCADE ON UPDATE CASCADE,
                 FOREIGN KEY(profile_id) REFERENCES profiles(id)
                     ON DELETE CASCADE ON UPDATE CASCADE
             );
 
-            CREATE TABLE profiles (
+            CREATE TABLE keys (
                 id INTEGER NOT NULL,
-                items_key_id INTEGER NULL,
+                store_key_id INTEGER NOT NULL,
+                category NOT NULL,
+                name NOT NULL,
                 reference TEXT NULL,
+                value BLOB NULL,
                 PRIMARY KEY(id),
-                FOREIGN KEY(items_key_id) REFERENCES keys(id)
+                FOREIGN KEY(store_key_id) REFERENCES store_keys(id)
                     ON DELETE CASCADE ON UPDATE CASCADE
             );
+            CREATE UNIQUE INDEX ux_keys_uniq ON keys(store_key_id, category, name);
 
             CREATE TABLE items (
                 id INTEGER NOT NULL,
-                key_id INTEGER NOT NULL,
+                store_key_id INTEGER NOT NULL,
                 category NOT NULL,
                 name NOT NULL,
                 value NOT NULL,
                 expiry DATETIME NULL,
                 PRIMARY KEY(id),
-                FOREIGN KEY(key_id) REFERENCES keys(id)
+                FOREIGN KEY(store_key_id) REFERENCES store_keys(id)
                     ON DELETE CASCADE ON UPDATE CASCADE
             );
-            CREATE UNIQUE INDEX ux_items_uniq ON items(key_id, category, name);
+            CREATE UNIQUE INDEX ux_items_uniq ON items(store_key_id, category, name);
 
             CREATE TABLE items_tags (
                 item_id INTEGER NOT NULL,
@@ -162,35 +179,71 @@ impl<'a> KvProvisionStore for KvSqliteOptions<'a> {
                 PRIMARY KEY(id)
             );
 
+            INSERT INTO profiles (name) VALUES (?1);
+            INSERT INTO store_keys (profile_id, value) VALUES (last_insert_rowid(), ?3);
+            UPDATE profiles SET active_key_id = last_insert_rowid();
+
             COMMIT;
-
-            -- for testing only
-            INSERT INTO profiles (items_key_id) VALUES (NULL);
-            INSERT INTO keys (profile_id) VALUES (1);
-
         "#,
         )
         .persistent(false)
-        .bind(wallet_id)
-        .execute(&conn_pool)
+        .bind(&spec.profile_id)
+        .bind(spec.wrap_key_ref)
+        .bind(spec.enc_store_key)
+        .execute(&mut conn)
         .await?;
 
-        Ok(KvSqlite::new(conn_pool))
+        let row = sqlx::query(
+            r#"SELECT id, active_key_id FROM profiles WHERE name = ?1
+        "#,
+        )
+        .persistent(false)
+        .bind(spec.profile_id)
+        .fetch_one(&mut conn)
+        .await?;
+        let default_profile = row.try_get(0)?;
+        let key_id: i64 = row.try_get(1)?;
+        let mut key_cache = KeyCache::new(spec.wrap_key);
+        key_cache.set_profile_key(default_profile, key_id, spec.store_key);
+
+        Ok(KvSqlite::new(conn_pool, default_profile, key_cache))
     }
 }
 
 pub struct KvSqlite {
     conn_pool: SqlitePool,
-    scans: Arc<Mutex<BTreeMap<ScanToken, Scan>>>,
-    locks: Arc<Mutex<BTreeMap<LockToken, Lock>>>,
+    default_profile: ProfileId,
+    key_cache: KeyCache,
+    scans: Mutex<BTreeMap<ScanToken, Scan>>,
+    locks: Mutex<BTreeMap<LockToken, Lock>>,
 }
 
 impl KvSqlite {
-    pub(crate) fn new(conn_pool: SqlitePool) -> Self {
+    pub(crate) fn new(
+        conn_pool: SqlitePool,
+        default_profile: ProfileId,
+        key_cache: KeyCache,
+    ) -> Self {
         Self {
             conn_pool,
-            scans: Arc::new(Mutex::new(BTreeMap::new())),
-            locks: Arc::new(Mutex::new(BTreeMap::new())),
+            default_profile,
+            key_cache,
+            scans: Mutex::new(BTreeMap::new()),
+            locks: Mutex::new(BTreeMap::new()),
+        }
+    }
+
+    async fn get_profile_key(
+        &self,
+        pid: Option<ProfileId>,
+    ) -> KvResult<(KeyId, Option<Arc<StoreKey>>)> {
+        if let Some((kid, key)) = self
+            .key_cache
+            .get_profile_key(pid.unwrap_or(self.default_profile))
+        {
+            Ok((kid, key))
+        } else {
+            unimplemented!()
         }
     }
 }
@@ -203,12 +256,15 @@ impl QueryPrepare for KvSqlite {
 impl KvStore for KvSqlite {
     async fn count(
         &self,
-        client_key: KvKeySelect,
+        profile_id: Option<ProfileId>,
         category: &[u8],
         tag_filter: Option<wql::Query>,
     ) -> KvResult<i64> {
-        let key_id = get_key_id(client_key).await;
-        let category = category.to_vec();
+        let (key_id, key) = self.get_profile_key(profile_id).await?;
+        let category = match key {
+            Some(key) => key.encrypt_category(category)?,
+            None => category.to_vec(),
+        };
         let mut args = QueryParams::new();
         args.push(key_id);
         args.push(category);
@@ -221,31 +277,39 @@ impl KvStore for KvSqlite {
 
     async fn fetch(
         &self,
-        client_key: KvKeySelect,
+        profile_id: Option<ProfileId>,
         category: &[u8],
         name: &[u8],
         options: KvFetchOptions,
     ) -> KvResult<Option<KvEntry>> {
-        let key_id = get_key_id(client_key).await;
-        let category = category.to_vec();
-        let name = name.to_vec();
+        let (key_id, key) = self.get_profile_key(profile_id).await?;
+        let raw_category = category.to_vec();
+        let raw_name = name.to_vec();
+        let (category, name) = match key.clone() {
+            Some(key) => (key.encrypt_category(category)?, key.encrypt_name(name)?),
+            None => (category.to_vec(), name.to_vec()),
+        };
         if let Some(row) = sqlx::query(FETCH_QUERY)
-            .bind(key_id.clone())
-            .bind(category.clone())
-            .bind(name.clone())
+            .bind(key_id)
+            .bind(&category)
+            .bind(&name)
             .fetch_optional(&self.conn_pool)
             .await?
         {
             let tags = if options.retrieve_tags {
-                fetch_row_tags(&self.conn_pool, row.try_get(0)?).await?
+                fetch_row_tags(&self.conn_pool, row.try_get(0)?, key.clone()).await?
             } else {
                 None
             };
+            let value: &[u8] = row.try_get(1)?;
+            let value = match key {
+                Some(key) => key.decrypt_value(value)?,
+                None => value.to_vec(),
+            };
             Ok(Some(KvEntry {
-                key_id,
-                category,
-                name,
-                value: row.try_get(1)?,
+                category: raw_category,
+                name: raw_name,
+                value,
                 tags,
             }))
         } else {
@@ -255,16 +319,20 @@ impl KvStore for KvSqlite {
 
     async fn scan_start(
         &self,
-        client_key: KvKeySelect,
+        profile_id: Option<ProfileId>,
         category: &[u8],
         options: KvFetchOptions,
         tag_filter: Option<wql::Query>,
         offset: Option<i64>,
         max_rows: Option<i64>,
     ) -> KvResult<ScanToken> {
+        let (key_id, key) = self.get_profile_key(profile_id).await?;
         let pool = self.conn_pool.clone();
-        let category = category.to_vec();
-        let key_id = get_key_id(client_key).await;
+        let raw_category = category.to_vec();
+        let category = match key.clone() {
+            Some(key) => key.encrypt_category(category)?,
+            None => category.to_vec(),
+        };
         let scan = try_stream! {
             let mut params = QueryParams::new();
             params.push(key_id.clone());
@@ -276,15 +344,23 @@ impl KvStore for KvSqlite {
                 let row = row?;
                 let tags = if options.retrieve_tags {
                     // FIXME - fetch tags in batches
-                    fetch_row_tags(&pool, row.try_get(0)?).await?
+                    fetch_row_tags(&pool, row.try_get(0)?, key.clone()).await?
                 } else {
                     None
                 };
+                let name = row.try_get(1)?;
+                let value = row.try_get(2)?;
+                let (name, value) = match key.as_ref() {
+                    Some(key) => {
+                        (key.decrypt_name(name)?,
+                        key.decrypt_value(value)?)
+                    }
+                    None => (name, value),
+                };
                 let entry = KvEntry {
-                    key_id: key_id.clone(),
-                    category: category.clone(),
-                    name: row.try_get(1)?,
-                    value: row.try_get(2)?,
+                    category: raw_category.clone(),
+                    name,
+                    value,
                     tags,
                 };
                 batch.push(entry);
@@ -331,23 +407,26 @@ impl KvStore for KvSqlite {
         with_lock: Option<LockToken>,
     ) -> KvResult<()> {
         let mut updates = vec![];
-        for entry in entries {
-            let key_id = get_key_id(entry.profile_key.clone()).await;
-            updates.push((key_id, entry))
+        for mut update in entries {
+            let (key_id, key) = self.get_profile_key(update.profile_id).await?;
+            if let Some(key) = key {
+                update.entry = key.encrypt_entry(update.entry.clone())?;
+            };
+            updates.push((key_id, update))
         }
 
         let mut txn = self.conn_pool.begin().await?; // deferred write txn
-        for (key_id, entry) in updates {
+        for (key_id, update) in updates {
             let row_id: Option<i64> = sqlx::query_scalar(FETCH_QUERY)
                 .bind(&key_id)
-                .bind(&entry.category)
-                .bind(&entry.name)
+                .bind(&update.entry.category)
+                .bind(&update.entry.name)
                 .fetch_optional(&mut txn)
                 .await?;
             let row_id = if let Some(row_id) = row_id {
                 sqlx::query("UPDATE items SET value=?1 WHERE id=?2")
                     .bind(row_id)
-                    .bind(&entry.value)
+                    .bind(&update.entry.value)
                     .execute(&mut txn)
                     .await?;
                 sqlx::query("DELETE FROM items_tags WHERE item_id=?1")
@@ -358,15 +437,15 @@ impl KvStore for KvSqlite {
             } else {
                 sqlx::query(INSERT_QUERY)
                     .bind(&key_id)
-                    .bind(&entry.category)
-                    .bind(&entry.name)
-                    .bind(&entry.value)
-                    .bind(&entry.expire_ms.map(expiry_timestamp))
+                    .bind(&update.entry.category)
+                    .bind(&update.entry.name)
+                    .bind(&update.entry.value)
+                    .bind(&update.expire_ms.map(expiry_timestamp))
                     .execute(&mut txn)
                     .await?
                     .last_insert_rowid()
             };
-            if let Some(tags) = entry.tags.as_ref() {
+            if let Some(tags) = update.entry.tags.as_ref() {
                 for tag in tags {
                     let (name, value, plaintext) = match tag {
                         KvTag::Encrypted(name, value) => (name, value, 0),
@@ -390,11 +469,15 @@ impl KvStore for KvSqlite {
 
     async fn create_lock(
         &self,
-        lock_info: KvUpdateEntry,
+        mut lock_info: KvUpdateEntry,
         options: KvFetchOptions,
         acquire_timeout_ms: Option<i64>,
     ) -> KvResult<Option<(LockToken, KvEntry)>> {
-        let key_id = get_key_id(lock_info.profile_key.clone()).await;
+        let (key_id, key) = self.get_profile_key(lock_info.profile_id).await?;
+        let raw_entry = lock_info.entry.clone();
+        if let Some(key) = key.clone() {
+            lock_info.entry = key.encrypt_entry(raw_entry.clone())?;
+        };
         let hash = hash_lock_info(key_id, &lock_info);
 
         let mut txn = self.conn_pool.begin().await?;
@@ -415,7 +498,6 @@ impl KvStore for KvSqlite {
             .await?
             .rows_affected();
             if upserted > 0 {
-                println!("upserted: {}", upserted);
                 break;
             }
             if expire
@@ -429,36 +511,33 @@ impl KvStore for KvSqlite {
 
         let entry = match sqlx::query(FETCH_QUERY)
             .bind(&key_id)
-            .bind(&lock_info.category)
-            .bind(&lock_info.name)
+            .bind(&lock_info.entry.category)
+            .bind(&lock_info.entry.name)
             .fetch_optional(&mut txn)
             .await?
         {
             Some(row) => {
+                let mut value = row.try_get(1)?;
+                if let Some(key) = key {
+                    value = key.decrypt_value(value)?;
+                }
                 KvEntry {
-                    key_id: key_id.clone(),
-                    category: lock_info.category.clone(),
-                    name: lock_info.name.clone(),
-                    value: row.try_get(1)?,
+                    category: lock_info.entry.category.clone(),
+                    name: lock_info.entry.name.clone(),
+                    value,
                     tags: None, // FIXME optionally fetch tags
                 }
             }
             None => {
                 sqlx::query(INSERT_QUERY)
                     .bind(&key_id)
-                    .bind(&lock_info.category)
-                    .bind(&lock_info.name)
-                    .bind(&lock_info.value)
+                    .bind(&lock_info.entry.category)
+                    .bind(&lock_info.entry.name)
+                    .bind(&lock_info.entry.value)
                     .bind(&lock_info.expire_ms.map(expiry_timestamp))
                     .execute(&mut txn)
                     .await?;
-                KvEntry {
-                    key_id: key_id.clone(),
-                    category: lock_info.category.clone(),
-                    name: lock_info.name.clone(),
-                    value: lock_info.value.clone(),
-                    tags: lock_info.tags.clone(),
-                }
+                raw_entry
             }
         };
         txn.commit().await?;
@@ -477,7 +556,8 @@ mod tests {
     #[test]
     fn sqlite_check_expiry_timestamp() {
         suspend::block_on(async {
-            let db = KvSqliteOptions::in_memory().provision_store().await?;
+            let spec = KvProvisionSpec::create_default().await?;
+            let db = KvSqliteOptions::in_memory().provision_store(spec).await?;
             let ts = expiry_timestamp(LOCK_EXPIRY);
             let check = sqlx::query("SELECT datetime('now'), ?1, ?1 > datetime('now')")
                 .bind(ts)

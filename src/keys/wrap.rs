@@ -18,8 +18,9 @@ pub fn generate_raw_wrap_key() -> Result<String> {
     Ok(base58::encode(key.as_slice()))
 }
 
-fn parse_raw_key(key: &str) -> Result<WrapKey> {
-    let key = base58::decode(key).map_err(|_| err_msg!("Error parsing raw key as base58 value"))?;
+fn parse_raw_key(raw_key: &str) -> Result<WrapKey> {
+    let key =
+        base58::decode(raw_key).map_err(|_| err_msg!("Error parsing raw key as base58 value"))?;
     if key.len() != RAW_KEY_SIZE {
         Err(err_msg!("Incorrect length for encoded raw key"))
     } else {
@@ -64,30 +65,30 @@ impl WrapKeyMethod {
     pub async fn wrap_data<'a>(
         &self,
         data: &'a [u8],
-        key: Option<&str>,
-    ) -> Result<(Cow<'a, [u8]>, WrapKeyReference)> {
+        pass_key: Option<&str>,
+    ) -> Result<(Cow<'a, [u8]>, Option<WrapKey>, WrapKeyReference)> {
         match self {
             Self::CreateManagedKey(_mgr_ref) => unimplemented!(),
             // Self::ExistingManagedKey(String),
             Self::DeriveKey(method) => {
-                if let Some(password) = key {
+                if let Some(password) = pass_key {
                     let (key, detail) = method.derive_new_key(password)?;
                     let key_ref = WrapKeyReference::DeriveKey(*method, detail);
-                    Ok((Cow::Owned(wrap_data(&key, data)?), key_ref))
+                    Ok((Cow::Owned(wrap_data(&key, data)?), Some(key), key_ref))
                 } else {
                     Err(err_msg!(Key, "Key derivation password not provided"))
                 }
             }
             Self::RawKey => {
-                if let Some(key) = key {
-                    let key = parse_raw_key(key)?;
+                if let Some(raw_key) = pass_key {
+                    let key = parse_raw_key(raw_key)?;
                     let key_ref = WrapKeyReference::RawKey;
-                    Ok((Cow::Owned(wrap_data(&key, data)?), key_ref))
+                    Ok((Cow::Owned(wrap_data(&key, data)?), Some(key), key_ref))
                 } else {
                     Err(err_msg!(Key, "Encoded raw key not provided"))
                 }
             }
-            Self::Unprotected => Ok((Cow::Borrowed(data), WrapKeyReference::Unprotected)),
+            Self::Unprotected => Ok((Cow::Borrowed(data), None, WrapKeyReference::Unprotected)),
         }
     }
 }
@@ -133,12 +134,12 @@ impl WrapKeyReference {
     pub async fn unwrap_data<'a>(
         &self,
         ciphertext: &'a [u8],
-        key: Option<&str>,
+        pass_key: Option<&str>,
     ) -> Result<Cow<'a, [u8]>> {
         match self {
             Self::ManagedKey(_key_ref) => unimplemented!(),
             Self::DeriveKey(method, detail) => {
-                if let Some(password) = key {
+                if let Some(password) = pass_key {
                     let key = method.derive_key(password, detail)?;
                     Ok(Cow::Owned(unwrap_data(&key, ciphertext)?))
                 } else {
@@ -146,8 +147,8 @@ impl WrapKeyReference {
                 }
             }
             Self::RawKey => {
-                if let Some(key) = key {
-                    let key = parse_raw_key(key)?;
+                if let Some(raw_key) = pass_key {
+                    let key = parse_raw_key(raw_key)?;
                     Ok(Cow::Owned(unwrap_data(&key, ciphertext)?))
                 } else {
                     Err(err_msg!(Key, "Encoded raw key not provided"))
@@ -181,12 +182,13 @@ mod tests {
     fn derived_key_wrap() {
         let input = b"test data";
         let pass = "pass";
-        let (wrapped, key_ref) = block_on(
+        let (wrapped, key, key_ref) = block_on(
             WrapKeyMethod::DeriveKey(KdfMethod::Argon2i(Default::default()))
                 .wrap_data(input, Some(pass)),
         )
         .unwrap();
         let wrapped = wrapped.into_owned();
+        assert!(key.is_some());
         assert_ne!(wrapped, input);
 
         // round trip the key reference
@@ -205,17 +207,18 @@ mod tests {
     #[test]
     fn raw_key_wrap() {
         let input = b"test data";
-        let key = generate_raw_wrap_key().unwrap();
-        let (wrapped, key_ref) =
-            block_on(WrapKeyMethod::RawKey.wrap_data(input, Some(key.as_str()))).unwrap();
+        let raw_key = generate_raw_wrap_key().unwrap();
+        let (wrapped, key, key_ref) =
+            block_on(WrapKeyMethod::RawKey.wrap_data(input, Some(raw_key.as_str()))).unwrap();
         let wrapped = wrapped.into_owned();
+        assert!(key.is_some());
         assert_ne!(wrapped, input);
 
         // round trip the key reference
         let key_uri = key_ref.into_uri();
         let key_ref = WrapKeyReference::parse_uri(&key_uri).unwrap();
 
-        let unwrapped = block_on(key_ref.unwrap_data(&wrapped, Some(key.as_str())))
+        let unwrapped = block_on(key_ref.unwrap_data(&wrapped, Some(raw_key.as_str())))
             .unwrap()
             .into_owned();
         assert_eq!(unwrapped, input);
@@ -227,9 +230,10 @@ mod tests {
     #[test]
     fn unprotected_wrap() {
         let input = b"test data";
-        let (wrapped, key_ref) =
+        let (wrapped, key, key_ref) =
             block_on(WrapKeyMethod::Unprotected.wrap_data(input, None)).unwrap();
         let wrapped = wrapped.into_owned();
+        assert!(key.is_some());
         assert_eq!(wrapped, input);
 
         // round trip the key reference

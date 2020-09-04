@@ -1,6 +1,6 @@
 pub mod kdf;
 
-pub mod storage_key;
+pub mod store_key;
 
 pub mod wrap;
 

@@ -18,20 +18,23 @@ use super::db_utils::{
     QueryPrepare, Scan, PAGE_SIZE,
 };
 use super::error::{Error, Result as KvResult};
+use super::keys::store_key::StoreKey;
 use super::options::IntoOptions;
-use super::store::{KvProvisionStore, KvStore, LockToken, ScanToken};
-use super::types::{KeyId, KvEntry, KvFetchOptions, KvKeySelect, KvTag, KvUpdateEntry, ProfileId};
+use super::store::{KeyCache, KvProvisionSpec, KvProvisionStore, KvStore, LockToken, ScanToken};
+use super::types::{
+    EntryEncryptor, KeyId, KvEntry, KvFetchOptions, KvTag, KvUpdateEntry, ProfileId,
+};
 use super::wql::{self};
 
 const COUNT_QUERY: &'static str = "SELECT COUNT(*) FROM items i
-    WHERE key_id = $1 AND category = $2
+    WHERE store_key_id = $1 AND category = $2
     AND (expiry IS NULL OR expiry > CURRENT_TIMESTAMP)";
 const FETCH_QUERY: &'static str = "SELECT id, value FROM items i
-    WHERE key_id = $1 AND category = $2 AND name = $3
+    WHERE store_key_id = $1 AND category = $2 AND name = $3
     AND (expiry IS NULL OR expiry > CURRENT_TIMESTAMP)";
-const INSERT_QUERY: &'static str = "INSERT INTO items(key_id, category, name, value, expiry)
+const INSERT_QUERY: &'static str = "INSERT INTO items(store_key_id, category, name, value, expiry)
     VALUES($1, $2, $3, $4, $5) RETURNING id";
-const SCAN_QUERY: &'static str = "SELECT id, name, value FROM items i WHERE key_id = $1
+const SCAN_QUERY: &'static str = "SELECT id, name, value FROM items i WHERE store_key_id = $1
     AND category = $2 AND (expiry IS NULL OR expiry > CURRENT_TIMESTAMP)";
 const TAG_QUERY: &'static str = "SELECT name, value, plaintext FROM items_tags WHERE item_id = $1";
 
@@ -68,7 +71,7 @@ impl KvPostgresOptions {
 impl KvProvisionStore for KvPostgresOptions {
     type Store = KvPostgres;
 
-    async fn provision_store(self) -> KvResult<Self::Store> {
+    async fn provision_store(self, spec: KvProvisionSpec) -> KvResult<Self::Store> {
         let mut conn_pool = PgPool::connect(
             self.admin_uri
                 .as_ref()
@@ -77,13 +80,13 @@ impl KvProvisionStore for KvPostgresOptions {
         )
         .await?;
 
-        KvPostgres::init_db(&conn_pool, false).await?;
+        let (default_profile, key_cache) = KvPostgres::init_db(&conn_pool, spec, false).await?;
 
         if self.admin_uri.is_some() {
             conn_pool = PgPool::connect(self.uri.as_str()).await?;
         }
 
-        Ok(KvPostgres::new(conn_pool))
+        Ok(KvPostgres::new(conn_pool, default_profile, key_cache))
     }
 }
 
@@ -110,8 +113,10 @@ impl std::ops::Deref for TestDB<'_> {
 
 pub struct KvPostgres {
     conn_pool: PgPool,
-    scans: Arc<Mutex<BTreeMap<ScanToken, Scan>>>,
-    locks: Arc<Mutex<BTreeMap<LockToken, Lock>>>,
+    default_profile: ProfileId,
+    key_cache: KeyCache,
+    scans: Mutex<BTreeMap<ScanToken, Scan>>,
+    locks: Mutex<BTreeMap<LockToken, Lock>>,
 }
 
 impl QueryPrepare for KvPostgres {
@@ -143,11 +148,27 @@ impl QueryPrepare for KvPostgres {
 }
 
 impl KvPostgres {
-    pub(crate) fn new(conn_pool: PgPool) -> Self {
+    pub(crate) fn new(conn_pool: PgPool, default_profile: ProfileId, key_cache: KeyCache) -> Self {
         Self {
             conn_pool,
-            scans: Arc::new(Mutex::new(BTreeMap::new())),
-            locks: Arc::new(Mutex::new(BTreeMap::new())),
+            default_profile,
+            key_cache,
+            scans: Mutex::new(BTreeMap::new()),
+            locks: Mutex::new(BTreeMap::new()),
+        }
+    }
+
+    async fn get_profile_key(
+        &self,
+        pid: Option<ProfileId>,
+    ) -> KvResult<(KeyId, Option<Arc<StoreKey>>)> {
+        if let Some((kid, key)) = self
+            .key_cache
+            .get_profile_key(pid.unwrap_or(self.default_profile))
+        {
+            Ok((kid, key))
+        } else {
+            unimplemented!()
         }
     }
 
@@ -164,75 +185,164 @@ impl KvPostgres {
         let mut txn = conn_pool.begin().await?;
         txn.execute("SELECT pg_advisory_xact_lock(99999);").await?;
 
-        Self::init_db(&conn_pool, true).await?;
-        let inst = Self::new(conn_pool);
+        let spec = KvProvisionSpec::create_default().await?;
+        let (default_profile, key_cache) = KvPostgres::init_db(&conn_pool, spec, true).await?;
+        let inst = Self::new(conn_pool, default_profile, key_cache);
 
         Ok(TestDB { inst, txn })
     }
 
-    pub(crate) async fn init_db(conn_pool: &PgPool, reset: bool) -> KvResult<()> {
+    pub(crate) async fn init_db(
+        conn_pool: &PgPool,
+        spec: KvProvisionSpec,
+        reset: bool,
+    ) -> KvResult<(ProfileId, KeyCache)> {
         if reset {
             conn_pool
                 .execute(
-                    "DROP TABLE IF EXISTS items_tags;
-                    DROP TABLE IF EXISTS items;",
+                    "
+                    DROP TABLE IF EXISTS
+                      config, profiles,
+                      store_keys, keys,
+                      items, items_tags;
+                    ",
                 )
                 .await?;
         }
 
         let mut txn = conn_pool.begin().await?;
         txn.execute(
-            r#"
-            CREATE TABLE items(
+            "
+            CREATE TABLE config (
+                name TEXT NOT NULL,
+                value TEXT,
+                PRIMARY KEY(name)
+            );
+
+            CREATE TABLE profiles (
                 id BIGSERIAL,
-                key_id BIGINT NOT NULL,
+                active_key_id BIGINT NULL,
+                name TEXT NOT NULL,
+                reference TEXT NULL,
+                PRIMARY KEY(id)
+            );
+            CREATE UNIQUE INDEX ux_profile_name ON profiles(name);
+
+            CREATE TABLE store_keys (
+                id BIGSERIAL,
+                profile_id BIGINT NOT NULL,
+                value BYTEA NULL,
+                PRIMARY KEY(id),
+                FOREIGN KEY(profile_id) REFERENCES profiles(id)
+                    ON DELETE CASCADE ON UPDATE CASCADE
+            );
+
+            ALTER TABLE profiles ADD FOREIGN KEY(active_key_id)
+                REFERENCES store_keys(id) ON DELETE SET NULL ON UPDATE CASCADE;
+
+            CREATE TABLE keys (
+                id BIGSERIAL,
+                store_key_id BIGINT NOT NULL,
+                category BYTEA NOT NULL,
+                name BYTEA NOT NULL,
+                reference TEXT NULL,
+                value BYTEA NULL,
+                PRIMARY KEY(id),
+                FOREIGN KEY(store_key_id) REFERENCES store_keys(id)
+                    ON DELETE CASCADE ON UPDATE CASCADE
+            );
+            CREATE UNIQUE INDEX ux_keys_uniq ON keys(store_key_id, category, name);
+
+            CREATE TABLE items (
+                id BIGSERIAL,
+                store_key_id BIGINT NOT NULL,
                 category BYTEA NOT NULL,
                 name BYTEA NOT NULL,
                 value BYTEA NOT NULL,
                 expiry TIMESTAMP NULL,
-                PRIMARY KEY(id)
+                PRIMARY KEY(id),
+                FOREIGN KEY(store_key_id) REFERENCES store_keys(id)
+                    ON DELETE CASCADE ON UPDATE CASCADE
             );
-            CREATE UNIQUE INDEX ux_items_uniq ON items(key_id, category, name);
+            CREATE UNIQUE INDEX ux_items_uniq ON items(store_key_id, category, name);
 
-            CREATE TABLE items_tags(
+            CREATE TABLE items_tags (
                 item_id BIGINT NOT NULL,
                 name BYTEA NOT NULL,
                 value BYTEA NOT NULL,
                 plaintext SMALLINT NOT NULL,
                 PRIMARY KEY(name, item_id, plaintext),
-                FOREIGN KEY(item_id)
-                    REFERENCES items(id)
-                    ON DELETE CASCADE
-                    ON UPDATE CASCADE
+                FOREIGN KEY(item_id) REFERENCES items(id)
+                    ON DELETE CASCADE ON UPDATE CASCADE
             );
             CREATE INDEX ix_items_tags_item_id ON items_tags(item_id);
             CREATE INDEX ix_items_tags_value ON items_tags(value) WHERE plaintext = 1;
-        "#,
+        ",
         )
         .await?;
+
+        sqlx::query(
+            "INSERT INTO config (name, value) VALUES
+                ('default_profile', $1),
+                ('wrap_key', $2),
+                ('version', '1');",
+        )
+        .persistent(false)
+        .bind(&spec.profile_id)
+        .bind(spec.wrap_key_ref)
+        .execute(&mut txn)
+        .await?;
+
+        let ins_profile = sqlx::query(
+            "WITH ins AS (INSERT INTO profiles (name) VALUES ($1) RETURNING id AS prof_id)
+                INSERT INTO store_keys (profile_id, value) SELECT prof_id, $2 FROM ins
+                RETURNING profile_id, id AS key_id",
+        )
+        .bind(&spec.profile_id)
+        .bind(spec.enc_store_key)
+        .fetch_one(&mut txn)
+        .await?;
+
+        let default_profile: i64 = ins_profile.try_get(0)?;
+        let key_id: i64 = ins_profile.try_get(1)?;
+
+        sqlx::query("UPDATE profiles SET active_key_id = $1 WHERE id = $2")
+            .persistent(false)
+            .bind(key_id)
+            .bind(default_profile)
+            .execute(&mut txn)
+            .await?;
+
         txn.commit().await?;
-        Ok(())
+
+        let mut key_cache = KeyCache::new(spec.wrap_key);
+        key_cache.set_profile_key(default_profile, key_id, spec.store_key);
+
+        Ok((default_profile, key_cache))
     }
 }
 
-async fn get_key_id(k: KvKeySelect) -> KeyId {
-    1
-}
-
-async fn fetch_row_tags(pool: &PgPool, row_id: i64) -> KvResult<Option<Vec<KvTag>>> {
-    let tags = sqlx::query(TAG_QUERY)
+async fn fetch_row_tags(
+    pool: &PgPool,
+    row_id: i64,
+    key: Option<Arc<StoreKey>>,
+) -> KvResult<Option<Vec<KvTag>>> {
+    let mut tags = sqlx::query(TAG_QUERY)
         .bind(row_id)
         .try_map(|row: PgRow| {
             let name = row.try_get(0)?;
             let value = row.try_get(1)?;
             let plaintext = row.try_get(2)?;
             match plaintext {
-                0 => Ok(KvTag::Encrypted(name, value)),
+                0i16 => Ok(KvTag::Encrypted(name, value)),
                 _ => Ok(KvTag::Plaintext(name, value)),
             }
         })
         .fetch_all(pool)
         .await?;
+    if let Some(key) = key {
+        tags = key.decrypt_tags(tags)?;
+    }
     Ok(if tags.is_empty() { None } else { Some(tags) })
 }
 
@@ -240,12 +350,15 @@ async fn fetch_row_tags(pool: &PgPool, row_id: i64) -> KvResult<Option<Vec<KvTag
 impl KvStore for KvPostgres {
     async fn count(
         &self,
-        client_key: KvKeySelect,
+        profile_id: Option<ProfileId>,
         category: &[u8],
         tag_filter: Option<wql::Query>,
     ) -> KvResult<i64> {
-        let key_id = get_key_id(client_key).await;
-        let category = category.to_vec();
+        let (key_id, key) = self.get_profile_key(profile_id).await?;
+        let category = match key {
+            Some(key) => key.encrypt_category(category)?,
+            None => category.to_vec(),
+        };
         let mut args = QueryParams::new();
         args.push(key_id);
         args.push(category);
@@ -258,31 +371,39 @@ impl KvStore for KvPostgres {
 
     async fn fetch(
         &self,
-        client_key: KvKeySelect,
+        profile_id: Option<ProfileId>,
         category: &[u8],
         name: &[u8],
         options: KvFetchOptions,
     ) -> KvResult<Option<KvEntry>> {
-        let key_id = get_key_id(client_key).await;
-        let category = category.to_vec();
-        let name = name.to_vec();
+        let (key_id, key) = self.get_profile_key(profile_id).await?;
+        let raw_category = category.to_vec();
+        let raw_name = name.to_vec();
+        let (category, name) = match key.clone() {
+            Some(key) => (key.encrypt_category(category)?, key.encrypt_name(name)?),
+            None => (category.to_vec(), name.to_vec()),
+        };
         if let Some(row) = sqlx::query(FETCH_QUERY)
             .bind(key_id)
-            .bind(category.clone())
-            .bind(name.clone())
+            .bind(&category)
+            .bind(&name)
             .fetch_optional(&self.conn_pool)
             .await?
         {
             let tags = if options.retrieve_tags {
-                fetch_row_tags(&self.conn_pool, row.try_get(0)?).await?
+                fetch_row_tags(&self.conn_pool, row.try_get(0)?, key.clone()).await?
             } else {
                 None
             };
+            let value: &[u8] = row.try_get(1)?;
+            let value = match key {
+                Some(key) => key.decrypt_value(value)?,
+                None => value.to_vec(),
+            };
             Ok(Some(KvEntry {
-                key_id,
-                category,
-                name,
-                value: row.try_get(1)?,
+                category: raw_category,
+                name: raw_name,
+                value,
                 tags,
             }))
         } else {
@@ -292,7 +413,7 @@ impl KvStore for KvPostgres {
 
     async fn scan_start(
         &self,
-        client_key: KvKeySelect,
+        profile_id: Option<ProfileId>,
         category: &[u8],
         options: KvFetchOptions,
         tag_filter: Option<wql::Query>,
@@ -300,8 +421,12 @@ impl KvStore for KvPostgres {
         max_rows: Option<i64>,
     ) -> KvResult<ScanToken> {
         let pool = self.conn_pool.clone();
-        let category = category.to_vec();
-        let key_id = get_key_id(client_key).await;
+        let (key_id, key) = self.get_profile_key(profile_id).await?;
+        let raw_category = category.to_vec();
+        let category = match key.clone() {
+            Some(key) => key.encrypt_category(category)?,
+            None => category.to_vec(),
+        };
         let scan = try_stream! {
             let mut params = QueryParams::new();
             params.push(key_id);
@@ -312,16 +437,24 @@ impl KvStore for KvPostgres {
             while let Some(row) = rows.next().await {
                 let row = row?;
                 let tags = if options.retrieve_tags {
-                    // FIXME - fetch tags in batches
-                    fetch_row_tags(&pool, row.try_get(0)?).await?
+                    // FIXME - fetch tags in batches, or better as part of the SELECT statement
+                    fetch_row_tags(&pool, row.try_get(0)?, key.clone()).await?
                 } else {
                     None
                 };
+                let name = row.try_get(1)?;
+                let value = row.try_get(2)?;
+                let (name, value) = match key.as_ref() {
+                    Some(key) => {
+                        (key.decrypt_name(name)?,
+                        key.decrypt_value(value)?)
+                    }
+                    None => (name, value),
+                };
                 let entry = KvEntry {
-                    key_id,
-                    category: category.clone(),
-                    name: row.try_get(1)?,
-                    value: row.try_get(2)?,
+                    category: raw_category.clone(),
+                    name,
+                    value,
                     tags,
                 };
                 batch.push(entry);
@@ -368,23 +501,26 @@ impl KvStore for KvPostgres {
         with_lock: Option<LockToken>,
     ) -> KvResult<()> {
         let mut updates = vec![];
-        for entry in entries {
-            let key_id = get_key_id(entry.profile_key.clone()).await;
-            updates.push((key_id, entry))
+        for mut update in entries {
+            let (key_id, key) = self.get_profile_key(update.profile_id).await?;
+            if let Some(key) = key {
+                update.entry = key.encrypt_entry(update.entry.clone())?;
+            };
+            updates.push((key_id, update))
         }
 
         let mut txn = self.conn_pool.begin().await?; // deferred write txn
-        for (key_id, entry) in updates {
+        for (key_id, update) in updates {
             let row_id: Option<i64> = sqlx::query_scalar(FETCH_QUERY)
                 .bind(&key_id)
-                .bind(&entry.category)
-                .bind(&entry.name)
+                .bind(&update.entry.category)
+                .bind(&update.entry.name)
                 .fetch_optional(&mut txn)
                 .await?;
             let row_id = if let Some(row_id) = row_id {
                 sqlx::query("UPDATE items SET value=$1 WHERE id=$2")
                     .bind(row_id)
-                    .bind(&entry.value)
+                    .bind(&update.entry.value)
                     .execute(&mut txn)
                     .await?;
                 sqlx::query("DELETE FROM items_tags WHERE item_id=$1")
@@ -395,18 +531,18 @@ impl KvStore for KvPostgres {
             } else {
                 sqlx::query_scalar(INSERT_QUERY)
                     .bind(&key_id)
-                    .bind(&entry.category)
-                    .bind(&entry.name)
-                    .bind(&entry.value)
-                    .bind(entry.expire_ms.map(expiry_timestamp))
+                    .bind(&update.entry.category)
+                    .bind(&update.entry.name)
+                    .bind(&update.entry.value)
+                    .bind(update.expire_ms.map(expiry_timestamp))
                     .fetch_one(&mut txn)
                     .await?
             };
-            if let Some(tags) = entry.tags.as_ref() {
+            if let Some(tags) = update.entry.tags.as_ref() {
                 for tag in tags {
                     let (name, value, plaintext) = match tag {
-                        KvTag::Encrypted(name, value) => (name, value, 0),
-                        KvTag::Plaintext(name, value) => (name, value, 1),
+                        KvTag::Encrypted(name, value) => (name, value, 0i16),
+                        KvTag::Plaintext(name, value) => (name, value, 1i16),
                     };
                     sqlx::query(
                         "INSERT INTO items_tags(item_id, name, value, plaintext)
@@ -426,11 +562,15 @@ impl KvStore for KvPostgres {
 
     async fn create_lock(
         &self,
-        lock_info: KvUpdateEntry,
+        mut lock_info: KvUpdateEntry,
         options: KvFetchOptions,
         acquire_timeout_ms: Option<i64>,
     ) -> KvResult<Option<(LockToken, KvEntry)>> {
-        let key_id = get_key_id(lock_info.profile_key.clone()).await;
+        let (key_id, key) = self.get_profile_key(lock_info.profile_id).await?;
+        let raw_entry = lock_info.entry.clone();
+        if let Some(key) = key.clone() {
+            lock_info.entry = key.encrypt_entry(raw_entry.clone())?;
+        };
         let hash = hash_lock_info(key_id, &lock_info);
 
         let mut lock_txn = self.conn_pool.begin().await?;
@@ -456,37 +596,34 @@ impl KvStore for KvPostgres {
         let mut txn = self.conn_pool.begin().await?;
         let entry = match sqlx::query(FETCH_QUERY)
             .bind(&key_id)
-            .bind(&lock_info.category)
-            .bind(&lock_info.name)
+            .bind(&lock_info.entry.category)
+            .bind(&lock_info.entry.name)
             .fetch_optional(&mut txn)
             .await?
         {
             Some(row) => {
+                let mut value = row.try_get(1)?;
+                if let Some(key) = key {
+                    value = key.decrypt_value(value)?;
+                }
                 KvEntry {
-                    key_id: key_id.clone(),
-                    category: lock_info.category.clone(),
-                    name: lock_info.name.clone(),
-                    value: row.try_get(1)?,
+                    category: lock_info.entry.category.clone(),
+                    name: lock_info.entry.name.clone(),
+                    value,
                     tags: None, // FIXME optionally fetch tags
                 }
             }
             None => {
                 sqlx::query(INSERT_QUERY)
                     .bind(&key_id)
-                    .bind(&lock_info.category)
-                    .bind(&lock_info.name)
-                    .bind(&lock_info.value)
+                    .bind(&lock_info.entry.category)
+                    .bind(&lock_info.entry.name)
+                    .bind(&lock_info.entry.value)
                     .bind(&lock_info.expire_ms.map(expiry_timestamp))
                     .execute(&mut txn)
                     .await?;
                 txn.commit().await?;
-                KvEntry {
-                    key_id: key_id.clone(),
-                    category: lock_info.category.clone(),
-                    name: lock_info.name.clone(),
-                    value: lock_info.value.clone(),
-                    tags: lock_info.tags.clone(),
-                }
+                raw_entry
             }
         };
 

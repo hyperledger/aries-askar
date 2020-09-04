@@ -1,11 +1,50 @@
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::collections::BTreeMap;
+use std::sync::{
+    atomic::{AtomicUsize, Ordering},
+    Arc,
+};
 
 use async_trait::async_trait;
 
+use super::keys::{
+    store_key::StoreKey,
+    wrap::{generate_raw_wrap_key, WrapKey, WrapKeyMethod},
+};
 use super::options::IntoOptions;
-use super::types::{KvEntry, KvFetchOptions, KvKeySelect, KvUpdateEntry};
+use super::types::{KeyId, KvEntry, KvFetchOptions, KvUpdateEntry, ProfileId};
 use super::wql;
 use super::{Error, Result};
+
+pub struct KeyCache {
+    profile_active_keys: BTreeMap<ProfileId, KeyId>,
+    store_keys: BTreeMap<KeyId, Arc<StoreKey>>,
+    wrap_key: Option<WrapKey>,
+}
+
+impl KeyCache {
+    pub fn new(wrap_key: Option<WrapKey>) -> Self {
+        Self {
+            profile_active_keys: BTreeMap::new(),
+            store_keys: BTreeMap::new(),
+            wrap_key,
+        }
+    }
+
+    pub fn set_profile_key(&mut self, pid: ProfileId, kid: KeyId, key: StoreKey) {
+        self.profile_active_keys.insert(pid, kid);
+        self.store_keys.insert(kid, Arc::new(key));
+    }
+
+    pub fn get_profile_key(&self, pid: ProfileId) -> Option<(KeyId, Option<Arc<StoreKey>>)> {
+        self.profile_active_keys
+            .get(&pid)
+            .map(|kid| (*kid, self.store_keys.get(kid).cloned()))
+    }
+
+    pub fn get_wrap_key(&self) -> Option<&WrapKey> {
+        self.wrap_key.as_ref()
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ScanToken {
@@ -43,7 +82,7 @@ pub trait KvStore {
     /// Count the number of entries for a given record category
     async fn count(
         &self,
-        profile_key: KvKeySelect,
+        profile_id: Option<ProfileId>,
         category: &[u8],
         tag_filter: Option<wql::Query>,
     ) -> Result<i64>;
@@ -55,7 +94,7 @@ pub trait KvStore {
     /// result found if any.
     async fn fetch(
         &self,
-        profile_key: KvKeySelect,
+        profile_id: Option<ProfileId>,
         category: &[u8],
         name: &[u8],
         options: KvFetchOptions,
@@ -68,7 +107,7 @@ pub trait KvStore {
     /// Results are not guaranteed to be ordered.
     async fn scan_start(
         &self,
-        profile_key: KvKeySelect,
+        profile_id: Option<ProfileId>,
         category: &[u8],
         options: KvFetchOptions,
         tag_filter: Option<wql::Query>,
@@ -118,31 +157,64 @@ pub trait KvStore {
     ) -> Result<Option<(LockToken, KvEntry)>>;
 }
 
+pub struct KvProvisionSpec {
+    pub enc_store_key: Vec<u8>,
+    pub pass_key: Option<String>,
+    pub profile_id: String,
+    pub store_key: StoreKey,
+    pub wrap_key: Option<WrapKey>,
+    pub wrap_key_ref: String,
+}
+
+impl KvProvisionSpec {
+    pub async fn create(method: WrapKeyMethod, pass_key: Option<String>) -> Result<Self> {
+        let store_key = StoreKey::new()?;
+        let key_data = serde_json::to_vec(&store_key).map_err(|_| Error::Unexpected)?;
+        let (enc_store_key, wrap_key, wrap_key_ref) = method
+            .wrap_data(&key_data, pass_key.as_ref().map(String::as_str))
+            .await?;
+        let profile_id = uuid::Uuid::new_v4().to_string();
+        Ok(Self {
+            enc_store_key: enc_store_key.into_owned(),
+            pass_key,
+            profile_id,
+            store_key,
+            wrap_key,
+            wrap_key_ref: wrap_key_ref.into_uri(),
+        })
+    }
+
+    pub async fn create_default() -> Result<Self> {
+        let key = generate_raw_wrap_key()?;
+        Self::create(WrapKeyMethod::RawKey, Some(key)).await
+    }
+}
+
 #[async_trait]
 pub trait KvProvisionStore {
     type Store;
 
-    async fn provision_store(self) -> Result<Self::Store>;
+    async fn provision_store(self, spec: KvProvisionSpec) -> Result<Self::Store>;
 }
 
 #[async_trait]
 impl KvProvisionStore for &str {
     type Store = Box<dyn KvStore>;
 
-    async fn provision_store(self) -> Result<Self::Store> {
+    async fn provision_store(self, spec: KvProvisionSpec) -> Result<Self::Store> {
         let opts = self.into_options()?;
         let store: Box<dyn KvStore> = match opts.schema.as_ref() {
             #[cfg(feature = "postgres")]
             "postgres" => Box::new(
                 super::postgres::KvPostgresOptions::new(opts)?
-                    .provision_store()
+                    .provision_store(spec)
                     .await?,
             ),
 
             #[cfg(feature = "sqlite")]
             "sqlite" => Box::new(
                 super::sqlite::KvSqliteOptions::new(opts)?
-                    .provision_store()
+                    .provision_store(spec)
                     .await?,
             ),
 

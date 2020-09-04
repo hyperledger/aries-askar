@@ -1,12 +1,12 @@
 use serde::Deserialize;
 
 use indy_utils::base58;
-pub use indy_utils::keys::wallet::{decrypt, EncKey, HmacKey, WalletKey as StorageKey};
+pub use indy_utils::keys::wallet::{decrypt, EncKey, HmacKey, WalletKey as StoreKey};
 
 use crate::error::{Error, Result as KvResult};
 use crate::types::{EntryEncryptor, KvTag};
 
-impl EntryEncryptor for StorageKey {
+impl EntryEncryptor for StoreKey {
     fn encrypt_category(&self, category: &[u8]) -> KvResult<Vec<u8>> {
         Ok(self.encrypt_category(&category)?)
     }
@@ -65,13 +65,13 @@ struct EncStorageKey {
     master_key_salt: Vec<u8>,
 }
 
-pub fn decode_wallet_key(enc_key: &[u8], password: &str) -> KvResult<StorageKey> {
+pub fn decode_wallet_key(enc_key: &[u8], password: &str) -> KvResult<StoreKey> {
     let key = serde_json::from_slice::<EncStorageKey>(enc_key)
         .map_err(|e| Error::InputError(format!("Invalid wallet key: {}", e.to_string())))?;
 
     let keys = decrypt_key(key, password)?;
     let data = rmp_serde::from_slice::<[serde_bytes::ByteBuf; 7]>(keys.as_slice()).unwrap();
-    let wallet_key = StorageKey {
+    let wallet_key = StoreKey {
         category_key: EncKey::from_slice(&data[0]),
         name_key: EncKey::from_slice(&data[1]),
         value_key: EncKey::from_slice(&data[2]),
@@ -129,9 +129,8 @@ mod tests {
 
     #[test]
     fn test_indy_key_round_trip() {
-        let key = StorageKey::new().unwrap();
+        let key = StoreKey::new().unwrap();
         let test_record = KvEntry {
-            key_id: 1,
             category: b"category".to_vec(),
             name: b"name".to_vec(),
             value: b"value".to_vec(),
