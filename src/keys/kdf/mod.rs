@@ -86,12 +86,12 @@ fn parse_salt(detail: &str) -> Result<Vec<u8>> {
             if salt.len() >= SALT_SIZE {
                 Ok(salt)
             } else {
-                Err(err_msg!(Key, "Invalid salt length"))
+                Err(err_msg!("Invalid salt length"))
             }
         } else {
-            Err(err_msg!(Key, "Invalid salt"))
+            Err(err_msg!("Invalid salt"))
         }
     } else {
-        Err(err_msg!(Key, "Missing salt"))
+        Err(err_msg!("Missing salt"))
     }
 }

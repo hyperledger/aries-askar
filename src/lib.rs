@@ -1,12 +1,15 @@
 #[macro_use]
 mod error;
-pub use self::error::{Error, Result};
+pub use self::error::{Error, ErrorKind, Result};
 
 pub(crate) mod db_utils;
 
 pub mod indy_compat;
 
 mod options;
+
+//#[cfg(feature = "ffi")]
+//pub mod ffi;
 
 #[cfg(feature = "postgres")]
 pub mod postgres;

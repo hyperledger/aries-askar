@@ -16,7 +16,7 @@ use sqlx::{
 use super::db_utils::{
     expiry_timestamp, extend_query, hash_lock_info, QueryParams, QueryPrepare, Scan, PAGE_SIZE,
 };
-use super::error::{Error, Result as KvResult};
+use super::error::Result as KvResult;
 use super::keys::store_key::StoreKey;
 use super::options::IntoOptions;
 use super::store::{KeyCache, KvProvisionSpec, KvStore, LockToken, ScanToken};
@@ -397,7 +397,7 @@ impl KvStore for KvSqlite {
                 None => Ok((vec![], None)),
             }
         } else {
-            Err(Error::Timeout)
+            Err(err_msg!(Timeout))
         }
     }
 

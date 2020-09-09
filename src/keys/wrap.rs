@@ -5,7 +5,7 @@ pub use indy_utils::keys::wallet::{decrypt, encrypt_non_searchable, EncKey as Wr
 use indy_utils::ursa::encryption::random_bytes;
 
 use super::kdf::KdfMethod;
-use crate::error::{Error, Result};
+use crate::error::{ErrorKind, Result};
 
 pub const PREFIX_KDF: &'static str = "kdf";
 pub const PREFIX_RAW: &'static str = "raw";
@@ -54,10 +54,10 @@ impl WrapKeyMethod {
             PREFIX_RAW => Ok(Self::RawKey),
             PREFIX_KDF => match KdfMethod::from_str(uri) {
                 Some((method, _)) => Ok(Self::DeriveKey(method)),
-                None => Err(Error::Unsupported),
+                None => Err(ErrorKind::Unsupported.into()),
             },
             PREFIX_NONE => Ok(Self::Unprotected),
-            _ => Err(Error::Unsupported),
+            _ => Err(ErrorKind::Unsupported.into()),
         }
     }
 
@@ -76,7 +76,7 @@ impl WrapKeyMethod {
                     let key_ref = WrapKeyReference::DeriveKey(*method, detail);
                     Ok((Cow::Owned(wrap_data(&key, data)?), Some(key), key_ref))
                 } else {
-                    Err(err_msg!(Key, "Key derivation password not provided"))
+                    Err(err_msg!("Key derivation password not provided"))
                 }
             }
             Self::RawKey => {
@@ -85,7 +85,7 @@ impl WrapKeyMethod {
                     let key_ref = WrapKeyReference::RawKey;
                     Ok((Cow::Owned(wrap_data(&key, data)?), Some(key), key_ref))
                 } else {
-                    Err(err_msg!(Key, "Encoded raw key not provided"))
+                    Err(err_msg!("Encoded raw key not provided"))
                 }
             }
             Self::Unprotected => Ok((Cow::Borrowed(data), None, WrapKeyReference::Unprotected)),
@@ -115,10 +115,10 @@ impl WrapKeyReference {
             PREFIX_RAW => Ok(Self::RawKey),
             PREFIX_KDF => match KdfMethod::from_str(uri) {
                 Some((method, detail)) => Ok(Self::DeriveKey(method, detail)),
-                None => Err(Error::Unsupported),
+                None => Err(ErrorKind::Unsupported.into()),
             },
             PREFIX_NONE => Ok(Self::Unprotected),
-            _ => Err(Error::Unsupported),
+            _ => Err(ErrorKind::Unsupported.into()),
         }
     }
 
@@ -143,7 +143,7 @@ impl WrapKeyReference {
                     let key = method.derive_key(password, detail)?;
                     Ok(Cow::Owned(unwrap_data(&key, ciphertext)?))
                 } else {
-                    Err(err_msg!(Key, "Key derivation password not provided"))
+                    Err(err_msg!("Key derivation password not provided"))
                 }
             }
             Self::RawKey => {
@@ -151,7 +151,7 @@ impl WrapKeyReference {
                     let key = parse_raw_key(raw_key)?;
                     Ok(Cow::Owned(unwrap_data(&key, ciphertext)?))
                 } else {
-                    Err(err_msg!(Key, "Encoded raw key not provided"))
+                    Err(err_msg!("Encoded raw key not provided"))
                 }
             }
             Self::Unprotected => Ok(Cow::Borrowed(ciphertext)),
@@ -175,7 +175,10 @@ mod tests {
                 Default::default()
             )))
         );
-        assert_eq!(parse("other:method:etc"), Err(Error::Unsupported));
+        assert_eq!(
+            parse("other:method:etc"),
+            Err(ErrorKind::Unsupported.into())
+        );
     }
 
     #[test]
@@ -233,7 +236,7 @@ mod tests {
         let (wrapped, key, key_ref) =
             block_on(WrapKeyMethod::Unprotected.wrap_data(input, None)).unwrap();
         let wrapped = wrapped.into_owned();
-        assert!(key.is_some());
+        assert!(key.is_none());
         assert_eq!(wrapped, input);
 
         // round trip the key reference

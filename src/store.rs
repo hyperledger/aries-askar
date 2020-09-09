@@ -13,7 +13,7 @@ use super::keys::{
 use super::options::IntoOptions;
 use super::types::{KeyId, KvEntry, KvFetchOptions, KvUpdateEntry, ProfileId};
 use super::wql;
-use super::{Error, Result};
+use super::{ErrorKind, Result};
 
 pub struct KeyCache {
     profile_active_keys: BTreeMap<ProfileId, KeyId>,
@@ -169,7 +169,7 @@ pub struct KvProvisionSpec {
 impl KvProvisionSpec {
     pub async fn create(method: WrapKeyMethod, pass_key: Option<String>) -> Result<Self> {
         let store_key = StoreKey::new()?;
-        let key_data = serde_json::to_vec(&store_key).map_err(|_| Error::Unexpected)?;
+        let key_data = serde_json::to_vec(&store_key).map_err(err_map!(Unexpected))?;
         let (enc_store_key, wrap_key, wrap_key_ref) = method
             .wrap_data(&key_data, pass_key.as_ref().map(String::as_str))
             .await?;
@@ -218,7 +218,7 @@ impl KvProvisionStore for &str {
                     .await?,
             ),
 
-            _ => return Err(Error::Unsupported),
+            _ => return Err(ErrorKind::Unsupported.into()),
         };
         Ok(store)
     }

@@ -48,7 +48,7 @@ impl Level {
 
 fn derive_key(password: &str, salt: &[u8], mem_cost: u32, time_cost: u32) -> Result<Vec<u8>> {
     if salt.len() < SALT_SIZE {
-        return Err(err_msg!(Key, "Invalid salt for argon2i hash"));
+        return Err(err_msg!(Encryption, "Invalid salt for argon2i hash"));
     }
     let config = argon2::Config {
         variant: argon2::Variant::Argon2i,
@@ -62,7 +62,7 @@ fn derive_key(password: &str, salt: &[u8], mem_cost: u32, time_cost: u32) -> Res
         hash_length: HASH_SIZE as u32,
     };
     argon2::hash_raw(password.as_bytes(), &salt[..SALT_SIZE], &config)
-        .map_err(|e| err_msg!(Key, "Error deriving key: {}", e))
+        .map_err(|e| err_msg!(Encryption, "Error deriving key: {}", e))
 }
 
 pub fn generate_salt() -> Vec<u8> {

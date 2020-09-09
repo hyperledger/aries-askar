@@ -3,7 +3,7 @@ use serde::Deserialize;
 use indy_utils::base58;
 pub use indy_utils::keys::wallet::{decrypt, EncKey, HmacKey, WalletKey as StoreKey};
 
-use crate::error::{Error, Result as KvResult};
+use crate::error::Result as KvResult;
 use crate::types::{EntryEncryptor, KvTag};
 
 impl EntryEncryptor for StoreKey {
@@ -66,8 +66,8 @@ struct EncStorageKey {
 }
 
 pub fn decode_wallet_key(enc_key: &[u8], password: &str) -> KvResult<StoreKey> {
-    let key = serde_json::from_slice::<EncStorageKey>(enc_key)
-        .map_err(|e| Error::InputError(format!("Invalid wallet key: {}", e.to_string())))?;
+    let key =
+        serde_json::from_slice::<EncStorageKey>(enc_key).map_err(err_map!("Invalid wallet key"))?;
 
     let keys = decrypt_key(key, password)?;
     let data = rmp_serde::from_slice::<[serde_bytes::ByteBuf; 7]>(keys.as_slice()).unwrap();
