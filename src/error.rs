@@ -63,6 +63,10 @@ impl Error {
         }
     }
 
+    pub fn kind(&self) -> ErrorKind {
+        self.kind
+    }
+
     pub fn with_cause<T: Into<Box<dyn StdError + Send + Sync>>>(mut self, err: T) -> Self {
         self.cause = Some(err.into());
         self

@@ -2,14 +2,28 @@
 mod error;
 pub use self::error::{Error, ErrorKind, Result};
 
+#[macro_use]
+mod macros;
+
+#[cfg(feature = "log")]
+#[macro_use]
+extern crate log;
+
 pub(crate) mod db_utils;
 
 pub mod indy_compat;
 
 mod options;
 
-//#[cfg(feature = "ffi")]
-//pub mod ffi;
+#[cfg(feature = "ffi")]
+#[macro_use]
+extern crate serde;
+#[cfg(feature = "ffi")]
+#[macro_use]
+extern crate serde_json;
+
+#[cfg(feature = "ffi")]
+pub mod ffi;
 
 #[cfg(feature = "postgres")]
 pub mod postgres;

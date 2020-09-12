@@ -199,11 +199,11 @@ pub trait KvProvisionStore {
 
 #[async_trait]
 impl KvProvisionStore for &str {
-    type Store = Box<dyn KvStore>;
+    type Store = Box<dyn KvStore + Send>;
 
     async fn provision_store(self, spec: KvProvisionSpec) -> Result<Self::Store> {
         let opts = self.into_options()?;
-        let store: Box<dyn KvStore> = match opts.schema.as_ref() {
+        let store: Box<dyn KvStore + Send> = match opts.schema.as_ref() {
             #[cfg(feature = "postgres")]
             "postgres" => Box::new(
                 super::postgres::KvPostgresOptions::new(opts)?
