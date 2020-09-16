@@ -45,7 +45,7 @@ impl FfiTag {
         let name = unsafe { FfiStr::from_raw(self.name) }
             .as_opt_str()
             .ok_or_else(|| err_msg!("Invalid tag name"))?;
-        let value = unsafe { FfiStr::from_raw(self.name) }
+        let value = unsafe { FfiStr::from_raw(self.value) }
             .into_opt_string()
             .ok_or_else(|| err_msg!("Invalid tag value"))?;
         Ok(if name.chars().next() == Some('~') {
@@ -69,6 +69,8 @@ impl From<KvEntry> for FfiEntryBuf {
         let category = CString::new(entry.category.clone()).unwrap();
         let name = CString::new(entry.name.clone()).unwrap();
         let mut tags = vec![];
+        let mut tags_ref = vec![];
+        let mut tags_idx = 0;
         if let Some(entry_tags) = entry.tags.as_ref() {
             for tag in entry_tags {
                 let (name, value) = match tag {
@@ -85,7 +87,12 @@ impl From<KvEntry> for FfiEntryBuf {
                         )
                     }
                 };
-                tags.push(FfiTagBuf { name, value })
+                tags.push(FfiTagBuf { name, value });
+                tags_ref.push(FfiTag {
+                    name: tags[tags_idx].name.as_c_str().as_ptr(),
+                    value: tags[tags_idx].value.as_c_str().as_ptr(),
+                });
+                tags_idx += 1;
             }
         }
         Self {
@@ -93,7 +100,7 @@ impl From<KvEntry> for FfiEntryBuf {
             name,
             value: entry.value.clone(),
             tags,
-            tags_ref: vec![],
+            tags_ref,
         }
     }
 }
@@ -189,7 +196,7 @@ impl FfiUpdateEntry {
         let entry = self.entry.decode()?;
         Ok(KvUpdateEntry {
             entry,
-            expire_ms: if self.expire_ms == 0 {
+            expire_ms: if self.expire_ms < 0 {
                 None
             } else {
                 Some(self.expire_ms)
@@ -268,14 +275,10 @@ pub extern "C" fn aries_store_fetch(
         let cb = EnsureCallback::new(move |result: KvResult<Option<KvEntry>>|
             match result {
                 Ok(Some(entry)) => {
-                    println!("got an entry");
                     let results = Box::into_raw(Box::new(FfiEntrySet::from(entry)));
                     cb(cb_id, ErrorCode::Success, results)
                 },
-                Ok(None) => {
-                    println!("no entry");
-                    cb(cb_id, ErrorCode::Success, ptr::null())
-                },
+                Ok(None) => cb(cb_id, ErrorCode::Success, ptr::null()),
                 Err(err) => cb(cb_id, set_last_error(Some(err)), ptr::null()),
             }
         );
@@ -323,7 +326,13 @@ pub extern "C" fn aries_store_update(
         }
         let upd_count = updates_len / mem::size_of::<FfiUpdateEntry>();
         let updates = unsafe { slice::from_raw_parts(updates, upd_count) };
-        let entries = updates.into_iter().flat_map(FfiUpdateEntry::decode).collect();
+        let entries = updates.into_iter().try_fold(
+            Vec::with_capacity(upd_count),
+            |mut acc, entry| {
+                acc.push(FfiUpdateEntry::decode(entry)?);
+                KvResult::Ok(acc)
+            }
+        )?;
         let cb = EnsureCallback::new(move |result|
             match result {
                 Ok(_) => cb(cb_id, ErrorCode::Success),

@@ -120,15 +120,11 @@ pub struct KvEncTag {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct KvFetchOptions {
     pub retrieve_tags: bool,
-    pub retrieve_value: bool,
 }
 
 impl KvFetchOptions {
-    pub fn new(retrieve_tags: bool, retrieve_value: bool) -> Self {
-        Self {
-            retrieve_tags,
-            retrieve_value,
-        }
+    pub fn new(retrieve_tags: bool) -> Self {
+        Self { retrieve_tags }
     }
 }
 
@@ -136,7 +132,6 @@ impl Default for KvFetchOptions {
     fn default() -> Self {
         return Self {
             retrieve_tags: true,
-            retrieve_value: true,
         };
     }
 }

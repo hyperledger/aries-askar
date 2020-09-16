@@ -17,7 +17,7 @@ pub async fn db_add_fetch<DB: KvStore>(db: &DB) -> KvResult<()> {
         tags: None,
     };
 
-    let options = KvFetchOptions::new(true, true);
+    let options = KvFetchOptions::new(true);
 
     let updates = vec![KvUpdateEntry {
         entry: KvEntry {
@@ -53,7 +53,7 @@ pub async fn db_add_fetch_tags<DB: KvStore>(db: &DB) -> KvResult<()> {
         ]),
     };
 
-    let options = KvFetchOptions::new(true, true);
+    let options = KvFetchOptions::new(true);
 
     let updates = vec![KvUpdateEntry {
         entry: KvEntry {

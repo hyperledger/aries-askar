@@ -31,6 +31,8 @@ const LOCK_EXPIRY: i64 = 120000; // 2 minutes
 const COUNT_QUERY: &'static str = "SELECT COUNT(*) FROM items i
     WHERE store_key_id = ?1 AND category = ?2
     AND (expiry IS NULL OR expiry > datetime('now'))";
+const DELETE_QUERY: &'static str = "DELETE FROM items
+    WHERE store_key_id = ?1 AND category = ?2 AND name = ?3";
 const FETCH_QUERY: &'static str = "SELECT id, value FROM items i
     WHERE store_key_id = ?1 AND category = ?2 AND name = ?3
     AND (expiry IS NULL OR expiry > datetime('now'))";
@@ -354,7 +356,6 @@ impl KvStore for KvSqlite {
                 let row = row?;
                 let tags = if options.retrieve_tags {
                     // FIXME - fetch tags in batches
-                    println!("fetch");
                     fetch_row_tags(&pool, row.try_get(0)?, key.clone()).await?
                 } else {
                     None
@@ -414,34 +415,29 @@ impl KvStore for KvSqlite {
         entries: Vec<KvUpdateEntry>,
         with_lock: Option<LockToken>,
     ) -> KvResult<()> {
+        if entries.is_empty() {
+            debug!("Skip update: no entries");
+            return Ok(());
+        }
         let mut updates = vec![];
         for update in entries {
             let (key_id, key) = self.get_profile_key(update.profile_id).await?;
             let (enc_entry, enc_tags) = key.encrypt_entry(&update.entry)?;
-            updates.push((key_id, enc_entry, enc_tags, update.expire_ms))
+            updates.push((key_id, enc_entry, enc_tags, update.expire_ms));
         }
 
         let mut txn = self.conn_pool.begin().await?; // deferred write txn
         for (key_id, enc_entry, enc_tags, expire_ms) in updates {
-            let row_id: Option<i64> = sqlx::query_scalar(FETCH_QUERY)
+            sqlx::query(DELETE_QUERY)
                 .bind(&key_id)
                 .bind(enc_entry.category.as_ref())
                 .bind(enc_entry.name.as_ref())
-                .fetch_optional(&mut txn)
+                .execute(&mut txn)
                 .await?;
-            let row_id = if let Some(row_id) = row_id {
-                sqlx::query("UPDATE items SET value=?1 WHERE id=?2")
-                    .bind(row_id)
-                    .bind(enc_entry.value.as_ref())
-                    .execute(&mut txn)
-                    .await?;
-                sqlx::query("DELETE FROM items_tags WHERE item_id=?1")
-                    .bind(row_id)
-                    .execute(&mut txn)
-                    .await?;
-                row_id
-            } else {
-                sqlx::query(INSERT_QUERY)
+
+            if expire_ms != Some(0) {
+                trace!("Insert entry");
+                let row_id = sqlx::query(INSERT_QUERY)
                     .bind(&key_id)
                     .bind(enc_entry.category.as_ref())
                     .bind(enc_entry.name.as_ref())
@@ -449,20 +445,20 @@ impl KvStore for KvSqlite {
                     .bind(&expire_ms.map(expiry_timestamp))
                     .execute(&mut txn)
                     .await?
-                    .last_insert_rowid()
-            };
-            if let Some(tags) = enc_tags {
-                for tag in tags {
-                    sqlx::query(
-                        "INSERT INTO items_tags(item_id, name, value, plaintext)
-                             VALUES(?1, ?2, ?3, ?4)",
-                    )
-                    .bind(row_id)
-                    .bind(&tag.name)
-                    .bind(&tag.value)
-                    .bind(tag.plaintext as i32)
-                    .execute(&mut txn)
-                    .await?;
+                    .last_insert_rowid();
+                if let Some(tags) = enc_tags {
+                    for tag in tags {
+                        sqlx::query(
+                            "INSERT INTO items_tags(item_id, name, value, plaintext)
+                                VALUES(?1, ?2, ?3, ?4)",
+                        )
+                        .bind(row_id)
+                        .bind(&tag.name)
+                        .bind(&tag.value)
+                        .bind(tag.plaintext as i32)
+                        .execute(&mut txn)
+                        .await?;
+                    }
                 }
             }
         }

@@ -501,11 +501,15 @@ impl KvStore for KvPostgres {
         entries: Vec<KvUpdateEntry>,
         with_lock: Option<LockToken>,
     ) -> KvResult<()> {
+        if entries.is_empty() {
+            debug!("Skip update: no entries");
+            return Ok(());
+        }
         let mut updates = vec![];
         for update in entries {
             let (key_id, key) = self.get_profile_key(update.profile_id).await?;
             let (enc_entry, enc_tags) = key.encrypt_entry(&update.entry)?;
-            updates.push((key_id, enc_entry, enc_tags, update.expire_ms))
+            updates.push((key_id, enc_entry, enc_tags, update.expire_ms));
         }
 
         let mut txn = self.conn_pool.begin().await?; // deferred write txn
