@@ -4,58 +4,74 @@ use indy_utils::base58;
 pub use indy_utils::keys::wallet::{decrypt, EncKey, HmacKey, WalletKey as StoreKey};
 
 use crate::error::Result as KvResult;
-use crate::types::{EntryEncryptor, KvTag};
+use crate::types::{EntryEncryptor, KvEncTag, KvTag};
+
+#[inline]
+pub fn decode_utf8(value: Vec<u8>) -> KvResult<String> {
+    String::from_utf8(value).map_err(err_map!(Encryption))
+}
 
 impl EntryEncryptor for StoreKey {
-    fn encrypt_category(&self, category: &[u8]) -> KvResult<Vec<u8>> {
+    fn encrypt_entry_category(&self, category: &str) -> KvResult<Vec<u8>> {
         Ok(self.encrypt_category(&category)?)
     }
 
-    fn encrypt_name(&self, name: &[u8]) -> KvResult<Vec<u8>> {
+    fn encrypt_entry_name(&self, name: &str) -> KvResult<Vec<u8>> {
         Ok(self.encrypt_name(&name)?)
     }
 
-    fn encrypt_value(&self, value: &[u8]) -> KvResult<Vec<u8>> {
+    fn encrypt_entry_value(&self, value: &[u8]) -> KvResult<Vec<u8>> {
         Ok(self.encrypt_value(&value)?)
     }
 
-    fn encrypt_tags(&self, tags: Vec<KvTag>) -> KvResult<Vec<KvTag>> {
+    fn encrypt_entry_tags(&self, tags: &Vec<KvTag>) -> KvResult<Vec<KvEncTag>> {
         tags.into_iter()
             .map(|tag| match tag {
-                tag @ KvTag::Plaintext(..) => Ok(tag),
+                KvTag::Plaintext(name, value) => {
+                    let name = self.encrypt_tag_name(&name)?;
+                    Ok(KvEncTag {
+                        name,
+                        value: value.as_bytes().to_vec(),
+                        plaintext: true,
+                    })
+                }
                 KvTag::Encrypted(name, value) => {
                     let name = self.encrypt_tag_name(&name)?;
                     let value = self.encrypt_tag_value(&value)?;
-                    Ok(KvTag::Encrypted(name, value))
+                    Ok(KvEncTag {
+                        name,
+                        value,
+                        plaintext: false,
+                    })
                 }
             })
             .collect()
     }
 
-    fn decrypt_category(&self, enc_category: &[u8]) -> KvResult<Vec<u8>> {
-        Ok(self.decrypt_category(&enc_category)?)
+    fn decrypt_entry_category(&self, enc_category: &[u8]) -> KvResult<String> {
+        decode_utf8(self.decrypt_category(&enc_category)?)
     }
 
-    fn decrypt_name(&self, enc_name: &[u8]) -> KvResult<Vec<u8>> {
-        Ok(self.decrypt_name(&enc_name)?)
+    fn decrypt_entry_name(&self, enc_name: &[u8]) -> KvResult<String> {
+        decode_utf8(self.decrypt_name(&enc_name)?)
     }
 
-    fn decrypt_value(&self, enc_value: &[u8]) -> KvResult<Vec<u8>> {
+    fn decrypt_entry_value(&self, enc_value: &[u8]) -> KvResult<Vec<u8>> {
         Ok(self.decrypt_value(&enc_value)?)
     }
 
-    fn decrypt_tags(&self, enc_tags: Vec<KvTag>) -> KvResult<Vec<KvTag>> {
-        enc_tags
-            .into_iter()
-            .map(|tag| match tag {
-                tag @ KvTag::Plaintext(..) => Ok(tag),
-                KvTag::Encrypted(name, value) => {
-                    let name = self.decrypt_tag_name(&name)?;
-                    let value = self.decrypt_tag_value(&value)?;
-                    Ok(KvTag::Encrypted(name, value))
-                }
-            })
-            .collect()
+    fn decrypt_entry_tags(&self, enc_tags: &Vec<KvEncTag>) -> KvResult<Vec<KvTag>> {
+        enc_tags.into_iter().try_fold(vec![], |mut acc, tag| {
+            let name = decode_utf8(self.decrypt_tag_name(&tag.name)?)?;
+            acc.push(if tag.plaintext {
+                let value = decode_utf8(tag.value.clone())?;
+                KvTag::Plaintext(name, value)
+            } else {
+                let value = decode_utf8(self.decrypt_tag_value(&tag.value)?)?;
+                KvTag::Encrypted(name, value)
+            });
+            KvResult::Ok(acc)
+        })
     }
 }
 
@@ -131,21 +147,20 @@ mod tests {
     fn test_indy_key_round_trip() {
         let key = StoreKey::new().unwrap();
         let test_record = KvEntry {
-            category: b"category".to_vec(),
-            name: b"name".to_vec(),
+            category: "category".to_string(),
+            name: "name".to_string(),
             value: b"value".to_vec(),
             tags: Some(vec![
-                KvTag::Plaintext(b"plain".to_vec(), b"tag".to_vec()),
-                KvTag::Encrypted(b"enctag".to_vec(), b"envtagval".to_vec()),
+                KvTag::Plaintext("plain".to_string(), "tag".to_string()),
+                KvTag::Encrypted("enctag".to_string(), "envtagval".to_string()),
             ]),
         };
-        let enc_record = key.encrypt_entry(test_record.clone()).unwrap();
-        assert_ne!(test_record, enc_record);
-        assert_eq!(
-            test_record.tags.as_ref().unwrap()[0],
-            enc_record.tags.as_ref().unwrap()[0]
-        );
-        let cmp_record = key.decrypt_entry(enc_record).unwrap();
+        let (enc_record, enc_tags) = key.encrypt_entry(&test_record).unwrap();
+        assert!(enc_record.category.as_ref() != test_record.category.as_bytes());
+        assert!(enc_record.name.as_ref() != test_record.name.as_bytes());
+        assert!(enc_record.value.as_ref() != test_record.value.as_slice());
+        assert!(enc_tags.is_some());
+        let cmp_record = key.decrypt_entry(&enc_record, enc_tags.as_ref()).unwrap();
         assert_eq!(test_record, cmp_record);
     }
 }

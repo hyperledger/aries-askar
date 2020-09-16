@@ -32,17 +32,3 @@ macro_rules! slice_from_c_ptr {
         }
     }};
 }
-
-macro_rules! read_lock {
-    ($e:expr) => {
-        ($e).read()
-            .map_err(err_map!(Unexpected, "Error acquiring read lock: {}"))
-    };
-}
-
-macro_rules! write_lock {
-    ($e:expr) => {
-        ($e).write()
-            .map_err(err_map!(Unexpected, "Error acquiring write lock: {}"))
-    };
-}

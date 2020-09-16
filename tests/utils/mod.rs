@@ -4,15 +4,15 @@ use aries_store_kv::{
 
 pub async fn db_fetch_fail<DB: KvStore>(db: &DB) -> KvResult<()> {
     let options = KvFetchOptions::default();
-    let result = db.fetch(None, b"cat", b"name", options).await?;
+    let result = db.fetch(None, "cat", "name", options).await?;
     assert!(result.is_none());
     Ok(())
 }
 
 pub async fn db_add_fetch<DB: KvStore>(db: &DB) -> KvResult<()> {
     let test_row = KvEntry {
-        category: b"cat".to_vec(),
-        name: b"name".to_vec(),
+        category: "cat".to_owned(),
+        name: "name".to_owned(),
         value: b"value".to_vec(),
         tags: None,
     };
@@ -44,12 +44,12 @@ pub async fn db_add_fetch<DB: KvStore>(db: &DB) -> KvResult<()> {
 
 pub async fn db_add_fetch_tags<DB: KvStore>(db: &DB) -> KvResult<()> {
     let test_row = KvEntry {
-        category: b"cat".to_vec(),
-        name: b"name".to_vec(),
+        category: "cat".to_owned(),
+        name: "name".to_owned(),
         value: b"value".to_vec(),
         tags: Some(vec![
-            KvTag::Encrypted(b"t1".to_vec(), b"v1".to_vec()),
-            KvTag::Plaintext(b"t2".to_vec(), b"v2".to_vec()),
+            KvTag::Encrypted("t1".to_owned(), "v1".to_owned()),
+            KvTag::Plaintext("t2".to_owned(), "v2".to_owned()),
         ]),
     };
 
@@ -79,10 +79,10 @@ pub async fn db_add_fetch_tags<DB: KvStore>(db: &DB) -> KvResult<()> {
 }
 
 pub async fn db_count<DB: KvStore>(db: &DB) -> KvResult<()> {
-    let category = b"cat".to_vec();
+    let category = "cat".to_owned();
     let test_rows = vec![KvEntry {
         category: category.clone(),
-        name: b"name".to_vec(),
+        name: "name".to_owned(),
         value: b"value".to_vec(),
         tags: None,
     }];
@@ -114,10 +114,10 @@ pub async fn db_count<DB: KvStore>(db: &DB) -> KvResult<()> {
 }
 
 pub async fn db_scan<DB: KvStore>(db: &DB) -> KvResult<()> {
-    let category = b"cat".to_vec();
+    let category = "cat".to_owned();
     let test_rows = vec![KvEntry {
         category: category.clone(),
-        name: b"name".to_vec(),
+        name: "name".to_owned(),
         value: b"value".to_vec(),
         tags: None,
     }];
@@ -163,8 +163,8 @@ pub async fn db_scan<DB: KvStore>(db: &DB) -> KvResult<()> {
 pub async fn db_create_lock_non_existing<DB: KvStore>(db: &DB) -> KvResult<()> {
     let update = KvUpdateEntry {
         entry: KvEntry {
-            category: b"cat".to_vec(),
-            name: b"name".to_vec(),
+            category: "cat".to_owned(),
+            name: "name".to_owned(),
             value: b"value".to_vec(),
             tags: None,
         },
@@ -185,8 +185,8 @@ pub async fn db_create_lock_non_existing<DB: KvStore>(db: &DB) -> KvResult<()> {
 pub async fn db_create_lock_timeout<DB: KvStore>(db: &DB) -> KvResult<()> {
     let update = KvUpdateEntry {
         entry: KvEntry {
-            category: b"cat".to_vec(),
-            name: b"name".to_vec(),
+            category: "cat".to_owned(),
+            name: "name".to_owned(),
             value: b"value".to_vec(),
             tags: None,
         },

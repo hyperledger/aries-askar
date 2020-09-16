@@ -22,7 +22,7 @@ use super::keys::store_key::StoreKey;
 use super::options::IntoOptions;
 use super::store::{KeyCache, KvProvisionSpec, KvProvisionStore, KvStore, LockToken, ScanToken};
 use super::types::{
-    EntryEncryptor, KeyId, KvEntry, KvFetchOptions, KvTag, KvUpdateEntry, ProfileId,
+    EntryEncryptor, KeyId, KvEncTag, KvEntry, KvFetchOptions, KvTag, KvUpdateEntry, ProfileId,
 };
 use super::wql::{self};
 
@@ -327,23 +327,25 @@ async fn fetch_row_tags(
     row_id: i64,
     key: Option<Arc<StoreKey>>,
 ) -> KvResult<Option<Vec<KvTag>>> {
-    let mut tags = sqlx::query(TAG_QUERY)
+    let tags = sqlx::query(TAG_QUERY)
         .bind(row_id)
         .try_map(|row: PgRow| {
             let name = row.try_get(0)?;
             let value = row.try_get(1)?;
-            let plaintext = row.try_get(2)?;
-            match plaintext {
-                0i16 => Ok(KvTag::Encrypted(name, value)),
-                _ => Ok(KvTag::Plaintext(name, value)),
-            }
+            let plaintext = row.try_get::<i32, _>(2)? != 0;
+            Ok(KvEncTag {
+                name,
+                value,
+                plaintext,
+            })
         })
         .fetch_all(pool)
         .await?;
-    if let Some(key) = key {
-        tags = key.decrypt_tags(tags)?;
-    }
-    Ok(if tags.is_empty() { None } else { Some(tags) })
+    Ok(if tags.is_empty() {
+        None
+    } else {
+        Some(key.decrypt_entry_tags(&tags)?)
+    })
 }
 
 #[async_trait]
@@ -351,13 +353,13 @@ impl KvStore for KvPostgres {
     async fn count(
         &self,
         profile_id: Option<ProfileId>,
-        category: &[u8],
+        category: &str,
         tag_filter: Option<wql::Query>,
     ) -> KvResult<i64> {
         let (key_id, key) = self.get_profile_key(profile_id).await?;
         let category = match key {
-            Some(key) => key.encrypt_category(category)?,
-            None => category.to_vec(),
+            Some(key) => key.encrypt_entry_category(category)?,
+            None => category.as_bytes().to_vec(),
         };
         let mut args = QueryParams::new();
         args.push(key_id);
@@ -372,16 +374,19 @@ impl KvStore for KvPostgres {
     async fn fetch(
         &self,
         profile_id: Option<ProfileId>,
-        category: &[u8],
-        name: &[u8],
+        category: &str,
+        name: &str,
         options: KvFetchOptions,
     ) -> KvResult<Option<KvEntry>> {
         let (key_id, key) = self.get_profile_key(profile_id).await?;
-        let raw_category = category.to_vec();
-        let raw_name = name.to_vec();
+        let raw_category = category.to_owned();
+        let raw_name = name.to_owned();
         let (category, name) = match key.clone() {
-            Some(key) => (key.encrypt_category(category)?, key.encrypt_name(name)?),
-            None => (category.to_vec(), name.to_vec()),
+            Some(key) => (
+                key.encrypt_entry_category(category)?,
+                key.encrypt_entry_name(name)?,
+            ),
+            None => (category.as_bytes().to_vec(), name.as_bytes().to_vec()),
         };
         if let Some(row) = sqlx::query(FETCH_QUERY)
             .bind(key_id)
@@ -396,9 +401,10 @@ impl KvStore for KvPostgres {
                 None
             };
             let value: &[u8] = row.try_get(1)?;
-            let value = match key {
-                Some(key) => key.decrypt_value(value)?,
-                None => value.to_vec(),
+            let value = if let Some(key) = key {
+                key.decrypt_entry_value(value)?
+            } else {
+                value.to_vec()
             };
             Ok(Some(KvEntry {
                 category: raw_category,
@@ -414,7 +420,7 @@ impl KvStore for KvPostgres {
     async fn scan_start(
         &self,
         profile_id: Option<ProfileId>,
-        category: &[u8],
+        category: &str,
         options: KvFetchOptions,
         tag_filter: Option<wql::Query>,
         offset: Option<i64>,
@@ -422,10 +428,10 @@ impl KvStore for KvPostgres {
     ) -> KvResult<ScanToken> {
         let pool = self.conn_pool.clone();
         let (key_id, key) = self.get_profile_key(profile_id).await?;
-        let raw_category = category.to_vec();
+        let raw_category = category.to_owned();
         let category = match key.clone() {
             Some(key) => key.encrypt_category(category)?,
-            None => category.to_vec(),
+            None => category.as_bytes().to_vec(),
         };
         let scan = try_stream! {
             let mut params = QueryParams::new();
@@ -444,13 +450,8 @@ impl KvStore for KvPostgres {
                 };
                 let name = row.try_get(1)?;
                 let value = row.try_get(2)?;
-                let (name, value) = match key.as_ref() {
-                    Some(key) => {
-                        (key.decrypt_name(name)?,
-                        key.decrypt_value(value)?)
-                    }
-                    None => (name, value),
-                };
+                let (name, value) = (key.decrypt_entry_name(name)?,
+                        key.decrypt_entry_value(value)?);
                 let entry = KvEntry {
                     category: raw_category.clone(),
                     name,
@@ -501,26 +502,24 @@ impl KvStore for KvPostgres {
         with_lock: Option<LockToken>,
     ) -> KvResult<()> {
         let mut updates = vec![];
-        for mut update in entries {
+        for update in entries {
             let (key_id, key) = self.get_profile_key(update.profile_id).await?;
-            if let Some(key) = key {
-                update.entry = key.encrypt_entry(update.entry.clone())?;
-            };
-            updates.push((key_id, update))
+            let (enc_entry, enc_tags) = key.encrypt_entry(&update.entry)?;
+            updates.push((key_id, enc_entry, enc_tags, update.expire_ms))
         }
 
         let mut txn = self.conn_pool.begin().await?; // deferred write txn
-        for (key_id, update) in updates {
+        for (key_id, enc_entry, enc_tags, expire_ms) in updates {
             let row_id: Option<i64> = sqlx::query_scalar(FETCH_QUERY)
                 .bind(&key_id)
-                .bind(&update.entry.category)
-                .bind(&update.entry.name)
+                .bind(enc_entry.category.as_ref())
+                .bind(enc_entry.name.as_ref())
                 .fetch_optional(&mut txn)
                 .await?;
             let row_id = if let Some(row_id) = row_id {
                 sqlx::query("UPDATE items SET value=$1 WHERE id=$2")
                     .bind(row_id)
-                    .bind(&update.entry.value)
+                    .bind(enc_entry.value.as_ref())
                     .execute(&mut txn)
                     .await?;
                 sqlx::query("DELETE FROM items_tags WHERE item_id=$1")
@@ -531,27 +530,23 @@ impl KvStore for KvPostgres {
             } else {
                 sqlx::query_scalar(INSERT_QUERY)
                     .bind(&key_id)
-                    .bind(&update.entry.category)
-                    .bind(&update.entry.name)
-                    .bind(&update.entry.value)
-                    .bind(update.expire_ms.map(expiry_timestamp))
+                    .bind(enc_entry.category.as_ref())
+                    .bind(enc_entry.name.as_ref())
+                    .bind(enc_entry.value.as_ref())
+                    .bind(expire_ms.map(expiry_timestamp))
                     .fetch_one(&mut txn)
                     .await?
             };
-            if let Some(tags) = update.entry.tags.as_ref() {
+            if let Some(tags) = enc_tags {
                 for tag in tags {
-                    let (name, value, plaintext) = match tag {
-                        KvTag::Encrypted(name, value) => (name, value, 0i16),
-                        KvTag::Plaintext(name, value) => (name, value, 1i16),
-                    };
                     sqlx::query(
                         "INSERT INTO items_tags(item_id, name, value, plaintext)
                              VALUES($1, $2, $3, $4)",
                     )
                     .bind(row_id)
-                    .bind(name)
-                    .bind(value)
-                    .bind(plaintext)
+                    .bind(&tag.name)
+                    .bind(&tag.value)
+                    .bind(tag.plaintext as i16)
                     .execute(&mut txn)
                     .await?;
                 }
@@ -562,15 +557,13 @@ impl KvStore for KvPostgres {
 
     async fn create_lock(
         &self,
-        mut lock_info: KvUpdateEntry,
+        lock_info: KvUpdateEntry,
         options: KvFetchOptions,
         acquire_timeout_ms: Option<i64>,
     ) -> KvResult<Option<(LockToken, KvEntry)>> {
         let (key_id, key) = self.get_profile_key(lock_info.profile_id).await?;
         let raw_entry = lock_info.entry.clone();
-        if let Some(key) = key.clone() {
-            lock_info.entry = key.encrypt_entry(raw_entry.clone())?;
-        };
+        let (enc_entry, enc_tags) = key.encrypt_entry(&raw_entry)?;
         let hash = hash_lock_info(key_id, &lock_info);
 
         let mut lock_txn = self.conn_pool.begin().await?;
@@ -596,19 +589,16 @@ impl KvStore for KvPostgres {
         let mut txn = self.conn_pool.begin().await?;
         let entry = match sqlx::query(FETCH_QUERY)
             .bind(&key_id)
-            .bind(&lock_info.entry.category)
-            .bind(&lock_info.entry.name)
+            .bind(enc_entry.category.as_ref())
+            .bind(enc_entry.name.as_ref())
             .fetch_optional(&mut txn)
             .await?
         {
             Some(row) => {
-                let mut value = row.try_get(1)?;
-                if let Some(key) = key {
-                    value = key.decrypt_value(value)?;
-                }
+                let value = key.decrypt_entry_value(row.try_get(1)?)?;
                 KvEntry {
-                    category: lock_info.entry.category.clone(),
-                    name: lock_info.entry.name.clone(),
+                    category: raw_entry.category.clone(),
+                    name: raw_entry.name.clone(),
                     value,
                     tags: None, // FIXME optionally fetch tags
                 }
@@ -616,9 +606,9 @@ impl KvStore for KvPostgres {
             None => {
                 sqlx::query(INSERT_QUERY)
                     .bind(&key_id)
-                    .bind(&lock_info.entry.category)
-                    .bind(&lock_info.entry.name)
-                    .bind(&lock_info.entry.value)
+                    .bind(enc_entry.category.as_ref())
+                    .bind(enc_entry.name.as_ref())
+                    .bind(enc_entry.value.as_ref())
                     .bind(&lock_info.expire_ms.map(expiry_timestamp))
                     .execute(&mut txn)
                     .await?;
@@ -630,6 +620,11 @@ impl KvStore for KvPostgres {
         let token = LockToken::next();
         self.locks.lock().await.insert(token, lock);
         Ok(Some((token, entry)))
+    }
+
+    async fn close(&self) -> KvResult<()> {
+        self.conn_pool.close().await;
+        Ok(())
     }
 }
 

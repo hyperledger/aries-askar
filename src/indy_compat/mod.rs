@@ -7,7 +7,7 @@ use itertools::Itertools;
 use sqlx::{sqlite::SqliteRow as DbRow, Row, SqlitePool as DbPool};
 
 use super::{types::KvTag, KvEntry, Result as KvResult};
-use crate::keys::store_key::{decode_wallet_key, decrypt, EncKey, StoreKey};
+use crate::keys::store_key::{decode_utf8, decode_wallet_key, decrypt, EncKey, StoreKey};
 
 const CHUNK_SIZE: usize = 20;
 
@@ -79,8 +79,8 @@ fn decode_row(key: &StoreKey, row: DbRow) -> KvResult<(i64, KvEntry)> {
     let value = decrypt(&value_key, get_slice(&row, 3)?)?;
 
     let entry = KvEntry {
-        category: key.decrypt_category(get_slice(&row, 1)?)?,
-        name: key.decrypt_name(get_slice(&row, 2)?)?,
+        category: decode_utf8(key.decrypt_category(get_slice(&row, 1)?)?)?,
+        name: decode_utf8(key.decrypt_name(get_slice(&row, 2)?)?)?,
         value,
         tags: None,
     };
@@ -91,13 +91,13 @@ fn collect_tags(key: &StoreKey, tags: Vec<DbRow>) -> KvResult<BTreeMap<i64, Vec<
     let mut result = BTreeMap::new();
     for row in tags {
         let entry = result.entry(row.try_get(1)?).or_insert_with(Vec::new);
-        let name = key.decrypt_tag_name(get_slice(&row, 2)?)?;
+        let name = decode_utf8(key.decrypt_tag_name(get_slice(&row, 2)?)?)?;
         if row.try_get(0)? {
             // encrypted value
-            let value = key.decrypt_tag_value(get_slice(&row, 3)?)?;
+            let value = decode_utf8(key.decrypt_tag_value(get_slice(&row, 3)?)?)?;
             entry.push(KvTag::Encrypted(name, value))
         } else {
-            let value = get_slice(&row, 3)?.to_vec();
+            let value = decode_utf8(get_slice(&row, 3)?.to_vec())?;
             entry.push(KvTag::Plaintext(name, value));
         };
     }

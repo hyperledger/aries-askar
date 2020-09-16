@@ -50,8 +50,8 @@ impl<T> From<Result<T>> for ErrorCode {
 }
 
 #[no_mangle]
-pub extern "C" fn indy_vdr_get_current_error(error_json_p: *mut *const c_char) -> ErrorCode {
-    trace!("indy_vdr_get_current_error");
+pub extern "C" fn aries_store_get_current_error(error_json_p: *mut *const c_char) -> ErrorCode {
+    trace!("aries_store_get_current_error");
 
     let error = rust_string_to_c(get_current_error_json());
     unsafe { *error_json_p = error };

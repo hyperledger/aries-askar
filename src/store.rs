@@ -47,32 +47,24 @@ impl KeyCache {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ScanToken {
-    pub id: usize,
-}
+pub struct ScanToken(pub usize);
 
 impl ScanToken {
     const COUNT: AtomicUsize = AtomicUsize::new(0);
 
     pub fn next() -> Self {
-        Self {
-            id: Self::COUNT.fetch_add(1, Ordering::AcqRel),
-        }
+        Self(Self::COUNT.fetch_add(1, Ordering::AcqRel))
     }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct LockToken {
-    pub id: usize,
-}
+pub struct LockToken(pub usize);
 
 impl LockToken {
     const COUNT: AtomicUsize = AtomicUsize::new(0);
 
     pub fn next() -> Self {
-        Self {
-            id: Self::COUNT.fetch_add(1, Ordering::AcqRel),
-        }
+        Self(Self::COUNT.fetch_add(1, Ordering::AcqRel))
     }
 }
 
@@ -83,7 +75,7 @@ pub trait KvStore {
     async fn count(
         &self,
         profile_id: Option<ProfileId>,
-        category: &[u8],
+        category: &str,
         tag_filter: Option<wql::Query>,
     ) -> Result<i64>;
 
@@ -95,8 +87,8 @@ pub trait KvStore {
     async fn fetch(
         &self,
         profile_id: Option<ProfileId>,
-        category: &[u8],
-        name: &[u8],
+        category: &str,
+        name: &str,
         options: KvFetchOptions,
     ) -> Result<Option<KvEntry>>;
 
@@ -108,7 +100,7 @@ pub trait KvStore {
     async fn scan_start(
         &self,
         profile_id: Option<ProfileId>,
-        category: &[u8],
+        category: &str,
         options: KvFetchOptions,
         tag_filter: Option<wql::Query>,
         offset: Option<i64>,
@@ -155,8 +147,12 @@ pub trait KvStore {
         options: KvFetchOptions,
         acquire_timeout_ms: Option<i64>,
     ) -> Result<Option<(LockToken, KvEntry)>>;
+
+    /// Close the store instance, waiting for any shutdown procedures to complete.
+    async fn close(&self) -> Result<()>;
 }
 
+#[derive(Debug)]
 pub struct KvProvisionSpec {
     pub enc_store_key: Vec<u8>,
     pub pass_key: Option<String>,
@@ -199,24 +195,24 @@ pub trait KvProvisionStore {
 
 #[async_trait]
 impl KvProvisionStore for &str {
-    type Store = Box<dyn KvStore + Send>;
+    type Store = Arc<dyn KvStore + Send + Sync>;
 
     async fn provision_store(self, spec: KvProvisionSpec) -> Result<Self::Store> {
         let opts = self.into_options()?;
-        let store: Box<dyn KvStore + Send> = match opts.schema.as_ref() {
+        let store: Arc<dyn KvStore + Send + Sync> = match opts.schema.as_ref() {
             #[cfg(feature = "postgres")]
-            "postgres" => Box::new(
+            "postgres" => Arc::new(
                 super::postgres::KvPostgresOptions::new(opts)?
                     .provision_store(spec)
                     .await?,
             ),
 
             #[cfg(feature = "sqlite")]
-            "sqlite" => Box::new(
-                super::sqlite::KvSqliteOptions::new(opts)?
-                    .provision_store(spec)
-                    .await?,
-            ),
+            "sqlite" => {
+                let opts = super::sqlite::KvSqliteOptions::new(opts)?;
+                debug!("SQLite provision with options: {:?}", &opts);
+                Arc::new(opts.provision_store(spec).await?)
+            }
 
             _ => return Err(ErrorKind::Unsupported.into()),
         };
