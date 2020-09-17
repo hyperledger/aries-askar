@@ -20,13 +20,61 @@ use super::error::set_last_error;
 use super::{CallbackId, EnsureCallback, ErrorCode, RUNTIME};
 use crate::error::Result as KvResult;
 use crate::keys::wrap::{generate_raw_wrap_key, WrapKeyMethod};
-use crate::store::{KvProvisionSpec, KvProvisionStore, KvStore, LockToken};
+use crate::store::{KvProvisionSpec, KvProvisionStore, KvStore, LockToken, ScanToken};
 use crate::types::{KvEntry, KvTag, KvUpdateEntry};
 
 new_handle_type!(StoreHandle, FFI_STORE_COUNTER);
+new_handle_type!(ScanHandle, FFI_SCAN_COUNTER);
 
-static STORES: Lazy<Mutex<BTreeMap<StoreHandle, Arc<dyn KvStore + Send + Sync>>>> =
+pub type ArcStore = Arc<dyn KvStore + Send + Sync>;
+
+static STORES: Lazy<Mutex<BTreeMap<StoreHandle, ArcStore>>> =
     Lazy::new(|| Mutex::new(BTreeMap::new()));
+static SCANS: Lazy<Mutex<BTreeMap<ScanHandle, Option<(ArcStore, ScanToken)>>>> =
+    Lazy::new(|| Mutex::new(BTreeMap::new()));
+
+impl StoreHandle {
+    pub async fn load(&self) -> KvResult<ArcStore> {
+        STORES
+            .lock()
+            .await
+            .get(self)
+            .cloned()
+            .ok_or_else(|| err_msg!("Invalid store handle"))
+    }
+
+    pub async fn remove(&self) -> KvResult<ArcStore> {
+        STORES
+            .lock()
+            .await
+            .remove(self)
+            .ok_or_else(|| err_msg!("Invalid store handle"))
+    }
+}
+
+impl ScanHandle {
+    pub async fn load(&self) -> KvResult<Option<(ArcStore, ScanToken)>> {
+        SCANS
+            .lock()
+            .await
+            .get(self)
+            .cloned()
+            .ok_or_else(|| err_msg!("Invalid scan handle"))
+    }
+
+    pub async fn update(&self, value: Option<(ArcStore, ScanToken)>) -> KvResult<()> {
+        SCANS.lock().await.insert(*self, value);
+        Ok(())
+    }
+
+    pub async fn remove(&self) -> KvResult<Option<(ArcStore, ScanToken)>> {
+        SCANS
+            .lock()
+            .await
+            .remove(self)
+            .ok_or_else(|| err_msg!("Invalid scan handle"))
+    }
+}
 
 // FIXME zeroize
 struct FfiTagBuf {
@@ -60,6 +108,7 @@ struct FfiEntryBuf {
     category: CString,
     name: CString,
     value: Vec<u8>,
+    #[allow(unused)] // referenced by tags_ref
     tags: Vec<FfiTagBuf>,
     tags_ref: Vec<FfiTag>,
 }
@@ -260,6 +309,36 @@ pub extern "C" fn aries_store_generate_raw_key(result_p: *mut *const c_char) -> 
 }
 
 #[no_mangle]
+pub extern "C" fn aries_store_count(
+    handle: StoreHandle,
+    category: FfiStr,
+    tag_filter: FfiStr,
+    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, usize)>,
+    cb_id: usize,
+) -> ErrorCode {
+    catch_err! {
+        trace!("Count from store");
+        let cb = cb.ok_or_else(|| err_msg!("No callback provided"))?;
+        let category = category.into_opt_string().ok_or_else(|| err_msg!("Invalid category"))?;
+        let tag_filter = tag_filter.as_opt_str().map(serde_json::from_str).transpose().map_err(err_map!("Error parsing tag query"))?;
+        let cb = EnsureCallback::new(move |result: KvResult<i64>|
+            match result {
+                Ok(count) => cb(cb_id, ErrorCode::Success, count as usize),
+                Err(err) => cb(cb_id, set_last_error(Some(err)), 0),
+            }
+        );
+        RUNTIME.spawn_ok(async move {
+            let result = async {
+                let store = handle.load().await?;
+                store.count(None, category.as_str(), tag_filter).await
+            }.await;
+            cb.resolve(result);
+        }.boxed());
+        Ok(ErrorCode::Success)
+    }
+}
+
+#[no_mangle]
 pub extern "C" fn aries_store_fetch(
     handle: StoreHandle,
     category: FfiStr,
@@ -284,10 +363,90 @@ pub extern "C" fn aries_store_fetch(
         );
         RUNTIME.spawn_ok(async move {
             let result = async {
-                let store = STORES.lock().await.get(&handle).cloned().ok_or_else(|| err_msg!("Invalid store handle"))?;
+                let store = handle.load().await?;
                 store.fetch(None, &category, &name, Default::default()).await
             }.await;
             cb.resolve(result);
+        }.boxed());
+        Ok(ErrorCode::Success)
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn aries_store_scan_start(
+    handle: StoreHandle,
+    category: FfiStr,
+    tag_filter: FfiStr,
+    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, ScanHandle)>,
+    cb_id: usize,
+) -> ErrorCode {
+    catch_err! {
+        trace!("Scan store start");
+        let cb = cb.ok_or_else(|| err_msg!("No callback provided"))?;
+        let category = category.into_opt_string().ok_or_else(|| err_msg!("Invalid category"))?;
+        let tag_filter = tag_filter.as_opt_str().map(serde_json::from_str).transpose().map_err(err_map!("Error parsing tag query"))?;
+        let cb = EnsureCallback::new(move |result: KvResult<ScanHandle>|
+            match result {
+                Ok(handle) => cb(cb_id, ErrorCode::Success, handle),
+                Err(err) => cb(cb_id, set_last_error(Some(err)), ScanHandle::invalid()),
+            }
+        );
+        RUNTIME.spawn_ok(async move {
+            let result = async {
+                let store = handle.load().await?;
+                let scan = store.scan_start(None, &category, Default::default(), tag_filter, None, None).await?;
+                let handle = ScanHandle::next();
+                let mut scans = SCANS.lock().await;
+                scans.insert(handle, Some((store, scan)));
+                Ok(handle)
+            }.await;
+            cb.resolve(result);
+        }.boxed());
+        Ok(ErrorCode::Success)
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn aries_store_scan_next(
+    handle: ScanHandle,
+    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, *const FfiEntrySet)>,
+    cb_id: usize,
+) -> ErrorCode {
+    catch_err! {
+        trace!("Scan store next");
+        let cb = cb.ok_or_else(|| err_msg!("No callback provided"))?;
+        let cb = EnsureCallback::new(move |result: KvResult<Option<Vec<KvEntry>>>|
+            match result {
+                Ok(Some(entries)) => {
+                    let results = Box::into_raw(Box::new(FfiEntrySet::from(entries)));
+                    cb(cb_id, ErrorCode::Success, results)
+                },
+                Ok(None) => cb(cb_id, ErrorCode::Success, ptr::null()),
+                Err(err) => cb(cb_id, set_last_error(Some(err)), ptr::null()),
+            }
+        );
+        RUNTIME.spawn_ok(async move {
+            let result = async {
+                if let Some((store, token)) = handle.load().await? {
+                    let (entries, opt_token) = store.scan_next(token).await?;
+                    handle.update(opt_token.map(|token| (store, token))).await?;
+                    Ok(Some(entries))
+                } else {
+                    Ok(None)
+                }
+            }.await;
+            cb.resolve(result);
+        }.boxed());
+        Ok(ErrorCode::Success)
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn aries_store_scan_free(handle: ScanHandle) -> ErrorCode {
+    catch_err! {
+        trace!("Close scan");
+        RUNTIME.spawn_ok(async move {
+            handle.remove().await.unwrap_or_default();
         }.boxed());
         Ok(ErrorCode::Success)
     }
@@ -341,7 +500,7 @@ pub extern "C" fn aries_store_update(
         );
         RUNTIME.spawn_ok(async move {
             let result = async {
-                let store = STORES.lock().await.get(&handle).cloned().ok_or_else(|| err_msg!("Invalid store handle"))?;
+                let store = handle.load().await?;
                 store.update(entries, if with_lock == 0 { None } else { Some(LockToken(with_lock))}).await?;
                 Ok(())
             }.await;
@@ -353,28 +512,29 @@ pub extern "C" fn aries_store_update(
 
 #[no_mangle]
 pub extern "C" fn aries_store_close(
-    store_handle: StoreHandle,
+    handle: StoreHandle,
     cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode)>,
     cb_id: usize,
 ) -> ErrorCode {
     catch_err! {
         trace!("Close store");
-        let cb = cb.ok_or_else(|| err_msg!("No callback provided"))?;
-        let cb = EnsureCallback::new(move |result|
-            match result {
-                Ok(_) => cb(cb_id, ErrorCode::Success),
-                Err(err) => cb(cb_id, set_last_error(Some(err))),
-            }
-        );
+        let cb = cb.map(|cb| {
+            EnsureCallback::new(move |result|
+                match result {
+                    Ok(_) => cb(cb_id, ErrorCode::Success),
+                    Err(err) => cb(cb_id, set_last_error(Some(err))),
+                }
+            )
+        });
         RUNTIME.spawn_ok(async move {
             let result = async {
-                let mut stores = STORES.lock().await;
-                match stores.remove(&store_handle) {
-                    Some(store) => store.close().await,
-                    None => Err(err_msg!("Invalid store handle"))
-                }
+                let store = handle.remove().await?;
+                store.close().await?;
+                Ok(())
             }.await;
-            cb.resolve(result);
+            if let Some(cb) = cb {
+                cb.resolve(result);
+            }
         }.boxed());
         Ok(ErrorCode::Success)
     }
