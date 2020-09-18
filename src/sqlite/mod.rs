@@ -1,6 +1,5 @@
 use std::borrow::Cow;
 use std::str::FromStr;
-use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use async_stream::try_stream;
@@ -17,11 +16,11 @@ use super::db_utils::{
 };
 use super::error::Result as KvResult;
 use super::future::sleep_ms;
-use super::keys::store_key::StoreKey;
+use super::keys::{store_key::StoreKey, AsyncEncryptor};
 use super::options::IntoOptions;
 use super::store::{EntryLock, EntryScan, KeyCache, ProvisionStore, ProvisionStoreSpec, Store};
 use super::types::{
-    EncEntryTag, Entry, EntryEncryptor, EntryFetchOptions, EntryTag, KeyId, ProfileId, UpdateEntry,
+    EncEntryTag, Entry, EntryFetchOptions, EntryTag, KeyId, ProfileId, UpdateEntry,
 };
 use super::wql;
 
@@ -45,7 +44,7 @@ const TAG_INSERT_QUERY: &'static str = "INSERT INTO items_tags(item_id, name, va
 async fn fetch_row_tags(
     pool: &SqlitePool,
     row_id: i64,
-    key: Option<Arc<StoreKey>>,
+    key: AsyncEncryptor<StoreKey>,
 ) -> KvResult<Option<Vec<EntryTag>>> {
     let tags = sqlx::query(TAG_QUERY)
         .bind(row_id)
@@ -64,7 +63,7 @@ async fn fetch_row_tags(
     Ok(if tags.is_empty() {
         None
     } else {
-        Some(key.decrypt_entry_tags(&tags)?)
+        Some(key.decrypt_entry_tags(tags).await?)
     })
 }
 
@@ -239,12 +238,12 @@ impl SqliteStore {
     async fn get_profile_key(
         &self,
         pid: Option<ProfileId>,
-    ) -> KvResult<(KeyId, Option<Arc<StoreKey>>)> {
+    ) -> KvResult<(KeyId, AsyncEncryptor<StoreKey>)> {
         if let Some((kid, key)) = self
             .key_cache
             .get_profile_key(pid.unwrap_or(self.default_profile))
         {
-            Ok((kid, key))
+            Ok((kid, AsyncEncryptor(key)))
         } else {
             // FIXME fetch from database
             unimplemented!()
@@ -261,14 +260,11 @@ impl Store for SqliteStore {
     async fn count(
         &self,
         profile_id: Option<ProfileId>,
-        category: &str,
+        category: String,
         tag_filter: Option<wql::Query>,
     ) -> KvResult<i64> {
         let (key_id, key) = self.get_profile_key(profile_id).await?;
-        let category = match key {
-            Some(key) => key.encrypt_entry_category(category)?,
-            None => category.as_bytes().to_vec(),
-        };
+        let category = key.encrypt_entry_category(category).await?;
         let mut args = QueryParams::new();
         args.push(key_id);
         args.push(category);
@@ -282,20 +278,14 @@ impl Store for SqliteStore {
     async fn fetch(
         &self,
         profile_id: Option<ProfileId>,
-        category: &str,
-        name: &str,
+        category: String,
+        name: String,
         options: EntryFetchOptions,
     ) -> KvResult<Option<Entry>> {
         let (key_id, key) = self.get_profile_key(profile_id).await?;
-        let raw_category = category.to_owned();
-        let raw_name = name.to_owned();
-        let (category, name) = match key.clone() {
-            Some(key) => (
-                key.encrypt_entry_category(category)?,
-                key.encrypt_entry_name(name)?,
-            ),
-            None => (category.as_bytes().to_vec(), name.as_bytes().to_vec()),
-        };
+        let raw_category = category.clone();
+        let raw_name = name.clone();
+        let (category, name) = key.encrypt_entry_category_name(category, name).await?;
         if let Some(row) = sqlx::query(FETCH_QUERY)
             .bind(key_id)
             .bind(&category)
@@ -304,16 +294,12 @@ impl Store for SqliteStore {
             .await?
         {
             let tags = if options.retrieve_tags {
+                // FIXME use the same connection to fetch all tags
                 fetch_row_tags(&self.conn_pool, row.try_get(0)?, key.clone()).await?
             } else {
                 None
             };
-            let value: &[u8] = row.try_get(1)?;
-            let value = if let Some(key) = key {
-                key.decrypt_entry_value(value)?
-            } else {
-                value.to_vec()
-            };
+            let value = key.decrypt_entry_value(row.try_get(1)?).await?;
             Ok(Some(Entry {
                 category: raw_category,
                 name: raw_name,
@@ -328,7 +314,7 @@ impl Store for SqliteStore {
     async fn scan(
         &self,
         profile_id: Option<ProfileId>,
-        category: &str,
+        category: String,
         options: EntryFetchOptions,
         tag_filter: Option<wql::Query>,
         offset: Option<i64>,
@@ -336,11 +322,8 @@ impl Store for SqliteStore {
     ) -> KvResult<EntryScan> {
         let (key_id, key) = self.get_profile_key(profile_id).await?;
         let pool = self.conn_pool.clone();
-        let raw_category = category.to_owned();
-        let category = match key.clone() {
-            Some(key) => key.encrypt_entry_category(category)?,
-            None => category.as_bytes().to_vec(),
-        };
+        let raw_category = category.clone();
+        let category = key.encrypt_entry_category(category).await?;
         let scan = try_stream! {
             let mut params = QueryParams::new();
             params.push(key_id.clone());
@@ -356,8 +339,7 @@ impl Store for SqliteStore {
                 } else {
                     None
                 };
-                let name = key.decrypt_entry_name(row.try_get(1)?)?;
-                let value = key.decrypt_entry_value(row.try_get(2)?)?;
+                let (name, value) = key.decrypt_entry_name_value(row.try_get(1)?, row.try_get(2)?).await?;
                 let entry = Entry {
                     category: raw_category.clone(),
                     name,
@@ -384,7 +366,7 @@ impl Store for SqliteStore {
         let mut updates = vec![];
         for update in entries {
             let (key_id, key) = self.get_profile_key(update.profile_id).await?;
-            let (enc_entry, enc_tags) = key.encrypt_entry(&update.entry)?;
+            let (enc_entry, enc_tags) = key.encrypt_entry(update.entry).await?;
             updates.push((key_id, enc_entry, enc_tags, update.expire_ms));
         }
 
@@ -432,8 +414,9 @@ impl Store for SqliteStore {
     ) -> KvResult<(Entry, EntryLock)> {
         let (key_id, key) = self.get_profile_key(lock_info.profile_id).await?;
         let raw_entry = lock_info.entry.clone();
-        let (enc_entry, enc_tags) = key.encrypt_entry(&raw_entry)?;
         let hash = hash_lock_info(key_id, &lock_info);
+        let (enc_entry, enc_tags) = key.encrypt_entry(lock_info.entry).await?;
+        let expiry = lock_info.expire_ms.and_then(expiry_timestamp);
 
         let mut txn = self.conn_pool.begin().await?;
 
@@ -472,7 +455,7 @@ impl Store for SqliteStore {
             .await?
         {
             Some(row) => {
-                let value = key.decrypt_entry_value(row.try_get(1)?)?;
+                let value = key.decrypt_entry_value(row.try_get(1)?).await?;
                 Entry {
                     category: raw_entry.category.clone(),
                     name: raw_entry.name.clone(),
@@ -486,7 +469,7 @@ impl Store for SqliteStore {
                     .bind(enc_entry.category.as_ref())
                     .bind(enc_entry.name.as_ref())
                     .bind(enc_entry.value.as_ref())
-                    .bind(&lock_info.expire_ms.map(expiry_timestamp))
+                    .bind(expiry)
                     .execute(&mut txn)
                     .await?
                     .last_insert_rowid();

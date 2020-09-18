@@ -53,7 +53,7 @@ pub trait Store {
     async fn count(
         &self,
         profile_id: Option<ProfileId>,
-        category: &str,
+        category: String,
         tag_filter: Option<wql::Query>,
     ) -> Result<i64>;
 
@@ -65,8 +65,8 @@ pub trait Store {
     async fn fetch(
         &self,
         profile_id: Option<ProfileId>,
-        category: &str,
-        name: &str,
+        category: String,
+        name: String,
         options: EntryFetchOptions,
     ) -> Result<Option<Entry>>;
 
@@ -78,7 +78,7 @@ pub trait Store {
     async fn scan(
         &self,
         profile_id: Option<ProfileId>,
-        category: &str,
+        category: String,
         options: EntryFetchOptions,
         tag_filter: Option<wql::Query>,
         offset: Option<i64>,

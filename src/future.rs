@@ -4,6 +4,15 @@ use std::time::Duration;
 pub use async_global_executor::block_on;
 
 #[inline]
+pub async fn blocking<F, T>(f: F) -> T
+where
+    T: Send + 'static,
+    F: FnOnce() -> T + Send + 'static,
+{
+    blocking::unblock(f).await
+}
+
+#[inline]
 pub fn spawn_ok(fut: impl Future<Output = ()> + Send + 'static) {
     async_global_executor::spawn(fut).detach();
 }

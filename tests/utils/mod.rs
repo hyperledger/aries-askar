@@ -4,15 +4,17 @@ use aries_store_kv::{
 
 pub async fn db_fetch_fail<DB: Store>(db: &DB) -> KvResult<()> {
     let options = EntryFetchOptions::default();
-    let result = db.fetch(None, "cat", "name", options).await?;
+    let result = db
+        .fetch(None, "cat".to_string(), "name".to_string(), options)
+        .await?;
     assert!(result.is_none());
     Ok(())
 }
 
 pub async fn db_add_fetch<DB: Store>(db: &DB) -> KvResult<()> {
     let test_row = Entry {
-        category: "cat".to_owned(),
-        name: "name".to_owned(),
+        category: "cat".to_string(),
+        name: "name".to_string(),
         value: b"value".to_vec(),
         tags: None,
     };
@@ -32,7 +34,12 @@ pub async fn db_add_fetch<DB: Store>(db: &DB) -> KvResult<()> {
     db.update(updates).await?;
 
     let row = db
-        .fetch(None, &test_row.category, &test_row.name, options)
+        .fetch(
+            None,
+            test_row.category.clone(),
+            test_row.name.clone(),
+            options,
+        )
         .await?;
 
     assert!(row.is_some());
@@ -44,12 +51,12 @@ pub async fn db_add_fetch<DB: Store>(db: &DB) -> KvResult<()> {
 
 pub async fn db_add_fetch_tags<DB: Store>(db: &DB) -> KvResult<()> {
     let test_row = Entry {
-        category: "cat".to_owned(),
-        name: "name".to_owned(),
+        category: "cat".to_string(),
+        name: "name".to_string(),
         value: b"value".to_vec(),
         tags: Some(vec![
-            EntryTag::Encrypted("t1".to_owned(), "v1".to_owned()),
-            EntryTag::Plaintext("t2".to_owned(), "v2".to_owned()),
+            EntryTag::Encrypted("t1".to_string(), "v1".to_string()),
+            EntryTag::Plaintext("t2".to_string(), "v2".to_string()),
         ]),
     };
 
@@ -68,7 +75,12 @@ pub async fn db_add_fetch_tags<DB: Store>(db: &DB) -> KvResult<()> {
     db.update(updates).await?;
 
     let row = db
-        .fetch(None, &test_row.category, &test_row.name, options)
+        .fetch(
+            None,
+            test_row.category.clone(),
+            test_row.name.clone(),
+            options,
+        )
         .await?;
 
     assert!(row.is_some());
@@ -79,10 +91,10 @@ pub async fn db_add_fetch_tags<DB: Store>(db: &DB) -> KvResult<()> {
 }
 
 pub async fn db_count<DB: Store>(db: &DB) -> KvResult<()> {
-    let category = "cat".to_owned();
+    let category = "cat".to_string();
     let test_rows = vec![Entry {
         category: category.clone(),
-        name: "name".to_owned(),
+        name: "name".to_string(),
         value: b"value".to_vec(),
         tags: None,
     }];
@@ -103,21 +115,21 @@ pub async fn db_count<DB: Store>(db: &DB) -> KvResult<()> {
     db.update(updates).await?;
 
     let tag_filter = None;
-    let count = db.count(None, &category, tag_filter).await?;
+    let count = db.count(None, category.clone(), tag_filter).await?;
     assert_eq!(count, 1);
 
     let tag_filter = Some(wql::Query::Eq("sometag".to_string(), "someval".to_string()));
-    let count = db.count(None, &category, tag_filter).await?;
+    let count = db.count(None, category.clone(), tag_filter).await?;
     assert_eq!(count, 0);
 
     Ok(())
 }
 
 pub async fn db_scan<DB: Store>(db: &DB) -> KvResult<()> {
-    let category = "cat".to_owned();
+    let category = "cat".to_string();
     let test_rows = vec![Entry {
         category: category.clone(),
-        name: "name".to_owned(),
+        name: "name".to_string(),
         value: b"value".to_vec(),
         tags: None,
     }];
@@ -142,7 +154,14 @@ pub async fn db_scan<DB: Store>(db: &DB) -> KvResult<()> {
     let offset = None;
     let max_rows = None;
     let mut scan = db
-        .scan(None, &category, options, tag_filter, offset, max_rows)
+        .scan(
+            None,
+            category.clone(),
+            options,
+            tag_filter,
+            offset,
+            max_rows,
+        )
         .await?;
     let rows = scan.fetch_next().await?;
     assert_eq!(rows, Some(test_rows));
@@ -152,7 +171,14 @@ pub async fn db_scan<DB: Store>(db: &DB) -> KvResult<()> {
     let options = EntryFetchOptions::default();
     let tag_filter = Some(wql::Query::Eq("sometag".to_string(), "someval".to_string()));
     let mut scan = db
-        .scan(None, &category, options, tag_filter, offset, max_rows)
+        .scan(
+            None,
+            category.clone(),
+            options,
+            tag_filter,
+            offset,
+            max_rows,
+        )
         .await?;
     let rows = scan.fetch_next().await?;
     assert_eq!(rows, None);
@@ -163,8 +189,8 @@ pub async fn db_scan<DB: Store>(db: &DB) -> KvResult<()> {
 pub async fn db_create_lock_non_existing<DB: Store>(db: &DB) -> KvResult<()> {
     let update = UpdateEntry {
         entry: Entry {
-            category: "cat".to_owned(),
-            name: "name".to_owned(),
+            category: "cat".to_string(),
+            name: "name".to_string(),
             value: b"value".to_vec(),
             tags: None,
         },
@@ -183,8 +209,8 @@ pub async fn db_create_lock_non_existing<DB: Store>(db: &DB) -> KvResult<()> {
 pub async fn db_create_lock_timeout<DB: Store>(db: &DB) -> KvResult<()> {
     let update = UpdateEntry {
         entry: Entry {
-            category: "cat".to_owned(),
-            name: "name".to_owned(),
+            category: "cat".to_string(),
+            name: "name".to_string(),
             value: b"value".to_vec(),
             tags: None,
         },

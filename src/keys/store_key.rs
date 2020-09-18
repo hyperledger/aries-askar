@@ -4,7 +4,8 @@ use indy_utils::base58;
 pub use indy_utils::keys::wallet::{decrypt, EncKey, HmacKey, WalletKey as StoreKey};
 
 use crate::error::Result as KvResult;
-use crate::types::{EncEntryTag, EntryEncryptor, EntryTag};
+use crate::keys::EntryEncryptor;
+use crate::types::{EncEntryTag, EntryTag};
 
 #[inline]
 pub fn decode_utf8(value: Vec<u8>) -> KvResult<String> {
@@ -24,7 +25,7 @@ impl EntryEncryptor for StoreKey {
         Ok(self.encrypt_value(&value)?)
     }
 
-    fn encrypt_entry_tags(&self, tags: &Vec<EntryTag>) -> KvResult<Vec<EncEntryTag>> {
+    fn encrypt_entry_tags(&self, tags: &[EntryTag]) -> KvResult<Vec<EncEntryTag>> {
         tags.into_iter()
             .map(|tag| match tag {
                 EntryTag::Plaintext(name, value) => {
@@ -60,7 +61,7 @@ impl EntryEncryptor for StoreKey {
         Ok(self.decrypt_value(&enc_value)?)
     }
 
-    fn decrypt_entry_tags(&self, enc_tags: &Vec<EncEntryTag>) -> KvResult<Vec<EntryTag>> {
+    fn decrypt_entry_tags(&self, enc_tags: &[EncEntryTag]) -> KvResult<Vec<EntryTag>> {
         enc_tags.into_iter().try_fold(vec![], |mut acc, tag| {
             let name = decode_utf8(self.decrypt_tag_name(&tag.name)?)?;
             acc.push(if tag.plaintext {

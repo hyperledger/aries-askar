@@ -34,6 +34,7 @@ dependencies = [
  "async-std",
  "async-stream",
  "async-trait",
+ "blocking",
  "chrono",
  "env_logger",
  "ffi-support",

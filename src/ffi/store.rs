@@ -401,7 +401,7 @@ pub extern "C" fn aries_store_count(
         spawn_ok(async move {
             let result = async {
                 let store = handle.load().await?;
-                store.count(None, category.as_str(), tag_filter).await
+                store.count(None, category, tag_filter).await
             }.await;
             cb.resolve(result);
         });
@@ -435,7 +435,7 @@ pub extern "C" fn aries_store_fetch(
         spawn_ok(async move {
             let result = async {
                 let store = handle.load().await?;
-                store.fetch(None, &category, &name, Default::default()).await
+                store.fetch(None, category, name, Default::default()).await
             }.await;
             cb.resolve(result);
         });
@@ -465,7 +465,7 @@ pub extern "C" fn aries_store_scan_start(
         spawn_ok(async move {
             let result = async {
                 let store = handle.load().await?;
-                let scan = store.scan(None, &category, Default::default(), tag_filter, None, None).await?;
+                let scan = store.scan(None, category, Default::default(), tag_filter, None, None).await?;
                 Ok(ScanHandle::create(scan).await)
             }.await;
             cb.resolve(result);
