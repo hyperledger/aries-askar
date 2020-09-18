@@ -605,7 +605,7 @@ pub extern "C" fn aries_store_create_lock(
         spawn_ok(async move {
             let result = async {
                 let store = handle.load().await?;
-                let (entry, lock) = store.create_lock(update, Default::default(), timeout).await?;
+                let (entry, lock) = store.create_lock(update, timeout).await?;
                 let lock_buf = FfiEntryLock {
                     lock: Mutex::new(Some(lock)),
                     entry: entry.into(),

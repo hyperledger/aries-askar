@@ -198,9 +198,7 @@ pub async fn db_create_lock_non_existing<DB: Store>(db: &DB) -> KvResult<()> {
         profile_id: None,
     };
     let lock_update = update.clone();
-    let (entry, _lock) = db
-        .create_lock(lock_update, EntryFetchOptions::default(), None)
-        .await?;
+    let (entry, _lock) = db.create_lock(lock_update, None).await?;
     assert_eq!(entry, update.entry);
 
     Ok(())
@@ -217,14 +215,10 @@ pub async fn db_create_lock_timeout<DB: Store>(db: &DB) -> KvResult<()> {
         expire_ms: None,
         profile_id: None,
     };
-    let (entry, _lock) = db
-        .create_lock(update.clone(), EntryFetchOptions::default(), Some(100))
-        .await?;
+    let (entry, _lock) = db.create_lock(update.clone(), Some(100)).await?;
     assert_eq!(entry, update.entry);
 
-    let lock2 = db
-        .create_lock(update.clone(), EntryFetchOptions::default(), Some(100))
-        .await;
+    let lock2 = db.create_lock(update.clone(), Some(100)).await;
     assert!(lock2.is_err());
 
     Ok(())

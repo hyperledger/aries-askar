@@ -409,7 +409,6 @@ impl Store for SqliteStore {
     async fn create_lock(
         &self,
         lock_info: UpdateEntry,
-        options: EntryFetchOptions,
         acquire_timeout_ms: Option<i64>,
     ) -> KvResult<(Entry, EntryLock)> {
         let (key_id, key) = self.get_profile_key(lock_info.profile_id).await?;

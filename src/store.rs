@@ -115,7 +115,6 @@ pub trait Store {
     async fn create_lock(
         &self,
         lock_info: UpdateEntry,
-        options: EntryFetchOptions,
         acquire_timeout_ms: Option<i64>,
     ) -> Result<(Entry, EntryLock)>;
 
