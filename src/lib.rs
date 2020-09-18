@@ -11,6 +11,9 @@ extern crate log;
 
 pub(crate) mod db_utils;
 
+#[doc(hidden)]
+pub mod future;
+
 pub mod indy_compat;
 
 mod options;

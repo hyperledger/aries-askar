@@ -1,13 +1,9 @@
 use std::marker::PhantomData;
 use std::os::raw::c_char;
 
-use async_resource::BoundedExecutor;
 use ffi_support::{define_string_destructor, rust_string_to_c};
-use once_cell::sync::Lazy;
 
 pub static LIB_VERSION: &str = env!("CARGO_PKG_VERSION");
-
-pub static RUNTIME: Lazy<BoundedExecutor> = Lazy::new(BoundedExecutor::default);
 
 #[macro_use]
 mod macros;

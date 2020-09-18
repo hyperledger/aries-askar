@@ -162,7 +162,7 @@ impl WrapKeyReference {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use suspend::block_on;
+    use crate::future::block_on;
 
     #[test]
     fn protection_method_parse() {

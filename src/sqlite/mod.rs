@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 
 use async_stream::try_stream;
 use async_trait::async_trait;
-use futures_util::stream::StreamExt;
+use futures_lite::stream::StreamExt;
 
 use sqlx::{
     sqlite::{Sqlite, SqliteConnectOptions, SqlitePool, SqlitePoolOptions, SqliteRow},
@@ -16,6 +16,7 @@ use super::db_utils::{
     expiry_timestamp, extend_query, hash_lock_info, QueryParams, QueryPrepare, PAGE_SIZE,
 };
 use super::error::Result as KvResult;
+use super::future::sleep_ms;
 use super::keys::store_key::StoreKey;
 use super::options::IntoOptions;
 use super::store::{EntryLock, EntryScan, KeyCache, ProvisionStore, ProvisionStoreSpec, Store};
@@ -460,7 +461,7 @@ impl Store for SqliteStore {
             {
                 return Err(err_msg!(Timeout, "Timed out waiting for lock"));
             }
-            smol::Timer::after(Duration::from_millis(interval as u64)).await;
+            sleep_ms(interval as u64).await;
         }
 
         let entry = match sqlx::query(FETCH_QUERY)
@@ -518,10 +519,11 @@ impl Store for SqliteStore {
 mod tests {
     use super::*;
     use crate::db_utils::replace_arg_placeholders;
+    use crate::future::block_on;
 
     #[test]
     fn sqlite_check_expiry_timestamp() {
-        suspend::block_on(async {
+        block_on(async {
             let spec = ProvisionStoreSpec::create_default().await?;
             let db = SqliteStoreOptions::in_memory()
                 .provision_store(spec)

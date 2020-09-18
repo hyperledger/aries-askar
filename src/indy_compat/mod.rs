@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use futures_util::StreamExt;
+use futures_lite::stream::StreamExt;
 
 use itertools::Itertools;
 

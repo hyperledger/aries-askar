@@ -11,15 +11,14 @@ use std::sync::{
 };
 
 use async_mutex::Mutex;
-use async_resource::Executor;
 use ffi_support::{rust_string_to_c, FfiStr};
-use futures_util::future::FutureExt;
 use indy_utils::new_handle_type;
 use once_cell::sync::Lazy;
 
 use super::error::set_last_error;
-use super::{CallbackId, EnsureCallback, ErrorCode, RUNTIME};
+use super::{CallbackId, EnsureCallback, ErrorCode};
 use crate::error::Result as KvResult;
+use crate::future::spawn_ok;
 use crate::keys::wrap::{generate_raw_wrap_key, WrapKeyMethod};
 use crate::store::{ArcStore, EntryLock, EntryScan, ProvisionStore, ProvisionStoreSpec};
 use crate::types::{Entry, EntryTag, UpdateEntry};
@@ -357,14 +356,14 @@ pub extern "C" fn aries_store_provision(
                 Err(err) => cb(cb_id, set_last_error(Some(err)), StoreHandle::invalid()),
             }
         );
-        RUNTIME.spawn_ok(async move {
+        spawn_ok(async move {
             let result = async {
                 let spec = ProvisionStoreSpec::create(wrap_key_method, pass_key).await?;
                 let store = spec_uri.provision_store(spec).await?;
                 Ok(StoreHandle::create(store).await)
             }.await;
             cb.resolve(result);
-        }.boxed());
+        });
         Ok(ErrorCode::Success)
     }
 }
@@ -399,13 +398,13 @@ pub extern "C" fn aries_store_count(
                 Err(err) => cb(cb_id, set_last_error(Some(err)), 0),
             }
         );
-        RUNTIME.spawn_ok(async move {
+        spawn_ok(async move {
             let result = async {
                 let store = handle.load().await?;
                 store.count(None, category.as_str(), tag_filter).await
             }.await;
             cb.resolve(result);
-        }.boxed());
+        });
         Ok(ErrorCode::Success)
     }
 }
@@ -433,13 +432,13 @@ pub extern "C" fn aries_store_fetch(
                 Err(err) => cb(cb_id, set_last_error(Some(err)), ptr::null()),
             }
         );
-        RUNTIME.spawn_ok(async move {
+        spawn_ok(async move {
             let result = async {
                 let store = handle.load().await?;
                 store.fetch(None, &category, &name, Default::default()).await
             }.await;
             cb.resolve(result);
-        }.boxed());
+        });
         Ok(ErrorCode::Success)
     }
 }
@@ -463,14 +462,14 @@ pub extern "C" fn aries_store_scan_start(
                 Err(err) => cb(cb_id, set_last_error(Some(err)), ScanHandle::invalid()),
             }
         );
-        RUNTIME.spawn_ok(async move {
+        spawn_ok(async move {
             let result = async {
                 let store = handle.load().await?;
                 let scan = store.scan(None, &category, Default::default(), tag_filter, None, None).await?;
                 Ok(ScanHandle::create(scan).await)
             }.await;
             cb.resolve(result);
-        }.boxed());
+        });
         Ok(ErrorCode::Success)
     }
 }
@@ -494,7 +493,7 @@ pub extern "C" fn aries_store_scan_next(
                 Err(err) => cb(cb_id, set_last_error(Some(err)), ptr::null()),
             }
         );
-        RUNTIME.spawn_ok(async move {
+        spawn_ok(async move {
             let result = async {
                 let mut scan = handle.borrow().await?;
                 let entries = scan.fetch_next().await?;
@@ -502,7 +501,7 @@ pub extern "C" fn aries_store_scan_next(
                 Ok(entries)
             }.await;
             cb.resolve(result);
-        }.boxed());
+        });
         Ok(ErrorCode::Success)
     }
 }
@@ -511,9 +510,9 @@ pub extern "C" fn aries_store_scan_next(
 pub extern "C" fn aries_store_scan_free(handle: ScanHandle) -> ErrorCode {
     catch_err! {
         trace!("Close scan");
-        RUNTIME.spawn_ok(async move {
+        spawn_ok(async move {
             handle.remove().await.ok();
-        }.boxed());
+        });
         Ok(ErrorCode::Success)
     }
 }
@@ -572,14 +571,14 @@ pub extern "C" fn aries_store_update(
                 Err(err) => cb(cb_id, set_last_error(Some(err))),
             }
         );
-        RUNTIME.spawn_ok(async move {
+        spawn_ok(async move {
             let result = async {
                 let store = handle.load().await?;
                 store.update(entries).await?;
                 Ok(())
             }.await;
             cb.resolve(result);
-        }.boxed());
+        });
         Ok(ErrorCode::Success)
     }
 }
@@ -603,7 +602,7 @@ pub extern "C" fn aries_store_create_lock(
                 Err(err) => cb(cb_id, set_last_error(Some(err)), LockHandle::null()),
             }
         );
-        RUNTIME.spawn_ok(async move {
+        spawn_ok(async move {
             let result = async {
                 let store = handle.load().await?;
                 let (entry, lock) = store.create_lock(update, Default::default(), timeout).await?;
@@ -614,7 +613,7 @@ pub extern "C" fn aries_store_create_lock(
                 Ok(LockHandle::new(lock_buf))
             }.await;
             cb.resolve(result);
-        }.boxed());
+        });
         Ok(ErrorCode::Success)
     }
 }
@@ -662,14 +661,14 @@ pub extern "C" fn aries_store_lock_update(
                 Err(err) => cb(cb_id, set_last_error(Some(err))),
             }
         );
-        RUNTIME.spawn_ok(async move {
+        spawn_ok(async move {
             let result = async {
                 let lock = handle.take().await?;
                 lock.update(entries).await?;
                 Ok(())
             }.await;
             cb.resolve(result);
-        }.boxed());
+        });
         Ok(ErrorCode::Success)
     }
 }
@@ -695,7 +694,7 @@ pub extern "C" fn aries_store_close(
                 }
             )
         });
-        RUNTIME.spawn_ok(async move {
+        spawn_ok(async move {
             let result = async {
                 let store = handle.remove().await?;
                 store.close().await?;
@@ -704,7 +703,7 @@ pub extern "C" fn aries_store_close(
             if let Some(cb) = cb {
                 cb.resolve(result);
             }
-        }.boxed());
+        });
         Ok(ErrorCode::Success)
     }
 }

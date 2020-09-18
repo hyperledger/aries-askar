@@ -4,7 +4,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use futures_util::stream::{Stream, StreamExt};
+use futures_lite::stream::{Stream, StreamExt};
 
 use super::keys::{
     store_key::StoreKey,

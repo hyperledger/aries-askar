@@ -1,6 +1,5 @@
+use aries_store_kv::future::block_on;
 use aries_store_kv::indy_compat::print_records;
-
-use suspend::block_on;
 
 #[test]
 fn test_print_records() {

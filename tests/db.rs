@@ -4,7 +4,7 @@ mod utils;
 
 macro_rules! db_tests {
     ($init:expr) => {
-        use suspend::block_on;
+        use aries_store_kv::future::block_on;
 
         #[test]
         fn init() {
@@ -101,7 +101,7 @@ mod sqlite {
 
     #[test]
     fn provision_from_str() {
-        suspend::block_on(async {
+        block_on(async {
             let db_url = "sqlite://:memory:";
             let spec = ProvisionStoreSpec::create_default().await?;
             let _db = db_url.provision_store(spec).await?;
@@ -109,7 +109,7 @@ mod sqlite {
         })
         .unwrap();
 
-        assert!(suspend::block_on(async {
+        assert!(block_on(async {
             let db_url = "not-sqlite://test-db";
             let spec = ProvisionStoreSpec::create_default().await?;
             let _db = db_url.provision_store(spec).await?;
