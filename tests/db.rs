@@ -1,4 +1,4 @@
-use aries_store_kv::{KvProvisionStore, Result as KvResult};
+use aries_store_kv::Result as KvResult;
 
 mod utils;
 
@@ -86,12 +86,14 @@ macro_rules! db_tests {
 #[cfg(feature = "sqlite")]
 mod sqlite {
     use super::*;
-    use aries_store_kv::sqlite::{KvSqlite, KvSqliteOptions};
-    use aries_store_kv::KvProvisionSpec;
+    use aries_store_kv::sqlite::{SqliteStore, SqliteStoreOptions};
+    use aries_store_kv::{ProvisionStore, ProvisionStoreSpec};
 
-    async fn init_db() -> KvResult<Box<KvSqlite>> {
-        let spec = KvProvisionSpec::create_default().await?;
-        let db = KvSqliteOptions::in_memory().provision_store(spec).await?;
+    async fn init_db() -> KvResult<Box<SqliteStore>> {
+        let spec = ProvisionStoreSpec::create_default().await?;
+        let db = SqliteStoreOptions::in_memory()
+            .provision_store(spec)
+            .await?;
         Ok(Box::new(db))
     }
 
@@ -101,7 +103,7 @@ mod sqlite {
     fn provision_from_str() {
         suspend::block_on(async {
             let db_url = "sqlite://:memory:";
-            let spec = KvProvisionSpec::create_default().await?;
+            let spec = ProvisionStoreSpec::create_default().await?;
             let _db = db_url.provision_store(spec).await?;
             KvResult::Ok(())
         })
@@ -109,7 +111,7 @@ mod sqlite {
 
         assert!(suspend::block_on(async {
             let db_url = "not-sqlite://test-db";
-            let spec = KvProvisionSpec::create_default().await?;
+            let spec = ProvisionStoreSpec::create_default().await?;
             let _db = db_url.provision_store(spec).await?;
             KvResult::Ok(())
         })
@@ -120,10 +122,10 @@ mod sqlite {
 #[cfg(all(feature = "pg_test", feature = "postgres"))]
 mod postgres {
     use super::*;
-    use aries_store_kv::postgres::{KvPostgres, TestDB};
+    use aries_store_kv::postgres::{PostgresStore, TestDB};
 
     async fn init_db<'t>() -> KvResult<TestDB<'t>> {
-        let db = KvPostgres::provision_test_db().await?;
+        let db = PostgresStore::provision_test_db().await?;
         Ok(db)
     }
 

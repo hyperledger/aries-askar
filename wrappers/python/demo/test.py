@@ -22,13 +22,23 @@ async def basic_test():
         )
         await store.update([entry])
 
-        print("row count:", await store.count("category", {"enctag": "b"}))
+        print("row count:", await store.count("category"))
 
         entry = await store.fetch("category", "name")
         print(entry)
 
         async for row in store.scan("category"):
             print("scan result", row)
+
+        lock_entry = UpdateEntry(
+            "category", "name", b"value", {"~plaintag": "a", "enctag": "b"}
+        )
+        lock = await store.create_lock(lock_entry)
+        print(lock.entry)
+
+        entry2 = UpdateEntry("category", "name", b"value2")
+        await lock.update([entry2])
+        del lock
 
 
 if __name__ == "__main__":

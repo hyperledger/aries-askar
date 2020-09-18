@@ -11,8 +11,10 @@ from ctypes import (
     POINTER,
     byref,
     cast,
+    pointer,
     sizeof,
     c_char_p,
+    c_long,
     c_size_t,
     c_void_p,
     c_ubyte,
@@ -47,6 +49,14 @@ class ScanHandle(c_size_t):
         return f"{self.__class__.__name__}({self.value})"
 
 
+class LockHandle(c_size_t):
+    """Index of an active Lock instance."""
+
+    def __repr__(self) -> str:
+        """Format lock handle as a string."""
+        return f"{self.__class__.__name__}({self.value})"
+
+
 class EntrySetHandle(c_size_t):
     """Index of an active EntrySet instance."""
 
@@ -72,6 +82,25 @@ class FfiEntry(Structure):
         ("tags_len", c_size_t),
     ]
 
+    def decode(self) -> Entry:
+        value = bytes((c_ubyte * self.value_len).from_address(self.value))
+        if self.tags_len % sizeof(FfiTag) != 0:
+            raise StoreError(StoreErrorCode.WRAPPER, "Invalid length for tags")
+        tag_count = self.tags_len // sizeof(FfiTag)
+        if tag_count:
+            tags_lst = cast(self.tags, POINTER(FfiTag * tag_count)).contents
+            tags = {}
+            for tag in tags_lst:
+                tags[decode_str(tag.name)] = decode_str(tag.value)
+        else:
+            tags = None
+        return Entry(
+            decode_str(self.category),
+            decode_str(self.name),
+            value,
+            tags,
+        )
+
 
 class FfiUpdateEntry(Structure):
     _fields_ = [
@@ -79,6 +108,35 @@ class FfiUpdateEntry(Structure):
         ("expire_ms", c_ulong),
         ("profile_id", c_ulong),
     ]
+
+    @classmethod
+    def encode(cls, upd: UpdateEntry) -> "FfiUpdateEntry":
+        if upd.tags:
+            tags = (FfiTag * len(upd.tags))()
+            tag_idx = 0
+            for tag_name, tag_value in upd.tags.items():
+                tags[tag_idx] = FfiTag(
+                    encode_str(tag_name),
+                    encode_str(tag_value),
+                )
+                tag_idx += 1
+            tags_len = sizeof(tags)
+        else:
+            tags = None
+            tags_len = 0
+        category = encode_str(upd.category)
+        name = encode_str(upd.name)
+        entry = FfiEntry(
+            category,
+            name,
+            cast(upd.value, c_void_p),
+            len(upd.value),
+            tags,
+            tags_len,
+        )
+        return FfiUpdateEntry(
+            entry, -1 if upd.expire_ms is None else upd.expire_ms, upd.profile_id or 0
+        )
 
 
 class lib_string(c_char_p):
@@ -313,24 +371,10 @@ def store_scan_free(handle: ScanHandle):
 
 def store_results_next(handle: EntrySetHandle) -> Optional[Entry]:
     ffi_entry = FfiEntry()
-    if get_library().aries_store_results_next(handle, byref(ffi_entry)):
-        value = bytes((c_ubyte * ffi_entry.value_len).from_address(ffi_entry.value))
-        if ffi_entry.tags_len % sizeof(FfiTag) != 0:
-            raise StoreError(StoreErrorCode.WRAPPER, "Invalid length for tags")
-        tag_count = ffi_entry.tags_len // sizeof(FfiTag)
-        if tag_count:
-            tags_lst = cast(ffi_entry.tags, POINTER(FfiTag * tag_count)).contents
-            tags = {}
-            for tag in tags_lst:
-                tags[decode_str(tag.name)] = decode_str(tag.value)
-        else:
-            tags = None
-        return Entry(
-            decode_str(ffi_entry.category),
-            decode_str(ffi_entry.name),
-            value,
-            tags,
-        )
+    found = c_ubyte(0)
+    do_call("aries_store_results_next", handle, byref(ffi_entry), byref(found))
+    if found:
+        return ffi_entry.decode()
     return None
 
 
@@ -338,47 +382,55 @@ def store_results_free(handle: EntrySetHandle):
     get_library().aries_store_results_free(handle)
 
 
-async def store_update(
-    handle: StoreHandle, entries: Sequence[UpdateEntry], with_lock=None
-):
+async def store_update(handle: StoreHandle, entries: Sequence[UpdateEntry]):
     """Update a Store by inserting, updating, and removing records."""
 
     updates = (FfiUpdateEntry * len(entries))()
     for idx, upd in enumerate(entries):
-        if upd.tags:
-            tags = (FfiTag * len(upd.tags))()
-            tag_idx = 0
-            for tag_name, tag_value in upd.tags.items():
-                tags[tag_idx] = FfiTag(
-                    encode_str(tag_name),
-                    encode_str(tag_value),
-                )
-                tag_idx += 1
-            tags_len = sizeof(tags)
-        else:
-            tags = None
-            tags_len = 0
-        category = encode_str(upd.category)
-        name = encode_str(upd.name)
-        entry = FfiEntry(
-            category,
-            name,
-            cast(upd.value, c_void_p),
-            len(upd.value),
-            tags,
-            tags_len,
-        )
-        updates[idx] = FfiUpdateEntry(
-            entry, -1 if upd.expire_ms is None else upd.expire_ms, upd.profile_id or 0
-        )
+        updates[idx] = FfiUpdateEntry.encode(upd)
 
-    with_lock = c_size_t(0)
     return await do_call_async(
         "aries_store_update",
         handle,
         updates,
         sizeof(updates),
-        with_lock,
+    )
+
+
+async def store_create_lock(
+    handle: StoreHandle, lock_info: UpdateEntry, acquire_timeout_ms: int = None
+) -> LockHandle:
+    ffi_info = FfiUpdateEntry.encode(lock_info)
+    timeout = c_long(acquire_timeout_ms if acquire_timeout_ms is not None else -1)
+    return await do_call_async(
+        "aries_store_create_lock",
+        handle,
+        pointer(ffi_info),
+        timeout,
+        return_type=LockHandle,
+    )
+
+
+def store_lock_get_entry(handle: LockHandle) -> Entry:
+    ffi_entry = FfiEntry()
+    do_call("aries_store_lock_get_entry", handle, byref(ffi_entry))
+    return ffi_entry.decode()
+
+
+def store_lock_free(handle: LockHandle):
+    get_library().aries_store_lock_free(handle)
+
+
+async def store_lock_update(handle: LockHandle, entries: Sequence[UpdateEntry]):
+    updates = (FfiUpdateEntry * len(entries))()
+    for idx, upd in enumerate(entries):
+        updates[idx] = FfiUpdateEntry.encode(upd)
+
+    return await do_call_async(
+        "aries_store_lock_update",
+        handle,
+        updates,
+        sizeof(updates),
     )
 
 

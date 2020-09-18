@@ -13,19 +13,19 @@ pub type KeyId = i64;
 pub type Expiry = chrono::DateTime<chrono::Utc>;
 
 #[derive(Clone, Eq, Zeroize)]
-pub struct KvEntry {
+pub struct Entry {
     pub category: String,
     pub name: String,
     pub value: Vec<u8>,
-    pub tags: Option<Vec<KvTag>>,
+    pub tags: Option<Vec<EntryTag>>,
 }
 
-impl KvEntry {
-    pub fn sorted_tags(&self) -> Option<Vec<&KvTag>> {
+impl Entry {
+    pub fn sorted_tags(&self) -> Option<Vec<&EntryTag>> {
         if self.tags.is_some() {
             let tags = self.tags.as_ref().unwrap();
             if tags.len() > 0 {
-                let mut tags = tags.iter().collect::<Vec<&KvTag>>();
+                let mut tags = tags.iter().collect::<Vec<&EntryTag>>();
                 tags.sort();
                 Some(tags)
             } else {
@@ -37,9 +37,9 @@ impl KvEntry {
     }
 }
 
-impl Debug for KvEntry {
+impl Debug for Entry {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.debug_struct("KvEntry")
+        f.debug_struct("Entry")
             .field("category", &self.category)
             .field("name", &self.name)
             .field("value", &MaybeStr(&self.value))
@@ -48,13 +48,13 @@ impl Debug for KvEntry {
     }
 }
 
-impl Drop for KvEntry {
+impl Drop for Entry {
     fn drop(&mut self) {
         self.zeroize();
     }
 }
 
-impl PartialEq for KvEntry {
+impl PartialEq for Entry {
     fn eq(&self, rhs: &Self) -> bool {
         self.category == rhs.category
             && self.name == rhs.name
@@ -63,38 +63,38 @@ impl PartialEq for KvEntry {
     }
 }
 
-pub struct KvEncEntry<'a> {
+pub struct EncEntry<'a> {
     pub category: Cow<'a, [u8]>,
     pub name: Cow<'a, [u8]>,
     pub value: Cow<'a, [u8]>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct KvUpdateEntry {
-    pub entry: KvEntry,
+pub struct UpdateEntry {
+    pub entry: Entry,
     pub expire_ms: Option<i64>,
     pub profile_id: Option<ProfileId>,
 }
 
-impl Drop for KvUpdateEntry {
+impl Drop for UpdateEntry {
     fn drop(&mut self) {
         self.zeroize();
     }
 }
 
-impl Zeroize for KvUpdateEntry {
+impl Zeroize for UpdateEntry {
     fn zeroize(&mut self) {
         self.entry.zeroize();
     }
 }
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Zeroize)]
-pub enum KvTag {
+pub enum EntryTag {
     Encrypted(String, String),
     Plaintext(String, String),
 }
 
-impl Debug for KvTag {
+impl Debug for EntryTag {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
             Self::Encrypted(name, value) => f
@@ -111,24 +111,24 @@ impl Debug for KvTag {
     }
 }
 
-pub struct KvEncTag {
+pub struct EncEntryTag {
     pub name: Vec<u8>,
     pub value: Vec<u8>,
     pub plaintext: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct KvFetchOptions {
+pub struct EntryFetchOptions {
     pub retrieve_tags: bool,
 }
 
-impl KvFetchOptions {
+impl EntryFetchOptions {
     pub fn new(retrieve_tags: bool) -> Self {
         Self { retrieve_tags }
     }
 }
 
-impl Default for KvFetchOptions {
+impl Default for EntryFetchOptions {
     fn default() -> Self {
         return Self {
             retrieve_tags: true,
@@ -154,18 +154,18 @@ pub trait EntryEncryptor {
     fn encrypt_entry_category(&self, category: &str) -> Result<Vec<u8>>;
     fn encrypt_entry_name(&self, name: &str) -> Result<Vec<u8>>;
     fn encrypt_entry_value(&self, value: &[u8]) -> Result<Vec<u8>>;
-    fn encrypt_entry_tags(&self, tags: &Vec<KvTag>) -> Result<Vec<KvEncTag>>;
+    fn encrypt_entry_tags(&self, tags: &Vec<EntryTag>) -> Result<Vec<EncEntryTag>>;
 
     fn decrypt_entry_category(&self, enc_category: &[u8]) -> Result<String>;
     fn decrypt_entry_name(&self, enc_name: &[u8]) -> Result<String>;
     fn decrypt_entry_value(&self, enc_value: &[u8]) -> Result<Vec<u8>>;
-    fn decrypt_entry_tags(&self, enc_tags: &Vec<KvEncTag>) -> Result<Vec<KvTag>>;
+    fn decrypt_entry_tags(&self, enc_tags: &Vec<EncEntryTag>) -> Result<Vec<EntryTag>>;
 
     fn encrypt_entry(
         &self,
-        entry: &KvEntry,
-    ) -> Result<(KvEncEntry<'static>, Option<Vec<KvEncTag>>)> {
-        let enc_entry = KvEncEntry {
+        entry: &Entry,
+    ) -> Result<(EncEntry<'static>, Option<Vec<EncEntryTag>>)> {
+        let enc_entry = EncEntry {
             category: Cow::Owned(self.encrypt_entry_category(&entry.category)?),
             name: Cow::Owned(self.encrypt_entry_name(&entry.name)?),
             value: Cow::Owned(self.encrypt_entry_value(&entry.value)?),
@@ -180,11 +180,11 @@ pub trait EntryEncryptor {
 
     fn decrypt_entry(
         &self,
-        enc_entry: &KvEncEntry,
-        enc_tags: Option<&Vec<KvEncTag>>,
-    ) -> Result<KvEntry> {
+        enc_entry: &EncEntry,
+        enc_tags: Option<&Vec<EncEntryTag>>,
+    ) -> Result<Entry> {
         let tags = enc_tags.map(|t| self.decrypt_entry_tags(t)).transpose()?;
-        Ok(KvEntry {
+        Ok(Entry {
             category: self.decrypt_entry_category(&enc_entry.category)?,
             name: self.decrypt_entry_name(&enc_entry.name)?,
             value: self.decrypt_entry_value(&enc_entry.value)?,
@@ -205,16 +205,16 @@ impl EntryEncryptor for NullEncryptor {
     fn encrypt_entry_value(&self, value: &[u8]) -> Result<Vec<u8>> {
         Ok(value.to_vec())
     }
-    fn encrypt_entry_tags(&self, tags: &Vec<KvTag>) -> Result<Vec<KvEncTag>> {
+    fn encrypt_entry_tags(&self, tags: &Vec<EntryTag>) -> Result<Vec<EncEntryTag>> {
         Ok(tags
             .into_iter()
             .map(|tag| match tag {
-                KvTag::Encrypted(name, value) => KvEncTag {
+                EntryTag::Encrypted(name, value) => EncEntryTag {
                     name: name.as_bytes().to_vec(),
                     value: value.as_bytes().to_vec(),
                     plaintext: false,
                 },
-                KvTag::Plaintext(name, value) => KvEncTag {
+                EntryTag::Plaintext(name, value) => EncEntryTag {
                     name: name.as_bytes().to_vec(),
                     value: value.as_bytes().to_vec(),
                     plaintext: true,
@@ -232,14 +232,14 @@ impl EntryEncryptor for NullEncryptor {
     fn decrypt_entry_value(&self, enc_value: &[u8]) -> Result<Vec<u8>> {
         Ok(enc_value.to_vec())
     }
-    fn decrypt_entry_tags(&self, enc_tags: &Vec<KvEncTag>) -> Result<Vec<KvTag>> {
+    fn decrypt_entry_tags(&self, enc_tags: &Vec<EncEntryTag>) -> Result<Vec<EntryTag>> {
         Ok(enc_tags.into_iter().try_fold(vec![], |mut acc, tag| {
             let name = String::from_utf8(tag.name.to_vec()).map_err(err_map!(Encryption))?;
             let value = String::from_utf8(tag.value.to_vec()).map_err(err_map!(Encryption))?;
             acc.push(if tag.plaintext {
-                KvTag::Plaintext(name, value)
+                EntryTag::Plaintext(name, value)
             } else {
-                KvTag::Encrypted(name, value)
+                EntryTag::Encrypted(name, value)
             });
             Result::Ok(acc)
         })?)
@@ -271,7 +271,7 @@ where
             Ok(value.to_vec())
         }
     }
-    fn encrypt_entry_tags(&self, tags: &Vec<KvTag>) -> Result<Vec<KvEncTag>> {
+    fn encrypt_entry_tags(&self, tags: &Vec<EntryTag>) -> Result<Vec<EncEntryTag>> {
         if let Some(key) = self {
             key.encrypt_entry_tags(tags)
         } else {
@@ -300,7 +300,7 @@ where
             NullEncryptor {}.decrypt_entry_value(enc_value)
         }
     }
-    fn decrypt_entry_tags(&self, enc_tags: &Vec<KvEncTag>) -> Result<Vec<KvTag>> {
+    fn decrypt_entry_tags(&self, enc_tags: &Vec<EncEntryTag>) -> Result<Vec<EntryTag>> {
         if let Some(key) = self {
             key.decrypt_entry_tags(enc_tags)
         } else {

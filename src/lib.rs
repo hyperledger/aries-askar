@@ -35,9 +35,9 @@ mod keys;
 pub use self::keys::wrap::{generate_raw_wrap_key, WrapKeyMethod};
 
 mod store;
-pub use self::store::{KvProvisionSpec, KvProvisionStore, KvStore};
+pub use self::store::{ProvisionStore, ProvisionStoreSpec, Store};
 
 mod types;
-pub use self::types::{KvEntry, KvFetchOptions, KvTag, KvUpdateEntry};
+pub use self::types::{Entry, EntryFetchOptions, EntryTag, UpdateEntry};
 
 pub mod wql;

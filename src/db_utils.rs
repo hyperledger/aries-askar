@@ -1,12 +1,10 @@
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
-use futures_util::stream::BoxStream;
-
 use sqlx::{database::HasArguments, Arguments, Database, Encode, IntoArguments, Type};
 
 use super::error::Result as KvResult;
-use super::types::{Expiry, KvEntry, KvUpdateEntry};
+use super::types::{Expiry, UpdateEntry};
 use super::wql::{
     self,
     sql::TagSqlEncoder,
@@ -134,12 +132,10 @@ where
     Ok(query)
 }
 
-pub fn hash_lock_info(key_id: i64, lock_info: &KvUpdateEntry) -> i64 {
+pub fn hash_lock_info(key_id: i64, lock_info: &UpdateEntry) -> i64 {
     let mut hasher = DefaultHasher::new();
     Hash::hash(&key_id, &mut hasher);
     Hash::hash_slice(lock_info.entry.category.as_bytes(), &mut hasher);
     Hash::hash_slice(lock_info.entry.name.as_bytes(), &mut hasher);
     hasher.finish() as i64
 }
-
-pub type Scan = BoxStream<'static, KvResult<Vec<KvEntry>>>;

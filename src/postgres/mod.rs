@@ -1,8 +1,6 @@
 use std::borrow::Cow;
-use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use async_mutex::Mutex;
 use async_stream::try_stream;
 use async_trait::async_trait;
 
@@ -15,14 +13,14 @@ use sqlx::{
 
 use super::db_utils::{
     expiry_timestamp, extend_query, hash_lock_info, replace_arg_placeholders, QueryParams,
-    QueryPrepare, Scan, PAGE_SIZE,
+    QueryPrepare, PAGE_SIZE,
 };
 use super::error::Result as KvResult;
 use super::keys::store_key::StoreKey;
 use super::options::IntoOptions;
-use super::store::{KeyCache, KvProvisionSpec, KvProvisionStore, KvStore, LockToken, ScanToken};
+use super::store::{EntryLock, EntryScan, KeyCache, ProvisionStore, ProvisionStoreSpec, Store};
 use super::types::{
-    EntryEncryptor, KeyId, KvEncTag, KvEntry, KvFetchOptions, KvTag, KvUpdateEntry, ProfileId,
+    EncEntryTag, Entry, EntryEncryptor, EntryFetchOptions, EntryTag, KeyId, ProfileId, UpdateEntry,
 };
 use super::wql::{self};
 
@@ -37,13 +35,15 @@ const INSERT_QUERY: &'static str = "INSERT INTO items(store_key_id, category, na
 const SCAN_QUERY: &'static str = "SELECT id, name, value FROM items i WHERE store_key_id = $1
     AND category = $2 AND (expiry IS NULL OR expiry > CURRENT_TIMESTAMP)";
 const TAG_QUERY: &'static str = "SELECT name, value, plaintext FROM items_tags WHERE item_id = $1";
+const TAG_INSERT_QUERY: &'static str = "INSERT INTO items_tags(item_id, name, value, plaintext)
+    VALUES($1, $2, $3, $4)";
 
-pub struct KvPostgresOptions {
+pub struct PostgresStoreOptions {
     uri: String,
     admin_uri: Option<String>,
 }
 
-impl KvPostgresOptions {
+impl PostgresStoreOptions {
     pub fn new<'a, O>(options: O) -> KvResult<Self>
     where
         O: IntoOptions<'a>,
@@ -68,10 +68,10 @@ impl KvPostgresOptions {
 }
 
 #[async_trait]
-impl KvProvisionStore for KvPostgresOptions {
-    type Store = KvPostgres;
+impl ProvisionStore for PostgresStoreOptions {
+    type Store = PostgresStore;
 
-    async fn provision_store(self, spec: KvProvisionSpec) -> KvResult<Self::Store> {
+    async fn provision_store(self, spec: ProvisionStoreSpec) -> KvResult<Self::Store> {
         let mut conn_pool = PgPool::connect(
             self.admin_uri
                 .as_ref()
@@ -80,13 +80,13 @@ impl KvProvisionStore for KvPostgresOptions {
         )
         .await?;
 
-        let (default_profile, key_cache) = KvPostgres::init_db(&conn_pool, spec, false).await?;
+        let (default_profile, key_cache) = PostgresStore::init_db(&conn_pool, spec, false).await?;
 
         if self.admin_uri.is_some() {
             conn_pool = PgPool::connect(self.uri.as_str()).await?;
         }
 
-        Ok(KvPostgres::new(conn_pool, default_profile, key_cache))
+        Ok(PostgresStore::new(conn_pool, default_profile, key_cache))
     }
 }
 
@@ -97,29 +97,27 @@ struct Lock {
 
 #[cfg(feature = "pg_test")]
 pub struct TestDB<'t> {
-    inst: KvPostgres,
+    inst: PostgresStore,
     #[allow(unused)]
     txn: sqlx::Transaction<'t, Postgres>,
 }
 
 #[cfg(feature = "pg_test")]
 impl std::ops::Deref for TestDB<'_> {
-    type Target = KvPostgres;
+    type Target = PostgresStore;
 
     fn deref(&self) -> &Self::Target {
         &self.inst
     }
 }
 
-pub struct KvPostgres {
+pub struct PostgresStore {
     conn_pool: PgPool,
     default_profile: ProfileId,
     key_cache: KeyCache,
-    scans: Mutex<BTreeMap<ScanToken, Scan>>,
-    locks: Mutex<BTreeMap<LockToken, Lock>>,
 }
 
-impl QueryPrepare for KvPostgres {
+impl QueryPrepare for PostgresStore {
     type DB = Postgres;
 
     fn placeholder(index: i64) -> String {
@@ -147,14 +145,12 @@ impl QueryPrepare for KvPostgres {
     }
 }
 
-impl KvPostgres {
+impl PostgresStore {
     pub(crate) fn new(conn_pool: PgPool, default_profile: ProfileId, key_cache: KeyCache) -> Self {
         Self {
             conn_pool,
             default_profile,
             key_cache,
-            scans: Mutex::new(BTreeMap::new()),
-            locks: Mutex::new(BTreeMap::new()),
         }
     }
 
@@ -185,8 +181,8 @@ impl KvPostgres {
         let mut txn = conn_pool.begin().await?;
         txn.execute("SELECT pg_advisory_xact_lock(99999);").await?;
 
-        let spec = KvProvisionSpec::create_default().await?;
-        let (default_profile, key_cache) = KvPostgres::init_db(&conn_pool, spec, true).await?;
+        let spec = ProvisionStoreSpec::create_default().await?;
+        let (default_profile, key_cache) = PostgresStore::init_db(&conn_pool, spec, true).await?;
         let inst = Self::new(conn_pool, default_profile, key_cache);
 
         Ok(TestDB { inst, txn })
@@ -194,7 +190,7 @@ impl KvPostgres {
 
     pub(crate) async fn init_db(
         conn_pool: &PgPool,
-        spec: KvProvisionSpec,
+        spec: ProvisionStoreSpec,
         reset: bool,
     ) -> KvResult<(ProfileId, KeyCache)> {
         if reset {
@@ -326,14 +322,14 @@ async fn fetch_row_tags(
     pool: &PgPool,
     row_id: i64,
     key: Option<Arc<StoreKey>>,
-) -> KvResult<Option<Vec<KvTag>>> {
+) -> KvResult<Option<Vec<EntryTag>>> {
     let tags = sqlx::query(TAG_QUERY)
         .bind(row_id)
         .try_map(|row: PgRow| {
             let name = row.try_get(0)?;
             let value = row.try_get(1)?;
             let plaintext = row.try_get::<i32, _>(2)? != 0;
-            Ok(KvEncTag {
+            Ok(EncEntryTag {
                 name,
                 value,
                 plaintext,
@@ -349,7 +345,7 @@ async fn fetch_row_tags(
 }
 
 #[async_trait]
-impl KvStore for KvPostgres {
+impl Store for PostgresStore {
     async fn count(
         &self,
         profile_id: Option<ProfileId>,
@@ -376,8 +372,8 @@ impl KvStore for KvPostgres {
         profile_id: Option<ProfileId>,
         category: &str,
         name: &str,
-        options: KvFetchOptions,
-    ) -> KvResult<Option<KvEntry>> {
+        options: EntryFetchOptions,
+    ) -> KvResult<Option<Entry>> {
         let (key_id, key) = self.get_profile_key(profile_id).await?;
         let raw_category = category.to_owned();
         let raw_name = name.to_owned();
@@ -406,7 +402,7 @@ impl KvStore for KvPostgres {
             } else {
                 value.to_vec()
             };
-            Ok(Some(KvEntry {
+            Ok(Some(Entry {
                 category: raw_category,
                 name: raw_name,
                 value,
@@ -417,15 +413,15 @@ impl KvStore for KvPostgres {
         }
     }
 
-    async fn scan_start(
+    async fn scan(
         &self,
         profile_id: Option<ProfileId>,
         category: &str,
-        options: KvFetchOptions,
+        options: EntryFetchOptions,
         tag_filter: Option<wql::Query>,
         offset: Option<i64>,
         max_rows: Option<i64>,
-    ) -> KvResult<ScanToken> {
+    ) -> KvResult<EntryScan> {
         let pool = self.conn_pool.clone();
         let (key_id, key) = self.get_profile_key(profile_id).await?;
         let raw_category = category.to_owned();
@@ -437,7 +433,7 @@ impl KvStore for KvPostgres {
             let mut params = QueryParams::new();
             params.push(key_id);
             params.push(category.clone());
-            let query = extend_query::<KvPostgres>(SCAN_QUERY, &mut params, tag_filter, offset, max_rows)?;
+            let query = extend_query::<PostgresStore>(SCAN_QUERY, &mut params, tag_filter, offset, max_rows)?;
             let mut batch = Vec::with_capacity(PAGE_SIZE);
             let mut rows = sqlx::query_with(query.as_str(), params).fetch(&pool);
             while let Some(row) = rows.next().await {
@@ -448,11 +444,9 @@ impl KvStore for KvPostgres {
                 } else {
                     None
                 };
-                let name = row.try_get(1)?;
-                let value = row.try_get(2)?;
-                let (name, value) = (key.decrypt_entry_name(name)?,
-                        key.decrypt_entry_value(value)?);
-                let entry = KvEntry {
+                let name = key.decrypt_entry_name(row.try_get(1)?)?;
+                let value = key.decrypt_entry_value(row.try_get(2)?)?;
+                let entry = Entry {
                     category: raw_category.clone(),
                     name,
                     value,
@@ -467,40 +461,10 @@ impl KvStore for KvPostgres {
                 yield batch;
             }
         };
-        let token = ScanToken::next();
-        self.scans.lock().await.insert(token, scan.boxed());
-        Ok(token)
+        Ok(EntryScan::new(scan, PAGE_SIZE))
     }
 
-    async fn scan_next(
-        &self,
-        scan_token: ScanToken,
-    ) -> KvResult<(Vec<KvEntry>, Option<ScanToken>)> {
-        let scan = self.scans.lock().await.remove(&scan_token);
-        if let Some(mut scan) = scan {
-            match scan.next().await {
-                Some(Ok(rows)) => {
-                    let token = if rows.len() == PAGE_SIZE {
-                        self.scans.lock().await.insert(scan_token, scan);
-                        Some(scan_token)
-                    } else {
-                        None
-                    };
-                    Ok((rows, token))
-                }
-                Some(Err(err)) => Err(err),
-                None => Ok((vec![], None)),
-            }
-        } else {
-            Err(err_msg!(Timeout))
-        }
-    }
-
-    async fn update(
-        &self,
-        entries: Vec<KvUpdateEntry>,
-        with_lock: Option<LockToken>,
-    ) -> KvResult<()> {
+    async fn update(&self, entries: Vec<UpdateEntry>) -> KvResult<()> {
         if entries.is_empty() {
             debug!("Skip update: no entries");
             return Ok(());
@@ -543,16 +507,13 @@ impl KvStore for KvPostgres {
             };
             if let Some(tags) = enc_tags {
                 for tag in tags {
-                    sqlx::query(
-                        "INSERT INTO items_tags(item_id, name, value, plaintext)
-                             VALUES($1, $2, $3, $4)",
-                    )
-                    .bind(row_id)
-                    .bind(&tag.name)
-                    .bind(&tag.value)
-                    .bind(tag.plaintext as i16)
-                    .execute(&mut txn)
-                    .await?;
+                    sqlx::query(TAG_INSERT_QUERY)
+                        .bind(row_id)
+                        .bind(&tag.name)
+                        .bind(&tag.value)
+                        .bind(tag.plaintext as i16)
+                        .execute(&mut txn)
+                        .await?;
                 }
             }
         }
@@ -561,10 +522,10 @@ impl KvStore for KvPostgres {
 
     async fn create_lock(
         &self,
-        lock_info: KvUpdateEntry,
-        options: KvFetchOptions,
+        lock_info: UpdateEntry,
+        options: EntryFetchOptions,
         acquire_timeout_ms: Option<i64>,
-    ) -> KvResult<Option<(LockToken, KvEntry)>> {
+    ) -> KvResult<(Entry, EntryLock)> {
         let (key_id, key) = self.get_profile_key(lock_info.profile_id).await?;
         let raw_entry = lock_info.entry.clone();
         let (enc_entry, enc_tags) = key.encrypt_entry(&raw_entry)?;
@@ -585,9 +546,7 @@ impl KvStore for KvPostgres {
         {
             Ok(_) => Lock { txn: lock_txn },
             // assuming failure due to lock timeout
-            Err(_) => {
-                return Ok(None);
-            }
+            Err(_) => return Err(err_msg!(Timeout, "Timed out waiting for lock")),
         };
 
         let mut txn = self.conn_pool.begin().await?;
@@ -600,7 +559,7 @@ impl KvStore for KvPostgres {
         {
             Some(row) => {
                 let value = key.decrypt_entry_value(row.try_get(1)?)?;
-                KvEntry {
+                Entry {
                     category: raw_entry.category.clone(),
                     name: raw_entry.name.clone(),
                     value,
@@ -608,22 +567,31 @@ impl KvStore for KvPostgres {
                 }
             }
             None => {
-                sqlx::query(INSERT_QUERY)
+                let row_id: i64 = sqlx::query_scalar(INSERT_QUERY)
                     .bind(&key_id)
                     .bind(enc_entry.category.as_ref())
                     .bind(enc_entry.name.as_ref())
                     .bind(enc_entry.value.as_ref())
                     .bind(&lock_info.expire_ms.map(expiry_timestamp))
-                    .execute(&mut txn)
+                    .fetch_one(&mut txn)
                     .await?;
+                if let Some(tags) = enc_tags {
+                    for tag in tags {
+                        sqlx::query(TAG_INSERT_QUERY)
+                            .bind(row_id)
+                            .bind(&tag.name)
+                            .bind(&tag.value)
+                            .bind(tag.plaintext as i16)
+                            .execute(&mut txn)
+                            .await?;
+                    }
+                }
                 txn.commit().await?;
                 raw_entry
             }
         };
 
-        let token = LockToken::next();
-        self.locks.lock().await.insert(token, lock);
-        Ok(Some((token, entry)))
+        Ok((entry, EntryLock::new(|updates| async { unimplemented!() })))
     }
 
     async fn close(&self) -> KvResult<()> {
@@ -640,11 +608,11 @@ mod tests {
     #[test]
     fn postgres_simple_and_convert_args_works() {
         assert_eq!(
-            replace_arg_placeholders::<KvPostgres>("This $$ is $$ a $$ string!", 3),
+            replace_arg_placeholders::<PostgresStore>("This $$ is $$ a $$ string!", 3),
             ("This $3 is $4 a $5 string!".to_string(), 6),
         );
         assert_eq!(
-            replace_arg_placeholders::<KvPostgres>("This is a string!", 1),
+            replace_arg_placeholders::<PostgresStore>("This is a string!", 1),
             ("This is a string!".to_string(), 1),
         );
     }
@@ -652,7 +620,7 @@ mod tests {
     #[test]
     fn postgres_parse_uri() {
         let uri = "postgres://user:pass@host?admin_username=user2&admin_password=pass2&test=1";
-        let opts = KvPostgresOptions::new(uri).unwrap();
+        let opts = PostgresStoreOptions::new(uri).unwrap();
         assert_eq!(opts.uri, "postgres://user:pass@host?test=1");
         assert_eq!(
             opts.admin_uri,

@@ -20,15 +20,3 @@ macro_rules! check_useful_c_ptr {
         }
     };
 }
-
-macro_rules! slice_from_c_ptr {
-    ($bytes:expr, $len:expr) => {{
-        if ($bytes).is_null() {
-            Err(err_msg!("Invalid pointer for input value"))
-        } else if ($len) <= 0 {
-            Err(err_msg!("Buffer size must be greater than zero"))
-        } else {
-            Ok(unsafe { std::slice::from_raw_parts($bytes, $len) })
-        }
-    }};
-}

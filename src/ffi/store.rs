@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::ffi::CString;
 use std::mem;
 use std::os::raw::c_char;
+use std::panic::RefUnwindSafe;
 use std::ptr;
 use std::slice;
 use std::sync::{
@@ -20,20 +21,25 @@ use super::error::set_last_error;
 use super::{CallbackId, EnsureCallback, ErrorCode, RUNTIME};
 use crate::error::Result as KvResult;
 use crate::keys::wrap::{generate_raw_wrap_key, WrapKeyMethod};
-use crate::store::{KvProvisionSpec, KvProvisionStore, KvStore, LockToken, ScanToken};
-use crate::types::{KvEntry, KvTag, KvUpdateEntry};
+use crate::store::{ArcStore, EntryLock, EntryScan, ProvisionStore, ProvisionStoreSpec};
+use crate::types::{Entry, EntryTag, UpdateEntry};
 
 new_handle_type!(StoreHandle, FFI_STORE_COUNTER);
 new_handle_type!(ScanHandle, FFI_SCAN_COUNTER);
 
-pub type ArcStore = Arc<dyn KvStore + Send + Sync>;
-
 static STORES: Lazy<Mutex<BTreeMap<StoreHandle, ArcStore>>> =
     Lazy::new(|| Mutex::new(BTreeMap::new()));
-static SCANS: Lazy<Mutex<BTreeMap<ScanHandle, Option<(ArcStore, ScanToken)>>>> =
+static SCANS: Lazy<Mutex<BTreeMap<ScanHandle, Option<EntryScan>>>> =
     Lazy::new(|| Mutex::new(BTreeMap::new()));
 
 impl StoreHandle {
+    pub async fn create(value: ArcStore) -> Self {
+        let handle = Self::next();
+        let mut repo = STORES.lock().await;
+        repo.insert(handle, value);
+        handle
+    }
+
     pub async fn load(&self) -> KvResult<ArcStore> {
         STORES
             .lock()
@@ -53,28 +59,80 @@ impl StoreHandle {
 }
 
 impl ScanHandle {
-    pub async fn load(&self) -> KvResult<Option<(ArcStore, ScanToken)>> {
+    pub async fn create(value: EntryScan) -> Self {
+        let handle = Self::next();
+        let mut repo = SCANS.lock().await;
+        repo.insert(handle, Some(value));
+        handle
+    }
+
+    pub async fn borrow(&self) -> KvResult<EntryScan> {
         SCANS
             .lock()
             .await
-            .get(self)
-            .cloned()
-            .ok_or_else(|| err_msg!("Invalid scan handle"))
+            .get_mut(self)
+            .ok_or_else(|| err_msg!("Invalid scan handle"))?
+            .take()
+            .ok_or_else(|| err_msg!(Busy, "Scan handle in use"))
     }
 
-    pub async fn update(&self, value: Option<(ArcStore, ScanToken)>) -> KvResult<()> {
-        SCANS.lock().await.insert(*self, value);
+    pub async fn release(&self, value: EntryScan) -> KvResult<()> {
+        SCANS
+            .lock()
+            .await
+            .get_mut(self)
+            .ok_or_else(|| err_msg!("Invalid scan handle"))?
+            .replace(value);
         Ok(())
     }
 
-    pub async fn remove(&self) -> KvResult<Option<(ArcStore, ScanToken)>> {
+    pub async fn remove(&self) -> KvResult<EntryScan> {
         SCANS
             .lock()
             .await
             .remove(self)
-            .ok_or_else(|| err_msg!("Invalid scan handle"))
+            .ok_or_else(|| err_msg!("Invalid scan handle"))?
+            .ok_or_else(|| err_msg!(Busy, "Scan handle in use"))
     }
 }
+
+#[repr(transparent)]
+pub struct LockHandle(*const FfiEntryLock);
+
+impl LockHandle {
+    pub fn new(lock_buf: FfiEntryLock) -> Self {
+        Self(Arc::into_raw(Arc::new(lock_buf)))
+    }
+
+    pub fn null() -> Self {
+        Self(ptr::null_mut())
+    }
+
+    pub fn get_entry(&self) -> KvResult<FfiEntry> {
+        let el = unsafe { mem::ManuallyDrop::new(Arc::from_raw(self.0)) };
+        Ok(el.entry.get_ref())
+    }
+
+    pub async fn take(&self) -> KvResult<EntryLock> {
+        let el = Arc::clone(&*unsafe { mem::ManuallyDrop::new(Arc::from_raw(self.0)) });
+        let result = el
+            .lock
+            .lock()
+            .await
+            .take()
+            .ok_or_else(|| err_msg!(Busy, "Lock handle in use"))?;
+        Ok(result)
+    }
+
+    pub fn free(self) {
+        unsafe {
+            Arc::from_raw(self.0);
+        }
+    }
+}
+
+unsafe impl Send for LockHandle {}
+unsafe impl Sync for LockHandle {}
 
 // FIXME zeroize
 struct FfiTagBuf {
@@ -89,7 +147,7 @@ pub struct FfiTag {
 }
 
 impl FfiTag {
-    pub fn decode(&self) -> KvResult<KvTag> {
+    pub fn decode(&self) -> KvResult<EntryTag> {
         let name = unsafe { FfiStr::from_raw(self.name) }
             .as_opt_str()
             .ok_or_else(|| err_msg!("Invalid tag name"))?;
@@ -97,9 +155,9 @@ impl FfiTag {
             .into_opt_string()
             .ok_or_else(|| err_msg!("Invalid tag value"))?;
         Ok(if name.chars().next() == Some('~') {
-            KvTag::Plaintext(name[1..].to_owned(), value)
+            EntryTag::Plaintext(name[1..].to_owned(), value)
         } else {
-            KvTag::Encrypted(name.to_owned(), value)
+            EntryTag::Encrypted(name.to_owned(), value)
         })
     }
 }
@@ -113,8 +171,24 @@ struct FfiEntryBuf {
     tags_ref: Vec<FfiTag>,
 }
 
-impl From<KvEntry> for FfiEntryBuf {
-    fn from(entry: KvEntry) -> Self {
+unsafe impl Send for FfiEntryBuf {}
+unsafe impl Sync for FfiEntryBuf {}
+
+impl FfiEntryBuf {
+    pub fn get_ref(&self) -> FfiEntry {
+        FfiEntry {
+            category: self.category.as_ptr(),
+            name: self.name.as_ptr(),
+            value: self.value.as_ptr(),
+            value_len: self.value.len(),
+            tags: self.tags_ref.as_ptr(),
+            tags_len: self.tags_ref.len() * mem::size_of::<FfiTag>(),
+        }
+    }
+}
+
+impl From<Entry> for FfiEntryBuf {
+    fn from(entry: Entry) -> Self {
         let category = CString::new(entry.category.clone()).unwrap();
         let name = CString::new(entry.name.clone()).unwrap();
         let mut tags = vec![];
@@ -123,11 +197,11 @@ impl From<KvEntry> for FfiEntryBuf {
         if let Some(entry_tags) = entry.tags.as_ref() {
             for tag in entry_tags {
                 let (name, value) = match tag {
-                    KvTag::Encrypted(tag_name, tag_value) => (
+                    EntryTag::Encrypted(tag_name, tag_value) => (
                         CString::new(tag_name.as_bytes()).unwrap(),
                         CString::new(tag_value.as_bytes()).unwrap(),
                     ),
-                    KvTag::Plaintext(tag_name, tag_value) => {
+                    EntryTag::Plaintext(tag_name, tag_value) => {
                         let mut name = "~".to_owned();
                         name.push_str(&tag_name);
                         (
@@ -164,22 +238,15 @@ impl FfiEntrySet {
         let pos = self.pos.fetch_add(1, Ordering::Release);
         if pos < self.rows.len() {
             let row = &self.rows[pos];
-            Some(FfiEntry {
-                category: row.category.as_ptr(),
-                name: row.name.as_ptr(),
-                value: row.value.as_ptr(),
-                value_len: row.value.len(),
-                tags: row.tags_ref.as_ptr(),
-                tags_len: row.tags_ref.len() * mem::size_of::<FfiTag>(),
-            })
+            Some(row.get_ref())
         } else {
             None
         }
     }
 }
 
-impl From<KvEntry> for FfiEntrySet {
-    fn from(entry: KvEntry) -> Self {
+impl From<Entry> for FfiEntrySet {
+    fn from(entry: Entry) -> Self {
         Self {
             pos: AtomicUsize::default(),
             rows: vec![entry.into()],
@@ -187,8 +254,8 @@ impl From<KvEntry> for FfiEntrySet {
     }
 }
 
-impl From<Vec<KvEntry>> for FfiEntrySet {
-    fn from(entries: Vec<KvEntry>) -> Self {
+impl From<Vec<Entry>> for FfiEntrySet {
+    fn from(entries: Vec<Entry>) -> Self {
         Self {
             pos: AtomicUsize::default(),
             rows: entries.into_iter().map(Into::into).collect(),
@@ -207,7 +274,7 @@ pub struct FfiEntry {
 }
 
 impl FfiEntry {
-    pub fn decode(&self) -> KvResult<KvEntry> {
+    pub fn decode(&self) -> KvResult<Entry> {
         let category = unsafe { FfiStr::from_raw(self.category) }
             .into_opt_string()
             .ok_or_else(|| err_msg!("Invalid entry category"))?;
@@ -220,7 +287,7 @@ impl FfiEntry {
         }
         let tags_count = self.tags_len / mem::size_of::<FfiTag>();
         let tags = unsafe { slice::from_raw_parts(self.tags, tags_count) };
-        let entry = KvEntry {
+        let entry = Entry {
             category,
             name,
             value: value.to_vec(),
@@ -234,6 +301,14 @@ impl FfiEntry {
 }
 
 #[repr(C)]
+pub struct FfiEntryLock {
+    lock: Mutex<Option<EntryLock>>,
+    entry: FfiEntryBuf,
+}
+
+impl RefUnwindSafe for FfiEntryLock {}
+
+#[repr(C)]
 pub struct FfiUpdateEntry {
     entry: FfiEntry,
     expire_ms: i64,
@@ -241,9 +316,9 @@ pub struct FfiUpdateEntry {
 }
 
 impl FfiUpdateEntry {
-    pub fn decode(&self) -> KvResult<KvUpdateEntry> {
+    pub fn decode(&self) -> KvResult<UpdateEntry> {
         let entry = self.entry.decode()?;
-        Ok(KvUpdateEntry {
+        Ok(UpdateEntry {
             entry,
             expire_ms: if self.expire_ms < 0 {
                 None
@@ -284,12 +359,9 @@ pub extern "C" fn aries_store_provision(
         );
         RUNTIME.spawn_ok(async move {
             let result = async {
-                let spec = KvProvisionSpec::create(wrap_key_method, pass_key).await?;
+                let spec = ProvisionStoreSpec::create(wrap_key_method, pass_key).await?;
                 let store = spec_uri.provision_store(spec).await?;
-                let handle = StoreHandle::next();
-                let mut stores = STORES.lock().await;
-                stores.insert(handle, store);
-                Ok(handle)
+                Ok(StoreHandle::create(store).await)
             }.await;
             cb.resolve(result);
         }.boxed());
@@ -313,7 +385,7 @@ pub extern "C" fn aries_store_count(
     handle: StoreHandle,
     category: FfiStr,
     tag_filter: FfiStr,
-    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, usize)>,
+    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, count: usize)>,
     cb_id: usize,
 ) -> ErrorCode {
     catch_err! {
@@ -343,7 +415,7 @@ pub extern "C" fn aries_store_fetch(
     handle: StoreHandle,
     category: FfiStr,
     name: FfiStr,
-    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, *const FfiEntrySet)>,
+    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, results: *const FfiEntrySet)>,
     cb_id: usize,
 ) -> ErrorCode {
     catch_err! {
@@ -351,7 +423,7 @@ pub extern "C" fn aries_store_fetch(
         let cb = cb.ok_or_else(|| err_msg!("No callback provided"))?;
         let category = category.into_opt_string().ok_or_else(|| err_msg!("Invalid category"))?;
         let name = name.into_opt_string().ok_or_else(|| err_msg!("Invalid name"))?;
-        let cb = EnsureCallback::new(move |result: KvResult<Option<KvEntry>>|
+        let cb = EnsureCallback::new(move |result: KvResult<Option<Entry>>|
             match result {
                 Ok(Some(entry)) => {
                     let results = Box::into_raw(Box::new(FfiEntrySet::from(entry)));
@@ -377,7 +449,7 @@ pub extern "C" fn aries_store_scan_start(
     handle: StoreHandle,
     category: FfiStr,
     tag_filter: FfiStr,
-    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, ScanHandle)>,
+    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, handle: ScanHandle)>,
     cb_id: usize,
 ) -> ErrorCode {
     catch_err! {
@@ -394,11 +466,8 @@ pub extern "C" fn aries_store_scan_start(
         RUNTIME.spawn_ok(async move {
             let result = async {
                 let store = handle.load().await?;
-                let scan = store.scan_start(None, &category, Default::default(), tag_filter, None, None).await?;
-                let handle = ScanHandle::next();
-                let mut scans = SCANS.lock().await;
-                scans.insert(handle, Some((store, scan)));
-                Ok(handle)
+                let scan = store.scan(None, &category, Default::default(), tag_filter, None, None).await?;
+                Ok(ScanHandle::create(scan).await)
             }.await;
             cb.resolve(result);
         }.boxed());
@@ -409,13 +478,13 @@ pub extern "C" fn aries_store_scan_start(
 #[no_mangle]
 pub extern "C" fn aries_store_scan_next(
     handle: ScanHandle,
-    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, *const FfiEntrySet)>,
+    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, results: *const FfiEntrySet)>,
     cb_id: usize,
 ) -> ErrorCode {
     catch_err! {
         trace!("Scan store next");
         let cb = cb.ok_or_else(|| err_msg!("No callback provided"))?;
-        let cb = EnsureCallback::new(move |result: KvResult<Option<Vec<KvEntry>>>|
+        let cb = EnsureCallback::new(move |result: KvResult<Option<Vec<Entry>>>|
             match result {
                 Ok(Some(entries)) => {
                     let results = Box::into_raw(Box::new(FfiEntrySet::from(entries)));
@@ -427,13 +496,10 @@ pub extern "C" fn aries_store_scan_next(
         );
         RUNTIME.spawn_ok(async move {
             let result = async {
-                if let Some((store, token)) = handle.load().await? {
-                    let (entries, opt_token) = store.scan_next(token).await?;
-                    handle.update(opt_token.map(|token| (store, token))).await?;
-                    Ok(Some(entries))
-                } else {
-                    Ok(None)
-                }
+                let mut scan = handle.borrow().await?;
+                let entries = scan.fetch_next().await?;
+                handle.release(scan).await?;
+                Ok(entries)
             }.await;
             cb.resolve(result);
         }.boxed());
@@ -446,20 +512,29 @@ pub extern "C" fn aries_store_scan_free(handle: ScanHandle) -> ErrorCode {
     catch_err! {
         trace!("Close scan");
         RUNTIME.spawn_ok(async move {
-            handle.remove().await.unwrap_or_default();
+            handle.remove().await.ok();
         }.boxed());
         Ok(ErrorCode::Success)
     }
 }
 
 #[no_mangle]
-pub extern "C" fn aries_store_results_next(result: *mut FfiEntrySet, entry: *mut FfiEntry) -> bool {
-    let results = mem::ManuallyDrop::new(unsafe { Box::from_raw(result) });
-    if let Some(found) = results.next() {
-        unsafe { *entry = found };
-        true
-    } else {
-        false
+pub extern "C" fn aries_store_results_next(
+    result: *mut FfiEntrySet,
+    entry: *mut FfiEntry,
+    found: *mut bool,
+) -> ErrorCode {
+    catch_err! {
+        check_useful_c_ptr!(entry);
+        check_useful_c_ptr!(found);
+        let results = mem::ManuallyDrop::new(unsafe { Box::from_raw(result) });
+        if let Some(next) = results.next() {
+            unsafe { *entry = next };
+            unsafe { *found = true };
+        } else {
+            unsafe { *found = false };
+        }
+        Ok(ErrorCode::Success)
     }
 }
 
@@ -473,7 +548,6 @@ pub extern "C" fn aries_store_update(
     handle: StoreHandle,
     updates: *const FfiUpdateEntry,
     updates_len: usize,
-    with_lock: usize,
     cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode)>,
     cb_id: usize,
 ) -> ErrorCode {
@@ -501,13 +575,108 @@ pub extern "C" fn aries_store_update(
         RUNTIME.spawn_ok(async move {
             let result = async {
                 let store = handle.load().await?;
-                store.update(entries, if with_lock == 0 { None } else { Some(LockToken(with_lock))}).await?;
+                store.update(entries).await?;
                 Ok(())
             }.await;
             cb.resolve(result);
         }.boxed());
         Ok(ErrorCode::Success)
     }
+}
+
+#[no_mangle]
+pub extern "C" fn aries_store_create_lock(
+    handle: StoreHandle,
+    lock_info: *const FfiUpdateEntry,
+    acquire_timeout_ms: i64,
+    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, result: LockHandle)>,
+    cb_id: usize,
+) -> ErrorCode {
+    catch_err! {
+        trace!("Store create lock");
+        let cb = cb.ok_or_else(|| err_msg!("No callback provided"))?;
+        let update = unsafe { &*lock_info as &FfiUpdateEntry }.decode()?;
+        let timeout = if acquire_timeout_ms == -1 { None } else { Some(acquire_timeout_ms)};
+        let cb = EnsureCallback::new(move |result|
+            match result {
+                Ok(lock) => cb(cb_id, ErrorCode::Success, lock),
+                Err(err) => cb(cb_id, set_last_error(Some(err)), LockHandle::null()),
+            }
+        );
+        RUNTIME.spawn_ok(async move {
+            let result = async {
+                let store = handle.load().await?;
+                let (entry, lock) = store.create_lock(update, Default::default(), timeout).await?;
+                let lock_buf = FfiEntryLock {
+                    lock: Mutex::new(Some(lock)),
+                    entry: entry.into(),
+                };
+                Ok(LockHandle::new(lock_buf))
+            }.await;
+            cb.resolve(result);
+        }.boxed());
+        Ok(ErrorCode::Success)
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn aries_store_lock_get_entry(
+    handle: LockHandle,
+    entry: *mut FfiEntry,
+) -> ErrorCode {
+    catch_err! {
+        trace!("Get store lock entry");
+        check_useful_c_ptr!(entry);
+        let found = handle.get_entry()?;
+        unsafe { *entry = found };
+        Ok(ErrorCode::Success)
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn aries_store_lock_update(
+    handle: LockHandle,
+    updates: *const FfiUpdateEntry,
+    updates_len: usize,
+    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode)>,
+    cb_id: usize,
+) -> ErrorCode {
+    catch_err! {
+        trace!("Update store lock");
+        let cb = cb.ok_or_else(|| err_msg!("No callback provided"))?;
+        if updates_len == 0 || updates_len % mem::size_of::<FfiUpdateEntry>() != 0 {
+            return Err(err_msg!("Invalid length for updates"));
+        }
+        let upd_count = updates_len / mem::size_of::<FfiUpdateEntry>();
+        let updates = unsafe { slice::from_raw_parts(updates, upd_count) };
+        let entries = updates.into_iter().try_fold(
+            Vec::with_capacity(upd_count),
+            |mut acc, entry| {
+                acc.push(FfiUpdateEntry::decode(entry)?);
+                KvResult::Ok(acc)
+            }
+        )?;
+        let cb = EnsureCallback::new(move |result|
+            match result {
+                Ok(_) => cb(cb_id, ErrorCode::Success),
+                Err(err) => cb(cb_id, set_last_error(Some(err))),
+            }
+        );
+        RUNTIME.spawn_ok(async move {
+            let result = async {
+                let lock = handle.take().await?;
+                lock.update(entries).await?;
+                Ok(())
+            }.await;
+            cb.resolve(result);
+        }.boxed());
+        Ok(ErrorCode::Success)
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn aries_store_lock_free(handle: LockHandle) {
+    handle.free()
 }
 
 #[no_mangle]

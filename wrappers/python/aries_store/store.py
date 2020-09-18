@@ -75,6 +75,58 @@ class Scan:
             bindings.store_scan_free(self.handle)
 
 
+class Lock:
+    """An entry lock on a Store."""
+
+    def __init__(
+        self, store: "Store", lock_info: UpdateEntry, acquire_timeout_ms: int = None
+    ):
+        """Initialize the Lock instance."""
+        self.handle = None
+        self.params = (store, lock_info, acquire_timeout_ms)
+
+    async def _acquire(self):
+        if not self.params:
+            raise StoreError(StoreErrorCode.WRAPPER, "Cannot reuse lock instance")
+        (store, lock_info, timeout) = self.params
+        self.params = None
+        if not store.handle:
+            raise StoreError(
+                StoreErrorCode.WRAPPER, "Cannot create lock with closed store"
+            )
+        self.handle = await bindings.store_create_lock(store.handle, lock_info, timeout)
+
+    def __await__(self):
+        yield from self._acquire().__await__()
+        return self
+
+    async def __aenter__(self):
+        await self._acquire()
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        pass
+
+    @property
+    def entry(self) -> Entry:
+        if not self.handle:
+            raise StoreError(
+                StoreErrorCode.WRAPPER, "Lock must be acquired using `async with`"
+            )
+        return bindings.store_lock_get_entry(self.handle)
+
+    async def update(self, entries: Sequence[UpdateEntry]):
+        if not self.handle:
+            raise StoreError(
+                StoreErrorCode.WRAPPER, "Lock must be acquired using `async with`"
+            )
+        await bindings.store_lock_update(self.handle, entries)
+
+    def __del__(self):
+        if self.handle:
+            bindings.store_lock_free(self.handle)
+
+
 class Store:
     """An opened Store instance."""
 
@@ -111,16 +163,21 @@ class Store:
     ) -> Optional[Entry]:
         if not self.handle:
             raise StoreError(StoreErrorCode.WRAPPER, "Cannot fetch from closed store")
-        results = await bindings.store_fetch(self.handle, category, name)
-        return next(EntrySet(results)) if results else None
+        result_handle = await bindings.store_fetch(self.handle, category, name)
+        return next(EntrySet(result_handle), None) if result_handle else None
 
     def scan(self, category: [str, bytes], tag_filter: [str, dict] = None) -> Scan:
         return Scan(self, category, tag_filter)
 
-    async def update(self, entries: Sequence[UpdateEntry], with_lock=None):
+    async def update(self, entries: Sequence[UpdateEntry]):
         if not self.handle:
             raise StoreError(StoreErrorCode.WRAPPER, "Cannot update closed store")
-        await bindings.store_update(self.handle, entries, with_lock)
+        await bindings.store_update(self.handle, entries)
+
+    def create_lock(
+        self, lock_info: UpdateEntry, acquire_timeout_ms: int = None
+    ) -> Lock:
+        return Lock(self, lock_info, acquire_timeout_ms)
 
 
 async def _wrap_open_store(fut: asyncio.Future) -> Store:
@@ -132,14 +189,14 @@ class StoreOpen:
         self._fut = _wrap_open_store(fut)
         self._store: Store = None
 
-    def __await__(self):
+    def __await__(self) -> Store:
         if not self._fut:
             raise StoreError(StoreErrorCode.WRAPPER, "Cannot reuse store opening")
         fut = self._fut
         self._fut = None
         return fut.__await__()
 
-    async def __aenter__(self):
+    async def __aenter__(self) -> Store:
         if not self._fut:
             raise StoreError(StoreErrorCode.WRAPPER, "Cannot reuse store opening")
         self._store = await self._fut

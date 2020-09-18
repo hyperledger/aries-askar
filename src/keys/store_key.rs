@@ -4,7 +4,7 @@ use indy_utils::base58;
 pub use indy_utils::keys::wallet::{decrypt, EncKey, HmacKey, WalletKey as StoreKey};
 
 use crate::error::Result as KvResult;
-use crate::types::{EntryEncryptor, KvEncTag, KvTag};
+use crate::types::{EncEntryTag, EntryEncryptor, EntryTag};
 
 #[inline]
 pub fn decode_utf8(value: Vec<u8>) -> KvResult<String> {
@@ -24,21 +24,21 @@ impl EntryEncryptor for StoreKey {
         Ok(self.encrypt_value(&value)?)
     }
 
-    fn encrypt_entry_tags(&self, tags: &Vec<KvTag>) -> KvResult<Vec<KvEncTag>> {
+    fn encrypt_entry_tags(&self, tags: &Vec<EntryTag>) -> KvResult<Vec<EncEntryTag>> {
         tags.into_iter()
             .map(|tag| match tag {
-                KvTag::Plaintext(name, value) => {
+                EntryTag::Plaintext(name, value) => {
                     let name = self.encrypt_tag_name(&name)?;
-                    Ok(KvEncTag {
+                    Ok(EncEntryTag {
                         name,
                         value: value.as_bytes().to_vec(),
                         plaintext: true,
                     })
                 }
-                KvTag::Encrypted(name, value) => {
+                EntryTag::Encrypted(name, value) => {
                     let name = self.encrypt_tag_name(&name)?;
                     let value = self.encrypt_tag_value(&value)?;
-                    Ok(KvEncTag {
+                    Ok(EncEntryTag {
                         name,
                         value,
                         plaintext: false,
@@ -60,15 +60,15 @@ impl EntryEncryptor for StoreKey {
         Ok(self.decrypt_value(&enc_value)?)
     }
 
-    fn decrypt_entry_tags(&self, enc_tags: &Vec<KvEncTag>) -> KvResult<Vec<KvTag>> {
+    fn decrypt_entry_tags(&self, enc_tags: &Vec<EncEntryTag>) -> KvResult<Vec<EntryTag>> {
         enc_tags.into_iter().try_fold(vec![], |mut acc, tag| {
             let name = decode_utf8(self.decrypt_tag_name(&tag.name)?)?;
             acc.push(if tag.plaintext {
                 let value = decode_utf8(tag.value.clone())?;
-                KvTag::Plaintext(name, value)
+                EntryTag::Plaintext(name, value)
             } else {
                 let value = decode_utf8(self.decrypt_tag_value(&tag.value)?)?;
-                KvTag::Encrypted(name, value)
+                EntryTag::Encrypted(name, value)
             });
             KvResult::Ok(acc)
         })
@@ -141,18 +141,18 @@ fn derive_key_argon2(password: &str, salt: &[u8], mem_cost: u32, time_cost: u32)
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::KvEntry;
+    use crate::types::Entry;
 
     #[test]
     fn test_indy_key_round_trip() {
         let key = StoreKey::new().unwrap();
-        let test_record = KvEntry {
+        let test_record = Entry {
             category: "category".to_string(),
             name: "name".to_string(),
             value: b"value".to_vec(),
             tags: Some(vec![
-                KvTag::Plaintext("plain".to_string(), "tag".to_string()),
-                KvTag::Encrypted("enctag".to_string(), "envtagval".to_string()),
+                EntryTag::Plaintext("plain".to_string(), "tag".to_string()),
+                EntryTag::Encrypted("enctag".to_string(), "envtagval".to_string()),
             ]),
         };
         let (enc_record, enc_tags) = key.encrypt_entry(&test_record).unwrap();

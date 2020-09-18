@@ -6,7 +6,7 @@ use itertools::Itertools;
 
 use sqlx::{sqlite::SqliteRow as DbRow, Row, SqlitePool as DbPool};
 
-use super::{types::KvTag, KvEntry, Result as KvResult};
+use super::{types::EntryTag, Entry, Result as KvResult};
 use crate::keys::store_key::{decode_utf8, decode_wallet_key, decrypt, EncKey, StoreKey};
 
 const CHUNK_SIZE: usize = 20;
@@ -73,12 +73,12 @@ fn get_slice<'a>(row: &'a DbRow, index: usize) -> Result<&'a [u8], sqlx::Error> 
     row.try_get(index)
 }
 
-fn decode_row(key: &StoreKey, row: DbRow) -> KvResult<(i64, KvEntry)> {
+fn decode_row(key: &StoreKey, row: DbRow) -> KvResult<(i64, Entry)> {
     let value_key_enc = get_slice(&row, 4)?;
     let value_key = EncKey::from_slice(decrypt(&key.value_key, value_key_enc)?);
     let value = decrypt(&value_key, get_slice(&row, 3)?)?;
 
-    let entry = KvEntry {
+    let entry = Entry {
         category: decode_utf8(key.decrypt_category(get_slice(&row, 1)?)?)?,
         name: decode_utf8(key.decrypt_name(get_slice(&row, 2)?)?)?,
         value,
@@ -87,7 +87,7 @@ fn decode_row(key: &StoreKey, row: DbRow) -> KvResult<(i64, KvEntry)> {
     Ok((row.try_get(0)?, entry))
 }
 
-fn collect_tags(key: &StoreKey, tags: Vec<DbRow>) -> KvResult<BTreeMap<i64, Vec<KvTag>>> {
+fn collect_tags(key: &StoreKey, tags: Vec<DbRow>) -> KvResult<BTreeMap<i64, Vec<EntryTag>>> {
     let mut result = BTreeMap::new();
     for row in tags {
         let entry = result.entry(row.try_get(1)?).or_insert_with(Vec::new);
@@ -95,10 +95,10 @@ fn collect_tags(key: &StoreKey, tags: Vec<DbRow>) -> KvResult<BTreeMap<i64, Vec<
         if row.try_get(0)? {
             // encrypted value
             let value = decode_utf8(key.decrypt_tag_value(get_slice(&row, 3)?)?)?;
-            entry.push(KvTag::Encrypted(name, value))
+            entry.push(EntryTag::Encrypted(name, value))
         } else {
             let value = decode_utf8(get_slice(&row, 3)?.to_vec())?;
-            entry.push(KvTag::Plaintext(name, value));
+            entry.push(EntryTag::Plaintext(name, value));
         };
     }
     Ok(result)
