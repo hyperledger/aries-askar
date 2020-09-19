@@ -311,7 +311,6 @@ impl RefUnwindSafe for FfiEntryLock {}
 pub struct FfiUpdateEntry {
     entry: FfiEntry,
     expire_ms: i64,
-    profile_id: i64,
 }
 
 impl FfiUpdateEntry {
@@ -323,11 +322,6 @@ impl FfiUpdateEntry {
                 None
             } else {
                 Some(self.expire_ms)
-            },
-            profile_id: if self.profile_id == 0 {
-                None
-            } else {
-                Some(self.profile_id)
             },
         })
     }
@@ -574,7 +568,7 @@ pub extern "C" fn aries_store_update(
         spawn_ok(async move {
             let result = async {
                 let store = handle.load().await?;
-                store.update(entries).await?;
+                store.update(None, entries).await?;
                 Ok(())
             }.await;
             cb.resolve(result);
@@ -605,7 +599,7 @@ pub extern "C" fn aries_store_create_lock(
         spawn_ok(async move {
             let result = async {
                 let store = handle.load().await?;
-                let (entry, lock) = store.create_lock(update, timeout).await?;
+                let (entry, lock) = store.create_lock(None, update, timeout).await?;
                 let lock_buf = FfiEntryLock {
                     lock: Mutex::new(Some(lock)),
                     entry: entry.into(),

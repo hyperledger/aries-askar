@@ -106,7 +106,6 @@ class FfiUpdateEntry(Structure):
     _fields_ = [
         ("entry", FfiEntry),
         ("expire_ms", c_ulong),
-        ("profile_id", c_ulong),
     ]
 
     @classmethod
@@ -135,7 +134,8 @@ class FfiUpdateEntry(Structure):
             tags_len,
         )
         return FfiUpdateEntry(
-            entry, -1 if upd.expire_ms is None else upd.expire_ms, upd.profile_id or 0
+            entry,
+            -1 if upd.expire_ms is None else upd.expire_ms,
         )
 
 

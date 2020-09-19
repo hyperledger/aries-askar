@@ -4,7 +4,8 @@ use std::hash::{Hash, Hasher};
 use sqlx::{database::HasArguments, Arguments, Database, Encode, IntoArguments, Type};
 
 use super::error::Result as KvResult;
-use super::types::{Expiry, UpdateEntry};
+use super::keys::{store_key::StoreKey, AsyncEncryptor};
+use super::types::{EncEntry, EncEntryTag, Expiry, KeyId, UpdateEntry};
 use super::wql::{
     self,
     sql::TagSqlEncoder,
@@ -101,8 +102,10 @@ pub fn replace_arg_placeholders<Q: QueryPrepare + ?Sized>(
     (s, index)
 }
 
-pub fn expiry_timestamp(expire_ms: i64) -> Option<Expiry> {
-    chrono::Utc::now().checked_add_signed(chrono::Duration::milliseconds(expire_ms))
+pub fn expiry_timestamp(expire_ms: i64) -> KvResult<Expiry> {
+    chrono::Utc::now()
+        .checked_add_signed(chrono::Duration::milliseconds(expire_ms))
+        .ok_or_else(|| err_msg!(Unexpected, "Invalid expiry timestamp"))
 }
 
 pub fn extend_query<'q, Q: QueryPrepare>(
@@ -138,4 +141,29 @@ pub fn hash_lock_info(key_id: i64, lock_info: &UpdateEntry) -> i64 {
     Hash::hash_slice(lock_info.entry.category.as_bytes(), &mut hasher);
     Hash::hash_slice(lock_info.entry.name.as_bytes(), &mut hasher);
     hasher.finish() as i64
+}
+
+pub struct PreparedUpdate {
+    pub key_id: KeyId,
+    pub enc_entry: EncEntry<'static>,
+    pub enc_tags: Option<Vec<EncEntryTag>>,
+    pub expire_ms: Option<i64>,
+}
+
+pub async fn prepare_update(
+    key_id: KeyId,
+    key: AsyncEncryptor<StoreKey>,
+    entries: Vec<UpdateEntry>,
+) -> KvResult<Vec<PreparedUpdate>> {
+    let mut updates = vec![];
+    for update in entries {
+        let (enc_entry, enc_tags) = key.encrypt_entry(update.entry).await?;
+        updates.push(PreparedUpdate {
+            key_id,
+            enc_entry,
+            enc_tags,
+            expire_ms: update.expire_ms,
+        });
+    }
+    Ok(updates)
 }

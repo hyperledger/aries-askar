@@ -94,7 +94,7 @@ pub trait Store {
     /// existing record lock, or verify it and release it upon completion of the update.
     /// Provide NULL for the entry value to remove existing records
     /// Returns an error if the lock was lost or one of the keys could not be assigned.
-    async fn update(&self, entries: Vec<UpdateEntry>) -> Result<()>;
+    async fn update(&self, profile_id: Option<ProfileId>, entries: Vec<UpdateEntry>) -> Result<()>;
 
     /// Establish an advisory lock on a particular record
     ///
@@ -114,6 +114,7 @@ pub trait Store {
     /// also try to obtain a lock.
     async fn create_lock(
         &self,
+        profile_id: Option<ProfileId>,
         lock_info: UpdateEntry,
         acquire_timeout_ms: Option<i64>,
     ) -> Result<(Entry, EntryLock)>;

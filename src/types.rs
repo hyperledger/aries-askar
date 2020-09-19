@@ -70,7 +70,6 @@ pub struct EncEntry<'a> {
 pub struct UpdateEntry {
     pub entry: Entry,
     pub expire_ms: Option<i64>,
-    pub profile_id: Option<ProfileId>,
 }
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Zeroize)]

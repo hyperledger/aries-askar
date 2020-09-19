@@ -8,19 +8,20 @@ use futures_lite::stream::StreamExt;
 
 use sqlx::{
     sqlite::{Sqlite, SqliteConnectOptions, SqlitePool, SqlitePoolOptions, SqliteRow},
-    Done, Row,
+    Done, Row, Transaction,
 };
 
 use super::db_utils::{
-    expiry_timestamp, extend_query, hash_lock_info, QueryParams, QueryPrepare, PAGE_SIZE,
+    expiry_timestamp, extend_query, hash_lock_info, prepare_update, PreparedUpdate, QueryParams,
+    QueryPrepare, PAGE_SIZE,
 };
 use super::error::Result as KvResult;
-use super::future::sleep_ms;
+use super::future::{sleep_ms, spawn_ok};
 use super::keys::{store_key::StoreKey, AsyncEncryptor};
 use super::options::IntoOptions;
 use super::store::{EntryLock, EntryScan, KeyCache, ProvisionStore, ProvisionStoreSpec, Store};
 use super::types::{
-    EncEntryTag, Entry, EntryFetchOptions, EntryTag, KeyId, ProfileId, UpdateEntry,
+    EncEntryTag, Entry, EntryFetchOptions, EntryTag, Expiry, KeyId, ProfileId, UpdateEntry,
 };
 use super::wql;
 
@@ -358,84 +359,52 @@ impl Store for SqliteStore {
         Ok(EntryScan::new(scan, PAGE_SIZE))
     }
 
-    async fn update(&self, entries: Vec<UpdateEntry>) -> KvResult<()> {
+    async fn update(
+        &self,
+        profile_id: Option<ProfileId>,
+        entries: Vec<UpdateEntry>,
+    ) -> KvResult<()> {
         if entries.is_empty() {
             debug!("Skip update: no entries");
             return Ok(());
         }
-        let mut updates = vec![];
-        for update in entries {
-            let (key_id, key) = self.get_profile_key(update.profile_id).await?;
-            let (enc_entry, enc_tags) = key.encrypt_entry(update.entry).await?;
-            updates.push((key_id, enc_entry, enc_tags, update.expire_ms));
-        }
-
+        let (key_id, key) = self.get_profile_key(profile_id).await?;
+        let updates = prepare_update(key_id, key, entries).await?;
         let mut txn = self.conn_pool.begin().await?; // deferred write txn
-        for (key_id, enc_entry, enc_tags, expire_ms) in updates {
-            sqlx::query(DELETE_QUERY)
-                .bind(&key_id)
-                .bind(enc_entry.category.as_ref())
-                .bind(enc_entry.name.as_ref())
-                .execute(&mut txn)
-                .await?;
-
-            if expire_ms != Some(0) {
-                trace!("Insert entry");
-                let row_id = sqlx::query(INSERT_QUERY)
-                    .bind(&key_id)
-                    .bind(enc_entry.category.as_ref())
-                    .bind(enc_entry.name.as_ref())
-                    .bind(enc_entry.value.as_ref())
-                    .bind(&expire_ms.map(expiry_timestamp))
-                    .execute(&mut txn)
-                    .await?
-                    .last_insert_rowid();
-                if let Some(tags) = enc_tags {
-                    for tag in tags {
-                        sqlx::query(TAG_INSERT_QUERY)
-                            .bind(row_id)
-                            .bind(&tag.name)
-                            .bind(&tag.value)
-                            .bind(tag.plaintext as i32)
-                            .execute(&mut txn)
-                            .await?;
-                    }
-                }
-            }
-        }
+        txn = perform_update(txn, updates).await?;
         Ok(txn.commit().await?)
     }
 
     async fn create_lock(
         &self,
+        profile_id: Option<ProfileId>,
         lock_info: UpdateEntry,
         acquire_timeout_ms: Option<i64>,
     ) -> KvResult<(Entry, EntryLock)> {
-        let (key_id, key) = self.get_profile_key(lock_info.profile_id).await?;
+        let (key_id, key) = self.get_profile_key(profile_id).await?;
         let raw_entry = lock_info.entry.clone();
         let hash = hash_lock_info(key_id, &lock_info);
         let (enc_entry, enc_tags) = key.encrypt_entry(lock_info.entry).await?;
-        let expiry = lock_info.expire_ms.and_then(expiry_timestamp);
+        let expiry = lock_info.expire_ms.map(expiry_timestamp).transpose()?;
 
-        let mut txn = self.conn_pool.begin().await?;
-
-        let interval = 10;
+        let interval = 50;
         let expire = acquire_timeout_ms.map(|offs| {
             Instant::now() + Duration::from_millis(std::cmp::max(0, offs - interval) as u64)
         });
-        loop {
+        let lock_expiry = loop {
+            let lock_expiry = expiry_timestamp(LOCK_EXPIRY)?;
             let upserted = sqlx::query(
                 "INSERT INTO items_locks (id, expiry) VALUES (?1, ?2)
                 ON CONFLICT (id) DO UPDATE SET expiry=excluded.expiry
                 WHERE expiry <= datetime('now')",
             )
             .bind(hash)
-            .bind(expiry_timestamp(LOCK_EXPIRY))
-            .execute(&mut txn)
+            .bind(lock_expiry)
+            .execute(&self.conn_pool)
             .await?
             .rows_affected();
             if upserted > 0 {
-                break;
+                break lock_expiry;
             }
             if expire
                 .map(|exp| Instant::now().checked_duration_since(exp).is_some())
@@ -444,7 +413,37 @@ impl Store for SqliteStore {
                 return Err(err_msg!(Timeout, "Timed out waiting for lock"));
             }
             sleep_ms(interval as u64).await;
+        };
+
+        struct LockHandle {
+            expiry: Expiry,
+            hash: i64,
+            pool: Option<SqlitePool>,
+        };
+
+        impl Drop for LockHandle {
+            fn drop(&mut self) {
+                if let Some(pool) = self.pool.take() {
+                    let (hash, expiry) = (self.hash, self.expiry);
+                    spawn_ok(async move {
+                        sqlx::query("DELETE FROM items_locks WHERE id=?1 AND expiry=?2")
+                            .bind(hash)
+                            .bind(expiry)
+                            .execute(&pool)
+                            .await
+                            .ok();
+                    })
+                }
+            }
         }
+
+        let mut lock_handle = LockHandle {
+            expiry: lock_expiry,
+            hash,
+            pool: Some(self.conn_pool.clone()),
+        };
+
+        let mut txn = self.conn_pool.begin().await?;
 
         let entry = match sqlx::query(FETCH_QUERY)
             .bind(&key_id)
@@ -459,7 +458,7 @@ impl Store for SqliteStore {
                     category: raw_entry.category.clone(),
                     name: raw_entry.name.clone(),
                     value,
-                    tags: None, // FIXME optionally fetch tags
+                    tags: None, // FIXME fetch tags
                 }
             }
             None => {
@@ -483,18 +482,87 @@ impl Store for SqliteStore {
                             .await?;
                     }
                 }
+                txn.commit().await?;
                 raw_entry
             }
         };
-        txn.commit().await?;
 
-        Ok((entry, EntryLock::new(|updates| async { unimplemented!() })))
+        Ok((
+            entry,
+            EntryLock::new(move |entries| async move {
+                if entries.is_empty() {
+                    debug!("Skip update: no entries");
+                    return Ok(());
+                }
+                let updates = prepare_update(key_id, key, entries).await?;
+                let mut txn = lock_handle.pool.as_ref().unwrap().begin().await?; // deferred write txn
+                txn = perform_update(txn, updates).await?;
+                if sqlx::query("DELETE FROM items_locks WHERE id=?1 AND expiry=?2")
+                    .bind(lock_handle.hash)
+                    .bind(lock_handle.expiry)
+                    .execute(&mut txn)
+                    .await?
+                    .rows_affected()
+                    != 1
+                {
+                    return Err(err_msg!(Lock, "Lock expired"));
+                }
+                txn.commit().await?;
+                lock_handle.pool.take(); // cancel drop
+                Ok(())
+            }),
+        ))
     }
 
     async fn close(&self) -> KvResult<()> {
         self.conn_pool.close().await;
         Ok(())
     }
+}
+
+async fn perform_update(
+    mut txn: Transaction<'static, Sqlite>,
+    updates: Vec<PreparedUpdate>,
+) -> KvResult<Transaction<'static, Sqlite>> {
+    for upd in updates {
+        let PreparedUpdate {
+            key_id,
+            enc_entry,
+            enc_tags,
+            expire_ms,
+        } = upd;
+        sqlx::query(DELETE_QUERY)
+            .bind(&key_id)
+            .bind(enc_entry.category.as_ref())
+            .bind(enc_entry.name.as_ref())
+            .execute(&mut txn)
+            .await?;
+
+        if expire_ms != Some(0) {
+            trace!("Insert entry");
+            let row_id = sqlx::query(INSERT_QUERY)
+                .bind(&key_id)
+                .bind(enc_entry.category.as_ref())
+                .bind(enc_entry.name.as_ref())
+                .bind(enc_entry.value.as_ref())
+                .bind(expire_ms.map(expiry_timestamp).transpose()?)
+                .execute(&mut txn)
+                .await?
+                .last_insert_rowid();
+            if let Some(tags) = enc_tags {
+                for tag in tags {
+                    sqlx::query(TAG_INSERT_QUERY)
+                        .bind(row_id)
+                        .bind(&tag.name)
+                        .bind(&tag.value)
+                        .bind(tag.plaintext as i32)
+                        .execute(&mut txn)
+                        .await?;
+                }
+            }
+        }
+    }
+    Ok(txn)
 }
 
 #[cfg(test)]
@@ -510,7 +578,7 @@ mod tests {
             let db = SqliteStoreOptions::in_memory()
                 .provision_store(spec)
                 .await?;
-            let ts = expiry_timestamp(LOCK_EXPIRY);
+            let ts = expiry_timestamp(LOCK_EXPIRY).unwrap();
             let check = sqlx::query("SELECT datetime('now'), ?1, ?1 > datetime('now')")
                 .bind(ts)
                 .fetch_one(&db.conn_pool)

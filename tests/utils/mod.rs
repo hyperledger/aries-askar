@@ -29,9 +29,8 @@ pub async fn db_add_fetch<DB: Store>(db: &DB) -> KvResult<()> {
             tags: None,
         },
         expire_ms: None,
-        profile_id: None,
     }];
-    db.update(updates).await?;
+    db.update(None, updates).await?;
 
     let row = db
         .fetch(
@@ -70,9 +69,8 @@ pub async fn db_add_fetch_tags<DB: Store>(db: &DB) -> KvResult<()> {
             tags: test_row.tags.clone(),
         },
         expire_ms: None,
-        profile_id: None,
     }];
-    db.update(updates).await?;
+    db.update(None, updates).await?;
 
     let row = db
         .fetch(
@@ -109,10 +107,9 @@ pub async fn db_count<DB: Store>(db: &DB) -> KvResult<()> {
                 tags: row.tags.clone(),
             },
             expire_ms: None,
-            profile_id: None,
         })
         .collect();
-    db.update(updates).await?;
+    db.update(None, updates).await?;
 
     let tag_filter = None;
     let count = db.count(None, category.clone(), tag_filter).await?;
@@ -144,10 +141,9 @@ pub async fn db_scan<DB: Store>(db: &DB) -> KvResult<()> {
                 tags: row.tags.clone(),
             },
             expire_ms: None,
-            profile_id: None,
         })
         .collect();
-    db.update(updates).await?;
+    db.update(None, updates).await?;
 
     let options = EntryFetchOptions::default();
     let tag_filter = None;
@@ -195,10 +191,9 @@ pub async fn db_create_lock_non_existing<DB: Store>(db: &DB) -> KvResult<()> {
             tags: None,
         },
         expire_ms: None,
-        profile_id: None,
     };
     let lock_update = update.clone();
-    let (entry, _lock) = db.create_lock(lock_update, None).await?;
+    let (entry, _lock) = db.create_lock(None, lock_update, None).await?;
     assert_eq!(entry, update.entry);
 
     Ok(())
@@ -213,12 +208,11 @@ pub async fn db_create_lock_timeout<DB: Store>(db: &DB) -> KvResult<()> {
             tags: None,
         },
         expire_ms: None,
-        profile_id: None,
     };
-    let (entry, _lock) = db.create_lock(update.clone(), Some(100)).await?;
+    let (entry, _lock) = db.create_lock(None, update.clone(), Some(100)).await?;
     assert_eq!(entry, update.entry);
 
-    let lock2 = db.create_lock(update.clone(), Some(100)).await;
+    let lock2 = db.create_lock(None, update.clone(), Some(100)).await;
     assert!(lock2.is_err());
 
     Ok(())

@@ -7,12 +7,12 @@ use futures_lite::stream::StreamExt;
 
 use sqlx::{
     postgres::{PgPool, PgRow, Postgres},
-    Executor, Row,
+    Executor, Row, Transaction,
 };
 
 use super::db_utils::{
-    expiry_timestamp, extend_query, hash_lock_info, replace_arg_placeholders, QueryParams,
-    QueryPrepare, PAGE_SIZE,
+    expiry_timestamp, extend_query, hash_lock_info, prepare_update, replace_arg_placeholders,
+    PreparedUpdate, QueryParams, QueryPrepare, PAGE_SIZE,
 };
 use super::error::Result as KvResult;
 use super::keys::{store_key::StoreKey, AsyncEncryptor};
@@ -26,6 +26,8 @@ use super::wql;
 const COUNT_QUERY: &'static str = "SELECT COUNT(*) FROM items i
     WHERE store_key_id = $1 AND category = $2
     AND (expiry IS NULL OR expiry > CURRENT_TIMESTAMP)";
+const DELETE_QUERY: &'static str = "DELETE FROM items
+    WHERE store_key_id = $1 AND category = $2 AND name = $3";
 const FETCH_QUERY: &'static str = "SELECT id, value FROM items i
     WHERE store_key_id = $1 AND category = $2 AND name = $3
     AND (expiry IS NULL OR expiry > CURRENT_TIMESTAMP)";
@@ -91,14 +93,14 @@ impl ProvisionStore for PostgresStoreOptions {
 
 #[derive(Debug)]
 struct Lock {
-    txn: sqlx::Transaction<'static, Postgres>,
+    txn: Transaction<'static, Postgres>,
 }
 
 #[cfg(feature = "pg_test")]
 pub struct TestDB<'t> {
     inst: PostgresStore,
     #[allow(unused)]
-    txn: sqlx::Transaction<'t, Postgres>,
+    txn: Transaction<'t, Postgres>,
 }
 
 #[cfg(feature = "pg_test")]
@@ -445,71 +447,33 @@ impl Store for PostgresStore {
         Ok(EntryScan::new(scan, PAGE_SIZE))
     }
 
-    async fn update(&self, entries: Vec<UpdateEntry>) -> KvResult<()> {
+    async fn update(
+        &self,
+        profile_id: Option<ProfileId>,
+        entries: Vec<UpdateEntry>,
+    ) -> KvResult<()> {
         if entries.is_empty() {
             debug!("Skip update: no entries");
             return Ok(());
         }
-        let mut updates = vec![];
-        for update in entries {
-            let (key_id, key) = self.get_profile_key(update.profile_id).await?;
-            let (enc_entry, enc_tags) = key.encrypt_entry(update.entry).await?;
-            updates.push((key_id, enc_entry, enc_tags, update.expire_ms));
-        }
-
+        let (key_id, key) = self.get_profile_key(profile_id).await?;
+        let updates = prepare_update(key_id, key, entries).await?;
         let mut txn = self.conn_pool.begin().await?; // deferred write txn
-        for (key_id, enc_entry, enc_tags, expire_ms) in updates {
-            let row_id: Option<i64> = sqlx::query_scalar(FETCH_QUERY)
-                .bind(&key_id)
-                .bind(enc_entry.category.as_ref())
-                .bind(enc_entry.name.as_ref())
-                .fetch_optional(&mut txn)
-                .await?;
-            let row_id = if let Some(row_id) = row_id {
-                sqlx::query("UPDATE items SET value=$1 WHERE id=$2")
-                    .bind(row_id)
-                    .bind(enc_entry.value.as_ref())
-                    .execute(&mut txn)
-                    .await?;
-                sqlx::query("DELETE FROM items_tags WHERE item_id=$1")
-                    .bind(row_id)
-                    .execute(&mut txn)
-                    .await?;
-                row_id
-            } else {
-                sqlx::query_scalar(INSERT_QUERY)
-                    .bind(&key_id)
-                    .bind(enc_entry.category.as_ref())
-                    .bind(enc_entry.name.as_ref())
-                    .bind(enc_entry.value.as_ref())
-                    .bind(expire_ms.map(expiry_timestamp))
-                    .fetch_one(&mut txn)
-                    .await?
-            };
-            if let Some(tags) = enc_tags {
-                for tag in tags {
-                    sqlx::query(TAG_INSERT_QUERY)
-                        .bind(row_id)
-                        .bind(&tag.name)
-                        .bind(&tag.value)
-                        .bind(tag.plaintext as i16)
-                        .execute(&mut txn)
-                        .await?;
-                }
-            }
-        }
+        txn = perform_update(txn, updates).await?;
         Ok(txn.commit().await?)
     }
 
     async fn create_lock(
         &self,
+        profile_id: Option<ProfileId>,
         lock_info: UpdateEntry,
         acquire_timeout_ms: Option<i64>,
     ) -> KvResult<(Entry, EntryLock)> {
-        let (key_id, key) = self.get_profile_key(lock_info.profile_id).await?;
+        let (key_id, key) = self.get_profile_key(profile_id).await?;
         let raw_entry = lock_info.entry.clone();
         let hash = hash_lock_info(key_id, &lock_info);
         let (enc_entry, enc_tags) = key.encrypt_entry(lock_info.entry).await?;
+        let expiry = lock_info.expire_ms.map(expiry_timestamp).transpose()?;
 
         let mut lock_txn = self.conn_pool.begin().await?;
         if let Some(timeout) = acquire_timeout_ms {
@@ -519,15 +483,14 @@ impl Store for PostgresStore {
             }
         }
 
-        let lock = match sqlx::query("SELECT pg_advisory_xact_lock($1)")
+        if let Err(_) = sqlx::query("SELECT pg_advisory_xact_lock($1)")
             .bind(hash)
             .execute(&mut lock_txn)
             .await
         {
-            Ok(_) => Lock { txn: lock_txn },
             // assuming failure due to lock timeout
-            Err(_) => return Err(err_msg!(Timeout, "Timed out waiting for lock")),
-        };
+            return Err(err_msg!(Timeout, "Timed out waiting for lock"));
+        }
 
         let mut txn = self.conn_pool.begin().await?;
         let entry = match sqlx::query(FETCH_QUERY)
@@ -552,7 +515,7 @@ impl Store for PostgresStore {
                     .bind(enc_entry.category.as_ref())
                     .bind(enc_entry.name.as_ref())
                     .bind(enc_entry.value.as_ref())
-                    .bind(&lock_info.expire_ms.map(expiry_timestamp))
+                    .bind(expiry)
                     .fetch_one(&mut txn)
                     .await?;
                 if let Some(tags) = enc_tags {
@@ -571,13 +534,68 @@ impl Store for PostgresStore {
             }
         };
 
-        Ok((entry, EntryLock::new(|updates| async { unimplemented!() })))
+        let pool = self.conn_pool.clone();
+        Ok((
+            entry,
+            EntryLock::new(move |entries| async move {
+                if entries.is_empty() {
+                    debug!("Skip update: no entries");
+                    return Ok(());
+                }
+                let updates = prepare_update(key_id, key, entries).await?;
+                let mut txn = pool.begin().await?; // deferred write txn
+                txn = perform_update(txn, updates).await?;
+                txn.commit().await?;
+                drop(lock_txn);
+                Ok(())
+            }),
+        ))
     }
 
     async fn close(&self) -> KvResult<()> {
         self.conn_pool.close().await;
         Ok(())
     }
+}
+
+async fn perform_update(
+    mut txn: Transaction<'static, Postgres>,
+    updates: Vec<PreparedUpdate>,
+) -> KvResult<Transaction<'static, Postgres>> {
+    for upd in updates {
+        let PreparedUpdate {
+            key_id,
+            enc_entry,
+            enc_tags,
+            expire_ms,
+        } = upd;
+        sqlx::query(DELETE_QUERY)
+            .bind(&key_id)
+            .bind(enc_entry.category.as_ref())
+            .bind(enc_entry.name.as_ref())
+            .execute(&mut txn)
+            .await?;
+        let row_id: i64 = sqlx::query_scalar(INSERT_QUERY)
+            .bind(&key_id)
+            .bind(enc_entry.category.as_ref())
+            .bind(enc_entry.name.as_ref())
+            .bind(enc_entry.value.as_ref())
+            .bind(expire_ms.map(expiry_timestamp).transpose()?)
+            .fetch_one(&mut txn)
+            .await?;
+        if let Some(tags) = enc_tags {
+            for tag in tags {
+                sqlx::query(TAG_INSERT_QUERY)
+                    .bind(row_id)
+                    .bind(&tag.name)
+                    .bind(&tag.value)
+                    .bind(tag.plaintext as i16)
+                    .execute(&mut txn)
+                    .await?;
+            }
+        }
+    }
+    Ok(txn)
 }
 
 #[cfg(test)]
