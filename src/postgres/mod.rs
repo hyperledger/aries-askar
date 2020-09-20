@@ -329,7 +329,7 @@ async fn fetch_row_tags(
         .try_map(|row: PgRow| {
             let name = row.try_get(0)?;
             let value = row.try_get(1)?;
-            let plaintext = row.try_get::<i32, _>(2)? != 0;
+            let plaintext = row.try_get::<i16, _>(2)? != 0;
             Ok(EncEntryTag {
                 name,
                 value,
