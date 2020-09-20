@@ -11,8 +11,8 @@ use sqlx::{
 };
 
 use super::db_utils::{
-    expiry_timestamp, extend_query, hash_lock_info, prepare_update, replace_arg_placeholders,
-    PreparedUpdate, QueryParams, QueryPrepare, PAGE_SIZE,
+    encode_tag_filter, expiry_timestamp, extend_query, hash_lock_info, prepare_update,
+    replace_arg_placeholders, PreparedUpdate, QueryParams, QueryPrepare, PAGE_SIZE,
 };
 use super::error::Result as KvResult;
 use super::keys::{store_key::StoreKey, AsyncEncryptor};
@@ -355,11 +355,12 @@ impl Store for PostgresStore {
     ) -> KvResult<i64> {
         let (key_id, key) = self.get_profile_key(profile_id).await?;
         let category = key.encrypt_entry_category(category).await?;
-        let mut args = QueryParams::new();
-        args.push(key_id);
-        args.push(category);
-        let query = extend_query::<Self>(COUNT_QUERY, &mut args, tag_filter, None, None)?;
-        let count = sqlx::query_scalar_with(query.as_str(), args)
+        let mut params = QueryParams::new();
+        params.push(key_id);
+        params.push(category);
+        let tag_filter = encode_tag_filter::<Self>(tag_filter, key.0.clone(), params.len()).await?;
+        let query = extend_query::<Self>(COUNT_QUERY, &mut params, tag_filter, None, None)?;
+        let count = sqlx::query_scalar_with(query.as_str(), params)
             .fetch_one(&self.conn_pool)
             .await?;
         KvResult::Ok(count)
@@ -417,7 +418,8 @@ impl Store for PostgresStore {
             let mut params = QueryParams::new();
             params.push(key_id);
             params.push(category.clone());
-            let query = extend_query::<PostgresStore>(SCAN_QUERY, &mut params, tag_filter, offset, max_rows)?;
+            let tag_filter = encode_tag_filter::<Self>(tag_filter, key.0.clone(), params.len()).await?;
+            let query = extend_query::<Self>(SCAN_QUERY, &mut params, tag_filter, offset, max_rows)?;
             let mut batch = Vec::with_capacity(PAGE_SIZE);
             let mut rows = sqlx::query_with(query.as_str(), params).fetch(&pool);
             while let Some(row) = rows.next().await {

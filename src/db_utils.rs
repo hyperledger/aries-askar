@@ -1,9 +1,11 @@
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
+use std::sync::Arc;
 
 use sqlx::{database::HasArguments, Arguments, Database, Encode, IntoArguments, Type};
 
 use super::error::Result as KvResult;
+use super::future::blocking;
 use super::keys::{store_key::StoreKey, AsyncEncryptor};
 use super::types::{EncEntry, EncEntryTag, Expiry, KeyId, UpdateEntry};
 use super::wql::{
@@ -108,10 +110,40 @@ pub fn expiry_timestamp(expire_ms: i64) -> KvResult<Expiry> {
         .ok_or_else(|| err_msg!(Unexpected, "Invalid expiry timestamp"))
 }
 
+pub async fn encode_tag_filter<Q: QueryPrepare>(
+    tag_filter: Option<wql::Query>,
+    key: Option<Arc<StoreKey>>,
+    offset: usize,
+) -> KvResult<Option<(String, Vec<Vec<u8>>)>> {
+    if let Some(tag_filter) = tag_filter {
+        blocking(move || {
+            let tag_query = tag_query(tag_filter)?;
+            let mut enc = if let Some(key) = key {
+                let key2 = key.clone();
+                TagSqlEncoder::new(
+                    move |name| Ok(key.encrypt_tag_name(name)?),
+                    move |value| Ok(key2.encrypt_tag_value(value)?),
+                )
+            } else {
+                TagSqlEncoder::new(
+                    |name| Ok(name.as_bytes().to_vec()),
+                    |value| Ok(value.as_bytes().to_vec()),
+                )
+            };
+            let filter: String = enc.encode_query(&tag_query)?;
+            let (filter, _next_idx) = replace_arg_placeholders::<Q>(&filter, (offset as i64) + 1);
+            Ok(Some((filter, enc.arguments)))
+        })
+        .await
+    } else {
+        Ok(None)
+    }
+}
+
 pub fn extend_query<'q, Q: QueryPrepare>(
     query: &str,
     args: &mut QueryParams<'q, Q::DB>,
-    tag_filter: Option<wql::Query>,
+    tag_filter: Option<(String, Vec<Vec<u8>>)>,
     offset: Option<i64>,
     limit: Option<i64>,
 ) -> KvResult<String>
@@ -120,14 +152,10 @@ where
     Vec<u8>: for<'e> Encode<'e, Q::DB> + Type<Q::DB>,
 {
     let mut query = query.to_string();
-    if let Some(tag_filter) = tag_filter {
-        let tag_query = tag_query(tag_filter)?;
-        let mut enc = TagSqlEncoder::new();
-        let filter: String = enc.encode_query(&tag_query)?;
-        let (filter, _next_idx) = replace_arg_placeholders::<Q>(&filter, args.len() as i64 + 1);
-        args.extend(enc.arguments);
+    if let Some((filter_clause, filter_args)) = tag_filter {
+        args.extend(filter_args);
         query.push_str(" AND "); // assumes WHERE already occurs
-        query.push_str(&filter);
+        query.push_str(&filter_clause);
     };
     if offset.is_some() || limit.is_some() {
         query = Q::limit_query(query, args, offset, limit);

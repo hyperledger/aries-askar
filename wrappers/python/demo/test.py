@@ -27,7 +27,7 @@ async def basic_test():
         entry = await store.fetch("category", "name")
         print(entry)
 
-        async for row in store.scan("category"):
+        async for row in store.scan("category", {"~plaintag": "a", "enctag": "b"}):
             print("scan result", row)
 
         lock_entry = UpdateEntry(

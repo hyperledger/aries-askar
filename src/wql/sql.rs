@@ -4,13 +4,21 @@ use super::tags::{CompareOp, ConjunctionOp, TagName, TagQueryEncoder};
 use crate::error::Result as KvResult;
 
 pub struct TagSqlEncoder {
+    pub enc_name: Box<dyn FnMut(&str) -> KvResult<Vec<u8>>>,
+    pub enc_value: Box<dyn FnMut(&str) -> KvResult<Vec<u8>>>,
     pub arguments: Vec<Vec<u8>>,
 }
 
 impl TagSqlEncoder {
-    pub fn new() -> Self {
-        // FIXME - encrypt via enclave
-        Self { arguments: vec![] }
+    pub fn new(
+        enc_name: impl FnMut(&str) -> KvResult<Vec<u8>> + 'static,
+        enc_value: impl FnMut(&str) -> KvResult<Vec<u8>> + 'static,
+    ) -> Self {
+        Self {
+            enc_name: Box::new(enc_name),
+            enc_value: Box::new(enc_value),
+            arguments: vec![],
+        }
     }
 }
 
@@ -20,15 +28,16 @@ impl TagQueryEncoder for TagSqlEncoder {
 
     fn encode_name(&mut self, name: &TagName) -> KvResult<Self::Arg> {
         Ok(match name {
-            TagName::Encrypted(name) => name.clone(),
-            TagName::Plaintext(name) => format!("~{}", name),
-        }
-        .as_bytes()
-        .to_vec())
+            TagName::Encrypted(name) | TagName::Plaintext(name) => (self.enc_name)(name)?,
+        })
     }
 
-    fn encode_value(&mut self, value: &String, _is_plaintext: bool) -> KvResult<Self::Arg> {
-        Ok(value.as_bytes().to_vec())
+    fn encode_value(&mut self, value: &String, is_plaintext: bool) -> KvResult<Self::Arg> {
+        Ok(if is_plaintext {
+            value.as_bytes().to_vec()
+        } else {
+            (self.enc_value)(value)?
+        })
     }
 
     fn encode_op_clause(
@@ -99,7 +108,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_simple_and() {
+    fn tag_query_encode() {
         let condition_1 = TagQuery::And(vec![
             TagQuery::Eq(
                 TagName::Encrypted("enctag".to_string()),
@@ -121,20 +130,23 @@ mod tests {
             ))),
         ]);
         let query = TagQuery::Or(vec![condition_1, condition_2]);
-        let mut enc = TagSqlEncoder::new();
+        let mut enc = TagSqlEncoder::new(
+            |name: &str| Ok(format!("--{}--", name).into_bytes()),
+            |value: &str| Ok(format!("~~{}~~", value).into_bytes()),
+        );
         let query_str = enc.encode_query(&query).unwrap();
         assert_eq!(query_str, "((i.id IN (SELECT item_id FROM items_tags WHERE name = $$ AND value = $$ AND plaintext = 0) AND i.id IN (SELECT item_id FROM items_tags WHERE name = $$ AND value = $$ AND plaintext = 1)) OR (i.id IN (SELECT item_id FROM items_tags WHERE name = $$ AND value = $$ AND plaintext = 0) AND i.id IN (SELECT item_id FROM items_tags WHERE name = $$ AND value != $$ AND plaintext = 1)))");
         let args = enc.arguments;
         assert_eq!(
             args,
             vec![
-                b"enctag".to_vec(),
-                b"encval".to_vec(),
-                b"~plaintag".to_vec(),
+                b"--enctag--".to_vec(),
+                b"~~encval~~".to_vec(),
+                b"--plaintag--".to_vec(),
                 b"plainval".to_vec(),
-                b"enctag".to_vec(),
-                b"encval".to_vec(),
-                b"~plaintag".to_vec(),
+                b"--enctag--".to_vec(),
+                b"~~encval~~".to_vec(),
+                b"--plaintag--".to_vec(),
                 b"eggs".to_vec()
             ]
         );

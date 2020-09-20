@@ -1,6 +1,6 @@
 macro_rules! catch_err {
     ($($e:tt)*) => {
-        match std::panic::catch_unwind(|| -> $crate::error::Result<_> {$($e)*}) {
+        match std::panic::catch_unwind(move || -> $crate::error::Result<_> {$($e)*}) {
             Ok(Ok(a)) => a,
             Ok(Err(err)) => { // lib error
                 $crate::ffi::error::set_last_error(Some(err))
