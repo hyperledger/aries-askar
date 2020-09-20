@@ -155,7 +155,7 @@ pub async fn prepare_update(
     key: AsyncEncryptor<StoreKey>,
     entries: Vec<UpdateEntry>,
 ) -> KvResult<Vec<PreparedUpdate>> {
-    let mut updates = vec![];
+    let mut updates = Vec::with_capacity(entries.len());
     for update in entries {
         let (enc_entry, enc_tags) = key.encrypt_entry(update.entry).await?;
         updates.push(PreparedUpdate {

@@ -14,6 +14,7 @@ use async_mutex::Mutex;
 use ffi_support::{rust_string_to_c, FfiStr};
 use indy_utils::new_handle_type;
 use once_cell::sync::Lazy;
+use zeroize::Zeroize;
 
 use super::error::set_last_error;
 use super::{CallbackId, EnsureCallback, ErrorCode};
@@ -133,24 +134,23 @@ impl LockHandle {
 unsafe impl Send for LockHandle {}
 unsafe impl Sync for LockHandle {}
 
-// FIXME zeroize
 struct FfiTagBuf {
-    name: CString,
-    value: CString,
+    name: Vec<u8>,
+    value: Vec<u8>,
 }
 
 #[repr(C)]
 pub struct FfiTag {
-    name: *const c_char,
-    value: *const c_char,
+    name: *const u8,
+    value: *const u8,
 }
 
 impl FfiTag {
     pub fn decode(&self) -> KvResult<EntryTag> {
-        let name = unsafe { FfiStr::from_raw(self.name) }
+        let name = unsafe { FfiStr::from_raw(self.name as *const c_char) }
             .as_opt_str()
             .ok_or_else(|| err_msg!("Invalid tag name"))?;
-        let value = unsafe { FfiStr::from_raw(self.value) }
+        let value = unsafe { FfiStr::from_raw(self.value as *const c_char) }
             .into_opt_string()
             .ok_or_else(|| err_msg!("Invalid tag value"))?;
         Ok(if name.chars().next() == Some('~') {
@@ -162,8 +162,8 @@ impl FfiTag {
 }
 
 struct FfiEntryBuf {
-    category: CString,
-    name: CString,
+    category: Vec<u8>,
+    name: Vec<u8>,
     value: Vec<u8>,
     #[allow(unused)] // referenced by tags_ref
     tags: Vec<FfiTagBuf>,
@@ -188,31 +188,34 @@ impl FfiEntryBuf {
 
 impl From<Entry> for FfiEntryBuf {
     fn from(entry: Entry) -> Self {
-        let category = CString::new(entry.category.clone()).unwrap();
-        let name = CString::new(entry.name.clone()).unwrap();
-        let mut tags = vec![];
-        let mut tags_ref = vec![];
+        let category = make_c_string(&entry.category);
+        let name = make_c_string(&entry.name);
+        let tags_count = entry.tags.as_ref().map(Vec::len).unwrap_or_default();
+        let mut tags = Vec::with_capacity(tags_count);
+        let mut tags_ref = Vec::with_capacity(tags_count);
         let mut tags_idx = 0;
         if let Some(entry_tags) = entry.tags.as_ref() {
             for tag in entry_tags {
                 let (name, value) = match tag {
-                    EntryTag::Encrypted(tag_name, tag_value) => (
-                        CString::new(tag_name.as_bytes()).unwrap(),
-                        CString::new(tag_value.as_bytes()).unwrap(),
-                    ),
+                    EntryTag::Encrypted(tag_name, tag_value) => {
+                        (make_c_string(tag_name), make_c_string(tag_value))
+                    }
                     EntryTag::Plaintext(tag_name, tag_value) => {
-                        let mut name = "~".to_owned();
+                        let mut name = String::with_capacity(tag_name.len() + 1);
+                        name.push('~');
                         name.push_str(&tag_name);
                         (
-                            CString::new(name.into_bytes()).unwrap(),
-                            CString::new(tag_value.as_bytes()).unwrap(),
+                            CString::new(name.into_bytes())
+                                .unwrap()
+                                .into_bytes_with_nul(),
+                            make_c_string(tag_value),
                         )
                     }
                 };
                 tags.push(FfiTagBuf { name, value });
                 tags_ref.push(FfiTag {
-                    name: tags[tags_idx].name.as_c_str().as_ptr(),
-                    value: tags[tags_idx].value.as_c_str().as_ptr(),
+                    name: tags[tags_idx].name.as_ptr(),
+                    value: tags[tags_idx].value.as_ptr(),
                 });
                 tags_idx += 1;
             }
@@ -224,6 +227,12 @@ impl From<Entry> for FfiEntryBuf {
             tags,
             tags_ref,
         }
+    }
+}
+
+impl Zeroize for FfiEntryBuf {
+    fn zeroize(&mut self) {
+        self.value.zeroize();
     }
 }
 
@@ -257,15 +266,25 @@ impl From<Vec<Entry>> for FfiEntrySet {
     fn from(entries: Vec<Entry>) -> Self {
         Self {
             pos: AtomicUsize::default(),
-            rows: entries.into_iter().map(Into::into).collect(),
+            rows: {
+                let mut acc = Vec::with_capacity(entries.len());
+                acc.extend(entries.into_iter().map(Into::into));
+                acc
+            },
         }
+    }
+}
+
+impl Drop for FfiEntrySet {
+    fn drop(&mut self) {
+        self.rows.zeroize();
     }
 }
 
 #[repr(C)]
 pub struct FfiEntry {
-    category: *const c_char,
-    name: *const c_char,
+    category: *const u8,
+    name: *const u8,
     value: *const u8,
     value_len: usize,
     tags: *const FfiTag,
@@ -274,10 +293,10 @@ pub struct FfiEntry {
 
 impl FfiEntry {
     pub fn decode(&self) -> KvResult<Entry> {
-        let category = unsafe { FfiStr::from_raw(self.category) }
+        let category = unsafe { FfiStr::from_raw(self.category as *const c_char) }
             .into_opt_string()
             .ok_or_else(|| err_msg!("Invalid entry category"))?;
-        let name = unsafe { FfiStr::from_raw(self.name) }
+        let name = unsafe { FfiStr::from_raw(self.name as *const c_char) }
             .into_opt_string()
             .ok_or_else(|| err_msg!("Invalid entry name"))?;
         let value = unsafe { slice::from_raw_parts(self.value, self.value_len) };
@@ -700,4 +719,12 @@ pub extern "C" fn aries_store_close(
         });
         Ok(ErrorCode::Success)
     }
+}
+
+#[inline]
+// note: using a Vec to allow in-place zeroize, which CString does not
+fn make_c_string(value: &str) -> Vec<u8> {
+    let mut buf = Vec::with_capacity(value.len() + 1);
+    buf.extend_from_slice(value.as_bytes());
+    CString::new(buf).unwrap().into_bytes_with_nul()
 }

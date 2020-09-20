@@ -6,6 +6,7 @@ use indy_utils::ursa::encryption::random_bytes;
 
 use super::kdf::KdfMethod;
 use crate::error::{ErrorKind, Result};
+use crate::future::blocking;
 
 pub const PREFIX_KDF: &'static str = "kdf";
 pub const PREFIX_RAW: &'static str = "raw";
@@ -28,10 +29,12 @@ fn parse_raw_key(raw_key: &str) -> Result<WrapKey> {
     }
 }
 
+#[inline]
 fn wrap_data(key: &WrapKey, input: &[u8]) -> Result<Vec<u8>> {
     Ok(encrypt_non_searchable(key, input)?)
 }
 
+#[inline]
 fn unwrap_data(key: &WrapKey, ciphertext: &[u8]) -> Result<Vec<u8>> {
     Ok(decrypt(key, ciphertext)?)
 }
@@ -61,7 +64,6 @@ impl WrapKeyMethod {
         }
     }
 
-    // FIXME: do not perform key derivation, encryption on current thread
     pub async fn wrap_data<'a>(
         &self,
         data: &'a [u8],
@@ -72,18 +74,29 @@ impl WrapKeyMethod {
             // Self::ExistingManagedKey(String),
             Self::DeriveKey(method) => {
                 if let Some(password) = pass_key {
-                    let (key, detail) = method.derive_new_key(password)?;
-                    let key_ref = WrapKeyReference::DeriveKey(*method, detail);
-                    Ok((Cow::Owned(wrap_data(&key, data)?), Some(key), key_ref))
+                    let method = *method;
+                    let password = zeroize::Zeroizing::new(password.to_owned());
+                    let data = zeroize::Zeroizing::new(data.to_owned());
+                    blocking(move || {
+                        let (key, detail) = method.derive_new_key(&password)?;
+                        let key_ref = WrapKeyReference::DeriveKey(method, detail);
+                        Ok((Cow::Owned(wrap_data(&key, &data)?), Some(key), key_ref))
+                    })
+                    .await
                 } else {
                     Err(err_msg!("Key derivation password not provided"))
                 }
             }
             Self::RawKey => {
                 if let Some(raw_key) = pass_key {
-                    let key = parse_raw_key(raw_key)?;
-                    let key_ref = WrapKeyReference::RawKey;
-                    Ok((Cow::Owned(wrap_data(&key, data)?), Some(key), key_ref))
+                    let raw_key = zeroize::Zeroizing::new(raw_key.to_owned());
+                    let data = zeroize::Zeroizing::new(data.to_owned());
+                    blocking(move || {
+                        let key = parse_raw_key(&raw_key)?;
+                        let key_ref = WrapKeyReference::RawKey;
+                        Ok((Cow::Owned(wrap_data(&key, &data)?), Some(key), key_ref))
+                    })
+                    .await
                 } else {
                     Err(err_msg!("Encoded raw key not provided"))
                 }

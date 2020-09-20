@@ -123,7 +123,7 @@ impl From<ErrorKind> for Error {
 
 impl From<sqlx::Error> for Error {
     fn from(err: sqlx::Error) -> Self {
-        Error::from_msg(ErrorKind::Backend, err.to_string())
+        Error::from_msg(ErrorKind::Backend, err.to_string()).with_cause(err)
     }
 }
 
@@ -135,13 +135,13 @@ impl From<indy_utils::EncryptionError> for Error {
 
 impl From<indy_utils::UnexpectedError> for Error {
     fn from(err: indy_utils::UnexpectedError) -> Self {
-        Error::from_opt_msg(ErrorKind::Encryption, err.context)
+        Error::from_opt_msg(ErrorKind::Unexpected, err.context)
     }
 }
 
 impl From<indy_utils::ValidationError> for Error {
     fn from(err: indy_utils::ValidationError) -> Self {
-        Error::from_opt_msg(ErrorKind::Encryption, err.context)
+        Error::from_opt_msg(ErrorKind::Input, err.context)
     }
 }
 
