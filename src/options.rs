@@ -11,6 +11,7 @@ pub struct Options<'a> {
     pub user: Cow<'a, str>,
     pub password: Cow<'a, str>,
     pub host: Cow<'a, str>,
+    pub path: Cow<'a, str>,
     pub query: HashMap<String, String>,
     pub fragment: Cow<'a, str>,
 }
@@ -47,7 +48,14 @@ impl<'a> Options<'a> {
                 (Cow::Borrowed(""), Cow::Borrowed(""), user_pass)
             }
         };
-        let host = percent_decode(host);
+        let (host, path) = if let Some(path_pos) = host.find('/') {
+            (
+                Cow::Borrowed(&host[..path_pos]),
+                Cow::Borrowed(&host[path_pos..]),
+            )
+        } else {
+            (Cow::Borrowed(host), Cow::Borrowed(""))
+        };
 
         let query = if let Some(query) = host_and_query.next() {
             url::form_urlencoded::parse(query.as_bytes())
@@ -64,6 +72,7 @@ impl<'a> Options<'a> {
             user,
             password,
             host,
+            path,
             schema,
             query,
             fragment,
@@ -82,7 +91,8 @@ impl<'a> Options<'a> {
             percent_encode_into(&mut uri, &self.password);
             uri.push('@');
         }
-        percent_encode_into(&mut uri, &self.host);
+        uri.push_str(&self.host);
+        uri.push_str(&self.path);
         if !self.query.is_empty() {
             uri.push('?');
             for (k, v) in self.query {
@@ -110,19 +120,6 @@ fn push_iter_str<'a, I: Iterator<Item = &'a str>>(s: &mut String, iter: I) {
 fn percent_decode(s: &str) -> Cow<'_, str> {
     percent_decode_str(s).decode_utf8_lossy()
 }
-
-// #[inline]
-// fn percent_encode(s: &str) -> Cow<'_, str> {
-//     let mut result = None;
-//     for val in utf8_percent_encode(s, NON_ALPHANUMERIC) {
-//         if result.is_none() {
-//             result = Some(Cow::Borrowed(val));
-//         } else {
-//             result.as_mut().unwrap().to_mut().push_str(val);
-//         }
-//     }
-//     result.unwrap_or_default()
-// }
 
 #[inline]
 fn percent_encode_into(result: &mut String, s: &str) {
@@ -152,7 +149,7 @@ mod tests {
 
     #[test]
     fn options_basic() {
-        let opts = Options::parse_uri("schema://user%2E:pass@dbname?a+1=b#frag").unwrap();
+        let opts = Options::parse_uri("schema://user%2E:pass@host/dbname?a+1=b#frag").unwrap();
         let bs = Cow::Borrowed;
         assert_eq!(
             opts,
@@ -160,7 +157,8 @@ mod tests {
                 user: bs("user."),
                 password: bs("pass"),
                 schema: bs("schema"),
-                host: bs("dbname"),
+                host: bs("host"),
+                path: bs("/dbname"),
                 query: HashMap::from_iter(vec![("a 1".to_owned(), "b".to_owned())]),
                 fragment: bs("frag"),
             }
@@ -169,7 +167,7 @@ mod tests {
 
     #[test]
     fn options_no_schema() {
-        let opts = Options::parse_uri("dbname?a#frag").unwrap();
+        let opts = Options::parse_uri("dbname/path?a#frag").unwrap();
         assert_eq!(
             opts,
             Options {
@@ -177,6 +175,7 @@ mod tests {
                 password: Default::default(),
                 schema: Default::default(),
                 host: Cow::Borrowed("dbname"),
+                path: Cow::Borrowed("/path"),
                 query: HashMap::from_iter(vec![("a".to_owned(), "".to_owned())]),
                 fragment: Cow::Borrowed("frag")
             }

@@ -14,7 +14,7 @@ use super::wql::{
     tags::{tag_query, TagQueryEncoder},
 };
 
-pub const PAGE_SIZE: usize = 5;
+pub const PAGE_SIZE: usize = 32;
 
 pub struct QueryParams<'q, DB: Database> {
     args: <DB as HasArguments<'q>>::Arguments,

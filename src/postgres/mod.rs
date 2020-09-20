@@ -39,6 +39,7 @@ const TAG_QUERY: &'static str = "SELECT name, value, plaintext FROM items_tags W
 const TAG_INSERT_QUERY: &'static str = "INSERT INTO items_tags(item_id, name, value, plaintext)
     VALUES($1, $2, $3, $4)";
 
+#[derive(Debug)]
 pub struct PostgresStoreOptions {
     uri: String,
     admin_uri: Option<String>,
@@ -223,7 +224,7 @@ impl PostgresStore {
                 reference TEXT NULL,
                 PRIMARY KEY(id)
             );
-            CREATE UNIQUE INDEX ux_profile_name ON profiles(name);
+            CREATE UNIQUE INDEX ix_profile_name ON profiles(name);
 
             CREATE TABLE store_keys (
                 id BIGSERIAL,
@@ -248,7 +249,7 @@ impl PostgresStore {
                 FOREIGN KEY(store_key_id) REFERENCES store_keys(id)
                     ON DELETE CASCADE ON UPDATE CASCADE
             );
-            CREATE UNIQUE INDEX ux_keys_uniq ON keys(store_key_id, category, name);
+            CREATE UNIQUE INDEX ix_keys_uniq ON keys(store_key_id, category, name);
 
             CREATE TABLE items (
                 id BIGSERIAL,
@@ -261,7 +262,7 @@ impl PostgresStore {
                 FOREIGN KEY(store_key_id) REFERENCES store_keys(id)
                     ON DELETE CASCADE ON UPDATE CASCADE
             );
-            CREATE UNIQUE INDEX ux_items_uniq ON items(store_key_id, category, name);
+            CREATE UNIQUE INDEX ix_items_uniq ON items(store_key_id, category, name);
 
             CREATE TABLE items_tags (
                 item_id BIGINT NOT NULL,

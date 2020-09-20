@@ -2,8 +2,8 @@ use std::borrow::Cow;
 use std::sync::Arc;
 
 use super::error::Result;
-use super::types::{EncEntry, EncEntryTag, Entry, EntryTag};
 use super::future::blocking;
+use super::types::{EncEntry, EncEntryTag, Entry, EntryTag};
 
 pub mod kdf;
 
@@ -181,6 +181,9 @@ impl<T: EntryEncryptor + Send + Sync + 'static> AsyncEncryptor<T> {
     }
 
     pub async fn decrypt_entry_tags(&self, enc_tags: Vec<EncEntryTag>) -> Result<Vec<EntryTag>> {
+        if enc_tags.is_empty() {
+            return Ok(vec![]);
+        }
         if let Some(key) = self.0.clone() {
             blocking(move || key.decrypt_entry_tags(&enc_tags)).await
         } else {

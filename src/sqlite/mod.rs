@@ -1,10 +1,12 @@
 use std::borrow::Cow;
+use std::collections::BTreeMap;
 use std::str::FromStr;
 use std::time::{Duration, Instant};
 
 use async_stream::try_stream;
 use async_trait::async_trait;
 use futures_lite::stream::StreamExt;
+use itertools::Itertools;
 
 use sqlx::{
     sqlite::{Sqlite, SqliteConnectOptions, SqlitePool, SqlitePoolOptions, SqliteRow},
@@ -39,6 +41,8 @@ const INSERT_QUERY: &'static str = "INSERT INTO items(store_key_id, category, na
 const SCAN_QUERY: &'static str = "SELECT id, name, value FROM items i WHERE store_key_id = ?1
     AND category = ?2 AND (expiry IS NULL OR expiry > datetime('now'))";
 const TAG_QUERY: &'static str = "SELECT name, value, plaintext FROM items_tags WHERE item_id = ?1";
+const TAG_QUERY_MANY: &'static str =
+    "SELECT item_id, name, value, plaintext FROM items_tags WHERE item_id IN ";
 const TAG_INSERT_QUERY: &'static str = "INSERT INTO items_tags(item_id, name, value, plaintext)
     VALUES(?1, ?2, ?3, ?4)";
 
@@ -46,31 +50,79 @@ async fn fetch_row_tags(
     pool: &SqlitePool,
     row_id: i64,
     key: AsyncEncryptor<StoreKey>,
-) -> KvResult<Option<Vec<EntryTag>>> {
+) -> KvResult<Vec<EntryTag>> {
     let tags = sqlx::query(TAG_QUERY)
         .bind(row_id)
         .try_map(|row: SqliteRow| {
-            let name = row.try_get(0)?;
-            let value = row.try_get(1)?;
-            let plaintext = row.try_get::<i32, _>(2)? != 0;
             Ok(EncEntryTag {
-                name,
-                value,
-                plaintext,
+                name: row.try_get(0)?,
+                value: row.try_get(1)?,
+                plaintext: row.try_get::<i32, _>(2)? != 0,
             })
         })
         .fetch_all(pool)
         .await?;
-    Ok(if tags.is_empty() {
-        None
-    } else {
-        Some(key.decrypt_entry_tags(tags).await?)
-    })
+    key.decrypt_entry_tags(tags).await
 }
 
-#[derive(Debug)]
-pub struct Lock {
-    pub id: i64,
+struct TagRetriever {
+    batch_size: usize,
+    query: String,
+}
+
+impl TagRetriever {
+    pub fn new(batch_size: usize) -> Self {
+        let mut query = TAG_QUERY_MANY.to_owned();
+        query.push('(');
+        query.extend(std::iter::repeat("?").take(batch_size).intersperse(", "));
+        query.push(')');
+        Self { batch_size, query }
+    }
+
+    pub async fn fetch_tags(
+        &mut self,
+        pool: &SqlitePool,
+        key: &AsyncEncryptor<StoreKey>,
+        results: &mut BTreeMap<i32, Entry>,
+    ) -> KvResult<()> {
+        let count = results.len();
+        if count > self.batch_size {
+            return Err(err_msg!(
+                Unexpected,
+                "Number of item ids exceeds batch size in tag retriever"
+            ));
+        }
+        let mut enc_tags = BTreeMap::new();
+        let mut stmt = sqlx::query(&self.query);
+        for id in results.keys() {
+            enc_tags.insert(*id, vec![]);
+            stmt = stmt.bind(*id);
+        }
+        for _ in count..self.batch_size {
+            stmt = stmt.bind(0i32);
+        }
+        let mut scan = stmt.fetch(pool);
+        while let Some(tag_row) = scan.next().await {
+            let tag_row = tag_row?;
+            let row_id = tag_row.try_get(0)?;
+            let entry = enc_tags
+                .get_mut(&row_id)
+                .ok_or_else(|| err_msg!(Unexpected, "Unexpected result for tag query"))?;
+            entry.push(EncEntryTag {
+                name: tag_row.try_get(1)?,
+                value: tag_row.try_get(2)?,
+                plaintext: tag_row.try_get::<i32, _>(3)? != 0,
+            });
+        }
+        for (id, tags) in enc_tags {
+            results
+                .get_mut(&id)
+                .unwrap()
+                .tags
+                .replace(key.decrypt_entry_tags(tags).await?);
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug)]
@@ -131,7 +183,7 @@ impl<'a> ProvisionStore for SqliteStoreOptions<'a> {
                 FOREIGN KEY(active_key_id) REFERENCES store_keys(id)
                     ON DELETE SET NULL ON UPDATE CASCADE
             );
-            CREATE UNIQUE INDEX ux_profile_name ON profiles(name);
+            CREATE UNIQUE INDEX ix_profile_name ON profiles(name);
 
             CREATE TABLE store_keys (
                 id INTEGER NOT NULL,
@@ -153,7 +205,7 @@ impl<'a> ProvisionStore for SqliteStoreOptions<'a> {
                 FOREIGN KEY(store_key_id) REFERENCES store_keys(id)
                     ON DELETE CASCADE ON UPDATE CASCADE
             );
-            CREATE UNIQUE INDEX ux_keys_uniq ON keys(store_key_id, category, name);
+            CREATE UNIQUE INDEX ix_keys_uniq ON keys(store_key_id, category, name);
 
             CREATE TABLE items (
                 id INTEGER NOT NULL,
@@ -166,7 +218,7 @@ impl<'a> ProvisionStore for SqliteStoreOptions<'a> {
                 FOREIGN KEY(store_key_id) REFERENCES store_keys(id)
                     ON DELETE CASCADE ON UPDATE CASCADE
             );
-            CREATE UNIQUE INDEX ux_items_uniq ON items(store_key_id, category, name);
+            CREATE UNIQUE INDEX ix_items_uniq ON items(store_key_id, category, name);
 
             CREATE TABLE items_tags (
                 item_id INTEGER NOT NULL,
@@ -297,7 +349,7 @@ impl Store for SqliteStore {
         {
             let tags = if options.retrieve_tags {
                 // FIXME use the same connection to fetch all tags
-                fetch_row_tags(&self.conn_pool, row.try_get(0)?, key.clone()).await?
+                Some(fetch_row_tags(&self.conn_pool, row.try_get(0)?, key.clone()).await?)
             } else {
                 None
             };
@@ -326,37 +378,47 @@ impl Store for SqliteStore {
         let pool = self.conn_pool.clone();
         let raw_category = category.clone();
         let category = key.encrypt_entry_category(category).await?;
+
         let scan = try_stream! {
             let mut params = QueryParams::new();
             params.push(key_id.clone());
             params.push(category.clone());
             let tag_filter = encode_tag_filter::<Self>(tag_filter, key.0.clone(), params.len()).await?;
             let query = extend_query::<Self>(SCAN_QUERY, &mut params, tag_filter, offset, max_rows)?;
-            let mut batch = Vec::with_capacity(PAGE_SIZE);
+            let mut batch = BTreeMap::<i32, Entry>::new();
+            let mut tag_retriever = if options.retrieve_tags {
+                Some(TagRetriever::new(PAGE_SIZE))
+            } else {
+                None
+            };
+
             let mut rows = sqlx::query_with(query.as_str(), params).fetch(&pool);
             while let Some(row) = rows.next().await {
                 let row = row?;
-                let tags = if options.retrieve_tags {
-                    // FIXME - fetch tags in batches
-                    fetch_row_tags(&pool, row.try_get(0)?, key.clone()).await?
-                } else {
-                    None
-                };
+                let row_id = row.try_get(0)?;
                 let (name, value) = key.decrypt_entry_name_value(row.try_get(1)?, row.try_get(2)?).await?;
-                let entry = Entry {
+                batch.insert(row_id, Entry {
                     category: raw_category.clone(),
                     name,
                     value,
-                    tags,
-                };
-                batch.push(entry);
+                    tags: None,
+                });
+
                 if batch.len() == PAGE_SIZE {
-                    yield batch.split_off(0);
+                    if let Some(retr) = tag_retriever.as_mut() {
+                        retr.fetch_tags(&pool, &key, &mut batch).await?;
+                    }
+                    yield batch.into_iter().map(|(_, v)| v).collect();
+                    batch = BTreeMap::new();
                 }
             }
             drop(rows);
+
             if batch.len() > 0 {
-                yield batch;
+                if let Some(retr) = tag_retriever.as_mut() {
+                    retr.fetch_tags(&pool, &key, &mut batch).await?;
+                }
+                yield batch.into_iter().map(|(_, v)| v).collect();
             }
             drop(query);
         };

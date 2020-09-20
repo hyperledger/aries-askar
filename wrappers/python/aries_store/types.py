@@ -23,8 +23,8 @@ class Entry:
 
     def __repr__(self) -> str:
         return (
-            f"{self.__class__.__name__}(category={self.category}, "
-            f"name={self.name}, value={self.value}, tags={self.tags})"
+            f"{self.__class__.__name__}(category={repr(self.category)}, "
+            f"name={repr(self.name)}, value={repr(self.value)}, tags={self.tags})"
         )
 
 

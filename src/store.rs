@@ -229,13 +229,14 @@ impl ProvisionStore for &str {
 
     async fn provision_store(self, spec: ProvisionStoreSpec) -> Result<Self::Store> {
         let opts = self.into_options()?;
+        debug!("Provision with options: {:?}", &opts);
         let store: ArcStore = match opts.schema.as_ref() {
             #[cfg(feature = "postgres")]
-            "postgres" => Arc::new(
-                super::postgres::PostgresStoreOptions::new(opts)?
-                    .provision_store(spec)
-                    .await?,
-            ),
+            "postgres" => {
+                let opts = super::postgres::PostgresStoreOptions::new(opts)?;
+                debug!("Postgres provision with options: {:?}", &opts);
+                Arc::new(opts.provision_store(spec).await?)
+            }
 
             #[cfg(feature = "sqlite")]
             "sqlite" => {
