@@ -217,3 +217,23 @@ pub async fn db_create_lock_timeout<DB: Store>(db: &DB) -> KvResult<()> {
 
     Ok(())
 }
+
+pub async fn db_create_lock_drop_expire<DB: Store>(db: &DB) -> KvResult<()> {
+    let update = UpdateEntry {
+        entry: Entry {
+            category: "cat".to_string(),
+            name: "name".to_string(),
+            value: b"value".to_vec(),
+            tags: None,
+        },
+        expire_ms: None,
+    };
+    let (entry, lock) = db.create_lock(None, update.clone(), Some(100)).await?;
+    assert_eq!(entry, update.entry);
+    drop(lock);
+
+    let (entry2, _lock2) = db.create_lock(None, update.clone(), Some(100)).await?;
+    assert_eq!(entry2, update.entry);
+
+    Ok(())
+}

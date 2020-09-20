@@ -80,6 +80,16 @@ macro_rules! db_tests {
             })
             .unwrap()
         }
+
+        #[test]
+        fn create_lock_drop_expire() {
+            block_on(async {
+                let db = $init.await?;
+                super::utils::db_create_lock_drop_expire(&*db).await?;
+                KvResult::Ok(())
+            })
+            .unwrap()
+        }
     };
 }
 
