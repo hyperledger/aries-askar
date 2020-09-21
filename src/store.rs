@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use futures_lite::stream::{Stream, StreamExt};
 
 use super::keys::{
-    store_key::StoreKey,
+    store::StoreKey,
     wrap::{generate_raw_wrap_key, WrapKey, WrapKeyMethod},
 };
 use super::options::IntoOptions;

@@ -9,6 +9,9 @@ mod macros;
 #[macro_use]
 extern crate log;
 
+#[macro_use]
+extern crate serde;
+
 pub(crate) mod db_utils;
 
 #[doc(hidden)]
@@ -18,9 +21,6 @@ pub mod indy_compat;
 
 mod options;
 
-#[cfg(feature = "ffi")]
-#[macro_use]
-extern crate serde;
 #[cfg(feature = "ffi")]
 #[macro_use]
 extern crate serde_json;

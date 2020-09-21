@@ -6,7 +6,7 @@ use sqlx::{database::HasArguments, Arguments, Database, Encode, IntoArguments, T
 
 use super::error::Result as KvResult;
 use super::future::blocking;
-use super::keys::{store_key::StoreKey, AsyncEncryptor};
+use super::keys::{store::StoreKey, AsyncEncryptor};
 use super::types::{EncEntry, EncEntryTag, Expiry, KeyId, UpdateEntry};
 use super::wql::{
     self,

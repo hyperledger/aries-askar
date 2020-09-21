@@ -1,4 +1,4 @@
-use indy_utils::ursa::encryption::random_vec;
+use ursa::encryption::random_vec;
 
 use crate::error::Result;
 

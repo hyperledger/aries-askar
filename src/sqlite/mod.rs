@@ -19,7 +19,7 @@ use super::db_utils::{
 };
 use super::error::Result as KvResult;
 use super::future::{sleep_ms, spawn_ok};
-use super::keys::{store_key::StoreKey, AsyncEncryptor};
+use super::keys::{store::StoreKey, AsyncEncryptor};
 use super::options::IntoOptions;
 use super::store::{EntryLock, EntryScan, KeyCache, ProvisionStore, ProvisionStoreSpec, Store};
 use super::types::{

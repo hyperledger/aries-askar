@@ -7,7 +7,7 @@ use itertools::Itertools;
 use sqlx::{sqlite::SqliteRow as DbRow, Row, SqlitePool as DbPool};
 
 use super::{types::EntryTag, Entry, Result as KvResult};
-use crate::keys::store_key::{decode_utf8, decode_wallet_key, decrypt, EncKey, StoreKey};
+use crate::keys::store::{decode_utf8, decode_wallet_key, decrypt, EncKey, StoreKey};
 
 const CHUNK_SIZE: usize = 20;
 

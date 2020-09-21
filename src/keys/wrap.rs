@@ -1,12 +1,14 @@
 use std::borrow::Cow;
 
 use indy_utils::base58;
-pub use indy_utils::keys::wallet::{decrypt, encrypt_non_searchable, EncKey as WrapKey};
-use indy_utils::ursa::encryption::random_bytes;
+use ursa::encryption::random_bytes;
 
 use super::kdf::KdfMethod;
 use crate::error::{ErrorKind, Result};
 use crate::future::blocking;
+use crate::keys::store::{decrypt, encrypt_non_searchable};
+
+pub use crate::keys::store::EncKey as WrapKey;
 
 pub const PREFIX_KDF: &'static str = "kdf";
 pub const PREFIX_RAW: &'static str = "raw";

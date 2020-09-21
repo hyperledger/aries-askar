@@ -7,7 +7,7 @@ use super::types::{EncEntry, EncEntryTag, Entry, EntryTag};
 
 pub mod kdf;
 
-pub mod store_key;
+pub mod store;
 
 pub mod wrap;
 
