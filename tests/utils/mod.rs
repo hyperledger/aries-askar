@@ -1,4 +1,4 @@
-use aries_store_kv::{
+use aries_askar::{
     wql, Entry, EntryFetchOptions, EntryTag, Result as KvResult, Store, UpdateEntry,
 };
 

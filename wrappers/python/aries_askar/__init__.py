@@ -1,4 +1,4 @@
-"""aries-store-kv Python wrapper library"""
+"""aries-askar Python wrapper library"""
 
 from .bindings import generate_raw_key, version
 from .error import StoreError, StoreErrorCode

@@ -1,5 +1,5 @@
-use aries_store_kv::future::block_on;
-use aries_store_kv::indy_compat::print_records;
+use aries_askar::future::block_on;
+use aries_askar::indy_compat::print_records;
 
 #[test]
 fn test_print_records() {

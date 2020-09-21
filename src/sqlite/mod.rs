@@ -40,30 +40,9 @@ const INSERT_QUERY: &'static str = "INSERT INTO items(store_key_id, category, na
     VALUES(?1, ?2, ?3, ?4, ?5)";
 const SCAN_QUERY: &'static str = "SELECT id, name, value FROM items i WHERE store_key_id = ?1
     AND category = ?2 AND (expiry IS NULL OR expiry > datetime('now'))";
-const TAG_QUERY: &'static str = "SELECT name, value, plaintext FROM items_tags WHERE item_id = ?1";
-const TAG_QUERY_MANY: &'static str =
-    "SELECT item_id, name, value, plaintext FROM items_tags WHERE item_id IN ";
+const TAG_QUERY: &'static str = "SELECT item_id, name, value, plaintext FROM items_tags";
 const TAG_INSERT_QUERY: &'static str = "INSERT INTO items_tags(item_id, name, value, plaintext)
     VALUES(?1, ?2, ?3, ?4)";
-
-async fn fetch_row_tags(
-    pool: &SqlitePool,
-    row_id: i64,
-    key: AsyncEncryptor<StoreKey>,
-) -> KvResult<Vec<EntryTag>> {
-    let tags = sqlx::query(TAG_QUERY)
-        .bind(row_id)
-        .try_map(|row: SqliteRow| {
-            Ok(EncEntryTag {
-                name: row.try_get(0)?,
-                value: row.try_get(1)?,
-                plaintext: row.try_get::<i32, _>(2)? != 0,
-            })
-        })
-        .fetch_all(pool)
-        .await?;
-    key.decrypt_entry_tags(tags).await
-}
 
 struct TagRetriever {
     batch_size: usize,
@@ -72,11 +51,32 @@ struct TagRetriever {
 
 impl TagRetriever {
     pub fn new(batch_size: usize) -> Self {
-        let mut query = TAG_QUERY_MANY.to_owned();
-        query.push('(');
+        let mut query = TAG_QUERY.to_owned();
+        query.push_str(" WHERE item_id IN (");
         query.extend(std::iter::repeat("?").take(batch_size).intersperse(", "));
         query.push(')');
         Self { batch_size, query }
+    }
+
+    pub async fn fetch_row_tags(
+        pool: &SqlitePool,
+        row_id: i64,
+        key: AsyncEncryptor<StoreKey>,
+    ) -> KvResult<Vec<EntryTag>> {
+        let mut query = TAG_QUERY.to_owned();
+        query.push_str(" WHERE item_id=?1");
+        let tags = sqlx::query(&query)
+            .bind(row_id)
+            .try_map(|row: SqliteRow| {
+                Ok(EncEntryTag {
+                    name: row.try_get(1)?,
+                    value: row.try_get(2)?,
+                    plaintext: row.try_get::<i32, _>(3)? != 0,
+                })
+            })
+            .fetch_all(pool)
+            .await?;
+        key.decrypt_entry_tags(tags).await
     }
 
     pub async fn fetch_tags(
@@ -142,7 +142,7 @@ impl<'a> SqliteStoreOptions<'a> {
             options: SqlitePoolOptions::default()
                 // must maintain at least 1 connection to avoid dropping in-memory database
                 .min_connections(1)
-                .max_connections(10),
+                .max_connections(10), // FIXME - default to num_cpus?
         })
     }
 
@@ -349,7 +349,10 @@ impl Store for SqliteStore {
         {
             let tags = if options.retrieve_tags {
                 // FIXME use the same connection to fetch all tags
-                Some(fetch_row_tags(&self.conn_pool, row.try_get(0)?, key.clone()).await?)
+                Some(
+                    TagRetriever::fetch_row_tags(&self.conn_pool, row.try_get(0)?, key.clone())
+                        .await?,
+                )
             } else {
                 None
             };

@@ -1,4 +1,4 @@
-"""Low-level interaction with the aries-store-kv library."""
+"""Low-level interaction with the aries-askar library."""
 
 import asyncio
 import json
@@ -157,15 +157,15 @@ class lib_string(c_char_p):
 
     def __del__(self):
         """Call the string destructor when this instance is released."""
-        get_library().aries_store_string_free(self)
+        get_library().askar_string_free(self)
 
 
 def get_library() -> CDLL:
     """Return the CDLL instance, loading it if necessary."""
     global LIB
     if LIB is None:
-        LIB = _load_library("aries_store_kv")
-        do_call("aries_store_set_default_logger")
+        LIB = _load_library("aries_askar")
+        do_call("askar_set_default_logger")
     return LIB
 
 
@@ -280,11 +280,11 @@ def get_current_error(expect: bool = False) -> StoreError:
         expect: Return a default error message if none is found
     """
     err_json = lib_string()
-    if not get_library().aries_store_get_current_error(byref(err_json)):
+    if not get_library().askar_get_current_error(byref(err_json)):
         try:
             msg = json.loads(err_json.value)
         except json.JSONDecodeError:
-            LOGGER.warning("JSON decode error for aries_store_get_current_error")
+            LOGGER.warning("JSON decode error for askar_get_current_error")
             msg = None
         if msg and "message" in msg and "code" in msg:
             return StoreError(
@@ -298,7 +298,7 @@ def get_current_error(expect: bool = False) -> StoreError:
 def generate_raw_key() -> str:
     """Generate a new raw store wrapping key."""
     result = lib_string()
-    do_call("aries_store_generate_raw_key", byref(result))
+    do_call("askar_store_generate_raw_key", byref(result))
     return result.value.decode("utf-8")
 
 
@@ -310,7 +310,7 @@ async def store_provision(
     wrap_method_p = encode_str(wrap_method)
     pass_key_p = encode_str(pass_key)
     return await do_call_async(
-        "aries_store_provision",
+        "askar_store_provision",
         uri_p,
         wrap_method_p,
         pass_key_p,
@@ -328,7 +328,7 @@ async def store_count(
     tag_filter = encode_str(tag_filter)
     return int(
         await do_call_async(
-            "aries_store_count", handle, category, tag_filter, return_type=c_size_t
+            "askar_store_count", handle, category, tag_filter, return_type=c_size_t
         )
     )
 
@@ -340,7 +340,7 @@ async def store_fetch(
     category = encode_str(category)
     name = encode_str(name)
     return await do_call_async(
-        "aries_store_fetch", handle, category, name, return_type=EntrySetHandle
+        "askar_store_fetch", handle, category, name, return_type=EntrySetHandle
     )
 
 
@@ -353,33 +353,33 @@ async def store_scan_start(
         tag_filter = json.dumps(tag_filter)
     tag_filter = encode_str(tag_filter)
     return await do_call_async(
-        "aries_store_scan_start", handle, category, tag_filter, return_type=ScanHandle
+        "askar_store_scan_start", handle, category, tag_filter, return_type=ScanHandle
     )
 
 
 async def store_scan_next(handle: StoreHandle) -> Optional[EntrySetHandle]:
     handle = await do_call_async(
-        "aries_store_scan_next", handle, return_type=EntrySetHandle
+        "askar_store_scan_next", handle, return_type=EntrySetHandle
     )
     return handle or None
 
 
 def store_scan_free(handle: ScanHandle):
     """Free an active store scan."""
-    do_call("aries_store_scan_free", handle)
+    do_call("askar_store_scan_free", handle)
 
 
 def store_results_next(handle: EntrySetHandle) -> Optional[Entry]:
     ffi_entry = FfiEntry()
     found = c_ubyte(0)
-    do_call("aries_store_results_next", handle, byref(ffi_entry), byref(found))
+    do_call("askar_store_results_next", handle, byref(ffi_entry), byref(found))
     if found:
         return ffi_entry.decode()
     return None
 
 
 def store_results_free(handle: EntrySetHandle):
-    get_library().aries_store_results_free(handle)
+    get_library().askar_store_results_free(handle)
 
 
 async def store_update(handle: StoreHandle, entries: Sequence[UpdateEntry]):
@@ -390,7 +390,7 @@ async def store_update(handle: StoreHandle, entries: Sequence[UpdateEntry]):
         updates[idx] = FfiUpdateEntry.encode(upd)
 
     return await do_call_async(
-        "aries_store_update",
+        "askar_store_update",
         handle,
         updates,
         sizeof(updates),
@@ -403,7 +403,7 @@ async def store_create_lock(
     ffi_info = FfiUpdateEntry.encode(lock_info)
     timeout = c_long(acquire_timeout_ms if acquire_timeout_ms is not None else -1)
     return await do_call_async(
-        "aries_store_create_lock",
+        "askar_store_create_lock",
         handle,
         pointer(ffi_info),
         timeout,
@@ -413,12 +413,12 @@ async def store_create_lock(
 
 def store_lock_get_entry(handle: LockHandle) -> Entry:
     ffi_entry = FfiEntry()
-    do_call("aries_store_lock_get_entry", handle, byref(ffi_entry))
+    do_call("askar_store_lock_get_entry", handle, byref(ffi_entry))
     return ffi_entry.decode()
 
 
 def store_lock_free(handle: LockHandle):
-    get_library().aries_store_lock_free(handle)
+    get_library().askar_store_lock_free(handle)
 
 
 async def store_lock_update(handle: LockHandle, entries: Sequence[UpdateEntry]):
@@ -427,7 +427,7 @@ async def store_lock_update(handle: LockHandle, entries: Sequence[UpdateEntry]):
         updates[idx] = FfiUpdateEntry.encode(upd)
 
     return await do_call_async(
-        "aries_store_lock_update",
+        "askar_store_lock_update",
         handle,
         updates,
         sizeof(updates),
@@ -436,16 +436,16 @@ async def store_lock_update(handle: LockHandle, entries: Sequence[UpdateEntry]):
 
 async def store_close(handle: StoreHandle):
     """Close an opened store instance."""
-    return await do_call_async("aries_store_close", handle)
+    return await do_call_async("askar_store_close", handle)
 
 
 def store_close_immed(handle: StoreHandle):
     """Close an opened store instance."""
-    do_call("aries_store_close", handle, c_void_p(0), c_size_t(0))
+    do_call("askar_store_close", handle, c_void_p(0), c_size_t(0))
 
 
 def version() -> str:
-    """Set the version of the installed aries-store-kv library."""
+    """Set the version of the installed aries-askar library."""
     lib = get_library()
-    lib.aries_store_version.restype = c_void_p
-    return lib_string(lib.aries_store_version()).value.decode("utf-8")
+    lib.askar_version.restype = c_void_p
+    return lib_string(lib.askar_version()).value.decode("utf-8")

@@ -347,7 +347,7 @@ impl FfiUpdateEntry {
 }
 
 #[no_mangle]
-pub extern "C" fn aries_store_provision(
+pub extern "C" fn askar_store_provision(
     spec_uri: FfiStr,
     wrap_key_method: FfiStr,
     pass_key: FfiStr,
@@ -382,7 +382,7 @@ pub extern "C" fn aries_store_provision(
 }
 
 #[no_mangle]
-pub extern "C" fn aries_store_generate_raw_key(result_p: *mut *const c_char) -> ErrorCode {
+pub extern "C" fn askar_store_generate_raw_key(result_p: *mut *const c_char) -> ErrorCode {
     catch_err! {
         trace!("Create raw key");
         check_useful_c_ptr!(result_p);
@@ -393,7 +393,7 @@ pub extern "C" fn aries_store_generate_raw_key(result_p: *mut *const c_char) -> 
 }
 
 #[no_mangle]
-pub extern "C" fn aries_store_count(
+pub extern "C" fn askar_store_count(
     handle: StoreHandle,
     category: FfiStr,
     tag_filter: FfiStr,
@@ -423,7 +423,7 @@ pub extern "C" fn aries_store_count(
 }
 
 #[no_mangle]
-pub extern "C" fn aries_store_fetch(
+pub extern "C" fn askar_store_fetch(
     handle: StoreHandle,
     category: FfiStr,
     name: FfiStr,
@@ -457,7 +457,7 @@ pub extern "C" fn aries_store_fetch(
 }
 
 #[no_mangle]
-pub extern "C" fn aries_store_scan_start(
+pub extern "C" fn askar_store_scan_start(
     handle: StoreHandle,
     category: FfiStr,
     tag_filter: FfiStr,
@@ -488,7 +488,7 @@ pub extern "C" fn aries_store_scan_start(
 }
 
 #[no_mangle]
-pub extern "C" fn aries_store_scan_next(
+pub extern "C" fn askar_store_scan_next(
     handle: ScanHandle,
     cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, results: *const FfiEntrySet)>,
     cb_id: usize,
@@ -520,7 +520,7 @@ pub extern "C" fn aries_store_scan_next(
 }
 
 #[no_mangle]
-pub extern "C" fn aries_store_scan_free(handle: ScanHandle) -> ErrorCode {
+pub extern "C" fn askar_store_scan_free(handle: ScanHandle) -> ErrorCode {
     catch_err! {
         trace!("Close scan");
         spawn_ok(async move {
@@ -531,7 +531,7 @@ pub extern "C" fn aries_store_scan_free(handle: ScanHandle) -> ErrorCode {
 }
 
 #[no_mangle]
-pub extern "C" fn aries_store_results_next(
+pub extern "C" fn askar_store_results_next(
     result: *mut FfiEntrySet,
     entry: *mut FfiEntry,
     found: *mut bool,
@@ -551,12 +551,12 @@ pub extern "C" fn aries_store_results_next(
 }
 
 #[no_mangle]
-pub extern "C" fn aries_store_results_free(result: *mut FfiEntrySet) {
+pub extern "C" fn askar_store_results_free(result: *mut FfiEntrySet) {
     unsafe { Box::from_raw(result) };
 }
 
 #[no_mangle]
-pub extern "C" fn aries_store_update(
+pub extern "C" fn askar_store_update(
     handle: StoreHandle,
     updates: *const FfiUpdateEntry,
     updates_len: usize,
@@ -597,7 +597,7 @@ pub extern "C" fn aries_store_update(
 }
 
 #[no_mangle]
-pub extern "C" fn aries_store_create_lock(
+pub extern "C" fn askar_store_create_lock(
     handle: StoreHandle,
     lock_info: *const FfiUpdateEntry,
     acquire_timeout_ms: i64,
@@ -632,7 +632,7 @@ pub extern "C" fn aries_store_create_lock(
 }
 
 #[no_mangle]
-pub extern "C" fn aries_store_lock_get_entry(
+pub extern "C" fn askar_store_lock_get_entry(
     handle: LockHandle,
     entry: *mut FfiEntry,
 ) -> ErrorCode {
@@ -646,7 +646,7 @@ pub extern "C" fn aries_store_lock_get_entry(
 }
 
 #[no_mangle]
-pub extern "C" fn aries_store_lock_update(
+pub extern "C" fn askar_store_lock_update(
     handle: LockHandle,
     updates: *const FfiUpdateEntry,
     updates_len: usize,
@@ -687,12 +687,12 @@ pub extern "C" fn aries_store_lock_update(
 }
 
 #[no_mangle]
-pub extern "C" fn aries_store_lock_free(handle: LockHandle) {
+pub extern "C" fn askar_store_lock_free(handle: LockHandle) {
     handle.free()
 }
 
 #[no_mangle]
-pub extern "C" fn aries_store_close(
+pub extern "C" fn askar_store_close(
     handle: StoreHandle,
     cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode)>,
     cb_id: usize,

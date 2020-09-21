@@ -1,14 +1,14 @@
 [package]
-name = "aries-store-kv"
+name = "aries-askar"
 version = "0.1.0"
 authors = ["Hyperledger Indy Contributors <hyperledger-indy@lists.hyperledger.org>"]
 edition = "2018"
 
-description = "Hyperledger Aries key-value storage interface"
+description = "Hyperledger Aries Askar secure storage"
 license = "MIT/Apache-2.0"
 
 [lib]
-name = "aries_store_kv"
+name = "aries_askar"
 path = "src/lib.rs"
 crate-type = ["staticlib", "rlib", "cdylib"]
 

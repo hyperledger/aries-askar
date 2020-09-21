@@ -50,8 +50,8 @@ impl<T> From<Result<T>> for ErrorCode {
 }
 
 #[no_mangle]
-pub extern "C" fn aries_store_get_current_error(error_json_p: *mut *const c_char) -> ErrorCode {
-    trace!("aries_store_get_current_error");
+pub extern "C" fn askar_get_current_error(error_json_p: *mut *const c_char) -> ErrorCode {
+    trace!("askar_get_current_error");
 
     let error = rust_string_to_c(get_current_error_json());
     unsafe { *error_json_p = error };
@@ -71,7 +71,7 @@ pub fn get_current_error_json() -> String {
 }
 
 pub fn set_last_error(error: Option<Error>) -> ErrorCode {
-    trace!("aries_store_set_last_error");
+    trace!("askar_set_last_error");
     let code = match error.as_ref() {
         Some(err) => err.kind.into(),
         None => ErrorCode::Success,

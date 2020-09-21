@@ -1,10 +1,10 @@
-use aries_store_kv::Result as KvResult;
+use aries_askar::Result as KvResult;
 
 mod utils;
 
 macro_rules! db_tests {
     ($init:expr) => {
-        use aries_store_kv::future::block_on;
+        use aries_askar::future::block_on;
 
         #[test]
         fn init() {
@@ -96,8 +96,8 @@ macro_rules! db_tests {
 #[cfg(feature = "sqlite")]
 mod sqlite {
     use super::*;
-    use aries_store_kv::sqlite::{SqliteStore, SqliteStoreOptions};
-    use aries_store_kv::{ProvisionStore, ProvisionStoreSpec};
+    use aries_askar::sqlite::{SqliteStore, SqliteStoreOptions};
+    use aries_askar::{ProvisionStore, ProvisionStoreSpec};
 
     async fn init_db() -> KvResult<Box<SqliteStore>> {
         let spec = ProvisionStoreSpec::create_default().await?;
@@ -132,7 +132,7 @@ mod sqlite {
 #[cfg(all(feature = "pg_test", feature = "postgres"))]
 mod postgres {
     use super::*;
-    use aries_store_kv::postgres::{PostgresStore, TestDB};
+    use aries_askar::postgres::{PostgresStore, TestDB};
 
     async fn init_db<'t>() -> KvResult<TestDB<'t>> {
         let db = PostgresStore::provision_test_db().await?;

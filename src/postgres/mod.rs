@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::time::Duration;
 
 use async_stream::try_stream;
 use async_trait::async_trait;
@@ -6,7 +7,7 @@ use async_trait::async_trait;
 use futures_lite::stream::StreamExt;
 
 use sqlx::{
-    postgres::{PgPool, PgRow, Postgres},
+    postgres::{PgPool, PgPoolOptions, PgRow, Postgres},
     Executor, Row, Transaction,
 };
 
@@ -74,13 +75,18 @@ impl ProvisionStore for PostgresStoreOptions {
     type Store = PostgresStore;
 
     async fn provision_store(self, spec: ProvisionStoreSpec) -> KvResult<Self::Store> {
-        let mut conn_pool = PgPool::connect(
-            self.admin_uri
-                .as_ref()
-                .map(String::as_str)
-                .unwrap_or_else(|| self.uri.as_str()),
-        )
-        .await?;
+        let mut conn_pool = PgPoolOptions::default()
+            .connect_timeout(Duration::from_secs(10))
+            .min_connections(1)
+            .max_connections(10)
+            .test_before_acquire(false)
+            .connect(
+                self.admin_uri
+                    .as_ref()
+                    .map(String::as_str)
+                    .unwrap_or_else(|| self.uri.as_str()),
+            )
+            .await?;
 
         let (default_profile, key_cache) = PostgresStore::init_db(&conn_pool, spec, false).await?;
 
@@ -461,7 +467,7 @@ impl Store for PostgresStore {
         }
         let (key_id, key) = self.get_profile_key(profile_id).await?;
         let updates = prepare_update(key_id, key, entries).await?;
-        let mut txn = self.conn_pool.begin().await?; // deferred write txn
+        let mut txn = self.conn_pool.begin().await?;
         txn = perform_update(txn, updates).await?;
         Ok(txn.commit().await?)
     }
@@ -537,7 +543,6 @@ impl Store for PostgresStore {
             }
         };
 
-        let pool = self.conn_pool.clone();
         Ok((
             entry,
             EntryLock::new(move |entries| async move {
@@ -546,10 +551,8 @@ impl Store for PostgresStore {
                     return Ok(());
                 }
                 let updates = prepare_update(key_id, key, entries).await?;
-                let mut txn = pool.begin().await?; // deferred write txn
-                txn = perform_update(txn, updates).await?;
+                let txn = perform_update(lock_txn, updates).await?;
                 txn.commit().await?;
-                drop(lock_txn);
                 Ok(())
             }),
         ))
@@ -573,28 +576,32 @@ async fn perform_update(
             expire_ms,
         } = upd;
         sqlx::query(DELETE_QUERY)
-            .bind(&key_id)
+            .bind(key_id)
             .bind(enc_entry.category.as_ref())
             .bind(enc_entry.name.as_ref())
             .execute(&mut txn)
             .await?;
-        let row_id: i64 = sqlx::query_scalar(INSERT_QUERY)
-            .bind(&key_id)
-            .bind(enc_entry.category.as_ref())
-            .bind(enc_entry.name.as_ref())
-            .bind(enc_entry.value.as_ref())
-            .bind(expire_ms.map(expiry_timestamp).transpose()?)
-            .fetch_one(&mut txn)
-            .await?;
-        if let Some(tags) = enc_tags {
-            for tag in tags {
-                sqlx::query(TAG_INSERT_QUERY)
-                    .bind(row_id)
-                    .bind(&tag.name)
-                    .bind(&tag.value)
-                    .bind(tag.plaintext as i16)
-                    .execute(&mut txn)
-                    .await?;
+
+        if expire_ms != Some(0) {
+            trace!("Insert entry");
+            let row_id: i64 = sqlx::query_scalar(INSERT_QUERY)
+                .bind(key_id)
+                .bind(enc_entry.category.as_ref())
+                .bind(enc_entry.name.as_ref())
+                .bind(enc_entry.value.as_ref())
+                .bind(expire_ms.map(expiry_timestamp).transpose()?)
+                .fetch_one(&mut txn)
+                .await?;
+            if let Some(tags) = enc_tags {
+                for tag in tags {
+                    sqlx::query(TAG_INSERT_QUERY)
+                        .bind(row_id)
+                        .bind(&tag.name)
+                        .bind(&tag.value)
+                        .bind(tag.plaintext as i16)
+                        .execute(&mut txn)
+                        .await?;
+                }
             }
         }
     }

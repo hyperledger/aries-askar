@@ -17,7 +17,7 @@ use crate::error::Error;
 
 pub type CallbackId = usize;
 
-define_string_destructor!(aries_store_string_free);
+define_string_destructor!(askar_string_free);
 
 pub struct EnsureCallback<T, F: Fn(Result<T, Error>)> {
     f: F,
@@ -46,7 +46,7 @@ impl<T, F: Fn(Result<T, Error>)> Drop for EnsureCallback<T, F> {
 }
 
 #[no_mangle]
-pub extern "C" fn aries_store_set_default_logger() -> ErrorCode {
+pub extern "C" fn askar_set_default_logger() -> ErrorCode {
     catch_err! {
         env_logger::init();
         debug!("Initialized default logger");
@@ -55,6 +55,6 @@ pub extern "C" fn aries_store_set_default_logger() -> ErrorCode {
 }
 
 #[no_mangle]
-pub extern "C" fn aries_store_version() -> *mut c_char {
+pub extern "C" fn askar_version() -> *mut c_char {
     rust_string_to_c(LIB_VERSION.to_owned())
 }

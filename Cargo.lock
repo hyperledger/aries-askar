@@ -25,7 +25,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "aries-store-kv"
+name = "aries-askar"
 version = "0.1.0"
 dependencies = [
  "async-global-executor",
