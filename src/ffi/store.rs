@@ -21,7 +21,7 @@ use super::{CallbackId, EnsureCallback, ErrorCode};
 use crate::error::Result as KvResult;
 use crate::future::spawn_ok;
 use crate::keys::wrap::{generate_raw_wrap_key, WrapKeyMethod};
-use crate::store::{ArcStore, EntryLock, EntryScan, ProvisionStore, ProvisionStoreSpec};
+use crate::store::{ArcStore, EntryLock, EntryScan, OpenStore, ProvisionStore, ProvisionStoreSpec};
 use crate::types::{Entry, EntryTag, UpdateEntry};
 
 new_handle_type!(StoreHandle, FFI_STORE_COUNTER);
@@ -362,7 +362,7 @@ pub extern "C" fn askar_store_provision(
             Some(method) => WrapKeyMethod::parse_uri(method)?,
             None => WrapKeyMethod::default()
         };
-        let pass_key = pass_key.into_opt_string();
+        let pass_key = zeroize::Zeroizing::new(pass_key.into_opt_string());
         let cb = EnsureCallback::new(move |result|
             match result {
                 Ok(sid) => cb(cb_id, ErrorCode::Success, sid),
@@ -371,8 +371,37 @@ pub extern "C" fn askar_store_provision(
         );
         spawn_ok(async move {
             let result = async {
-                let spec = ProvisionStoreSpec::create(wrap_key_method, pass_key).await?;
+                let spec = ProvisionStoreSpec::create(wrap_key_method, pass_key.as_ref().map(String::as_str)).await?;
                 let store = spec_uri.provision_store(spec).await?;
+                Ok(StoreHandle::create(store).await)
+            }.await;
+            cb.resolve(result);
+        });
+        Ok(ErrorCode::Success)
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn askar_store_open(
+    spec_uri: FfiStr,
+    pass_key: FfiStr,
+    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, handle: StoreHandle)>,
+    cb_id: usize,
+) -> ErrorCode {
+    catch_err! {
+        trace!("Open store");
+        let cb = cb.ok_or_else(|| err_msg!("No callback provided"))?;
+        let spec_uri = spec_uri.into_opt_string().ok_or_else(|| err_msg!("No store URI provided"))?;
+        let pass_key = zeroize::Zeroizing::new(pass_key.into_opt_string());
+        let cb = EnsureCallback::new(move |result|
+            match result {
+                Ok(sid) => cb(cb_id, ErrorCode::Success, sid),
+                Err(err) => cb(cb_id, set_last_error(Some(err)), StoreHandle::invalid()),
+            }
+        );
+        spawn_ok(async move {
+            let result = async {
+                let store = spec_uri.open_store(pass_key.as_ref().map(String::as_str)).await?;
                 Ok(StoreHandle::create(store).await)
             }.await;
             cb.resolve(result);

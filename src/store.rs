@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -11,38 +11,39 @@ use super::keys::{
     wrap::{generate_raw_wrap_key, WrapKey, WrapKeyMethod},
 };
 use super::options::IntoOptions;
-use super::types::{Entry, EntryFetchOptions, KeyId, ProfileId, UpdateEntry};
+use super::types::{Entry, EntryFetchOptions, ProfileId, UpdateEntry};
 use super::wql;
 use super::{ErrorKind, Result};
 
 pub struct KeyCache {
-    profile_active_keys: BTreeMap<ProfileId, KeyId>,
-    store_keys: BTreeMap<KeyId, Arc<StoreKey>>,
-    wrap_key: Option<WrapKey>,
+    profile_info: HashMap<String, (ProfileId, Arc<StoreKey>)>,
+    wrap_key: WrapKey,
 }
 
 impl KeyCache {
-    pub fn new(wrap_key: Option<WrapKey>) -> Self {
+    pub fn new(wrap_key: WrapKey) -> Self {
         Self {
-            profile_active_keys: BTreeMap::new(),
-            store_keys: BTreeMap::new(),
+            profile_info: HashMap::new(),
             wrap_key,
         }
     }
 
-    pub fn set_profile_key(&mut self, pid: ProfileId, kid: KeyId, key: StoreKey) {
-        self.profile_active_keys.insert(pid, kid);
-        self.store_keys.insert(kid, Arc::new(key));
+    pub async fn load_key(&self, ciphertext: Vec<u8>) -> Result<StoreKey> {
+        serde_json::from_slice(&self.wrap_key.unwrap_data(ciphertext).await?)
+            .map_err(err_map!(Unsupported, "Invalid store key"))
     }
 
-    pub fn get_profile_key(&self, pid: ProfileId) -> Option<(KeyId, Option<Arc<StoreKey>>)> {
-        self.profile_active_keys
-            .get(&pid)
-            .map(|kid| (*kid, self.store_keys.get(kid).cloned()))
+    pub fn add_profile(&mut self, ident: String, pid: ProfileId, key: StoreKey) {
+        self.profile_info.insert(ident, (pid, Arc::new(key)));
     }
 
-    pub fn get_wrap_key(&self) -> Option<&WrapKey> {
-        self.wrap_key.as_ref()
+    pub fn get_profile(&self, name: &str) -> Option<(ProfileId, Arc<StoreKey>)> {
+        self.profile_info.get(name).cloned()
+    }
+
+    #[allow(unused)]
+    pub fn get_wrap_key(&self) -> &WrapKey {
+        &self.wrap_key
     }
 }
 
@@ -52,7 +53,7 @@ pub trait Store {
     /// Count the number of entries for a given record category
     async fn count(
         &self,
-        profile_id: Option<ProfileId>,
+        profile: Option<String>,
         category: String,
         tag_filter: Option<wql::Query>,
     ) -> Result<i64>;
@@ -64,7 +65,7 @@ pub trait Store {
     /// result found if any.
     async fn fetch(
         &self,
-        profile_id: Option<ProfileId>,
+        profile: Option<String>,
         category: String,
         name: String,
         options: EntryFetchOptions,
@@ -77,7 +78,7 @@ pub trait Store {
     /// Results are not guaranteed to be ordered.
     async fn scan(
         &self,
-        profile_id: Option<ProfileId>,
+        profile: Option<String>,
         category: String,
         options: EntryFetchOptions,
         tag_filter: Option<wql::Query>,
@@ -94,7 +95,7 @@ pub trait Store {
     /// existing record lock, or verify it and release it upon completion of the update.
     /// Provide NULL for the entry value to remove existing records
     /// Returns an error if the lock was lost or one of the keys could not be assigned.
-    async fn update(&self, profile_id: Option<ProfileId>, entries: Vec<UpdateEntry>) -> Result<()>;
+    async fn update(&self, profile: Option<String>, entries: Vec<UpdateEntry>) -> Result<()>;
 
     /// Establish an advisory lock on a particular record
     ///
@@ -114,7 +115,7 @@ pub trait Store {
     /// also try to obtain a lock.
     async fn create_lock(
         &self,
-        profile_id: Option<ProfileId>,
+        profile: Option<String>,
         lock_info: UpdateEntry,
         acquire_timeout_ms: Option<i64>,
     ) -> Result<(Entry, EntryLock)>;
@@ -183,25 +184,22 @@ impl EntryLock {
 #[derive(Debug)]
 pub struct ProvisionStoreSpec {
     pub enc_store_key: Vec<u8>,
-    pub pass_key: Option<String>,
-    pub profile_id: String,
+    pub profile_name: String,
     pub store_key: StoreKey,
-    pub wrap_key: Option<WrapKey>,
+    pub wrap_key: WrapKey,
     pub wrap_key_ref: String,
 }
 
 impl ProvisionStoreSpec {
-    pub async fn create(method: WrapKeyMethod, pass_key: Option<String>) -> Result<Self> {
+    pub async fn create(method: WrapKeyMethod, pass_key: Option<&str>) -> Result<Self> {
         let store_key = StoreKey::new()?;
         let key_data = serde_json::to_vec(&store_key).map_err(err_map!(Unexpected))?;
-        let (enc_store_key, wrap_key, wrap_key_ref) = method
-            .wrap_data(&key_data, pass_key.as_ref().map(String::as_str))
-            .await?;
-        let profile_id = uuid::Uuid::new_v4().to_string();
+        let (wrap_key, wrap_key_ref) = method.resolve(pass_key).await?;
+        let enc_store_key = wrap_key.wrap_data(key_data).await?;
+        let profile_name = uuid::Uuid::new_v4().to_string();
         Ok(Self {
-            enc_store_key: enc_store_key.into_owned(),
-            pass_key,
-            profile_id,
+            enc_store_key,
+            profile_name,
             store_key,
             wrap_key,
             wrap_key_ref: wrap_key_ref.into_uri(),
@@ -210,38 +208,67 @@ impl ProvisionStoreSpec {
 
     pub async fn create_default() -> Result<Self> {
         let key = generate_raw_wrap_key()?;
-        Self::create(WrapKeyMethod::RawKey, Some(key)).await
+        Self::create(WrapKeyMethod::RawKey, Some(&key)).await
     }
 }
 
 #[async_trait]
-pub trait ProvisionStore {
+pub trait OpenStore {
     type Store;
 
-    async fn provision_store(self, spec: ProvisionStoreSpec) -> Result<Self::Store>;
+    async fn open_store(self, pass_key: Option<&str>) -> Result<Self::Store>;
 }
 
 pub type ArcStore = Arc<dyn Store + Send + Sync>;
 
 #[async_trait]
-impl ProvisionStore for &str {
+pub trait ProvisionStore: OpenStore {
+    async fn provision_store(self, spec: ProvisionStoreSpec) -> Result<Self::Store>;
+}
+
+#[async_trait]
+impl OpenStore for &str {
     type Store = ArcStore;
 
-    async fn provision_store(self, spec: ProvisionStoreSpec) -> Result<Self::Store> {
+    async fn open_store(self, pass_key: Option<&str>) -> Result<Self::Store> {
         let opts = self.into_options()?;
-        debug!("Provision with options: {:?}", &opts);
+        debug!("Open store with options: {:?}", &opts);
+
         let store: ArcStore = match opts.schema.as_ref() {
             #[cfg(feature = "postgres")]
             "postgres" => {
                 let opts = super::postgres::PostgresStoreOptions::new(opts)?;
-                debug!("Postgres provision with options: {:?}", &opts);
+                Arc::new(opts.open_store(pass_key).await?)
+            }
+
+            #[cfg(feature = "sqlite")]
+            "sqlite" => {
+                let opts = super::sqlite::SqliteStoreOptions::new(opts)?;
+                Arc::new(opts.open_store(pass_key).await?)
+            }
+
+            _ => return Err(ErrorKind::Unsupported.into()),
+        };
+        Ok(store)
+    }
+}
+
+#[async_trait]
+impl ProvisionStore for &str {
+    async fn provision_store(self, spec: ProvisionStoreSpec) -> Result<<Self as OpenStore>::Store> {
+        let opts = self.into_options()?;
+        debug!("Provision store with options: {:?}", &opts);
+
+        let store: ArcStore = match opts.schema.as_ref() {
+            #[cfg(feature = "postgres")]
+            "postgres" => {
+                let opts = super::postgres::PostgresStoreOptions::new(opts)?;
                 Arc::new(opts.provision_store(spec).await?)
             }
 
             #[cfg(feature = "sqlite")]
             "sqlite" => {
                 let opts = super::sqlite::SqliteStoreOptions::new(opts)?;
-                debug!("SQLite provision with options: {:?}", &opts);
                 Arc::new(opts.provision_store(spec).await?)
             }
 

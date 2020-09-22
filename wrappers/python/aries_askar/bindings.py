@@ -318,6 +318,18 @@ async def store_provision(
     )
 
 
+async def store_open(uri: str, pass_key: str = None) -> StoreHandle:
+    """Open an existing Store and return the open handle."""
+    uri_p = encode_str(uri)
+    pass_key_p = encode_str(pass_key)
+    return await do_call_async(
+        "askar_store_open",
+        uri_p,
+        pass_key_p,
+        return_type=StoreHandle,
+    )
+
+
 async def store_count(
     handle: StoreHandle, category: [str, bytes], tag_filter: [str, dict] = None
 ) -> int:

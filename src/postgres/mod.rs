@@ -16,25 +16,25 @@ use super::db_utils::{
     replace_arg_placeholders, PreparedUpdate, QueryParams, QueryPrepare, PAGE_SIZE,
 };
 use super::error::Result as KvResult;
-use super::keys::{store::StoreKey, AsyncEncryptor};
+use super::keys::{store::StoreKey, wrap::WrapKeyReference, AsyncEncryptor};
 use super::options::IntoOptions;
-use super::store::{EntryLock, EntryScan, KeyCache, ProvisionStore, ProvisionStoreSpec, Store};
-use super::types::{
-    EncEntryTag, Entry, EntryFetchOptions, EntryTag, KeyId, ProfileId, UpdateEntry,
+use super::store::{
+    EntryLock, EntryScan, KeyCache, OpenStore, ProvisionStore, ProvisionStoreSpec, Store,
 };
+use super::types::{EncEntryTag, Entry, EntryFetchOptions, EntryTag, ProfileId, UpdateEntry};
 use super::wql;
 
 const COUNT_QUERY: &'static str = "SELECT COUNT(*) FROM items i
-    WHERE store_key_id = $1 AND category = $2
+    WHERE profile_id = $1 AND category = $2
     AND (expiry IS NULL OR expiry > CURRENT_TIMESTAMP)";
 const DELETE_QUERY: &'static str = "DELETE FROM items
-    WHERE store_key_id = $1 AND category = $2 AND name = $3";
+    WHERE profile_id = $1 AND category = $2 AND name = $3";
 const FETCH_QUERY: &'static str = "SELECT id, value FROM items i
-    WHERE store_key_id = $1 AND category = $2 AND name = $3
+    WHERE profile_id = $1 AND category = $2 AND name = $3
     AND (expiry IS NULL OR expiry > CURRENT_TIMESTAMP)";
-const INSERT_QUERY: &'static str = "INSERT INTO items(store_key_id, category, name, value, expiry)
+const INSERT_QUERY: &'static str = "INSERT INTO items(profile_id, category, name, value, expiry)
     VALUES($1, $2, $3, $4, $5) RETURNING id";
-const SCAN_QUERY: &'static str = "SELECT id, name, value FROM items i WHERE store_key_id = $1
+const SCAN_QUERY: &'static str = "SELECT id, name, value FROM items i WHERE profile_id = $1
     AND category = $2 AND (expiry IS NULL OR expiry > CURRENT_TIMESTAMP)";
 const TAG_QUERY: &'static str = "SELECT name, value, plaintext FROM items_tags WHERE item_id = $1";
 const TAG_INSERT_QUERY: &'static str = "INSERT INTO items_tags(item_id, name, value, plaintext)
@@ -71,10 +71,80 @@ impl PostgresStoreOptions {
 }
 
 #[async_trait]
-impl ProvisionStore for PostgresStoreOptions {
+impl OpenStore for PostgresStoreOptions {
     type Store = PostgresStore;
 
-    async fn provision_store(self, spec: ProvisionStoreSpec) -> KvResult<Self::Store> {
+    async fn open_store(self, pass_key: Option<&str>) -> KvResult<Self::Store> {
+        let conn_pool = PgPoolOptions::default()
+            .connect_timeout(Duration::from_secs(10))
+            .min_connections(1)
+            .max_connections(10)
+            .test_before_acquire(false)
+            .connect(
+                self.admin_uri
+                    .as_ref()
+                    .map(String::as_str)
+                    .unwrap_or_else(|| self.uri.as_str()),
+            )
+            .await?;
+
+        let mut conn = conn_pool.acquire().await?;
+        let mut ver_ok = false;
+        let mut default_profile: Option<String> = None;
+        let mut wrap_key_ref: Option<String> = None;
+
+        let config = sqlx::query(
+            r#"SELECT name, value FROM config
+            WHERE name IN ('default_profile', 'version', 'wrap_key')"#,
+        )
+        .fetch_all(&mut conn)
+        .await?;
+        for row in config {
+            match row.try_get(0)? {
+                "default_profile" => {
+                    default_profile.replace(row.try_get(1)?);
+                }
+                "version" => {
+                    if row.try_get::<&str, _>(1)? != "1" {
+                        return Err(err_msg!(Unsupported, "Unsupported store version"));
+                    }
+                    ver_ok = true;
+                }
+                "wrap_key" => {
+                    wrap_key_ref.replace(row.try_get(1)?);
+                }
+                _ => (),
+            }
+        }
+        if !ver_ok {
+            return Err(err_msg!(Unsupported, "Store version not found"));
+        }
+        let default_profile = default_profile
+            .ok_or_else(|| err_msg!(Unsupported, "Default store profile not found"))?;
+        let wrap_key = if let Some(wrap_key_ref) = wrap_key_ref {
+            WrapKeyReference::parse_uri(&wrap_key_ref)?
+                .resolve(pass_key)
+                .await?
+        } else {
+            return Err(err_msg!(Unsupported, "Store wrap key not found"));
+        };
+        let mut key_cache = KeyCache::new(wrap_key);
+
+        let row = sqlx::query("SELECT id, store_key FROM profiles WHERE name = $1")
+            .bind(&default_profile)
+            .fetch_one(&mut conn)
+            .await?;
+        let profile_id = row.try_get(0)?;
+        let store_key = key_cache.load_key(row.try_get(1)?).await?;
+        key_cache.add_profile(default_profile.clone(), profile_id, store_key);
+
+        Ok(PostgresStore::new(conn_pool, default_profile, key_cache))
+    }
+}
+
+#[async_trait]
+impl ProvisionStore for PostgresStoreOptions {
+    async fn provision_store(self, spec: ProvisionStoreSpec) -> KvResult<PostgresStore> {
         let mut conn_pool = PgPoolOptions::default()
             .connect_timeout(Duration::from_secs(10))
             .min_connections(1)
@@ -121,40 +191,12 @@ impl std::ops::Deref for TestDB<'_> {
 
 pub struct PostgresStore {
     conn_pool: PgPool,
-    default_profile: ProfileId,
+    default_profile: String,
     key_cache: KeyCache,
 }
 
-impl QueryPrepare for PostgresStore {
-    type DB = Postgres;
-
-    fn placeholder(index: i64) -> String {
-        format!("${}", index)
-    }
-
-    fn limit_query<'q>(
-        mut query: String,
-        args: &mut QueryParams<'q, Self::DB>,
-        offset: Option<i64>,
-        limit: Option<i64>,
-    ) -> String
-    where
-        i64: for<'e> sqlx::Encode<'e, Self::DB> + sqlx::Type<Self::DB>,
-    {
-        if offset.is_some() || limit.is_some() {
-            let last_idx = (args.len() + 1) as i64;
-            args.push(limit);
-            args.push(offset.unwrap_or(0));
-            let (limit, _next_idx) =
-                replace_arg_placeholders::<Self>(" LIMIT $$ OFFSET $$", last_idx);
-            query.push_str(&limit);
-        }
-        query
-    }
-}
-
 impl PostgresStore {
-    pub(crate) fn new(conn_pool: PgPool, default_profile: ProfileId, key_cache: KeyCache) -> Self {
+    pub(crate) fn new(conn_pool: PgPool, default_profile: String, key_cache: KeyCache) -> Self {
         Self {
             conn_pool,
             default_profile,
@@ -164,14 +206,16 @@ impl PostgresStore {
 
     async fn get_profile_key(
         &self,
-        pid: Option<ProfileId>,
-    ) -> KvResult<(KeyId, AsyncEncryptor<StoreKey>)> {
-        if let Some((kid, key)) = self
-            .key_cache
-            .get_profile_key(pid.unwrap_or(self.default_profile))
-        {
-            Ok((kid, AsyncEncryptor(key)))
+        name: Option<String>,
+    ) -> KvResult<(ProfileId, AsyncEncryptor<StoreKey>)> {
+        if let Some((pid, key)) = self.key_cache.get_profile(
+            name.as_ref()
+                .map(String::as_str)
+                .unwrap_or(self.default_profile.as_str()),
+        ) {
+            Ok((pid, AsyncEncryptor(Some(key))))
         } else {
+            // FIXME fetch from database
             unimplemented!()
         }
     }
@@ -200,7 +244,7 @@ impl PostgresStore {
         conn_pool: &PgPool,
         spec: ProvisionStoreSpec,
         reset: bool,
-    ) -> KvResult<(ProfileId, KeyCache)> {
+    ) -> KvResult<(String, KeyCache)> {
         if reset {
             conn_pool
                 .execute(
@@ -225,50 +269,38 @@ impl PostgresStore {
 
             CREATE TABLE profiles (
                 id BIGSERIAL,
-                active_key_id BIGINT NULL,
                 name TEXT NOT NULL,
                 reference TEXT NULL,
+                store_key BYTEA NULL,
                 PRIMARY KEY(id)
             );
             CREATE UNIQUE INDEX ix_profile_name ON profiles(name);
 
-            CREATE TABLE store_keys (
+            CREATE TABLE keys (
                 id BIGSERIAL,
                 profile_id BIGINT NOT NULL,
+                category BYTEA NOT NULL,
+                name BYTEA NOT NULL,
+                reference TEXT NULL,
                 value BYTEA NULL,
                 PRIMARY KEY(id),
                 FOREIGN KEY(profile_id) REFERENCES profiles(id)
                     ON DELETE CASCADE ON UPDATE CASCADE
             );
-
-            ALTER TABLE profiles ADD FOREIGN KEY(active_key_id)
-                REFERENCES store_keys(id) ON DELETE SET NULL ON UPDATE CASCADE;
-
-            CREATE TABLE keys (
-                id BIGSERIAL,
-                store_key_id BIGINT NOT NULL,
-                category BYTEA NOT NULL,
-                name BYTEA NOT NULL,
-                reference TEXT NULL,
-                value BYTEA NULL,
-                PRIMARY KEY(id),
-                FOREIGN KEY(store_key_id) REFERENCES store_keys(id)
-                    ON DELETE CASCADE ON UPDATE CASCADE
-            );
-            CREATE UNIQUE INDEX ix_keys_uniq ON keys(store_key_id, category, name);
+            CREATE UNIQUE INDEX ix_keys_uniq ON keys(profile_id, category, name);
 
             CREATE TABLE items (
                 id BIGSERIAL,
-                store_key_id BIGINT NOT NULL,
+                profile_id BIGINT NOT NULL,
                 category BYTEA NOT NULL,
                 name BYTEA NOT NULL,
                 value BYTEA NOT NULL,
                 expiry TIMESTAMP NULL,
                 PRIMARY KEY(id),
-                FOREIGN KEY(store_key_id) REFERENCES store_keys(id)
+                FOREIGN KEY(profile_id) REFERENCES profiles(id)
                     ON DELETE CASCADE ON UPDATE CASCADE
             );
-            CREATE UNIQUE INDEX ix_items_uniq ON items(store_key_id, category, name);
+            CREATE UNIQUE INDEX ix_items_uniq ON items(profile_id, category, name);
 
             CREATE TABLE items_tags (
                 item_id BIGINT NOT NULL,
@@ -288,41 +320,29 @@ impl PostgresStore {
         sqlx::query(
             "INSERT INTO config (name, value) VALUES
                 ('default_profile', $1),
-                ('wrap_key', $2),
-                ('version', '1');",
+                ('version', '1'),
+                ('wrap_key', $2)",
         )
         .persistent(false)
-        .bind(&spec.profile_id)
+        .bind(&spec.profile_name)
         .bind(spec.wrap_key_ref)
         .execute(&mut txn)
         .await?;
 
-        let ins_profile = sqlx::query(
-            "WITH ins AS (INSERT INTO profiles (name) VALUES ($1) RETURNING id AS prof_id)
-                INSERT INTO store_keys (profile_id, value) SELECT prof_id, $2 FROM ins
-                RETURNING profile_id, id AS key_id",
+        let profile_id = sqlx::query_scalar(
+            "INSERT INTO profiles (name, store_key) VALUES ($1, $2) RETURNING id",
         )
-        .bind(&spec.profile_id)
+        .bind(&spec.profile_name)
         .bind(spec.enc_store_key)
         .fetch_one(&mut txn)
         .await?;
 
-        let default_profile: i64 = ins_profile.try_get(0)?;
-        let key_id: i64 = ins_profile.try_get(1)?;
-
-        sqlx::query("UPDATE profiles SET active_key_id = $1 WHERE id = $2")
-            .persistent(false)
-            .bind(key_id)
-            .bind(default_profile)
-            .execute(&mut txn)
-            .await?;
-
         txn.commit().await?;
 
         let mut key_cache = KeyCache::new(spec.wrap_key);
-        key_cache.set_profile_key(default_profile, key_id, spec.store_key);
+        key_cache.add_profile(spec.profile_name.clone(), profile_id, spec.store_key);
 
-        Ok((default_profile, key_cache))
+        Ok((spec.profile_name, key_cache))
     }
 }
 
@@ -356,14 +376,14 @@ async fn fetch_row_tags(
 impl Store for PostgresStore {
     async fn count(
         &self,
-        profile_id: Option<ProfileId>,
+        profile: Option<String>,
         category: String,
         tag_filter: Option<wql::Query>,
     ) -> KvResult<i64> {
-        let (key_id, key) = self.get_profile_key(profile_id).await?;
+        let (profile_id, key) = self.get_profile_key(profile).await?;
         let category = key.encrypt_entry_category(category).await?;
         let mut params = QueryParams::new();
-        params.push(key_id);
+        params.push(profile_id);
         params.push(category);
         let tag_filter = encode_tag_filter::<Self>(tag_filter, key.0.clone(), params.len()).await?;
         let query = extend_query::<Self>(COUNT_QUERY, &mut params, tag_filter, None, None)?;
@@ -375,19 +395,19 @@ impl Store for PostgresStore {
 
     async fn fetch(
         &self,
-        profile_id: Option<ProfileId>,
+        profile: Option<String>,
         category: String,
         name: String,
         options: EntryFetchOptions,
     ) -> KvResult<Option<Entry>> {
-        let (key_id, key) = self.get_profile_key(profile_id).await?;
+        let (profile_id, key) = self.get_profile_key(profile).await?;
         let raw_category = category.clone();
         let raw_name = name.clone();
         let (category, name) = key.encrypt_entry_category_name(category, name).await?;
         if let Some(row) = sqlx::query(FETCH_QUERY)
-            .bind(key_id)
-            .bind(&category)
-            .bind(&name)
+            .bind(profile_id)
+            .bind(category)
+            .bind(name)
             .fetch_optional(&self.conn_pool)
             .await?
         {
@@ -410,7 +430,7 @@ impl Store for PostgresStore {
 
     async fn scan(
         &self,
-        profile_id: Option<ProfileId>,
+        profile: Option<String>,
         category: String,
         options: EntryFetchOptions,
         tag_filter: Option<wql::Query>,
@@ -418,13 +438,13 @@ impl Store for PostgresStore {
         max_rows: Option<i64>,
     ) -> KvResult<EntryScan> {
         let pool = self.conn_pool.clone();
-        let (key_id, key) = self.get_profile_key(profile_id).await?;
+        let (profile_id, key) = self.get_profile_key(profile).await?;
         let raw_category = category.clone();
         let category = key.encrypt_entry_category(category).await?;
         let scan = try_stream! {
             let mut params = QueryParams::new();
-            params.push(key_id);
-            params.push(category.clone());
+            params.push(profile_id);
+            params.push(category);
             let tag_filter = encode_tag_filter::<Self>(tag_filter, key.0.clone(), params.len()).await?;
             let query = extend_query::<Self>(SCAN_QUERY, &mut params, tag_filter, offset, max_rows)?;
             let mut batch = Vec::with_capacity(PAGE_SIZE);
@@ -456,17 +476,13 @@ impl Store for PostgresStore {
         Ok(EntryScan::new(scan, PAGE_SIZE))
     }
 
-    async fn update(
-        &self,
-        profile_id: Option<ProfileId>,
-        entries: Vec<UpdateEntry>,
-    ) -> KvResult<()> {
+    async fn update(&self, profile: Option<String>, entries: Vec<UpdateEntry>) -> KvResult<()> {
         if entries.is_empty() {
             debug!("Skip update: no entries");
             return Ok(());
         }
-        let (key_id, key) = self.get_profile_key(profile_id).await?;
-        let updates = prepare_update(key_id, key, entries).await?;
+        let (profile_id, key) = self.get_profile_key(profile).await?;
+        let updates = prepare_update(profile_id, key, entries).await?;
         let mut txn = self.conn_pool.begin().await?;
         txn = perform_update(txn, updates).await?;
         Ok(txn.commit().await?)
@@ -474,13 +490,13 @@ impl Store for PostgresStore {
 
     async fn create_lock(
         &self,
-        profile_id: Option<ProfileId>,
+        profile: Option<String>,
         lock_info: UpdateEntry,
         acquire_timeout_ms: Option<i64>,
     ) -> KvResult<(Entry, EntryLock)> {
-        let (key_id, key) = self.get_profile_key(profile_id).await?;
+        let (profile_id, key) = self.get_profile_key(profile).await?;
         let raw_entry = lock_info.entry.clone();
-        let hash = hash_lock_info(key_id, &lock_info);
+        let hash = hash_lock_info(profile_id, &lock_info);
         let (enc_entry, enc_tags) = key.encrypt_entry(lock_info.entry).await?;
         let expiry = lock_info.expire_ms.map(expiry_timestamp).transpose()?;
 
@@ -503,7 +519,7 @@ impl Store for PostgresStore {
 
         let mut txn = self.conn_pool.begin().await?;
         let entry = match sqlx::query(FETCH_QUERY)
-            .bind(&key_id)
+            .bind(profile_id)
             .bind(enc_entry.category.as_ref())
             .bind(enc_entry.name.as_ref())
             .fetch_optional(&mut txn)
@@ -520,7 +536,7 @@ impl Store for PostgresStore {
             }
             None => {
                 let row_id: i64 = sqlx::query_scalar(INSERT_QUERY)
-                    .bind(&key_id)
+                    .bind(profile_id)
                     .bind(enc_entry.category.as_ref())
                     .bind(enc_entry.name.as_ref())
                     .bind(enc_entry.value.as_ref())
@@ -531,8 +547,8 @@ impl Store for PostgresStore {
                     for tag in tags {
                         sqlx::query(TAG_INSERT_QUERY)
                             .bind(row_id)
-                            .bind(&tag.name)
-                            .bind(&tag.value)
+                            .bind(tag.name)
+                            .bind(tag.value)
                             .bind(tag.plaintext as i16)
                             .execute(&mut txn)
                             .await?;
@@ -550,7 +566,7 @@ impl Store for PostgresStore {
                     debug!("Skip update: no entries");
                     return Ok(());
                 }
-                let updates = prepare_update(key_id, key, entries).await?;
+                let updates = prepare_update(profile_id, key, entries).await?;
                 let txn = perform_update(lock_txn, updates).await?;
                 txn.commit().await?;
                 Ok(())
@@ -564,19 +580,47 @@ impl Store for PostgresStore {
     }
 }
 
+impl QueryPrepare for PostgresStore {
+    type DB = Postgres;
+
+    fn placeholder(index: i64) -> String {
+        format!("${}", index)
+    }
+
+    fn limit_query<'q>(
+        mut query: String,
+        args: &mut QueryParams<'q, Self::DB>,
+        offset: Option<i64>,
+        limit: Option<i64>,
+    ) -> String
+    where
+        i64: for<'e> sqlx::Encode<'e, Self::DB> + sqlx::Type<Self::DB>,
+    {
+        if offset.is_some() || limit.is_some() {
+            let last_idx = (args.len() + 1) as i64;
+            args.push(limit);
+            args.push(offset.unwrap_or(0));
+            let (limit, _next_idx) =
+                replace_arg_placeholders::<Self>(" LIMIT $$ OFFSET $$", last_idx);
+            query.push_str(&limit);
+        }
+        query
+    }
+}
+
 async fn perform_update(
     mut txn: Transaction<'static, Postgres>,
     updates: Vec<PreparedUpdate>,
 ) -> KvResult<Transaction<'static, Postgres>> {
     for upd in updates {
         let PreparedUpdate {
-            key_id,
+            profile_id,
             enc_entry,
             enc_tags,
             expire_ms,
         } = upd;
         sqlx::query(DELETE_QUERY)
-            .bind(key_id)
+            .bind(profile_id)
             .bind(enc_entry.category.as_ref())
             .bind(enc_entry.name.as_ref())
             .execute(&mut txn)
@@ -585,7 +629,7 @@ async fn perform_update(
         if expire_ms != Some(0) {
             trace!("Insert entry");
             let row_id: i64 = sqlx::query_scalar(INSERT_QUERY)
-                .bind(key_id)
+                .bind(profile_id)
                 .bind(enc_entry.category.as_ref())
                 .bind(enc_entry.name.as_ref())
                 .bind(enc_entry.value.as_ref())
@@ -596,8 +640,8 @@ async fn perform_update(
                 for tag in tags {
                     sqlx::query(TAG_INSERT_QUERY)
                         .bind(row_id)
-                        .bind(&tag.name)
-                        .bind(&tag.value)
+                        .bind(tag.name)
+                        .bind(tag.value)
                         .bind(tag.plaintext as i16)
                         .execute(&mut txn)
                         .await?;

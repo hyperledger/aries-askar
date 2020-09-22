@@ -7,7 +7,7 @@ use sqlx::{database::HasArguments, Arguments, Database, Encode, IntoArguments, T
 use super::error::Result as KvResult;
 use super::future::blocking;
 use super::keys::{store::StoreKey, AsyncEncryptor};
-use super::types::{EncEntry, EncEntryTag, Expiry, KeyId, UpdateEntry};
+use super::types::{EncEntry, EncEntryTag, Expiry, ProfileId, UpdateEntry};
 use super::wql::{
     self,
     sql::TagSqlEncoder,
@@ -163,23 +163,23 @@ where
     Ok(query)
 }
 
-pub fn hash_lock_info(key_id: i64, lock_info: &UpdateEntry) -> i64 {
+pub fn hash_lock_info(profile_id: ProfileId, lock_info: &UpdateEntry) -> i64 {
     let mut hasher = DefaultHasher::new();
-    Hash::hash(&key_id, &mut hasher);
+    Hash::hash(&profile_id, &mut hasher);
     Hash::hash_slice(lock_info.entry.category.as_bytes(), &mut hasher);
     Hash::hash_slice(lock_info.entry.name.as_bytes(), &mut hasher);
     hasher.finish() as i64
 }
 
 pub struct PreparedUpdate {
-    pub key_id: KeyId,
+    pub profile_id: ProfileId,
     pub enc_entry: EncEntry<'static>,
     pub enc_tags: Option<Vec<EncEntryTag>>,
     pub expire_ms: Option<i64>,
 }
 
 pub async fn prepare_update(
-    key_id: KeyId,
+    profile_id: ProfileId,
     key: AsyncEncryptor<StoreKey>,
     entries: Vec<UpdateEntry>,
 ) -> KvResult<Vec<PreparedUpdate>> {
@@ -187,7 +187,7 @@ pub async fn prepare_update(
     for update in entries {
         let (enc_entry, enc_tags) = key.encrypt_entry(update.entry).await?;
         updates.push(PreparedUpdate {
-            key_id,
+            profile_id,
             enc_entry,
             enc_tags,
             expire_ms: update.expire_ms,

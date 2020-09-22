@@ -2,7 +2,7 @@ use indy_utils::base58;
 
 use super::wrap::PREFIX_KDF;
 use crate::error::Result;
-use crate::keys::wrap::WrapKey;
+use crate::keys::wrap::{WrapKey, WrapKeyData};
 use crate::options::Options;
 
 pub mod argon2;
@@ -61,9 +61,9 @@ impl KdfMethod {
         match self {
             Self::Argon2i(level) => {
                 let salt = generate_salt();
-                let key = level.derive_key(&salt, password)?;
+                let key = zeroize::Zeroizing::new(level.derive_key(&salt, password)?);
                 let detail = format!("?salt={}", base58::encode(&salt));
-                Ok((WrapKey::from_slice(&key), detail))
+                Ok((WrapKeyData::from_slice(&*key).into(), detail))
             }
         }
     }
@@ -72,8 +72,8 @@ impl KdfMethod {
         match self {
             Self::Argon2i(level) => {
                 let salt = parse_salt(detail)?;
-                let key = level.derive_key(&salt, password)?;
-                Ok(WrapKey::from_slice(&key))
+                let key = zeroize::Zeroizing::new(level.derive_key(&salt, password)?);
+                Ok(WrapKeyData::from_slice(&*key).into())
             }
         }
     }

@@ -140,6 +140,10 @@ class Store:
     ) -> "StoreOpen":
         return StoreOpen(bindings.store_provision(uri, wrap_method, pass_key))
 
+    @classmethod
+    def open(cls, uri: str, pass_key: str = None) -> "StoreOpen":
+        return StoreOpen(bindings.store_open(uri, pass_key))
+
     async def close(self):
         """Close and free the pool instance."""
         if self.handle:

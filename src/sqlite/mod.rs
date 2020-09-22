@@ -19,26 +19,28 @@ use super::db_utils::{
 };
 use super::error::Result as KvResult;
 use super::future::{sleep_ms, spawn_ok};
-use super::keys::{store::StoreKey, AsyncEncryptor};
+use super::keys::{store::StoreKey, wrap::WrapKeyReference, AsyncEncryptor};
 use super::options::IntoOptions;
-use super::store::{EntryLock, EntryScan, KeyCache, ProvisionStore, ProvisionStoreSpec, Store};
+use super::store::{
+    EntryLock, EntryScan, KeyCache, OpenStore, ProvisionStore, ProvisionStoreSpec, Store,
+};
 use super::types::{
-    EncEntryTag, Entry, EntryFetchOptions, EntryTag, Expiry, KeyId, ProfileId, UpdateEntry,
+    EncEntryTag, Entry, EntryFetchOptions, EntryTag, Expiry, ProfileId, UpdateEntry,
 };
 use super::wql;
 
 const LOCK_EXPIRY: i64 = 120000; // 2 minutes
 const COUNT_QUERY: &'static str = "SELECT COUNT(*) FROM items i
-    WHERE store_key_id = ?1 AND category = ?2
+    WHERE profile_id = ?1 AND category = ?2
     AND (expiry IS NULL OR expiry > datetime('now'))";
 const DELETE_QUERY: &'static str = "DELETE FROM items
-    WHERE store_key_id = ?1 AND category = ?2 AND name = ?3";
+    WHERE profile_id = ?1 AND category = ?2 AND name = ?3";
 const FETCH_QUERY: &'static str = "SELECT id, value FROM items i
-    WHERE store_key_id = ?1 AND category = ?2 AND name = ?3
+    WHERE profile_id = ?1 AND category = ?2 AND name = ?3
     AND (expiry IS NULL OR expiry > datetime('now'))";
-const INSERT_QUERY: &'static str = "INSERT INTO items(store_key_id, category, name, value, expiry)
+const INSERT_QUERY: &'static str = "INSERT INTO items(profile_id, category, name, value, expiry)
     VALUES(?1, ?2, ?3, ?4, ?5)";
-const SCAN_QUERY: &'static str = "SELECT id, name, value FROM items i WHERE store_key_id = ?1
+const SCAN_QUERY: &'static str = "SELECT id, name, value FROM items i WHERE profile_id = ?1
     AND category = ?2 AND (expiry IS NULL OR expiry > datetime('now'))";
 const TAG_QUERY: &'static str = "SELECT item_id, name, value, plaintext FROM items_tags";
 const TAG_INSERT_QUERY: &'static str = "INSERT INTO items_tags(item_id, name, value, plaintext)
@@ -152,10 +154,70 @@ impl<'a> SqliteStoreOptions<'a> {
 }
 
 #[async_trait]
-impl<'a> ProvisionStore for SqliteStoreOptions<'a> {
+impl<'a> OpenStore for SqliteStoreOptions<'a> {
     type Store = SqliteStore;
 
-    async fn provision_store(self, spec: ProvisionStoreSpec) -> KvResult<Self::Store> {
+    async fn open_store(self, pass_key: Option<&str>) -> KvResult<Self::Store> {
+        let conn_opts = SqliteConnectOptions::from_str(self.path.as_ref())?;
+        let conn_pool = self.options.connect_with(conn_opts).await?;
+
+        let mut conn = conn_pool.acquire().await?;
+        let mut ver_ok = false;
+        let mut default_profile: Option<String> = None;
+        let mut wrap_key_ref: Option<String> = None;
+
+        let config = sqlx::query(
+            r#"SELECT name, value FROM config
+            WHERE name IN ("default_profile", "version", "wrap_key")"#,
+        )
+        .fetch_all(&mut conn)
+        .await?;
+        for row in config {
+            match row.try_get(0)? {
+                "default_profile" => {
+                    default_profile.replace(row.try_get(1)?);
+                }
+                "version" => {
+                    if row.try_get::<&str, _>(1)? != "1" {
+                        return Err(err_msg!(Unsupported, "Unsupported store version"));
+                    }
+                    ver_ok = true;
+                }
+                "wrap_key" => {
+                    wrap_key_ref.replace(row.try_get(1)?);
+                }
+                _ => (),
+            }
+        }
+        if !ver_ok {
+            return Err(err_msg!(Unsupported, "Store version not found"));
+        }
+        let default_profile = default_profile
+            .ok_or_else(|| err_msg!(Unsupported, "Default store profile not found"))?;
+        let wrap_key = if let Some(wrap_key_ref) = wrap_key_ref {
+            WrapKeyReference::parse_uri(&wrap_key_ref)?
+                .resolve(pass_key)
+                .await?
+        } else {
+            return Err(err_msg!(Unsupported, "Store wrap key not found"));
+        };
+        let mut key_cache = KeyCache::new(wrap_key);
+
+        let row = sqlx::query("SELECT id, store_key FROM profiles WHERE name = ?1")
+            .bind(&default_profile)
+            .fetch_one(&mut conn)
+            .await?;
+        let profile_id = row.try_get(0)?;
+        let store_key = key_cache.load_key(row.try_get(1)?).await?;
+        key_cache.add_profile(default_profile.clone(), profile_id, store_key);
+
+        Ok(SqliteStore::new(conn_pool, default_profile, key_cache))
+    }
+}
+
+#[async_trait]
+impl<'a> ProvisionStore for SqliteStoreOptions<'a> {
+    async fn provision_store(self, spec: ProvisionStoreSpec) -> KvResult<SqliteStore> {
         let conn_opts = SqliteConnectOptions::from_str(self.path.as_ref())?.create_if_missing(true);
         let conn_pool = self.options.connect_with(conn_opts).await?;
         let mut conn = conn_pool.acquire().await?;
@@ -171,59 +233,48 @@ impl<'a> ProvisionStore for SqliteStoreOptions<'a> {
             );
             INSERT INTO config (name, value) VALUES
                 ("default_profile", ?1),
-                ("wrap_key", ?2),
-                ("version", "1");
+                ("version", "1"),
+                ("wrap_key", ?2);
 
             CREATE TABLE profiles (
                 id INTEGER NOT NULL,
-                active_key_id INTEGER NULL,
                 name TEXT NOT NULL,
                 reference TEXT NULL,
-                PRIMARY KEY(id),
-                FOREIGN KEY(active_key_id) REFERENCES store_keys(id)
-                    ON DELETE SET NULL ON UPDATE CASCADE
+                store_key BLOB NULL,
+                PRIMARY KEY(id)
             );
             CREATE UNIQUE INDEX ix_profile_name ON profiles(name);
 
-            CREATE TABLE store_keys (
+            CREATE TABLE keys (
                 id INTEGER NOT NULL,
                 profile_id INTEGER NOT NULL,
+                category BLOB NOT NULL,
+                name BLOB NOT NULL,
+                reference TEXT NULL,
                 value BLOB NULL,
                 PRIMARY KEY(id),
                 FOREIGN KEY(profile_id) REFERENCES profiles(id)
                     ON DELETE CASCADE ON UPDATE CASCADE
             );
-
-            CREATE TABLE keys (
-                id INTEGER NOT NULL,
-                store_key_id INTEGER NOT NULL,
-                category NOT NULL,
-                name NOT NULL,
-                reference TEXT NULL,
-                value BLOB NULL,
-                PRIMARY KEY(id),
-                FOREIGN KEY(store_key_id) REFERENCES store_keys(id)
-                    ON DELETE CASCADE ON UPDATE CASCADE
-            );
-            CREATE UNIQUE INDEX ix_keys_uniq ON keys(store_key_id, category, name);
+            CREATE UNIQUE INDEX ix_keys_uniq ON keys(profile_id, category, name);
 
             CREATE TABLE items (
                 id INTEGER NOT NULL,
-                store_key_id INTEGER NOT NULL,
-                category NOT NULL,
-                name NOT NULL,
-                value NOT NULL,
+                profile_id INTEGER NOT NULL,
+                category BLOB NOT NULL,
+                name BLOB NOT NULL,
+                value BLOB NOT NULL,
                 expiry DATETIME NULL,
                 PRIMARY KEY(id),
-                FOREIGN KEY(store_key_id) REFERENCES store_keys(id)
+                FOREIGN KEY(profile_id) REFERENCES profiles(id)
                     ON DELETE CASCADE ON UPDATE CASCADE
             );
-            CREATE UNIQUE INDEX ix_items_uniq ON items(store_key_id, category, name);
+            CREATE UNIQUE INDEX ix_items_uniq ON items(profile_id, category, name);
 
             CREATE TABLE items_tags (
                 item_id INTEGER NOT NULL,
-                name NOT NULL,
-                value NOT NULL,
+                name BLOB NOT NULL,
+                value BLOB NOT NULL,
                 plaintext BOOLEAN NOT NULL,
                 PRIMARY KEY(name, item_id, plaintext),
                 FOREIGN KEY(item_id) REFERENCES items(id)
@@ -238,49 +289,39 @@ impl<'a> ProvisionStore for SqliteStoreOptions<'a> {
                 PRIMARY KEY(id)
             );
 
-            INSERT INTO profiles (name) VALUES (?1);
-            INSERT INTO store_keys (profile_id, value) VALUES (last_insert_rowid(), ?3);
-            UPDATE profiles SET active_key_id = last_insert_rowid();
+            INSERT INTO profiles (name, store_key) VALUES (?1, ?3);
 
             COMMIT;
         "#,
         )
         .persistent(false)
-        .bind(&spec.profile_id)
+        .bind(&spec.profile_name)
         .bind(spec.wrap_key_ref)
         .bind(spec.enc_store_key)
         .execute(&mut conn)
         .await?;
 
-        let row = sqlx::query(
-            r#"SELECT id, active_key_id FROM profiles WHERE name = ?1
-        "#,
-        )
-        .persistent(false)
-        .bind(spec.profile_id)
-        .fetch_one(&mut conn)
-        .await?;
-        let default_profile = row.try_get(0)?;
-        let key_id: i64 = row.try_get(1)?;
         let mut key_cache = KeyCache::new(spec.wrap_key);
-        key_cache.set_profile_key(default_profile, key_id, spec.store_key);
 
-        Ok(SqliteStore::new(conn_pool, default_profile, key_cache))
+        let row = sqlx::query("SELECT id FROM profiles WHERE name = ?1")
+            .persistent(false)
+            .bind(&spec.profile_name)
+            .fetch_one(&mut conn)
+            .await?;
+        key_cache.add_profile(spec.profile_name.clone(), row.try_get(0)?, spec.store_key);
+
+        Ok(SqliteStore::new(conn_pool, spec.profile_name, key_cache))
     }
 }
 
 pub struct SqliteStore {
     conn_pool: SqlitePool,
-    default_profile: ProfileId,
+    default_profile: String,
     key_cache: KeyCache,
 }
 
 impl SqliteStore {
-    pub(crate) fn new(
-        conn_pool: SqlitePool,
-        default_profile: ProfileId,
-        key_cache: KeyCache,
-    ) -> Self {
+    pub(crate) fn new(conn_pool: SqlitePool, default_profile: String, key_cache: KeyCache) -> Self {
         Self {
             conn_pool,
             default_profile,
@@ -290,13 +331,14 @@ impl SqliteStore {
 
     async fn get_profile_key(
         &self,
-        pid: Option<ProfileId>,
-    ) -> KvResult<(KeyId, AsyncEncryptor<StoreKey>)> {
-        if let Some((kid, key)) = self
-            .key_cache
-            .get_profile_key(pid.unwrap_or(self.default_profile))
-        {
-            Ok((kid, AsyncEncryptor(key)))
+        name: Option<String>,
+    ) -> KvResult<(ProfileId, AsyncEncryptor<StoreKey>)> {
+        if let Some((pid, key)) = self.key_cache.get_profile(
+            name.as_ref()
+                .map(String::as_str)
+                .unwrap_or(self.default_profile.as_str()),
+        ) {
+            Ok((pid, AsyncEncryptor(Some(key))))
         } else {
             // FIXME fetch from database
             unimplemented!()
@@ -312,14 +354,14 @@ impl QueryPrepare for SqliteStore {
 impl Store for SqliteStore {
     async fn count(
         &self,
-        profile_id: Option<ProfileId>,
+        profile: Option<String>,
         category: String,
         tag_filter: Option<wql::Query>,
     ) -> KvResult<i64> {
-        let (key_id, key) = self.get_profile_key(profile_id).await?;
+        let (profile_id, key) = self.get_profile_key(profile).await?;
         let category = key.encrypt_entry_category(category).await?;
         let mut params = QueryParams::new();
-        params.push(key_id);
+        params.push(profile_id);
         params.push(category);
         let tag_filter = encode_tag_filter::<Self>(tag_filter, key.0.clone(), params.len()).await?;
         let query = extend_query::<Self>(COUNT_QUERY, &mut params, tag_filter, None, None)?;
@@ -331,19 +373,19 @@ impl Store for SqliteStore {
 
     async fn fetch(
         &self,
-        profile_id: Option<ProfileId>,
+        profile: Option<String>,
         category: String,
         name: String,
         options: EntryFetchOptions,
     ) -> KvResult<Option<Entry>> {
-        let (key_id, key) = self.get_profile_key(profile_id).await?;
+        let (profile_id, key) = self.get_profile_key(profile).await?;
         let raw_category = category.clone();
         let raw_name = name.clone();
         let (category, name) = key.encrypt_entry_category_name(category, name).await?;
         if let Some(row) = sqlx::query(FETCH_QUERY)
-            .bind(key_id)
-            .bind(&category)
-            .bind(&name)
+            .bind(profile_id)
+            .bind(category)
+            .bind(name)
             .fetch_optional(&self.conn_pool)
             .await?
         {
@@ -370,21 +412,21 @@ impl Store for SqliteStore {
 
     async fn scan(
         &self,
-        profile_id: Option<ProfileId>,
+        profile: Option<String>,
         category: String,
         options: EntryFetchOptions,
         tag_filter: Option<wql::Query>,
         offset: Option<i64>,
         max_rows: Option<i64>,
     ) -> KvResult<EntryScan> {
-        let (key_id, key) = self.get_profile_key(profile_id).await?;
+        let (profile_id, key) = self.get_profile_key(profile).await?;
         let pool = self.conn_pool.clone();
         let raw_category = category.clone();
         let category = key.encrypt_entry_category(category).await?;
 
         let scan = try_stream! {
             let mut params = QueryParams::new();
-            params.push(key_id.clone());
+            params.push(profile_id);
             params.push(category.clone());
             let tag_filter = encode_tag_filter::<Self>(tag_filter, key.0.clone(), params.len()).await?;
             let query = extend_query::<Self>(SCAN_QUERY, &mut params, tag_filter, offset, max_rows)?;
@@ -428,17 +470,13 @@ impl Store for SqliteStore {
         Ok(EntryScan::new(scan, PAGE_SIZE))
     }
 
-    async fn update(
-        &self,
-        profile_id: Option<ProfileId>,
-        entries: Vec<UpdateEntry>,
-    ) -> KvResult<()> {
+    async fn update(&self, profile: Option<String>, entries: Vec<UpdateEntry>) -> KvResult<()> {
         if entries.is_empty() {
             debug!("Skip update: no entries");
             return Ok(());
         }
-        let (key_id, key) = self.get_profile_key(profile_id).await?;
-        let updates = prepare_update(key_id, key, entries).await?;
+        let (profile_id, key) = self.get_profile_key(profile).await?;
+        let updates = prepare_update(profile_id, key, entries).await?;
         let mut txn = self.conn_pool.begin().await?; // deferred write txn
         txn = perform_update(txn, updates).await?;
         Ok(txn.commit().await?)
@@ -446,13 +484,13 @@ impl Store for SqliteStore {
 
     async fn create_lock(
         &self,
-        profile_id: Option<ProfileId>,
+        profile: Option<String>,
         lock_info: UpdateEntry,
         acquire_timeout_ms: Option<i64>,
     ) -> KvResult<(Entry, EntryLock)> {
-        let (key_id, key) = self.get_profile_key(profile_id).await?;
+        let (profile_id, key) = self.get_profile_key(profile).await?;
         let raw_entry = lock_info.entry.clone();
-        let hash = hash_lock_info(key_id, &lock_info);
+        let hash = hash_lock_info(profile_id, &lock_info);
         let (enc_entry, enc_tags) = key.encrypt_entry(lock_info.entry).await?;
         let expiry = lock_info.expire_ms.map(expiry_timestamp).transpose()?;
 
@@ -515,7 +553,7 @@ impl Store for SqliteStore {
         let mut txn = self.conn_pool.begin().await?;
 
         let entry = match sqlx::query(FETCH_QUERY)
-            .bind(&key_id)
+            .bind(profile_id)
             .bind(enc_entry.category.as_ref())
             .bind(enc_entry.name.as_ref())
             .fetch_optional(&mut txn)
@@ -532,7 +570,7 @@ impl Store for SqliteStore {
             }
             None => {
                 let row_id = sqlx::query(INSERT_QUERY)
-                    .bind(&key_id)
+                    .bind(profile_id)
                     .bind(enc_entry.category.as_ref())
                     .bind(enc_entry.name.as_ref())
                     .bind(enc_entry.value.as_ref())
@@ -544,8 +582,8 @@ impl Store for SqliteStore {
                     for tag in tags {
                         sqlx::query(TAG_INSERT_QUERY)
                             .bind(row_id)
-                            .bind(&tag.name)
-                            .bind(&tag.value)
+                            .bind(tag.name)
+                            .bind(tag.value)
                             .bind(tag.plaintext as i32)
                             .execute(&mut txn)
                             .await?;
@@ -563,7 +601,7 @@ impl Store for SqliteStore {
                     debug!("Skip update: no entries");
                     return Ok(());
                 }
-                let updates = prepare_update(key_id, key, entries).await?;
+                let updates = prepare_update(profile_id, key, entries).await?;
                 let mut txn = lock_handle.pool.as_ref().unwrap().begin().await?; // deferred write txn
                 txn = perform_update(txn, updates).await?;
                 if sqlx::query("DELETE FROM items_locks WHERE id=?1 AND expiry=?2")
@@ -595,13 +633,13 @@ async fn perform_update(
 ) -> KvResult<Transaction<'static, Sqlite>> {
     for upd in updates {
         let PreparedUpdate {
-            key_id,
+            profile_id,
             enc_entry,
             enc_tags,
             expire_ms,
         } = upd;
         sqlx::query(DELETE_QUERY)
-            .bind(&key_id)
+            .bind(profile_id)
             .bind(enc_entry.category.as_ref())
             .bind(enc_entry.name.as_ref())
             .execute(&mut txn)
@@ -610,7 +648,7 @@ async fn perform_update(
         if expire_ms != Some(0) {
             trace!("Insert entry");
             let row_id = sqlx::query(INSERT_QUERY)
-                .bind(&key_id)
+                .bind(profile_id)
                 .bind(enc_entry.category.as_ref())
                 .bind(enc_entry.name.as_ref())
                 .bind(enc_entry.value.as_ref())

@@ -5,8 +5,6 @@ use zeroize::Zeroize;
 
 pub type ProfileId = i64;
 
-pub type KeyId = i64;
-
 pub type Expiry = chrono::DateTime<chrono::Utc>;
 
 #[derive(Clone, Eq, Zeroize)]

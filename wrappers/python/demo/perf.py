@@ -16,10 +16,12 @@ def log(*args):
 async def perf_test():
     key = generate_raw_key()
 
+    # repo_uri = "postgres://postgres:pgpass@localhost:5432/test_wallet"
+    repo_uri = "sqlite://test.db"
+    # repo_uri = "sqlite://:memory:"
+
     async with Store.provision(
-        # "postgres://postgres:pgpass@localhost:5432/test_wallet",
-        "sqlite://test.db",
-        # "sqlite://:memory:",
+        repo_uri,
         "raw",
         key,
     ) as store:
