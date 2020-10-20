@@ -4,7 +4,9 @@ import time
 from aries_askar.bindings import generate_raw_key, version
 from aries_askar import Store, UpdateEntry
 
-PASS_KEY = "test-password"
+# REPO_URI = "postgres://postgres:pgpass@localhost:5432/test_wallet"
+REPO_URI = "sqlite://test.db"
+# REPO_URI = "sqlite://:memory:"
 
 PERF_ROWS = 10000
 
@@ -16,12 +18,8 @@ def log(*args):
 async def perf_test():
     key = generate_raw_key()
 
-    # repo_uri = "postgres://postgres:pgpass@localhost:5432/test_wallet"
-    repo_uri = "sqlite://test.db"
-    # repo_uri = "sqlite://:memory:"
-
     async with Store.provision(
-        repo_uri,
+        REPO_URI,
         "raw",
         key,
     ) as store:
@@ -45,7 +43,7 @@ async def perf_test():
         rc = 0
         tags = 0
         scan_start = time.perf_counter()
-        async for row in store.scan("category"):
+        async for row in store.scan("category", {"~plaintag": "a", "enctag": "b"}):
             rc += 1
             tags += len(row.tags)
         dur = time.perf_counter() - scan_start

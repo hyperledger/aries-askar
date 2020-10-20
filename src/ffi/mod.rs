@@ -1,7 +1,7 @@
 use std::marker::PhantomData;
 use std::os::raw::c_char;
 
-use ffi_support::{define_string_destructor, rust_string_to_c};
+use ffi_support::rust_string_to_c;
 
 pub static LIB_VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -15,9 +15,10 @@ mod store;
 use self::error::ErrorCode;
 use crate::error::Error;
 
-pub type CallbackId = usize;
+pub type CallbackId = i64;
 
-define_string_destructor!(askar_string_free);
+ffi_support::define_bytebuffer_destructor!(askar_buffer_free);
+ffi_support::define_string_destructor!(askar_string_free);
 
 pub struct EnsureCallback<T, F: Fn(Result<T, Error>)> {
     f: F,

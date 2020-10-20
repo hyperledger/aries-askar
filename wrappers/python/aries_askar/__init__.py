@@ -3,7 +3,7 @@
 from .bindings import generate_raw_key, version
 from .error import StoreError, StoreErrorCode
 from .store import Store
-from .types import Entry, UpdateEntry
+from .types import Entry, KeyAlg, UpdateEntry
 
 __all__ = [
     "generate_raw_key",
@@ -11,6 +11,7 @@ __all__ = [
     "set_protocol_version",
     "version",
     "Entry",
+    "KeyAlg",
     "Store",
     "StoreError",
     "StoreErrorCode",

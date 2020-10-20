@@ -10,7 +10,7 @@ pub mod kdf;
 pub mod store;
 
 mod types;
-pub use self::types::{KeyAlg, KeyCategory, KeyEntry, KeyFetchOptions, KeyParams};
+pub use self::types::{KeyAlg, KeyCategory, KeyEntry, KeyParams};
 
 pub mod wrap;
 

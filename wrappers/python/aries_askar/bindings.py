@@ -15,7 +15,7 @@ from ctypes import (
     sizeof,
     c_char_p,
     c_long,
-    c_size_t,
+    c_int64,
     c_void_p,
     c_ubyte,
     c_ulong,
@@ -33,7 +33,7 @@ LIB: CDLL = None
 LOGGER = logging.getLogger(__name__)
 
 
-class StoreHandle(c_size_t):
+class StoreHandle(c_int64):
     """Index of an active Store instance."""
 
     def __repr__(self) -> str:
@@ -41,7 +41,7 @@ class StoreHandle(c_size_t):
         return f"{self.__class__.__name__}({self.value})"
 
 
-class ScanHandle(c_size_t):
+class ScanHandle(c_int64):
     """Index of an active Store scan instance."""
 
     def __repr__(self) -> str:
@@ -49,7 +49,7 @@ class ScanHandle(c_size_t):
         return f"{self.__class__.__name__}({self.value})"
 
 
-class LockHandle(c_size_t):
+class LockHandle(c_int64):
     """Index of an active Lock instance."""
 
     def __repr__(self) -> str:
@@ -57,7 +57,7 @@ class LockHandle(c_size_t):
         return f"{self.__class__.__name__}({self.value})"
 
 
-class EntrySetHandle(c_size_t):
+class EntrySetHandle(c_int64):
     """Index of an active EntrySet instance."""
 
     def __repr__(self) -> str:
@@ -77,9 +77,9 @@ class FfiEntry(Structure):
         ("category", c_char_p),
         ("name", c_char_p),
         ("value", c_void_p),
-        ("value_len", c_size_t),
+        ("value_len", c_int64),
         ("tags", POINTER(FfiTag)),
-        ("tags_len", c_size_t),
+        ("tags_len", c_int64),
     ]
 
     def decode(self) -> Entry:
@@ -139,6 +139,35 @@ class FfiUpdateEntry(Structure):
         )
 
 
+class FfiByteBuffer(Structure):
+    """A byte buffer allocated by python."""
+
+    _fields_ = [
+        ("len", c_int64),
+        ("value", c_char_p),
+    ]
+
+
+class lib_buffer(Structure):
+    """A byte buffer allocated by the library."""
+
+    _fields_ = [
+        ("len", c_int64),
+        ("value", c_void_p),
+    ]
+
+    def __bytes__(self) -> bytes:
+        return bytes((c_ubyte * self.len).from_address(self.value))
+
+    def __repr__(self) -> str:
+        """Format byte buffer as a string."""
+        return repr(bytes(self))
+
+    def __del__(self):
+        """Call the byte buffer destructor when this instance is released."""
+        get_library().askar_buffer_free(self)
+
+
 class lib_string(c_char_p):
     """A string allocated by the library."""
 
@@ -147,17 +176,29 @@ class lib_string(c_char_p):
         """Returns the type ctypes should use for loading the result."""
         return c_void_p
 
+    def opt_str(self) -> Optional[str]:
+        return self.value.decode("utf-8") if self.value is not None else None
+
     def __bytes__(self):
         """Convert to bytes."""
         return self.value
 
     def __str__(self):
         """Convert to str."""
-        return self.value.decode("utf-8")
+        # not allowed to return None
+        return self.value.decode("utf-8") if self.value is not None else ""
 
     def __del__(self):
         """Call the string destructor when this instance is released."""
         get_library().askar_string_free(self)
+
+
+class lib_unpack_result(Structure):
+    _fields_ = [
+        ("unpacked", lib_buffer),
+        ("recipient", lib_string),
+        ("sender", lib_string),
+    ]
 
 
 def get_library() -> CDLL:
@@ -244,14 +285,14 @@ def do_call_async(
     lib_fn = getattr(get_library(), fn_name)
     loop = asyncio.get_event_loop()
     fut = loop.create_future()
-    cf_args = [None, c_size_t, c_size_t]
+    cf_args = [None, c_int64, c_int64]
     if return_type:
         cf_args.append(return_type)
     cb_type = CFUNCTYPE(*cf_args)  # could be cached
     cb_res = _create_callback(cb_type, fut, post_process)
     # keep a reference to the callback function to avoid it being freed
     CALLBACKS[fut] = (loop, cb_res)
-    result = lib_fn(*args, cb_res, c_size_t(0))  # not making use of callback ID
+    result = lib_fn(*args, cb_res, c_int64(0))  # not making use of callback ID
     if result:
         # callback will not be executed
         if CALLBACKS.pop(fut):
@@ -272,6 +313,19 @@ def encode_str(arg: Optional[Union[str, bytes]]) -> c_char_p:
     if isinstance(arg, bytes):
         return c_char_p(arg)
     return c_char_p(arg.encode("utf-8"))
+
+
+def encode_bytes(arg: Optional[Union[str, bytes]]) -> FfiByteBuffer:
+    buf = FfiByteBuffer()
+    if arg is None:
+        buf.len = 0
+        buf.value = c_char_p.from_address(0)
+    else:
+        if isinstance(arg, str):
+            arg = arg.encode("utf-8")
+        buf.len = len(arg)
+        buf.value = c_char_p(arg)
+    return buf
 
 
 def get_current_error(expect: bool = False) -> StoreError:
@@ -340,7 +394,7 @@ async def store_count(
     tag_filter = encode_str(tag_filter)
     return int(
         await do_call_async(
-            "askar_store_count", handle, category, tag_filter, return_type=c_size_t
+            "askar_store_count", handle, category, tag_filter, return_type=c_int64
         )
     )
 
@@ -446,6 +500,93 @@ async def store_lock_update(handle: LockHandle, entries: Sequence[UpdateEntry]):
     )
 
 
+async def store_create_keypair(
+    handle: StoreHandle,
+    alg: str,
+    metadata: str = None,
+    seed: str = None,
+) -> EntrySetHandle:
+    alg = encode_str(alg)
+    metadata = encode_str(metadata)
+    seed = encode_str(seed)
+    return await do_call_async(
+        "askar_store_create_keypair",
+        handle,
+        alg,
+        metadata,
+        seed,
+        return_type=EntrySetHandle,
+    )
+
+
+async def store_sign_message(
+    handle: StoreHandle,
+    key_ident: str,
+    message: [str, bytes],
+) -> lib_buffer:
+    key_ident = encode_str(key_ident)
+    message = encode_bytes(message)
+    return await do_call_async(
+        "askar_store_sign_message",
+        handle,
+        key_ident,
+        message,
+        return_type=lib_buffer,
+    )
+
+
+async def store_verify_signature(
+    handle: StoreHandle,
+    signer_vk: str,
+    message: [str, bytes],
+    signature: [str, bytes],
+) -> bool:
+    signer_vk = encode_str(signer_vk)
+    message = encode_bytes(message)
+    signature = encode_bytes(signature)
+    return (
+        await do_call_async(
+            "askar_store_verify_signature",
+            handle,
+            signer_vk,
+            message,
+            signature,
+            return_type=c_int64,
+        )
+        != 0
+    )
+
+
+async def store_pack_message(
+    handle: StoreHandle,
+    recipient_vks: Sequence[str],
+    from_key_ident: Optional[str],
+    message: [str, bytes],
+) -> lib_buffer:
+    recipient_vks = encode_str(",".join(recipient_vks))
+    from_key_ident = encode_str(from_key_ident)
+    message = encode_bytes(message)
+    return await do_call_async(
+        "askar_store_pack_message",
+        handle,
+        recipient_vks,
+        from_key_ident,
+        message,
+        return_type=lib_buffer,
+    )
+
+
+async def store_unpack_message(
+    handle: StoreHandle,
+    message: [str, bytes],
+) -> (lib_buffer, str, Optional[str]):
+    message = encode_bytes(message)
+    result = await do_call_async(
+        "askar_store_unpack_message", handle, message, return_type=lib_unpack_result
+    )
+    return (result.unpacked, str(result.recipient), result.sender.opt_str())
+
+
 async def store_close(handle: StoreHandle):
     """Close an opened store instance."""
     return await do_call_async("askar_store_close", handle)
@@ -453,7 +594,7 @@ async def store_close(handle: StoreHandle):
 
 def store_close_immed(handle: StoreHandle):
     """Close an opened store instance."""
-    do_call("askar_store_close", handle, c_void_p(0), c_size_t(0))
+    do_call("askar_store_close", handle, c_void_p(0), c_int64(0))
 
 
 def version() -> str:

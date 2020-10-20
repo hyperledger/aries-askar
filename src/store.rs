@@ -16,7 +16,7 @@ use indy_utils::{
 use super::keys::{
     store::StoreKey,
     wrap::{generate_raw_wrap_key, WrapKey, WrapKeyMethod},
-    KeyAlg, KeyCategory, KeyEntry, KeyFetchOptions, KeyParams,
+    KeyAlg, KeyCategory, KeyEntry, KeyParams,
 };
 use super::options::IntoOptions;
 use super::types::{Entry, EntryFetchOptions, EntryKind, EntryTag, ProfileId, UpdateEntry};
@@ -320,11 +320,11 @@ impl<T: RawStore + ?Sized> Store<T> {
 
         let category = KeyCategory::KeyPair;
         let ident = pk
-            .encode(&IndyKeyEncoding::BASE58)
+            .as_base58()
             .map_err(err_map!(Unexpected, "Error encoding public key"))?
-            .to_string();
+            .long_form();
 
-        let mut params = KeyParams {
+        let params = KeyParams {
             alg,
             metadata,
             reference: None,
@@ -343,8 +343,6 @@ impl<T: RawStore + ?Sized> Store<T> {
         }];
         self.inner.update(profile, EntryKind::Key, entries).await?;
 
-        // use fetch_key if the private key is needed
-        params.prv_key = None;
         Ok(KeyEntry {
             category,
             ident,
@@ -362,7 +360,7 @@ impl<T: RawStore + ?Sized> Store<T> {
         profile: Option<String>,
         category: KeyCategory,
         ident: String,
-        options: KeyFetchOptions,
+        options: EntryFetchOptions,
     ) -> Result<Option<KeyEntry>> {
         Ok(
             if let Some(row) = self
@@ -376,11 +374,7 @@ impl<T: RawStore + ?Sized> Store<T> {
                 )
                 .await?
             {
-                let mut params = KeyParams::from_slice(&row.value)?;
-                if !options.retrieve_private {
-                    params.prv_key = None;
-                }
-
+                let params = KeyParams::from_slice(&row.value)?;
                 Some(KeyEntry {
                     category: KeyCategory::from_str(&row.category).unwrap(),
                     ident: row.name.clone(),
@@ -393,6 +387,50 @@ impl<T: RawStore + ?Sized> Store<T> {
         )
     }
 
+    pub async fn remove_key(
+        &self,
+        profile: Option<String>,
+        category: KeyCategory,
+        ident: String,
+    ) -> Result<()> {
+        let update = UpdateEntry {
+            entry: Entry {
+                category: category.as_str().to_owned(),
+                name: ident,
+                value: vec![],
+                tags: None,
+            },
+            expire_ms: Some(0),
+        };
+        self.inner
+            .update(profile, EntryKind::Key, vec![update])
+            .await
+    }
+
+    pub async fn scan_keys(
+        &self,
+        profile: Option<String>,
+        category: String,
+        options: EntryFetchOptions,
+        tag_filter: Option<wql::Query>,
+        offset: Option<i64>,
+        max_rows: Option<i64>,
+    ) -> Result<Scan<KeyEntry>> {
+        unimplemented!();
+    }
+
+    pub async fn update_key_metadata(
+        &self,
+        profile: Option<String>,
+        category: KeyCategory,
+        ident: String,
+        metadata: Option<String>,
+    ) -> Result<()> {
+        unimplemented!();
+    }
+
+    // update_key_tags
+
     pub async fn sign_message(
         &self,
         profile: Option<String>,
@@ -404,7 +442,7 @@ impl<T: RawStore + ?Sized> Store<T> {
                 profile,
                 KeyCategory::KeyPair,
                 key_ident,
-                KeyFetchOptions::new(true, false),
+                EntryFetchOptions::new(false),
             )
             .await?
         {
@@ -461,7 +499,7 @@ impl<T: RawStore + ?Sized> Store<T> {
                     profile,
                     KeyCategory::KeyPair,
                     ident,
-                    KeyFetchOptions::new(true, false),
+                    EntryFetchOptions::new(false),
                 )
                 .await?
                 .ok_or_else(|| err_msg!("Unknown sender key"))?;
@@ -500,13 +538,14 @@ impl<T: RawStore + ?Sized> Store<T> {
                 let profile = self.profile.clone();
                 let store = self.store.clone();
                 Box::pin(async move {
+                    println!("keys: {:?}", &keys);
                     for (idx, key) in keys.into_iter().enumerate() {
                         if let Ok(Some(key)) = store
                             .fetch_key(
                                 profile.clone(),
                                 KeyCategory::KeyPair,
-                                key.to_string(),
-                                KeyFetchOptions::new(true, false),
+                                key.long_form(),
+                                EntryFetchOptions::new(false),
                             )
                             .await
                         {
@@ -530,32 +569,6 @@ impl<T: RawStore + ?Sized> Store<T> {
             }
             Err(err) => Err(err_msg!("Error unpacking message").with_cause(err)),
         }
-    }
-
-    pub async fn remove_key(&self, profile: Option<String>, ident: String) -> Result<()> {
-        unimplemented!();
-    }
-
-    pub async fn scan_keys(
-        &self,
-        profile: Option<String>,
-        category: String,
-        options: KeyFetchOptions,
-        tag_filter: Option<wql::Query>,
-        offset: Option<i64>,
-        max_rows: Option<i64>,
-    ) -> Result<Scan<KeyEntry>> {
-        unimplemented!();
-    }
-
-    pub async fn update_key_metadata(
-        &self,
-        profile: Option<String>,
-        category: KeyCategory,
-        ident: String,
-        metadata: Option<String>,
-    ) -> Result<()> {
-        unimplemented!();
     }
 }
 

@@ -1,6 +1,6 @@
 use aries_askar::{
-    wql, Entry, EntryFetchOptions, EntryTag, KeyAlg, KeyFetchOptions, RawStore, Result as KvResult,
-    Store, UpdateEntry,
+    wql, Entry, EntryFetchOptions, EntryTag, KeyAlg, RawStore, Result as KvResult, Store,
+    UpdateEntry,
 };
 
 pub async fn db_fetch_fail<DB: RawStore>(db: &Store<DB>) -> KvResult<()> {
@@ -251,7 +251,7 @@ pub async fn db_keypair_create_fetch<DB: RawStore>(db: &Store<DB>) -> KvResult<(
             None,
             key_info.category.clone(),
             key_info.ident.clone(),
-            KeyFetchOptions::default(),
+            Default::default(),
         )
         .await?;
     assert_eq!(Some(key_info), found);

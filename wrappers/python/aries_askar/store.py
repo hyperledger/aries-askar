@@ -7,7 +7,7 @@ from typing import Optional, Sequence
 from . import bindings
 
 from .error import StoreError, StoreErrorCode
-from .types import Entry, UpdateEntry
+from .types import Entry, KeyAlg, UpdateEntry
 
 
 class EntrySet:
@@ -182,6 +182,63 @@ class Store:
         self, lock_info: UpdateEntry, acquire_timeout_ms: int = None
     ) -> Lock:
         return Lock(self, lock_info, acquire_timeout_ms)
+
+    async def create_keypair(
+        self, key_alg: KeyAlg, metadata: str = None, seed: str = None
+    ) -> str:
+        if not self.handle:
+            raise StoreError(
+                StoreErrorCode.WRAPPER, "Cannot create keypair with closed store"
+            )
+        result_handle = await bindings.store_create_keypair(
+            self.handle, key_alg.value, metadata, seed
+        )
+        return next(EntrySet(result_handle)).name if result_handle else None
+
+    async def sign_message(self, key_ident: str, message: [str, bytes]) -> bytes:
+        if not self.handle:
+            raise StoreError(
+                StoreErrorCode.WRAPPER, "Cannot sign message with closed store"
+            )
+        buf = await bindings.store_sign_message(self.handle, key_ident, message)
+        return bytes(buf)
+
+    async def verify_signature(
+        self, signer_vk: str, message: [str, bytes], signature: [str, bytes]
+    ) -> bool:
+        if not self.handle:
+            raise StoreError(
+                StoreErrorCode.WRAPPER, "Cannot verify signature with closed store"
+            )
+        return await bindings.store_verify_signature(
+            self.handle, signer_vk, message, signature
+        )
+
+    async def pack_message(
+        self,
+        recipient_vks: Sequence[str],
+        from_key_ident: Optional[str],
+        message: [str, bytes],
+    ) -> str:
+        if not self.handle:
+            raise StoreError(
+                StoreErrorCode.WRAPPER, "Cannot pack message with closed store"
+            )
+        return bytes(
+            await bindings.store_pack_message(
+                self.handle, recipient_vks, from_key_ident, message
+            )
+        ).decode("utf-8")
+
+    async def unpack_message(
+        self,
+        message: [str, bytes],
+    ) -> (bytes, str, Optional[str]):
+        if not self.handle:
+            raise StoreError(
+                StoreErrorCode.WRAPPER, "Cannot unpack message with closed store"
+            )
+        return await bindings.store_unpack_message(self.handle, message)
 
 
 async def _wrap_open_store(fut: asyncio.Future) -> Store:

@@ -60,7 +60,7 @@ impl KeyCategory {
     pub fn as_str(&self) -> &str {
         match self {
             Self::PublicKey => "public",
-            Self::KeyPair => "pair",
+            Self::KeyPair => "keypair",
             Self::Other(other) => other.as_str(),
         }
     }
@@ -80,7 +80,7 @@ impl FromStr for KeyCategory {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Ok(match s {
             "public" => Self::PublicKey,
-            "pair" => Self::KeyPair,
+            "keypair" => Self::KeyPair,
             other => Self::Other(other.to_owned()),
         })
     }
@@ -187,30 +187,6 @@ impl PartialEq for KeyEntry {
             && self.ident == rhs.ident
             && self.params == rhs.params
             && self.sorted_tags() == rhs.sorted_tags()
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct KeyFetchOptions {
-    pub retrieve_private: bool,
-    pub retrieve_tags: bool,
-}
-
-impl KeyFetchOptions {
-    pub fn new(retrieve_private: bool, retrieve_tags: bool) -> Self {
-        Self {
-            retrieve_private,
-            retrieve_tags,
-        }
-    }
-}
-
-impl Default for KeyFetchOptions {
-    fn default() -> Self {
-        return Self {
-            retrieve_private: false,
-            retrieve_tags: true,
-        };
     }
 }
 

@@ -5,13 +5,14 @@ use std::os::raw::c_char;
 use std::panic::RefUnwindSafe;
 use std::ptr;
 use std::slice;
+use std::str::FromStr;
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
     Arc,
 };
 
 use async_mutex::Mutex;
-use ffi_support::{rust_string_to_c, FfiStr};
+use ffi_support::{rust_string_to_c, ByteBuffer, FfiStr};
 use indy_utils::new_handle_type;
 use once_cell::sync::Lazy;
 use zeroize::Zeroize;
@@ -20,7 +21,10 @@ use super::error::set_last_error;
 use super::{CallbackId, EnsureCallback, ErrorCode};
 use crate::error::Result as KvResult;
 use crate::future::spawn_ok;
-use crate::keys::wrap::{generate_raw_wrap_key, WrapKeyMethod};
+use crate::keys::{
+    wrap::{generate_raw_wrap_key, WrapKeyMethod},
+    KeyAlg, KeyEntry,
+};
 use crate::store::{ArcStore, EntryLock, OpenStore, ProvisionStore, ProvisionStoreSpec, Scan};
 use crate::types::{Entry, EntryTag, UpdateEntry};
 
@@ -179,9 +183,9 @@ impl FfiEntryBuf {
             category: self.category.as_ptr(),
             name: self.name.as_ptr(),
             value: self.value.as_ptr(),
-            value_len: self.value.len(),
+            value_len: self.value.len() as i64,
             tags: self.tags_ref.as_ptr(),
-            tags_len: self.tags_ref.len() * mem::size_of::<FfiTag>(),
+            tags_len: (self.tags_ref.len() * mem::size_of::<FfiTag>()) as i64,
         }
     }
 }
@@ -286,25 +290,25 @@ pub struct FfiEntry {
     category: *const u8,
     name: *const u8,
     value: *const u8,
-    value_len: usize,
+    value_len: i64,
     tags: *const FfiTag,
-    tags_len: usize,
+    tags_len: i64,
 }
 
 impl FfiEntry {
     pub fn decode(&self) -> KvResult<Entry> {
         let category = unsafe { FfiStr::from_raw(self.category as *const c_char) }
             .into_opt_string()
-            .ok_or_else(|| err_msg!("Invalid entry category"))?;
+            .ok_or_else(|| err_msg!("Entry category not provided"))?;
         let name = unsafe { FfiStr::from_raw(self.name as *const c_char) }
             .into_opt_string()
-            .ok_or_else(|| err_msg!("Invalid entry name"))?;
-        let value = unsafe { slice::from_raw_parts(self.value, self.value_len) };
-        if self.tags_len % mem::size_of::<FfiTag>() != 0 {
+            .ok_or_else(|| err_msg!("Entry name not provided"))?;
+        let value = unsafe { slice::from_raw_parts(self.value, self.value_len as usize) };
+        if self.tags_len % (mem::size_of::<FfiTag>() as i64) != 0 {
             return Err(err_msg!("Invalid length for entry tags"));
         }
-        let tags_count = self.tags_len / mem::size_of::<FfiTag>();
-        let tags = unsafe { slice::from_raw_parts(self.tags, tags_count) };
+        let tags_count = self.tags_len / (mem::size_of::<FfiTag>() as i64);
+        let tags = unsafe { slice::from_raw_parts(self.tags, tags_count as usize) };
         let entry = Entry {
             category,
             name,
@@ -346,13 +350,20 @@ impl FfiUpdateEntry {
     }
 }
 
+#[repr(C)]
+pub struct FfiUnpackResult {
+    unpacked: ByteBuffer,
+    recipient: *const c_char,
+    sender: *const c_char,
+}
+
 #[no_mangle]
 pub extern "C" fn askar_store_provision(
     spec_uri: FfiStr,
     wrap_key_method: FfiStr,
     pass_key: FfiStr,
     cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, handle: StoreHandle)>,
-    cb_id: usize,
+    cb_id: CallbackId,
 ) -> ErrorCode {
     catch_err! {
         trace!("Provision store");
@@ -386,7 +397,7 @@ pub extern "C" fn askar_store_open(
     spec_uri: FfiStr,
     pass_key: FfiStr,
     cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, handle: StoreHandle)>,
-    cb_id: usize,
+    cb_id: CallbackId,
 ) -> ErrorCode {
     catch_err! {
         trace!("Open store");
@@ -426,17 +437,17 @@ pub extern "C" fn askar_store_count(
     handle: StoreHandle,
     category: FfiStr,
     tag_filter: FfiStr,
-    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, count: usize)>,
-    cb_id: usize,
+    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, count: i64)>,
+    cb_id: CallbackId,
 ) -> ErrorCode {
     catch_err! {
         trace!("Count from store");
         let cb = cb.ok_or_else(|| err_msg!("No callback provided"))?;
-        let category = category.into_opt_string().ok_or_else(|| err_msg!("Invalid category"))?;
+        let category = category.into_opt_string().ok_or_else(|| err_msg!("Category not provided"))?;
         let tag_filter = tag_filter.as_opt_str().map(serde_json::from_str).transpose().map_err(err_map!("Error parsing tag query"))?;
         let cb = EnsureCallback::new(move |result: KvResult<i64>|
             match result {
-                Ok(count) => cb(cb_id, ErrorCode::Success, count as usize),
+                Ok(count) => cb(cb_id, ErrorCode::Success, count),
                 Err(err) => cb(cb_id, set_last_error(Some(err)), 0),
             }
         );
@@ -457,13 +468,13 @@ pub extern "C" fn askar_store_fetch(
     category: FfiStr,
     name: FfiStr,
     cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, results: *const FfiEntrySet)>,
-    cb_id: usize,
+    cb_id: CallbackId,
 ) -> ErrorCode {
     catch_err! {
         trace!("Fetch from store");
         let cb = cb.ok_or_else(|| err_msg!("No callback provided"))?;
-        let category = category.into_opt_string().ok_or_else(|| err_msg!("Invalid category"))?;
-        let name = name.into_opt_string().ok_or_else(|| err_msg!("Invalid name"))?;
+        let category = category.into_opt_string().ok_or_else(|| err_msg!("Category not provided"))?;
+        let name = name.into_opt_string().ok_or_else(|| err_msg!("Name not provided"))?;
         let cb = EnsureCallback::new(move |result: KvResult<Option<Entry>>|
             match result {
                 Ok(Some(entry)) => {
@@ -491,12 +502,12 @@ pub extern "C" fn askar_store_scan_start(
     category: FfiStr,
     tag_filter: FfiStr,
     cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, handle: ScanHandle)>,
-    cb_id: usize,
+    cb_id: CallbackId,
 ) -> ErrorCode {
     catch_err! {
         trace!("Scan store start");
         let cb = cb.ok_or_else(|| err_msg!("No callback provided"))?;
-        let category = category.into_opt_string().ok_or_else(|| err_msg!("Invalid category"))?;
+        let category = category.into_opt_string().ok_or_else(|| err_msg!("Category not provided"))?;
         let tag_filter = tag_filter.as_opt_str().map(serde_json::from_str).transpose().map_err(err_map!("Error parsing tag query"))?;
         let cb = EnsureCallback::new(move |result: KvResult<ScanHandle>|
             match result {
@@ -520,7 +531,7 @@ pub extern "C" fn askar_store_scan_start(
 pub extern "C" fn askar_store_scan_next(
     handle: ScanHandle,
     cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, results: *const FfiEntrySet)>,
-    cb_id: usize,
+    cb_id: CallbackId,
 ) -> ErrorCode {
     catch_err! {
         trace!("Scan store next");
@@ -588,17 +599,17 @@ pub extern "C" fn askar_store_results_free(result: *mut FfiEntrySet) {
 pub extern "C" fn askar_store_update(
     handle: StoreHandle,
     updates: *const FfiUpdateEntry,
-    updates_len: usize,
+    updates_len: i64,
     cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode)>,
-    cb_id: usize,
+    cb_id: CallbackId,
 ) -> ErrorCode {
     catch_err! {
         trace!("Update store");
         let cb = cb.ok_or_else(|| err_msg!("No callback provided"))?;
-        if updates_len == 0 || updates_len % mem::size_of::<FfiUpdateEntry>() != 0 {
+        if updates_len <= 0 || updates_len % (mem::size_of::<FfiUpdateEntry>() as i64) != 0 {
             return Err(err_msg!("Invalid length for updates"));
         }
-        let upd_count = updates_len / mem::size_of::<FfiUpdateEntry>();
+        let upd_count = (updates_len as usize) / mem::size_of::<FfiUpdateEntry>();
         let updates = unsafe { slice::from_raw_parts(updates, upd_count) };
         let entries = updates.into_iter().try_fold(
             Vec::with_capacity(upd_count),
@@ -631,7 +642,7 @@ pub extern "C" fn askar_store_create_lock(
     lock_info: *const FfiUpdateEntry,
     acquire_timeout_ms: i64,
     cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, result: LockHandle)>,
-    cb_id: usize,
+    cb_id: CallbackId,
 ) -> ErrorCode {
     catch_err! {
         trace!("Store create lock");
@@ -678,17 +689,18 @@ pub extern "C" fn askar_store_lock_get_entry(
 pub extern "C" fn askar_store_lock_update(
     handle: LockHandle,
     updates: *const FfiUpdateEntry,
-    updates_len: usize,
+    updates_len: i64,
     cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode)>,
-    cb_id: usize,
+    cb_id: CallbackId,
 ) -> ErrorCode {
     catch_err! {
         trace!("Update store lock");
         let cb = cb.ok_or_else(|| err_msg!("No callback provided"))?;
-        if updates_len == 0 || updates_len % mem::size_of::<FfiUpdateEntry>() != 0 {
+        check_useful_c_ptr!(updates);
+        if updates_len <= 0 || updates_len % (mem::size_of::<FfiUpdateEntry>() as i64) != 0 {
             return Err(err_msg!("Invalid length for updates"));
         }
-        let upd_count = updates_len / mem::size_of::<FfiUpdateEntry>();
+        let upd_count = (updates_len as usize) / mem::size_of::<FfiUpdateEntry>();
         let updates = unsafe { slice::from_raw_parts(updates, upd_count) };
         let entries = updates.into_iter().try_fold(
             Vec::with_capacity(upd_count),
@@ -721,10 +733,232 @@ pub extern "C" fn askar_store_lock_free(handle: LockHandle) {
 }
 
 #[no_mangle]
+pub extern "C" fn askar_store_create_keypair(
+    handle: StoreHandle,
+    alg: FfiStr,
+    metadata: FfiStr,
+    seed: FfiStr,
+    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, results: *const FfiEntrySet)>,
+    cb_id: CallbackId,
+) -> ErrorCode {
+    catch_err! {
+        trace!("Create keypair");
+        let cb = cb.ok_or_else(|| err_msg!("No callback provided"))?;
+        let alg = alg.as_opt_str().map(|alg| KeyAlg::from_str(alg).unwrap()).ok_or_else(|| err_msg!("Key algorithm not provided"))?;
+        let metadata = metadata.into_opt_string();
+        let seed = seed.into_opt_string();
+
+        let cb = EnsureCallback::new(move |result|
+                match result {
+                    Ok(entry) => {
+                        let results = Box::into_raw(Box::new(FfiEntrySet::from(entry)));
+                        cb(cb_id, ErrorCode::Success, results)
+                    }
+                    Err(err) => cb(cb_id, set_last_error(Some(err)), ptr::null()),
+                }
+            );
+
+        spawn_ok(async move {
+            let result = async {
+                let store = handle.load().await?;
+                let key_entry = store.create_keypair(
+                        None,
+                        alg,
+                        metadata,
+                        seed,
+                        None,
+                ).await?;
+                let entry = export_key_entry(key_entry)?;
+                Ok(entry)
+            }.await;
+            cb.resolve(result);
+        });
+        Ok(ErrorCode::Success)
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn askar_store_sign_message(
+    handle: StoreHandle,
+    key_ident: FfiStr,
+    message: ByteBuffer,
+    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, results: ByteBuffer)>,
+    cb_id: CallbackId,
+) -> ErrorCode {
+    catch_err! {
+        trace!("Sign message");
+        let cb = cb.ok_or_else(|| err_msg!("No callback provided"))?;
+        let key_ident = key_ident.into_opt_string().ok_or_else(|| err_msg!("Key identity not provided"))?;
+        // copy message so the caller can drop it
+        let message = message.as_slice().to_vec();
+
+        let cb = EnsureCallback::new(move |result|
+                match result {
+                    Ok(sig) => {
+                        cb(cb_id, ErrorCode::Success, ByteBuffer::from_vec(sig))
+                    }
+                    Err(err) => cb(cb_id, set_last_error(Some(err)), ByteBuffer::default()),
+                }
+            );
+
+        spawn_ok(async move {
+            let result = async {
+                let store = handle.load().await?;
+                let signature = store.sign_message(
+                        None,
+                        key_ident,
+                        message,
+                ).await?;
+                Ok(signature)
+            }.await;
+            cb.resolve(result);
+        });
+        Ok(ErrorCode::Success)
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn askar_store_verify_signature(
+    handle: StoreHandle,
+    signer_vk: FfiStr,
+    message: ByteBuffer,
+    signature: ByteBuffer,
+    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, verify: i64)>,
+    cb_id: CallbackId,
+) -> ErrorCode {
+    catch_err! {
+        trace!("Verify signature");
+        let cb = cb.ok_or_else(|| err_msg!("No callback provided"))?;
+        let signer_vk = signer_vk.into_opt_string().ok_or_else(|| err_msg!("Signer verkey not provided"))?;
+        // copy inputs so the caller can drop them
+        let message = message.as_slice().to_vec();
+        let signature = signature.as_slice().to_vec();
+
+        let cb = EnsureCallback::new(move |result|
+                match result {
+                    Ok(verify) => {
+                        cb(cb_id, ErrorCode::Success, verify as i64)
+                    }
+                    Err(err) => cb(cb_id, set_last_error(Some(err)), 0),
+                }
+            );
+
+        spawn_ok(async move {
+            let result = async {
+                let store = handle.load().await?;
+                let verify = store.verify_signature(
+                        signer_vk,
+                        message,
+                        signature
+                ).await?;
+                Ok(verify)
+            }.await;
+            cb.resolve(result);
+        });
+        Ok(ErrorCode::Success)
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn askar_store_pack_message(
+    handle: StoreHandle,
+    recipient_vks: FfiStr,
+    from_key_ident: FfiStr,
+    message: ByteBuffer,
+    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, packed: ByteBuffer)>,
+    cb_id: CallbackId,
+) -> ErrorCode {
+    catch_err! {
+        trace!("Pack message");
+        let cb = cb.ok_or_else(|| err_msg!("No callback provided"))?;
+        let mut recips = recipient_vks.as_opt_str().ok_or_else(|| err_msg!("Recipient verkey(s) not provided"))?;
+        let mut recipient_vks = vec![];
+        loop {
+            if let Some(pos) = recips.find(",") {
+                recipient_vks.push((&recips[..pos]).to_string());
+                recips = &recips[(pos+1)..];
+            } else {
+                if !recips.is_empty() {
+                    recipient_vks.push(recips.to_string());
+                }
+                break;
+            }
+        }
+        let from_key_ident = from_key_ident.into_opt_string();
+        let message = message.as_slice().to_vec();
+
+        let cb = EnsureCallback::new(move |result|
+                match result {
+                    Ok(packed) => {
+                        cb(cb_id, ErrorCode::Success, ByteBuffer::from_vec(packed))
+                    }
+                    Err(err) => cb(cb_id, set_last_error(Some(err)), ByteBuffer::default()),
+                }
+            );
+
+        spawn_ok(async move {
+            let result = async {
+                let store = handle.load().await?;
+                let packed = store.pack_message(
+                    None,
+                        recipient_vks,
+                        from_key_ident,
+                        message
+                ).await?;
+                Ok(packed)
+            }.await;
+            cb.resolve(result);
+        });
+        Ok(ErrorCode::Success)
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn askar_store_unpack_message(
+    handle: StoreHandle,
+    message: ByteBuffer,
+    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, result: FfiUnpackResult)>,
+    cb_id: CallbackId,
+) -> ErrorCode {
+    catch_err! {
+        trace!("Unpack message");
+        let cb = cb.ok_or_else(|| err_msg!("No callback provided"))?;
+        let message = message.as_slice().to_vec();
+
+        let cb = EnsureCallback::new(move |result: KvResult<(Vec<u8>, String, Option<String>)>|
+                match result {
+                    Ok((unpacked, recipient, sender)) => {
+                        cb(cb_id, ErrorCode::Success, FfiUnpackResult {
+                            unpacked: ByteBuffer::from_vec(unpacked), recipient: rust_string_to_c(recipient), sender: sender.map(rust_string_to_c).unwrap_or(ptr::null_mut())}
+                        )
+                    }
+                    Err(err) => {
+                        println!("err: {:?}", &err);
+                        cb(cb_id, set_last_error(Some(err)), FfiUnpackResult { unpacked: ByteBuffer::default(), recipient: ptr::null(), sender: ptr::null() })
+                    }
+                }
+            );
+
+        spawn_ok(async move {
+            let result = async {
+                let store = handle.load().await?;
+                let (unpacked, recipient, sender) = store.unpack_message(
+                    None,
+                    message
+                ).await?;
+                Ok((unpacked, recipient, sender))
+            }.await;
+            cb.resolve(result);
+        });
+        Ok(ErrorCode::Success)
+    }
+}
+
+#[no_mangle]
 pub extern "C" fn askar_store_close(
     handle: StoreHandle,
     cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode)>,
-    cb_id: usize,
+    cb_id: CallbackId,
 ) -> ErrorCode {
     catch_err! {
         trace!("Close store");
@@ -756,4 +990,15 @@ fn make_c_string(value: &str) -> Vec<u8> {
     let mut buf = Vec::with_capacity(value.len() + 1);
     buf.extend_from_slice(value.as_bytes());
     CString::new(buf).unwrap().into_bytes_with_nul()
+}
+
+fn export_key_entry(key_entry: KeyEntry) -> KvResult<Entry> {
+    Ok(Entry {
+        category: key_entry.category.to_string(),
+        name: key_entry.ident.clone(),
+        value: serde_json::to_string(&key_entry.params)
+            .map_err(err_map!("Error converting key entry to JSON"))?
+            .into_bytes(),
+        tags: key_entry.tags.clone(),
+    })
 }

@@ -40,7 +40,7 @@ pub mod sqlite;
 mod keys;
 pub use self::keys::{
     wrap::{generate_raw_wrap_key, WrapKeyMethod},
-    KeyAlg, KeyCategory, KeyEntry, KeyFetchOptions, KeyParams,
+    KeyAlg, KeyCategory, KeyEntry, KeyParams,
 };
 
 mod store;

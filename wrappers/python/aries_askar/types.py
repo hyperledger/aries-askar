@@ -1,3 +1,4 @@
+from enum import Enum
 from typing import Mapping, Optional
 
 
@@ -44,3 +45,7 @@ class UpdateEntry:
         self.tags = dict(tags) if tags else {}
         self.expire_ms = expire_ms
         self.profile_id = profile_id
+
+
+class KeyAlg(Enum):
+    ED25519 = "ed25519"

@@ -2,10 +2,10 @@ import asyncio
 import sys
 
 from aries_askar.bindings import generate_raw_key, version
-from aries_askar import Store, UpdateEntry
+from aries_askar import KeyAlg, Store, UpdateEntry
 
 # REPO_URI = "postgres://postgres:pgpass@localhost:5432/test_wallet2"
-REPO_URI = "sqlite://test.db"
+REPO_URI = "sqlite://:memory:"
 ENCRYPT = True
 
 
@@ -17,11 +17,12 @@ async def basic_test():
     if ENCRYPT:
         key = generate_raw_key()
         key_method = "raw"
-        print("Generated key:", key)
+        print("Generated raw key:", key)
     else:
         key = None
         key_method = "none"
 
+    # Provision the store
     async with Store.provision(REPO_URI, key_method, key) as store:
         log(f"Provisioned store: {store}")
 
@@ -54,6 +55,26 @@ async def basic_test():
 
             entry2 = UpdateEntry("category2", "name2", b"value2")
             await lock.update([entry2])
+
+        # Create a new keypair
+        key_ident = await store.create_keypair(KeyAlg.ED25519)
+        print("Created key:", key_ident)
+
+        # Sign a message
+        signature = await store.sign_message(key_ident, b"my message")
+        print("Signature:", signature)
+
+        # Verify signature
+        verify = await store.verify_signature(key_ident, b"my message", signature)
+        print("Verify signature:", verify)
+
+        # Pack message
+        packed = await store.pack_message([key_ident], key_ident, b"my message")
+        print("Packed message:", packed)
+
+        # Unpack message
+        unpacked = await store.unpack_message(packed)
+        print("Unpacked message:", unpacked)
 
 
 async def open_test(key):
