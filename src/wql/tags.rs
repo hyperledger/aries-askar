@@ -106,6 +106,16 @@ impl CompareOp {
         }
     }
 
+    pub fn as_sql_str_for_prefix(&self) -> Option<&'static str> {
+        match self {
+            Self::Eq => Some("="),
+            Self::Neq => Some("!="),
+            Self::Gt | Self::Gte => Some(">="),
+            Self::Lt | Self::Lte => Some("<="),
+            _ => None,
+        }
+    }
+
     pub fn negate(&self) -> Self {
         match self {
             Self::Eq => Self::Neq,

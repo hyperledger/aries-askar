@@ -281,8 +281,7 @@ impl PostgresStore {
                 profile_id BIGINT NOT NULL,
                 category BYTEA NOT NULL,
                 name BYTEA NOT NULL,
-                reference TEXT NULL,
-                value BYTEA NULL,
+                value BYTEA NOT NULL,
                 PRIMARY KEY(id),
                 FOREIGN KEY(profile_id) REFERENCES profiles(id)
                     ON DELETE CASCADE ON UPDATE CASCADE
@@ -307,12 +306,12 @@ impl PostgresStore {
                 name BYTEA NOT NULL,
                 value BYTEA NOT NULL,
                 plaintext SMALLINT NOT NULL,
-                PRIMARY KEY(name, item_id, plaintext),
+                PRIMARY KEY(name, plaintext, item_id),
                 FOREIGN KEY(item_id) REFERENCES items(id)
                     ON DELETE CASCADE ON UPDATE CASCADE
             );
             CREATE INDEX ix_items_tags_item_id ON items_tags(item_id);
-            CREATE INDEX ix_items_tags_value ON items_tags(value) WHERE plaintext = 1;
+            CREATE INDEX ix_items_tags_value ON items_tags(plaintext, SUBSTR(value, 0, 12));
         ",
         )
         .await?;
@@ -600,8 +599,7 @@ impl QueryPrepare for PostgresStore {
             let last_idx = (args.len() + 1) as i64;
             args.push(limit);
             args.push(offset.unwrap_or(0));
-            let (limit, _next_idx) =
-                replace_arg_placeholders::<Self>(" LIMIT $$ OFFSET $$", last_idx);
+            let limit = replace_arg_placeholders::<Self>(" LIMIT $$ OFFSET $$", last_idx);
             query.push_str(&limit);
         }
         query
@@ -660,12 +658,8 @@ mod tests {
     #[test]
     fn postgres_simple_and_convert_args_works() {
         assert_eq!(
-            replace_arg_placeholders::<PostgresStore>("This $$ is $$ a $$ string!", 3),
-            ("This $3 is $4 a $5 string!".to_string(), 6),
-        );
-        assert_eq!(
-            replace_arg_placeholders::<PostgresStore>("This is a string!", 1),
-            ("This is a string!".to_string(), 1),
+            &replace_arg_placeholders::<PostgresStore>("This $$ is $10 a $$ string!", 3),
+            "This $3 is $12 a $5 string!",
         );
     }
 

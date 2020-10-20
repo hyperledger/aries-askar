@@ -43,7 +43,7 @@ impl WrapKey {
     }
 
     pub fn is_empty(&self) -> bool {
-        self.0.is_some()
+        self.0.is_none()
     }
 
     pub async fn wrap_data<'a>(&self, data: Vec<u8>) -> Result<Vec<u8>> {
@@ -239,18 +239,21 @@ mod tests {
         let key_ref = WrapKeyReference::parse_uri(&key_uri).unwrap();
         let key = block_on(key_ref.resolve(Some(pass))).unwrap();
 
-        let unwrapped = block_on(key.unwrap_data(wrapped)).unwrap();
+        let unwrapped = block_on(key.unwrap_data(wrapped.clone())).unwrap();
         assert_eq!(unwrapped, input);
 
-        let check_bad_pass = block_on(key_ref.resolve(Some("not my pass")));
-        assert!(check_bad_pass.is_err());
+        let check_bad_pass = block_on(key_ref.resolve(Some("not my pass"))).unwrap();
+        let unwrapped_err = block_on(check_bad_pass.unwrap_data(wrapped));
+        assert!(unwrapped_err.is_err());
     }
 
     #[test]
     fn raw_key_wrap() {
         let input = b"test data";
+        let raw_key = generate_raw_wrap_key().unwrap();
+
         let (wrapped, key_ref) = block_on(async {
-            let (key, key_ref) = WrapKeyMethod::RawKey.resolve(None).await?;
+            let (key, key_ref) = WrapKeyMethod::RawKey.resolve(Some(&raw_key)).await?;
             assert!(!key.is_empty());
             let wrapped = key.wrap_data(input.to_vec()).await?;
             Result::Ok((wrapped, key_ref))
@@ -261,10 +264,13 @@ mod tests {
         // round trip the key reference
         let key_uri = key_ref.into_uri();
         let key_ref = WrapKeyReference::parse_uri(&key_uri).unwrap();
-        let key = block_on(key_ref.resolve(None)).unwrap();
+        let key = block_on(key_ref.resolve(Some(&raw_key))).unwrap();
 
         let unwrapped = block_on(key.unwrap_data(wrapped)).unwrap();
         assert_eq!(unwrapped, input);
+
+        let check_no_key = block_on(key_ref.resolve(None));
+        assert!(check_no_key.is_err());
 
         let check_bad_key = block_on(key_ref.resolve(Some("not the key")));
         assert!(check_bad_key.is_err());

@@ -7,7 +7,7 @@ use sqlx::{database::HasArguments, Arguments, Database, Encode, IntoArguments, T
 use super::error::Result as KvResult;
 use super::future::blocking;
 use super::keys::{store::StoreKey, AsyncEncryptor};
-use super::types::{EncEntry, EncEntryTag, Expiry, ProfileId, UpdateEntry};
+use super::types::{EncEntry, EncEntryTag, EntryKind, Expiry, ProfileId, UpdateEntry};
 use super::wql::{
     self,
     sql::TagSqlEncoder,
@@ -83,7 +83,7 @@ pub trait QueryPrepare {
             let last_idx = (args.len() + 1) as i64;
             args.push(offset.unwrap_or(0));
             args.push(limit.unwrap_or(-1));
-            let (limit, _next_idx) = replace_arg_placeholders::<Self>(" LIMIT $$, $$", last_idx);
+            let limit = replace_arg_placeholders::<Self>(" LIMIT $$, $$", last_idx);
             query.push_str(&limit);
         }
         query
@@ -93,15 +93,41 @@ pub trait QueryPrepare {
 pub fn replace_arg_placeholders<Q: QueryPrepare + ?Sized>(
     filter: &str,
     start_index: i64,
-) -> (String, i64) {
+) -> String {
     let mut index = start_index;
-    let mut s: String = filter.to_owned();
-    while let Some(pos) = s.find("$$") {
-        let arg_str = Q::placeholder(index);
-        s.replace_range(pos..(pos + 2), &arg_str);
-        index = index + 1;
+    let mut buffer: String = String::with_capacity(filter.len());
+    let mut remain = filter;
+    while let Some(start_offs) = remain.find('$') {
+        let mut iter = remain[(start_offs + 1)..].chars();
+        if let Some((end_offs, sub_index)) = iter.next().and_then(|c| match c {
+            '$' => Some((start_offs + 2, index)),
+            '0'..='9' => {
+                let mut end_offs = start_offs + 2;
+                while let Some(c) = iter.next() {
+                    if ('0'..='9').contains(&c) {
+                        end_offs += 1;
+                    } else {
+                        break;
+                    }
+                }
+                Some((
+                    end_offs,
+                    remain[(start_offs + 1)..end_offs].parse::<i64>().unwrap() + start_index - 1,
+                ))
+            }
+            _ => None,
+        }) {
+            buffer.push_str(&remain[..start_offs]);
+            buffer.push_str(&Q::placeholder(sub_index));
+            remain = &remain[end_offs..];
+            index += 1;
+        } else {
+            buffer.push_str(&remain[..=start_offs]);
+            remain = &remain[(start_offs + 1)..];
+        }
     }
-    (s, index)
+    buffer.push_str(remain);
+    buffer
 }
 
 pub fn expiry_timestamp(expire_ms: i64) -> KvResult<Expiry> {
@@ -131,7 +157,7 @@ pub async fn encode_tag_filter<Q: QueryPrepare>(
                 )
             };
             let filter: String = enc.encode_query(&tag_query)?;
-            let (filter, _next_idx) = replace_arg_placeholders::<Q>(&filter, (offset as i64) + 1);
+            let filter = replace_arg_placeholders::<Q>(&filter, (offset as i64) + 1);
             Ok(Some((filter, enc.arguments)))
         })
         .await
@@ -163,9 +189,10 @@ where
     Ok(query)
 }
 
-pub fn hash_lock_info(profile_id: ProfileId, lock_info: &UpdateEntry) -> i64 {
+pub fn hash_lock_info(profile_id: ProfileId, kind: EntryKind, lock_info: &UpdateEntry) -> i64 {
     let mut hasher = DefaultHasher::new();
     Hash::hash(&profile_id, &mut hasher);
+    Hash::hash(&kind, &mut hasher);
     Hash::hash_slice(lock_info.entry.category.as_bytes(), &mut hasher);
     Hash::hash_slice(lock_info.entry.name.as_bytes(), &mut hasher);
     hasher.finish() as i64
@@ -173,6 +200,7 @@ pub fn hash_lock_info(profile_id: ProfileId, lock_info: &UpdateEntry) -> i64 {
 
 pub struct PreparedUpdate {
     pub profile_id: ProfileId,
+    pub kind: EntryKind,
     pub enc_entry: EncEntry<'static>,
     pub enc_tags: Option<Vec<EncEntryTag>>,
     pub expire_ms: Option<i64>,
@@ -180,6 +208,7 @@ pub struct PreparedUpdate {
 
 pub async fn prepare_update(
     profile_id: ProfileId,
+    kind: EntryKind,
     key: AsyncEncryptor<StoreKey>,
     entries: Vec<UpdateEntry>,
 ) -> KvResult<Vec<PreparedUpdate>> {
@@ -188,6 +217,7 @@ pub async fn prepare_update(
         let (enc_entry, enc_tags) = key.encrypt_entry(update.entry).await?;
         updates.push(PreparedUpdate {
             profile_id,
+            kind,
             enc_entry,
             enc_tags,
             expire_ms: update.expire_ms,

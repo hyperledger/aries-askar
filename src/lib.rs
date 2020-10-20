@@ -31,14 +31,20 @@ pub mod ffi;
 #[cfg(feature = "postgres")]
 pub mod postgres;
 
+#[macro_use]
+pub(crate) mod serde_util;
+
 #[cfg(feature = "sqlite")]
 pub mod sqlite;
 
 mod keys;
-pub use self::keys::wrap::{generate_raw_wrap_key, WrapKeyMethod};
+pub use self::keys::{
+    wrap::{generate_raw_wrap_key, WrapKeyMethod},
+    KeyAlg, KeyCategory, KeyEntry, KeyFetchOptions, KeyParams,
+};
 
 mod store;
-pub use self::store::{ProvisionStore, ProvisionStoreSpec, Store};
+pub use self::store::{ProvisionStore, ProvisionStoreSpec, RawStore, Store};
 
 mod types;
 pub use self::types::{Entry, EntryFetchOptions, EntryTag, UpdateEntry};

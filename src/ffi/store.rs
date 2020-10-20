@@ -21,7 +21,7 @@ use super::{CallbackId, EnsureCallback, ErrorCode};
 use crate::error::Result as KvResult;
 use crate::future::spawn_ok;
 use crate::keys::wrap::{generate_raw_wrap_key, WrapKeyMethod};
-use crate::store::{ArcStore, EntryLock, EntryScan, OpenStore, ProvisionStore, ProvisionStoreSpec};
+use crate::store::{ArcStore, EntryLock, OpenStore, ProvisionStore, ProvisionStoreSpec, Scan};
 use crate::types::{Entry, EntryTag, UpdateEntry};
 
 new_handle_type!(StoreHandle, FFI_STORE_COUNTER);
@@ -29,7 +29,7 @@ new_handle_type!(ScanHandle, FFI_SCAN_COUNTER);
 
 static STORES: Lazy<Mutex<BTreeMap<StoreHandle, ArcStore>>> =
     Lazy::new(|| Mutex::new(BTreeMap::new()));
-static SCANS: Lazy<Mutex<BTreeMap<ScanHandle, Option<EntryScan>>>> =
+static SCANS: Lazy<Mutex<BTreeMap<ScanHandle, Option<Scan<Entry>>>>> =
     Lazy::new(|| Mutex::new(BTreeMap::new()));
 
 impl StoreHandle {
@@ -59,14 +59,14 @@ impl StoreHandle {
 }
 
 impl ScanHandle {
-    pub async fn create(value: EntryScan) -> Self {
+    pub async fn create(value: Scan<Entry>) -> Self {
         let handle = Self::next();
         let mut repo = SCANS.lock().await;
         repo.insert(handle, Some(value));
         handle
     }
 
-    pub async fn borrow(&self) -> KvResult<EntryScan> {
+    pub async fn borrow(&self) -> KvResult<Scan<Entry>> {
         SCANS
             .lock()
             .await
@@ -76,7 +76,7 @@ impl ScanHandle {
             .ok_or_else(|| err_msg!(Busy, "Scan handle in use"))
     }
 
-    pub async fn release(&self, value: EntryScan) -> KvResult<()> {
+    pub async fn release(&self, value: Scan<Entry>) -> KvResult<()> {
         SCANS
             .lock()
             .await
@@ -86,7 +86,7 @@ impl ScanHandle {
         Ok(())
     }
 
-    pub async fn remove(&self) -> KvResult<EntryScan> {
+    pub async fn remove(&self) -> KvResult<Scan<Entry>> {
         SCANS
             .lock()
             .await

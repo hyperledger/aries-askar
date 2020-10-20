@@ -47,9 +47,20 @@ impl TagQueryEncoder for TagSqlEncoder {
         enc_value: Self::Arg,
         is_plaintext: bool,
     ) -> KvResult<Self::Clause> {
+        let idx = self.arguments.len();
+        let op_prefix = op.as_sql_str_for_prefix().map(|pfx_op| {
+            format!(
+                "AND SUBSTR(value, 0, 12) {} SUBSTR(${}, 0, 12)",
+                pfx_op,
+                idx + 2
+            )
+        });
         let query = format!(
-            "i.id IN (SELECT item_id FROM items_tags WHERE name = $$ AND value {} $$ AND plaintext = {})",
+            "i.id IN (SELECT item_id FROM items_tags WHERE name = ${} AND value {} ${} {} AND plaintext = {})",
+            idx + 1,
             op.as_sql_str(),
+            idx + 2,
+            op_prefix.as_ref().map(String::as_str).unwrap_or_default(),
             if is_plaintext { 1 } else { 0 }
         );
         self.arguments.push(enc_name);
@@ -135,7 +146,7 @@ mod tests {
             |value: &str| Ok(format!("~~{}~~", value).into_bytes()),
         );
         let query_str = enc.encode_query(&query).unwrap();
-        assert_eq!(query_str, "((i.id IN (SELECT item_id FROM items_tags WHERE name = $$ AND value = $$ AND plaintext = 0) AND i.id IN (SELECT item_id FROM items_tags WHERE name = $$ AND value = $$ AND plaintext = 1)) OR (i.id IN (SELECT item_id FROM items_tags WHERE name = $$ AND value = $$ AND plaintext = 0) AND i.id IN (SELECT item_id FROM items_tags WHERE name = $$ AND value != $$ AND plaintext = 1)))");
+        assert_eq!(query_str, "((i.id IN (SELECT item_id FROM items_tags WHERE name = $1 AND value = $2 AND SUBSTR(value, 0, 12) = SUBSTR($2, 0, 12) AND plaintext = 0) AND i.id IN (SELECT item_id FROM items_tags WHERE name = $3 AND value = $4 AND SUBSTR(value, 0, 12) = SUBSTR($4, 0, 12) AND plaintext = 1)) OR (i.id IN (SELECT item_id FROM items_tags WHERE name = $5 AND value = $6 AND SUBSTR(value, 0, 12) = SUBSTR($6, 0, 12) AND plaintext = 0) AND i.id IN (SELECT item_id FROM items_tags WHERE name = $7 AND value != $8 AND SUBSTR(value, 0, 12) != SUBSTR($8, 0, 12) AND plaintext = 1)))");
         let args = enc.arguments;
         assert_eq!(
             args,

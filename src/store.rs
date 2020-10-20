@@ -1,17 +1,25 @@
 use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
+use std::str::FromStr;
 use std::sync::Arc;
 
 use async_trait::async_trait;
 use futures_lite::stream::{Stream, StreamExt};
+use indy_utils::{
+    base58,
+    keys::{EncodedVerKey, KeyEncoding as IndyKeyEncoding, KeyType as IndyKeyAlg, SignKey},
+    pack::{pack_message, unpack_message, KeyLookup},
+    Validatable,
+};
 
 use super::keys::{
     store::StoreKey,
     wrap::{generate_raw_wrap_key, WrapKey, WrapKeyMethod},
+    KeyAlg, KeyCategory, KeyEntry, KeyFetchOptions, KeyParams,
 };
 use super::options::IntoOptions;
-use super::types::{Entry, EntryFetchOptions, ProfileId, UpdateEntry};
+use super::types::{Entry, EntryFetchOptions, EntryKind, EntryTag, ProfileId, UpdateEntry};
 use super::wql;
 use super::{ErrorKind, Result};
 
@@ -49,34 +57,174 @@ impl KeyCache {
 
 /// Common trait for all key-value storage backends
 #[async_trait]
-pub trait Store {
-    /// Count the number of entries for a given record category
+pub trait RawStore: Send + Sync {
     async fn count(
+        &self,
+        profile: Option<String>,
+        kind: EntryKind,
+        category: String,
+        tag_filter: Option<wql::Query>,
+    ) -> Result<i64>;
+
+    async fn fetch(
+        &self,
+        profile: Option<String>,
+        kind: EntryKind,
+        category: String,
+        name: String,
+        options: EntryFetchOptions,
+    ) -> Result<Option<Entry>>;
+
+    async fn scan(
+        &self,
+        profile: Option<String>,
+        kind: EntryKind,
+        category: String,
+        options: EntryFetchOptions,
+        tag_filter: Option<wql::Query>,
+        offset: Option<i64>,
+        max_rows: Option<i64>,
+    ) -> Result<Scan<Entry>>;
+
+    async fn update(
+        &self,
+        profile: Option<String>,
+        kind: EntryKind,
+        entries: Vec<UpdateEntry>,
+    ) -> Result<()>;
+
+    async fn create_lock(
+        &self,
+        profile: Option<String>,
+        kind: EntryKind,
+        lock_info: UpdateEntry,
+        acquire_timeout_ms: Option<i64>,
+    ) -> Result<(Entry, EntryLock)>;
+
+    async fn close(&self) -> Result<()>;
+}
+
+#[async_trait]
+impl<T: RawStore + ?Sized + Send + Sync> RawStore for Arc<T> {
+    #[inline]
+    async fn count(
+        &self,
+        profile: Option<String>,
+        kind: EntryKind,
+        category: String,
+        tag_filter: Option<wql::Query>,
+    ) -> Result<i64> {
+        T::count(&*self, profile, kind, category, tag_filter).await
+    }
+
+    #[inline]
+    async fn fetch(
+        &self,
+        profile: Option<String>,
+        kind: EntryKind,
+        category: String,
+        name: String,
+        options: EntryFetchOptions,
+    ) -> Result<Option<Entry>> {
+        T::fetch(&*self, profile, kind, category, name, options).await
+    }
+
+    #[inline]
+    async fn scan(
+        &self,
+        profile: Option<String>,
+        kind: EntryKind,
+        category: String,
+        options: EntryFetchOptions,
+        tag_filter: Option<wql::Query>,
+        offset: Option<i64>,
+        max_rows: Option<i64>,
+    ) -> Result<Scan<Entry>> {
+        T::scan(
+            &*self, profile, kind, category, options, tag_filter, offset, max_rows,
+        )
+        .await
+    }
+
+    #[inline]
+    async fn update(
+        &self,
+        profile: Option<String>,
+        kind: EntryKind,
+        entries: Vec<UpdateEntry>,
+    ) -> Result<()> {
+        T::update(&*self, profile, kind, entries).await
+    }
+
+    #[inline]
+    async fn create_lock(
+        &self,
+        profile: Option<String>,
+        kind: EntryKind,
+        lock_info: UpdateEntry,
+        acquire_timeout_ms: Option<i64>,
+    ) -> Result<(Entry, EntryLock)> {
+        T::create_lock(&*self, profile, kind, lock_info, acquire_timeout_ms).await
+    }
+
+    async fn close(&self) -> Result<()> {
+        T::close(&*self).await
+    }
+}
+
+#[derive(Debug)]
+pub struct Store<T: RawStore + ?Sized> {
+    pub(crate) inner: Arc<T>,
+}
+
+impl<T: RawStore> Store<T> {
+    pub(crate) fn new(inner: T) -> Self {
+        Self {
+            inner: Arc::new(inner),
+        }
+    }
+
+    pub(crate) fn into_inner(self) -> Arc<T> {
+        self.inner
+    }
+}
+
+impl<T: RawStore + ?Sized> Store<T> {
+    /// Count the number of entries for a given record category
+    pub async fn count(
         &self,
         profile: Option<String>,
         category: String,
         tag_filter: Option<wql::Query>,
-    ) -> Result<i64>;
+    ) -> Result<i64> {
+        self.inner
+            .count(profile, EntryKind::Item, category, tag_filter)
+            .await
+    }
 
     /// Query the current value for the record at `(key_id, category, name)`
     ///
     /// A specific `key_id` may be given, otherwise all relevant keys for the provided
     /// `profile_id` are searched in reverse order of creation, returning the first
     /// result found if any.
-    async fn fetch(
+    pub async fn fetch(
         &self,
         profile: Option<String>,
         category: String,
         name: String,
         options: EntryFetchOptions,
-    ) -> Result<Option<Entry>>;
+    ) -> Result<Option<Entry>> {
+        self.inner
+            .fetch(profile, EntryKind::Item, category, name, options)
+            .await
+    }
 
     /// Start a new query for a particular `key_id` and `category`
     ///
     /// If `key_id` is provided, restrict results to records for the particular key.
     /// Otherwise, all relevant keys for the given `profile_id` are searched.
     /// Results are not guaranteed to be ordered.
-    async fn scan(
+    pub async fn scan(
         &self,
         profile: Option<String>,
         category: String,
@@ -84,7 +232,19 @@ pub trait Store {
         tag_filter: Option<wql::Query>,
         offset: Option<i64>,
         max_rows: Option<i64>,
-    ) -> Result<EntryScan>;
+    ) -> Result<Scan<Entry>> {
+        self.inner
+            .scan(
+                profile,
+                EntryKind::Item,
+                category,
+                options,
+                tag_filter,
+                offset,
+                max_rows,
+            )
+            .await
+    }
 
     /// Atomically set multiple values with optional expiry times
     ///
@@ -95,7 +255,9 @@ pub trait Store {
     /// existing record lock, or verify it and release it upon completion of the update.
     /// Provide NULL for the entry value to remove existing records
     /// Returns an error if the lock was lost or one of the keys could not be assigned.
-    async fn update(&self, profile: Option<String>, entries: Vec<UpdateEntry>) -> Result<()>;
+    pub async fn update(&self, profile: Option<String>, entries: Vec<UpdateEntry>) -> Result<()> {
+        self.inner.update(profile, EntryKind::Item, entries).await
+    }
 
     /// Establish an advisory lock on a particular record
     ///
@@ -113,26 +275,307 @@ pub trait Store {
     ///
     /// Other clients are not prevented from reading or writing the record unless they
     /// also try to obtain a lock.
-    async fn create_lock(
+    pub async fn create_lock(
         &self,
         profile: Option<String>,
         lock_info: UpdateEntry,
         acquire_timeout_ms: Option<i64>,
-    ) -> Result<(Entry, EntryLock)>;
+    ) -> Result<(Entry, EntryLock)> {
+        self.inner
+            .create_lock(profile, EntryKind::Item, lock_info, acquire_timeout_ms)
+            .await
+    }
 
     /// Close the store instance, waiting for any shutdown procedures to complete.
-    async fn close(&self) -> Result<()>;
+    pub async fn close(&self) -> Result<()> {
+        self.inner.close().await
+    }
+
+    pub async fn create_keypair(
+        &self,
+        profile: Option<String>,
+        alg: KeyAlg,
+        metadata: Option<String>,
+        seed: Option<String>,
+        tags: Option<Vec<EntryTag>>,
+        // backend
+    ) -> Result<KeyEntry> {
+        match alg {
+            KeyAlg::ED25519 => (),
+            _ => return Err(err_msg!("Unsupported key algorithm")),
+        }
+
+        let sk = match seed {
+            None => SignKey::generate(Some(IndyKeyAlg::ED25519)),
+            Some(s) => {
+                let s = base58::decode(s).map_err(err_map!("Invalid seed"))?;
+                SignKey::from_seed(&s)
+            }
+        }
+        .map_err(err_map!(Unexpected, "Error generating keypair"))?;
+
+        let pk = sk
+            .public_key()
+            .map_err(err_map!(Unexpected, "Error generating public key"))?;
+
+        let category = KeyCategory::KeyPair;
+        let ident = pk
+            .encode(&IndyKeyEncoding::BASE58)
+            .map_err(err_map!(Unexpected, "Error encoding public key"))?
+            .to_string();
+
+        let mut params = KeyParams {
+            alg,
+            metadata,
+            reference: None,
+            pub_key: Some(pk.key_bytes()),
+            prv_key: Some(sk.key_bytes()),
+        };
+
+        let entries = vec![UpdateEntry {
+            entry: Entry {
+                category: category.as_str().to_owned(),
+                name: ident.clone(),
+                value: params.to_vec()?,
+                tags: tags.clone(),
+            },
+            expire_ms: None,
+        }];
+        self.inner.update(profile, EntryKind::Key, entries).await?;
+
+        // use fetch_key if the private key is needed
+        params.prv_key = None;
+        Ok(KeyEntry {
+            category,
+            ident,
+            params,
+            tags,
+        })
+    }
+
+    // pub async fn import_key(&self, key: KeyEntry) -> Result<()> {
+    //     Ok(())
+    // }
+
+    pub async fn fetch_key(
+        &self,
+        profile: Option<String>,
+        category: KeyCategory,
+        ident: String,
+        options: KeyFetchOptions,
+    ) -> Result<Option<KeyEntry>> {
+        Ok(
+            if let Some(row) = self
+                .inner
+                .fetch(
+                    profile,
+                    EntryKind::Key,
+                    category.as_str().to_owned(),
+                    ident,
+                    EntryFetchOptions::new(options.retrieve_tags),
+                )
+                .await?
+            {
+                let mut params = KeyParams::from_slice(&row.value)?;
+                if !options.retrieve_private {
+                    params.prv_key = None;
+                }
+
+                Some(KeyEntry {
+                    category: KeyCategory::from_str(&row.category).unwrap(),
+                    ident: row.name.clone(),
+                    params,
+                    tags: row.tags.clone(),
+                })
+            } else {
+                None
+            },
+        )
+    }
+
+    pub async fn sign_message(
+        &self,
+        profile: Option<String>,
+        key_ident: String,
+        data: Vec<u8>,
+    ) -> Result<Vec<u8>> {
+        if let Some(key) = self
+            .fetch_key(
+                profile,
+                KeyCategory::KeyPair,
+                key_ident,
+                KeyFetchOptions::new(true, false),
+            )
+            .await?
+        {
+            let sk = key.sign_key()?;
+            sk.sign(&data)
+                .map_err(|e| err_msg!("Signature error: {}", e))
+        } else {
+            return Err(err_msg!("Unknown key")); // FIXME add new error class
+        }
+    }
+
+    pub async fn verify_signature(
+        &self,
+        signer_vk: String,
+        data: Vec<u8>,
+        signature: Vec<u8>,
+    ) -> Result<bool> {
+        let vk = EncodedVerKey::from_str(&signer_vk).map_err(err_map!("Invalid verkey"))?;
+        Ok(vk
+            .decode()
+            .map_err(err_map!("Unsupported verkey"))?
+            .verify_signature(&data, &signature)
+            .unwrap_or(false))
+    }
+
+    pub async fn encrypt_message(
+        &self,
+        profile: Option<String>,
+        key_ident: String,
+        data: Vec<u8>,
+    ) -> Result<Vec<u8>> {
+        unimplemented!();
+    }
+
+    pub async fn decrypt_message(
+        &self,
+        profile: Option<String>,
+        key_ident: String,
+        data: Vec<u8>,
+    ) -> Result<Vec<u8>> {
+        unimplemented!();
+    }
+
+    pub async fn pack_message(
+        &self,
+        profile: Option<String>,
+        recipient_vks: Vec<String>,
+        from_key_ident: Option<String>,
+        data: Vec<u8>,
+    ) -> Result<Vec<u8>> {
+        let sign_key = if let Some(ident) = from_key_ident {
+            let sk = self
+                .fetch_key(
+                    profile,
+                    KeyCategory::KeyPair,
+                    ident,
+                    KeyFetchOptions::new(true, false),
+                )
+                .await?
+                .ok_or_else(|| err_msg!("Unknown sender key"))?;
+            Some(sk.sign_key()?)
+        } else {
+            None
+        };
+        let vks = recipient_vks
+            .into_iter()
+            .map(|vk| {
+                let vk =
+                    EncodedVerKey::from_str(&vk).map_err(err_map!("Invalid recipient verkey"))?;
+                vk.validate()?;
+                Ok(vk)
+            })
+            .collect::<Result<Vec<EncodedVerKey>>>()?;
+        Ok(pack_message(data, vks, sign_key).map_err(err_map!("Error packing message"))?)
+    }
+
+    pub async fn unpack_message(
+        &self,
+        profile: Option<String>,
+        data: Vec<u8>,
+    ) -> Result<(Vec<u8>, String, Option<String>)> {
+        struct Lookup<T: RawStore + ?Sized> {
+            profile: Option<String>,
+            store: Store<T>,
+        }
+
+        impl<T: RawStore + ?Sized> KeyLookup for Lookup<T> {
+            fn find<'f>(
+                &'f self,
+                keys: &'f Vec<EncodedVerKey>,
+            ) -> std::pin::Pin<Box<dyn Future<Output = Option<(usize, SignKey)>> + Send + 'f>>
+            {
+                let profile = self.profile.clone();
+                let store = self.store.clone();
+                Box::pin(async move {
+                    for (idx, key) in keys.into_iter().enumerate() {
+                        if let Ok(Some(key)) = store
+                            .fetch_key(
+                                profile.clone(),
+                                KeyCategory::KeyPair,
+                                key.to_string(),
+                                KeyFetchOptions::new(true, false),
+                            )
+                            .await
+                        {
+                            if let Ok(sk) = key.sign_key() {
+                                return Some((idx, sk));
+                            }
+                        }
+                    }
+                    return None;
+                })
+            }
+        }
+
+        let lookup = Lookup {
+            profile,
+            store: self.clone(),
+        };
+        match unpack_message(data, lookup).await {
+            Ok((message, recip, sender)) => {
+                Ok((message, recip.to_string(), sender.map(|s| s.to_string())))
+            }
+            Err(err) => Err(err_msg!("Error unpacking message").with_cause(err)),
+        }
+    }
+
+    pub async fn remove_key(&self, profile: Option<String>, ident: String) -> Result<()> {
+        unimplemented!();
+    }
+
+    pub async fn scan_keys(
+        &self,
+        profile: Option<String>,
+        category: String,
+        options: KeyFetchOptions,
+        tag_filter: Option<wql::Query>,
+        offset: Option<i64>,
+        max_rows: Option<i64>,
+    ) -> Result<Scan<KeyEntry>> {
+        unimplemented!();
+    }
+
+    pub async fn update_key_metadata(
+        &self,
+        profile: Option<String>,
+        category: KeyCategory,
+        ident: String,
+        metadata: Option<String>,
+    ) -> Result<()> {
+        unimplemented!();
+    }
 }
 
-pub struct EntryScan {
-    stream: Option<Pin<Box<dyn Stream<Item = Result<Vec<Entry>>> + Send>>>,
+impl<T: RawStore + ?Sized> Clone for Store<T> {
+    fn clone(&self) -> Self {
+        Self {
+            inner: self.inner.clone(),
+        }
+    }
+}
+
+pub struct Scan<T> {
+    stream: Option<Pin<Box<dyn Stream<Item = Result<Vec<T>>> + Send>>>,
     page_size: usize,
 }
 
-impl EntryScan {
+impl<T> Scan<T> {
     pub fn new<S>(stream: S, page_size: usize) -> Self
     where
-        S: Stream<Item = Result<Vec<Entry>>> + Send + 'static,
+        S: Stream<Item = Result<Vec<T>>> + Send + 'static,
     {
         Self {
             stream: Some(stream.boxed()),
@@ -140,7 +583,7 @@ impl EntryScan {
         }
     }
 
-    pub async fn fetch_next(&mut self) -> Result<Option<Vec<Entry>>> {
+    pub async fn fetch_next(&mut self) -> Result<Option<Vec<T>>> {
         if let Some(mut s) = self.stream.take() {
             match s.next().await {
                 Some(Ok(val)) => {
@@ -219,7 +662,7 @@ pub trait OpenStore {
     async fn open_store(self, pass_key: Option<&str>) -> Result<Self::Store>;
 }
 
-pub type ArcStore = Arc<dyn Store + Send + Sync>;
+pub type ArcStore = Store<dyn RawStore>;
 
 #[async_trait]
 pub trait ProvisionStore: OpenStore {
@@ -234,22 +677,22 @@ impl OpenStore for &str {
         let opts = self.into_options()?;
         debug!("Open store with options: {:?}", &opts);
 
-        let store: ArcStore = match opts.schema.as_ref() {
+        let inner: Arc<dyn RawStore> = match opts.schema.as_ref() {
             #[cfg(feature = "postgres")]
             "postgres" => {
                 let opts = super::postgres::PostgresStoreOptions::new(opts)?;
-                Arc::new(opts.open_store(pass_key).await?)
+                Arc::new(opts.open_store(pass_key).await?.into_inner())
             }
 
             #[cfg(feature = "sqlite")]
             "sqlite" => {
                 let opts = super::sqlite::SqliteStoreOptions::new(opts)?;
-                Arc::new(opts.open_store(pass_key).await?)
+                Arc::new(opts.open_store(pass_key).await?.into_inner())
             }
 
             _ => return Err(ErrorKind::Unsupported.into()),
         };
-        Ok(store)
+        Ok(Store { inner })
     }
 }
 
@@ -259,21 +702,21 @@ impl ProvisionStore for &str {
         let opts = self.into_options()?;
         debug!("Provision store with options: {:?}", &opts);
 
-        let store: ArcStore = match opts.schema.as_ref() {
+        let inner: Arc<dyn RawStore> = match opts.schema.as_ref() {
             #[cfg(feature = "postgres")]
             "postgres" => {
                 let opts = super::postgres::PostgresStoreOptions::new(opts)?;
-                Arc::new(opts.provision_store(spec).await?)
+                opts.provision_store(spec).await?.into_inner()
             }
 
             #[cfg(feature = "sqlite")]
             "sqlite" => {
                 let opts = super::sqlite::SqliteStoreOptions::new(opts)?;
-                Arc::new(opts.provision_store(spec).await?)
+                opts.provision_store(spec).await?.into_inner()
             }
 
             _ => return Err(ErrorKind::Unsupported.into()),
         };
-        Ok(store)
+        Ok(Store { inner })
     }
 }

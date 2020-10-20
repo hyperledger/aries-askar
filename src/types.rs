@@ -7,6 +7,16 @@ pub type ProfileId = i64;
 
 pub type Expiry = chrono::DateTime<chrono::Utc>;
 
+pub(crate) fn sorted_tags(tags: &Vec<EntryTag>) -> Option<Vec<&EntryTag>> {
+    if tags.len() > 0 {
+        let mut tags = tags.iter().collect::<Vec<&EntryTag>>();
+        tags.sort();
+        Some(tags)
+    } else {
+        None
+    }
+}
+
 #[derive(Clone, Eq, Zeroize)]
 pub struct Entry {
     pub category: String,
@@ -17,18 +27,7 @@ pub struct Entry {
 
 impl Entry {
     pub fn sorted_tags(&self) -> Option<Vec<&EntryTag>> {
-        if self.tags.is_some() {
-            let tags = self.tags.as_ref().unwrap();
-            if tags.len() > 0 {
-                let mut tags = tags.iter().collect::<Vec<&EntryTag>>();
-                tags.sort();
-                Some(tags)
-            } else {
-                None
-            }
-        } else {
-            None
-        }
+        self.tags.as_ref().and_then(sorted_tags)
     }
 }
 
@@ -56,6 +55,12 @@ impl PartialEq for Entry {
             && self.value == rhs.value
             && self.sorted_tags() == rhs.sorted_tags()
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum EntryKind {
+    Key = 1,
+    Item = 2,
 }
 
 pub struct EncEntry<'a> {

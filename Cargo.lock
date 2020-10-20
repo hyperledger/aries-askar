@@ -47,6 +47,7 @@ dependencies = [
  "once_cell",
  "percent-encoding",
  "rand",
+ "rand_chacha",
  "rmp-serde",
  "rust-argon2",
  "serde",
@@ -265,6 +266,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf1de2fe8c75bc145a2f577add951f8134889b4795d47466a54a5c846d691693"
 
 [[package]]
+name = "blake2"
+version = "0.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "94cb07b0da6a73955f8fb85d24c466778e70cda767a568229b104f0264089330"
+dependencies = [
+ "byte-tools",
+ "crypto-mac 0.7.0",
+ "digest 0.8.1",
+ "opaque-debug 0.2.3",
+]
+
+[[package]]
 name = "blake2b_simd"
 version = "0.5.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -350,6 +363,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0e4cec68f03f32e44924783795810fa50a7035d8c8ebe78580ad7e6c703fba38"
 
 [[package]]
+name = "c2-chacha"
+version = "0.2.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "217192c943108d8b13bac38a1d51df9ce8a407a3f5a71ab633980665e68fbd9a"
+dependencies = [
+ "ppv-lite86",
+]
+
+[[package]]
 name = "cache-padded"
 version = "1.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -399,6 +421,15 @@ dependencies = [
  "num-integer",
  "num-traits",
  "time",
+]
+
+[[package]]
+name = "clear_on_drop"
+version = "0.2.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c9cc5db465b294c3fa986d5bbb0f3017cd850bff6dd6c52f9ccff8b4d21b7b08"
+dependencies = [
+ "cc",
 ]
 
 [[package]]
@@ -500,6 +531,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "crypto_box"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d0c239757c96b30119ff93c5f4e2f977436ae3088bc6ba609108aa74eeb2d891"
+dependencies = [
+ "rand_core",
+ "salsa20",
+ "x25519-dalek",
+ "xsalsa20poly1305",
+ "zeroize",
+]
+
+[[package]]
+name = "curve25519-dalek"
+version = "2.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5d85653f070353a16313d0046f173f70d1aadd5b42600a14de626f0dfb3473a5"
+dependencies = [
+ "byteorder",
+ "digest 0.8.1",
+ "rand_core",
+ "subtle 2.3.0",
+ "zeroize",
+]
+
+[[package]]
 name = "digest"
 version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -522,6 +579,18 @@ name = "dotenv"
 version = "0.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "77c90badedccf4105eca100756a0b1289e191f6fcbdadd3cee1d2f614f97da8f"
+
+[[package]]
+name = "ed25519-dalek"
+version = "1.0.0-pre.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "978710b352437433c97b2bff193f2fb1dfd58a093f863dd95e225a19baa599a2"
+dependencies = [
+ "clear_on_drop",
+ "curve25519-dalek",
+ "rand",
+ "sha2 0.8.2",
+]
 
 [[package]]
 name = "either"
@@ -828,7 +897,9 @@ name = "indy-utils"
 version = "0.3.3"
 dependencies = [
  "aead",
+ "base64",
  "bs58",
+ "crypto_box",
  "hex",
  "once_cell",
  "regex",
@@ -1235,11 +1306,11 @@ dependencies = [
 
 [[package]]
 name = "rand_chacha"
-version = "0.2.2"
+version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f4c8ed856279c9737206bf725bf36935d8666ead7aa69b52be55af369d193402"
+checksum = "03a2a90da8c7523f554344f921aa97283eadf6ac484a6d2a7d0212fa7f8d6853"
 dependencies = [
- "ppv-lite86",
+ "c2-chacha",
  "rand_core",
 ]
 
@@ -1332,6 +1403,16 @@ name = "ryu"
 version = "1.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "71d301d4193d031abdd79ff7e3dd721168a9572ef3fe51a1517aba235bd8f86e"
+
+[[package]]
+name = "salsa20"
+version = "0.5.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6fc17dc5eee5d3040d9f95a2d3ac42fb2c1829a80f417045da6cfd2befa66769"
+dependencies = [
+ "stream-cipher",
+ "zeroize",
+]
 
 [[package]]
 name = "schannel"
@@ -1739,12 +1820,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "42e50b5a83e303aa9e0a6affffbca0fe9444854d1c5fab409d401f1eaa9fa8b6"
 dependencies = [
  "aead",
+ "arrayref",
+ "blake2",
  "chacha20poly1305",
+ "curve25519-dalek",
+ "ed25519-dalek",
  "hex",
  "hkdf",
  "rand",
+ "rand_chacha",
  "serde",
  "sha2 0.8.2",
+ "x25519-dalek",
  "zeroize",
 ]
 
@@ -1914,6 +2001,31 @@ name = "winapi-x86_64-pc-windows-gnu"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "712e227841d057c1ee1cd2fb22fa7e5a5461ae8e48fa2ca79ec42cfc1931183f"
+
+[[package]]
+name = "x25519-dalek"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "637ff90c9540fa3073bb577e65033069e4bae7c79d49d74aa3ffdf5342a53217"
+dependencies = [
+ "curve25519-dalek",
+ "rand_core",
+ "zeroize",
+]
+
+[[package]]
+name = "xsalsa20poly1305"
+version = "0.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a7a4120d688bcca2a2226223c83a8ca3dbf349c6a3c7bef0f4a1ca8404326dba"
+dependencies = [
+ "aead",
+ "poly1305",
+ "rand_core",
+ "salsa20",
+ "subtle 2.3.0",
+ "zeroize",
+]
 
 [[package]]
 name = "zeroize"

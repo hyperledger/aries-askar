@@ -15,7 +15,7 @@ macro_rules! db_tests {
         fn fetch_fail() {
             block_on(async {
                 let db = $init.await?;
-                super::utils::db_fetch_fail(&*db).await?;
+                super::utils::db_fetch_fail(&db).await?;
                 KvResult::Ok(())
             })
             .unwrap()
@@ -25,7 +25,7 @@ macro_rules! db_tests {
         fn add_fetch() {
             block_on(async {
                 let db = $init.await?;
-                super::utils::db_add_fetch(&*db).await?;
+                super::utils::db_add_fetch(&db).await?;
                 KvResult::Ok(())
             })
             .unwrap()
@@ -35,7 +35,7 @@ macro_rules! db_tests {
         fn add_fetch_tags() {
             block_on(async {
                 let db = $init.await?;
-                super::utils::db_add_fetch_tags(&*db).await?;
+                super::utils::db_add_fetch_tags(&db).await?;
                 KvResult::Ok(())
             })
             .unwrap()
@@ -45,7 +45,7 @@ macro_rules! db_tests {
         fn count() {
             block_on(async {
                 let db = $init.await?;
-                super::utils::db_count(&*db).await?;
+                super::utils::db_count(&db).await?;
                 KvResult::Ok(())
             })
             .unwrap()
@@ -55,7 +55,7 @@ macro_rules! db_tests {
         fn scan() {
             block_on(async {
                 let db = $init.await?;
-                super::utils::db_scan(&*db).await?;
+                super::utils::db_scan(&db).await?;
                 KvResult::Ok(())
             })
             .unwrap()
@@ -65,7 +65,7 @@ macro_rules! db_tests {
         fn create_lock_non_existing() {
             block_on(async {
                 let db = $init.await?;
-                super::utils::db_create_lock_non_existing(&*db).await?;
+                super::utils::db_create_lock_non_existing(&db).await?;
                 KvResult::Ok(())
             })
             .unwrap()
@@ -75,7 +75,7 @@ macro_rules! db_tests {
         fn create_lock_timeout() {
             block_on(async {
                 let db = $init.await?;
-                super::utils::db_create_lock_timeout(&*db).await?;
+                super::utils::db_create_lock_timeout(&db).await?;
                 KvResult::Ok(())
             })
             .unwrap()
@@ -85,7 +85,47 @@ macro_rules! db_tests {
         fn create_lock_drop_expire() {
             block_on(async {
                 let db = $init.await?;
-                super::utils::db_create_lock_drop_expire(&*db).await?;
+                super::utils::db_create_lock_drop_expire(&db).await?;
+                KvResult::Ok(())
+            })
+            .unwrap()
+        }
+
+        #[test]
+        fn keypair_create_fetch() {
+            block_on(async {
+                let db = $init.await?;
+                super::utils::db_keypair_create_fetch(&db).await?;
+                KvResult::Ok(())
+            })
+            .unwrap()
+        }
+
+        #[test]
+        fn keypair_sign_verify() {
+            block_on(async {
+                let db = $init.await?;
+                super::utils::db_keypair_sign_verify(&db).await?;
+                KvResult::Ok(())
+            })
+            .unwrap()
+        }
+
+        #[test]
+        fn keypair_pack_unpack_anon() {
+            block_on(async {
+                let db = $init.await?;
+                super::utils::db_keypair_pack_unpack_anon(&db).await?;
+                KvResult::Ok(())
+            })
+            .unwrap()
+        }
+
+        #[test]
+        fn keypair_pack_unpack_auth() {
+            block_on(async {
+                let db = $init.await?;
+                super::utils::db_keypair_pack_unpack_auth(&db).await?;
                 KvResult::Ok(())
             })
             .unwrap()
@@ -97,14 +137,14 @@ macro_rules! db_tests {
 mod sqlite {
     use super::*;
     use aries_askar::sqlite::{SqliteStore, SqliteStoreOptions};
-    use aries_askar::{ProvisionStore, ProvisionStoreSpec};
+    use aries_askar::{ProvisionStore, ProvisionStoreSpec, Store};
 
-    async fn init_db() -> KvResult<Box<SqliteStore>> {
+    async fn init_db() -> KvResult<Store<SqliteStore>> {
         let spec = ProvisionStoreSpec::create_default().await?;
         let db = SqliteStoreOptions::in_memory()
             .provision_store(spec)
             .await?;
-        Ok(Box::new(db))
+        Ok(db)
     }
 
     db_tests!(init_db());

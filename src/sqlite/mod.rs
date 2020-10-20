@@ -22,28 +22,30 @@ use super::future::{sleep_ms, spawn_ok};
 use super::keys::{store::StoreKey, wrap::WrapKeyReference, AsyncEncryptor};
 use super::options::IntoOptions;
 use super::store::{
-    EntryLock, EntryScan, KeyCache, OpenStore, ProvisionStore, ProvisionStoreSpec, Store,
+    EntryLock, KeyCache, OpenStore, ProvisionStore, ProvisionStoreSpec, RawStore, Scan, Store,
 };
 use super::types::{
-    EncEntryTag, Entry, EntryFetchOptions, EntryTag, Expiry, ProfileId, UpdateEntry,
+    EncEntryTag, Entry, EntryFetchOptions, EntryKind, EntryTag, Expiry, ProfileId, UpdateEntry,
 };
 use super::wql;
 
 const LOCK_EXPIRY: i64 = 120000; // 2 minutes
 const COUNT_QUERY: &'static str = "SELECT COUNT(*) FROM items i
-    WHERE profile_id = ?1 AND category = ?2
+    WHERE profile_id = ?1 AND kind = ?2 AND category = ?3
     AND (expiry IS NULL OR expiry > datetime('now'))";
 const DELETE_QUERY: &'static str = "DELETE FROM items
-    WHERE profile_id = ?1 AND category = ?2 AND name = ?3";
+    WHERE profile_id = ?1 AND kind = ?2 AND category = ?3 AND name = ?4";
 const FETCH_QUERY: &'static str = "SELECT id, value FROM items i
-    WHERE profile_id = ?1 AND category = ?2 AND name = ?3
+    WHERE profile_id = ?1 AND kind = ?2 AND category = ?3 AND name = ?4
     AND (expiry IS NULL OR expiry > datetime('now'))";
-const INSERT_QUERY: &'static str = "INSERT INTO items(profile_id, category, name, value, expiry)
-    VALUES(?1, ?2, ?3, ?4, ?5)";
-const SCAN_QUERY: &'static str = "SELECT id, name, value FROM items i WHERE profile_id = ?1
-    AND category = ?2 AND (expiry IS NULL OR expiry > datetime('now'))";
+const INSERT_QUERY: &'static str =
+    "INSERT INTO items (profile_id, kind, category, name, value, expiry)
+    VALUES(?1, ?2, ?3, ?4, ?5, ?6)";
+const SCAN_QUERY: &'static str = "SELECT id, name, value FROM items i
+    WHERE profile_id = ?1 AND kind = ?2 AND category = ?3
+    AND (expiry IS NULL OR expiry > datetime('now'))";
 const TAG_QUERY: &'static str = "SELECT item_id, name, value, plaintext FROM items_tags";
-const TAG_INSERT_QUERY: &'static str = "INSERT INTO items_tags(item_id, name, value, plaintext)
+const TAG_INSERT_QUERY: &'static str = "INSERT INTO items_tags (item_id, name, value, plaintext)
     VALUES(?1, ?2, ?3, ?4)";
 
 struct TagRetriever {
@@ -52,8 +54,8 @@ struct TagRetriever {
 }
 
 impl TagRetriever {
-    pub fn new(batch_size: usize) -> Self {
-        let mut query = TAG_QUERY.to_owned();
+    pub fn new(query: &str, batch_size: usize) -> Self {
+        let mut query = query.to_owned();
         query.push_str(" WHERE item_id IN (");
         query.extend(std::iter::repeat("?").take(batch_size).intersperse(", "));
         query.push(')');
@@ -62,10 +64,11 @@ impl TagRetriever {
 
     pub async fn fetch_row_tags(
         pool: &SqlitePool,
+        query: &str,
         row_id: i64,
         key: AsyncEncryptor<StoreKey>,
     ) -> KvResult<Vec<EntryTag>> {
-        let mut query = TAG_QUERY.to_owned();
+        let mut query = query.to_owned();
         query.push_str(" WHERE item_id=?1");
         let tags = sqlx::query(&query)
             .bind(row_id)
@@ -82,21 +85,21 @@ impl TagRetriever {
     }
 
     pub async fn fetch_tags(
-        &mut self,
+        &self,
         pool: &SqlitePool,
         key: &AsyncEncryptor<StoreKey>,
-        results: &mut BTreeMap<i32, Entry>,
-    ) -> KvResult<()> {
-        let count = results.len();
+        ids: &[i32],
+    ) -> KvResult<BTreeMap<i32, Vec<EntryTag>>> {
+        let count = ids.len();
         if count > self.batch_size {
             return Err(err_msg!(
                 Unexpected,
-                "Number of item ids exceeds batch size in tag retriever"
+                "Number of item IDs exceeds batch size in tag retriever"
             ));
         }
         let mut enc_tags = BTreeMap::new();
         let mut stmt = sqlx::query(&self.query);
-        for id in results.keys() {
+        for id in ids {
             enc_tags.insert(*id, vec![]);
             stmt = stmt.bind(*id);
         }
@@ -116,12 +119,25 @@ impl TagRetriever {
                 plaintext: tag_row.try_get::<i32, _>(3)? != 0,
             });
         }
+        let mut results = BTreeMap::new();
         for (id, tags) in enc_tags {
-            results
-                .get_mut(&id)
-                .unwrap()
-                .tags
-                .replace(key.decrypt_entry_tags(tags).await?);
+            results.insert(id, key.decrypt_entry_tags(tags).await?);
+        }
+        Ok(results)
+    }
+
+    pub async fn populate_tags(
+        &self,
+        pool: &SqlitePool,
+        key: &AsyncEncryptor<StoreKey>,
+        rows: &mut Vec<Entry>,
+        ids: &[i32],
+    ) -> KvResult<()> {
+        let mut tags = self.fetch_tags(pool, key, ids).await?;
+        for (idx, id) in ids.into_iter().enumerate() {
+            if let Some(t) = tags.remove(id) {
+                rows[idx].tags.replace(t);
+            }
         }
         Ok(())
     }
@@ -155,7 +171,7 @@ impl<'a> SqliteStoreOptions<'a> {
 
 #[async_trait]
 impl<'a> OpenStore for SqliteStoreOptions<'a> {
-    type Store = SqliteStore;
+    type Store = Store<SqliteStore>;
 
     async fn open_store(self, pass_key: Option<&str>) -> KvResult<Self::Store> {
         let conn_opts = SqliteConnectOptions::from_str(self.path.as_ref())?;
@@ -211,13 +227,17 @@ impl<'a> OpenStore for SqliteStoreOptions<'a> {
         let store_key = key_cache.load_key(row.try_get(1)?).await?;
         key_cache.add_profile(default_profile.clone(), profile_id, store_key);
 
-        Ok(SqliteStore::new(conn_pool, default_profile, key_cache))
+        Ok(Store::new(SqliteStore::new(
+            conn_pool,
+            default_profile,
+            key_cache,
+        )))
     }
 }
 
 #[async_trait]
 impl<'a> ProvisionStore for SqliteStoreOptions<'a> {
-    async fn provision_store(self, spec: ProvisionStoreSpec) -> KvResult<SqliteStore> {
+    async fn provision_store(self, spec: ProvisionStoreSpec) -> KvResult<Store<SqliteStore>> {
         let conn_opts = SqliteConnectOptions::from_str(self.path.as_ref())?.create_if_missing(true);
         let conn_pool = self.options.connect_with(conn_opts).await?;
         let mut conn = conn_pool.acquire().await?;
@@ -229,7 +249,7 @@ impl<'a> ProvisionStore for SqliteStoreOptions<'a> {
             CREATE TABLE config (
                 name TEXT NOT NULL,
                 value TEXT,
-                PRIMARY KEY(name)
+                PRIMARY KEY (name)
             );
             INSERT INTO config (name, value) VALUES
                 ("default_profile", ?1),
@@ -243,50 +263,38 @@ impl<'a> ProvisionStore for SqliteStoreOptions<'a> {
                 store_key BLOB NULL,
                 PRIMARY KEY(id)
             );
-            CREATE UNIQUE INDEX ix_profile_name ON profiles(name);
-
-            CREATE TABLE keys (
-                id INTEGER NOT NULL,
-                profile_id INTEGER NOT NULL,
-                category BLOB NOT NULL,
-                name BLOB NOT NULL,
-                reference TEXT NULL,
-                value BLOB NULL,
-                PRIMARY KEY(id),
-                FOREIGN KEY(profile_id) REFERENCES profiles(id)
-                    ON DELETE CASCADE ON UPDATE CASCADE
-            );
-            CREATE UNIQUE INDEX ix_keys_uniq ON keys(profile_id, category, name);
+            CREATE UNIQUE INDEX ix_profile_name ON profiles (name);
 
             CREATE TABLE items (
                 id INTEGER NOT NULL,
                 profile_id INTEGER NOT NULL,
+                kind INTEGER NOT NULL,
                 category BLOB NOT NULL,
                 name BLOB NOT NULL,
                 value BLOB NOT NULL,
                 expiry DATETIME NULL,
-                PRIMARY KEY(id),
-                FOREIGN KEY(profile_id) REFERENCES profiles(id)
+                PRIMARY KEY (id),
+                FOREIGN KEY (profile_id) REFERENCES profiles (id)
                     ON DELETE CASCADE ON UPDATE CASCADE
             );
-            CREATE UNIQUE INDEX ix_items_uniq ON items(profile_id, category, name);
+            CREATE UNIQUE INDEX ix_items_uniq ON items (profile_id, kind, category, name);
 
             CREATE TABLE items_tags (
                 item_id INTEGER NOT NULL,
                 name BLOB NOT NULL,
                 value BLOB NOT NULL,
                 plaintext BOOLEAN NOT NULL,
-                PRIMARY KEY(name, item_id, plaintext),
-                FOREIGN KEY(item_id) REFERENCES items(id)
+                PRIMARY KEY (name, plaintext, item_id),
+                FOREIGN KEY (item_id) REFERENCES items (id)
                     ON DELETE CASCADE ON UPDATE CASCADE
             );
-            CREATE INDEX ix_items_tags_item_id ON items_tags(item_id);
-            CREATE INDEX ix_items_tags_value ON items_tags(value) WHERE plaintext;
+            CREATE INDEX ix_items_tags_item_id ON items_tags (item_id);
+            CREATE INDEX ix_items_tags_value ON items_tags (plaintext, SUBSTR(value, 0, 12));
 
             CREATE TABLE items_locks (
                 id INTEGER NOT NULL,
                 expiry DATETIME NOT NULL,
-                PRIMARY KEY(id)
+                PRIMARY KEY (id)
             );
 
             INSERT INTO profiles (name, store_key) VALUES (?1, ?3);
@@ -310,7 +318,11 @@ impl<'a> ProvisionStore for SqliteStoreOptions<'a> {
             .await?;
         key_cache.add_profile(spec.profile_name.clone(), row.try_get(0)?, spec.store_key);
 
-        Ok(SqliteStore::new(conn_pool, spec.profile_name, key_cache))
+        Ok(Store::new(SqliteStore::new(
+            conn_pool,
+            spec.profile_name,
+            key_cache,
+        )))
     }
 }
 
@@ -351,10 +363,11 @@ impl QueryPrepare for SqliteStore {
 }
 
 #[async_trait]
-impl Store for SqliteStore {
+impl RawStore for SqliteStore {
     async fn count(
         &self,
         profile: Option<String>,
+        kind: EntryKind,
         category: String,
         tag_filter: Option<wql::Query>,
     ) -> KvResult<i64> {
@@ -362,6 +375,7 @@ impl Store for SqliteStore {
         let category = key.encrypt_entry_category(category).await?;
         let mut params = QueryParams::new();
         params.push(profile_id);
+        params.push(kind as i32);
         params.push(category);
         let tag_filter = encode_tag_filter::<Self>(tag_filter, key.0.clone(), params.len()).await?;
         let query = extend_query::<Self>(COUNT_QUERY, &mut params, tag_filter, None, None)?;
@@ -374,6 +388,7 @@ impl Store for SqliteStore {
     async fn fetch(
         &self,
         profile: Option<String>,
+        kind: EntryKind,
         category: String,
         name: String,
         options: EntryFetchOptions,
@@ -384,6 +399,7 @@ impl Store for SqliteStore {
         let (category, name) = key.encrypt_entry_category_name(category, name).await?;
         if let Some(row) = sqlx::query(FETCH_QUERY)
             .bind(profile_id)
+            .bind(kind as i32)
             .bind(category)
             .bind(name)
             .fetch_optional(&self.conn_pool)
@@ -392,8 +408,13 @@ impl Store for SqliteStore {
             let tags = if options.retrieve_tags {
                 // FIXME use the same connection to fetch all tags
                 Some(
-                    TagRetriever::fetch_row_tags(&self.conn_pool, row.try_get(0)?, key.clone())
-                        .await?,
+                    TagRetriever::fetch_row_tags(
+                        &self.conn_pool,
+                        TAG_QUERY,
+                        row.try_get(0)?,
+                        key.clone(),
+                    )
+                    .await?,
                 )
             } else {
                 None
@@ -413,70 +434,42 @@ impl Store for SqliteStore {
     async fn scan(
         &self,
         profile: Option<String>,
+        kind: EntryKind,
         category: String,
         options: EntryFetchOptions,
         tag_filter: Option<wql::Query>,
         offset: Option<i64>,
         max_rows: Option<i64>,
-    ) -> KvResult<EntryScan> {
+    ) -> KvResult<Scan<Entry>> {
         let (profile_id, key) = self.get_profile_key(profile).await?;
         let pool = self.conn_pool.clone();
-        let raw_category = category.clone();
-        let category = key.encrypt_entry_category(category).await?;
 
-        let scan = try_stream! {
-            let mut params = QueryParams::new();
-            params.push(profile_id);
-            params.push(category.clone());
-            let tag_filter = encode_tag_filter::<Self>(tag_filter, key.0.clone(), params.len()).await?;
-            let query = extend_query::<Self>(SCAN_QUERY, &mut params, tag_filter, offset, max_rows)?;
-            let mut batch = BTreeMap::<i32, Entry>::new();
-            let mut tag_retriever = if options.retrieve_tags {
-                Some(TagRetriever::new(PAGE_SIZE))
-            } else {
-                None
-            };
-
-            let mut rows = sqlx::query_with(query.as_str(), params).fetch(&pool);
-            while let Some(row) = rows.next().await {
-                let row = row?;
-                let row_id = row.try_get(0)?;
-                let (name, value) = key.decrypt_entry_name_value(row.try_get(1)?, row.try_get(2)?).await?;
-                batch.insert(row_id, Entry {
-                    category: raw_category.clone(),
-                    name,
-                    value,
-                    tags: None,
-                });
-
-                if batch.len() == PAGE_SIZE {
-                    if let Some(retr) = tag_retriever.as_mut() {
-                        retr.fetch_tags(&pool, &key, &mut batch).await?;
-                    }
-                    yield batch.into_iter().map(|(_, v)| v).collect();
-                    batch = BTreeMap::new();
-                }
-            }
-            drop(rows);
-
-            if batch.len() > 0 {
-                if let Some(retr) = tag_retriever.as_mut() {
-                    retr.fetch_tags(&pool, &key, &mut batch).await?;
-                }
-                yield batch.into_iter().map(|(_, v)| v).collect();
-            }
-            drop(query);
-        };
-        Ok(EntryScan::new(scan, PAGE_SIZE))
+        perform_scan(
+            pool,
+            profile_id,
+            kind,
+            key,
+            category,
+            tag_filter,
+            offset,
+            max_rows,
+            options.retrieve_tags,
+        )
+        .await
     }
 
-    async fn update(&self, profile: Option<String>, entries: Vec<UpdateEntry>) -> KvResult<()> {
+    async fn update(
+        &self,
+        profile: Option<String>,
+        kind: EntryKind,
+        entries: Vec<UpdateEntry>,
+    ) -> KvResult<()> {
         if entries.is_empty() {
             debug!("Skip update: no entries");
             return Ok(());
         }
         let (profile_id, key) = self.get_profile_key(profile).await?;
-        let updates = prepare_update(profile_id, key, entries).await?;
+        let updates = prepare_update(profile_id, kind, key, entries).await?;
         let mut txn = self.conn_pool.begin().await?; // deferred write txn
         txn = perform_update(txn, updates).await?;
         Ok(txn.commit().await?)
@@ -485,12 +478,13 @@ impl Store for SqliteStore {
     async fn create_lock(
         &self,
         profile: Option<String>,
+        kind: EntryKind,
         lock_info: UpdateEntry,
         acquire_timeout_ms: Option<i64>,
     ) -> KvResult<(Entry, EntryLock)> {
         let (profile_id, key) = self.get_profile_key(profile).await?;
         let raw_entry = lock_info.entry.clone();
-        let hash = hash_lock_info(profile_id, &lock_info);
+        let hash = hash_lock_info(profile_id, kind, &lock_info);
         let (enc_entry, enc_tags) = key.encrypt_entry(lock_info.entry).await?;
         let expiry = lock_info.expire_ms.map(expiry_timestamp).transpose()?;
 
@@ -554,6 +548,7 @@ impl Store for SqliteStore {
 
         let entry = match sqlx::query(FETCH_QUERY)
             .bind(profile_id)
+            .bind(kind as i32)
             .bind(enc_entry.category.as_ref())
             .bind(enc_entry.name.as_ref())
             .fetch_optional(&mut txn)
@@ -571,6 +566,7 @@ impl Store for SqliteStore {
             None => {
                 let row_id = sqlx::query(INSERT_QUERY)
                     .bind(profile_id)
+                    .bind(kind as i32)
                     .bind(enc_entry.category.as_ref())
                     .bind(enc_entry.name.as_ref())
                     .bind(enc_entry.value.as_ref())
@@ -601,7 +597,7 @@ impl Store for SqliteStore {
                     debug!("Skip update: no entries");
                     return Ok(());
                 }
-                let updates = prepare_update(profile_id, key, entries).await?;
+                let updates = prepare_update(profile_id, kind, key, entries).await?;
                 let mut txn = lock_handle.pool.as_ref().unwrap().begin().await?; // deferred write txn
                 txn = perform_update(txn, updates).await?;
                 if sqlx::query("DELETE FROM items_locks WHERE id=?1 AND expiry=?2")
@@ -627,6 +623,68 @@ impl Store for SqliteStore {
     }
 }
 
+async fn perform_scan(
+    pool: SqlitePool,
+    profile_id: ProfileId,
+    kind: EntryKind,
+    key: AsyncEncryptor<StoreKey>,
+    category: String,
+    tag_filter: Option<wql::Query>,
+    offset: Option<i64>,
+    max_rows: Option<i64>,
+    retrieve_tags: bool,
+) -> KvResult<Scan<Entry>> {
+    let raw_category = category.clone();
+    let category = key.encrypt_entry_category(category).await?;
+
+    let scan = try_stream! {
+        let mut params = QueryParams::new();
+        params.push(profile_id);
+        params.push(kind as i32);
+        params.push(category.clone());
+        let tag_filter = encode_tag_filter::<SqliteStore>(tag_filter, key.0.clone(), params.len()).await?;
+        let query = extend_query::<SqliteStore>(SCAN_QUERY, &mut params, tag_filter, offset, max_rows)?;
+        let mut batch = Vec::<Entry>::with_capacity(PAGE_SIZE);
+        let mut ids = Vec::<i32>::with_capacity(PAGE_SIZE);
+        let mut tag_retriever = if retrieve_tags {
+            Some(TagRetriever::new(TAG_QUERY, PAGE_SIZE))
+        } else {
+            None
+        };
+
+        let mut rows = sqlx::query_with(query.as_str(), params).fetch(&pool);
+        while let Some(row) = rows.next().await {
+            let row = row?;
+            let row_id = row.try_get(0)?;
+            let (name, value) = key.decrypt_entry_name_value(row.try_get(1)?, row.try_get(2)?).await?;
+            batch.push(Entry {
+                category: raw_category.clone(),
+                name,
+                value,
+            tags: None});
+            ids.push(row_id);
+
+            if batch.len() == PAGE_SIZE {
+                if let Some(retr) = tag_retriever.as_mut() {
+                    retr.populate_tags(&pool, &key, &mut batch, ids.as_slice()).await?;
+                }
+                yield batch.split_off(0);
+                ids.clear();
+            }
+        }
+        drop(rows);
+
+        if batch.len() > 0 {
+            if let Some(retr) = tag_retriever.as_mut() {
+                retr.populate_tags(&pool, &key, &mut batch, ids.as_slice()).await?;
+            }
+            yield batch;
+        }
+        drop(query);
+    };
+    Ok(Scan::new(scan, PAGE_SIZE))
+}
+
 async fn perform_update(
     mut txn: Transaction<'static, Sqlite>,
     updates: Vec<PreparedUpdate>,
@@ -634,6 +692,7 @@ async fn perform_update(
     for upd in updates {
         let PreparedUpdate {
             profile_id,
+            kind,
             enc_entry,
             enc_tags,
             expire_ms,
@@ -649,6 +708,7 @@ async fn perform_update(
             trace!("Insert entry");
             let row_id = sqlx::query(INSERT_QUERY)
                 .bind(profile_id)
+                .bind(kind as i32)
                 .bind(enc_entry.category.as_ref())
                 .bind(enc_entry.name.as_ref())
                 .bind(enc_entry.value.as_ref())
@@ -688,7 +748,7 @@ mod tests {
             let ts = expiry_timestamp(LOCK_EXPIRY).unwrap();
             let check = sqlx::query("SELECT datetime('now'), ?1, ?1 > datetime('now')")
                 .bind(ts)
-                .fetch_one(&db.conn_pool)
+                .fetch_one(&db.inner.conn_pool)
                 .await?;
             let now: String = check.try_get(0)?;
             let cmp_ts: String = check.try_get(1)?;
@@ -702,14 +762,14 @@ mod tests {
     }
 
     #[test]
-    fn sqlite_simple_and_convert_args_works() {
+    fn sqlite_query_placeholders() {
         assert_eq!(
-            replace_arg_placeholders::<SqliteStore>("This $$ is $$ a $$ string!", 3),
-            ("This ?3 is ?4 a ?5 string!".to_string(), 6),
+            &replace_arg_placeholders::<SqliteStore>("This $$ is $10 a $$ string!", 3),
+            "This ?3 is ?12 a ?5 string!",
         );
         assert_eq!(
-            replace_arg_placeholders::<SqliteStore>("This is a string!", 1),
-            ("This is a string!".to_string(), 1),
+            &replace_arg_placeholders::<SqliteStore>("This $a is a string!", 1),
+            "This $a is a string!",
         );
     }
 }
