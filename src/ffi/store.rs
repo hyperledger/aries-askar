@@ -288,9 +288,12 @@ pub struct FfiUpdateEntry {
 
 impl FfiUpdateEntry {
     pub fn decode(&self) -> KvResult<UpdateEntry> {
-        let entry = self.entry.decode()?;
+        let (category, name, value, tags) = self.entry.decode()?.into_parts();
         Ok(UpdateEntry {
-            entry,
+            category,
+            name,
+            value: Some(value),
+            tags,
             expire_ms: if self.expire_ms < 0 {
                 None
             } else {
@@ -600,6 +603,7 @@ pub extern "C" fn askar_store_create_lock(
         let cb = cb.ok_or_else(|| err_msg!("No callback provided"))?;
         let update = unsafe { &*lock_info as &FfiUpdateEntry }.decode()?;
         let timeout = if acquire_timeout_ms == -1 { None } else { Some(acquire_timeout_ms)};
+
         let cb = EnsureCallback::new(move |result|
             match result {
                 Ok(lock) => cb(cb_id, ErrorCode::Success, lock),

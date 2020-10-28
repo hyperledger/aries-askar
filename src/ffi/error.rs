@@ -20,9 +20,10 @@ pub enum ErrorCode {
     Encryption = 5,
     Input = 6,
     Lock = 7,
-    Timeout = 8,
-    Unexpected = 9,
-    Unsupported = 10,
+    NotFound = 8,
+    Timeout = 9,
+    Unexpected = 10,
+    Unsupported = 11,
 }
 
 impl From<ErrorKind> for ErrorCode {
@@ -35,6 +36,7 @@ impl From<ErrorKind> for ErrorCode {
             ErrorKind::Encryption => ErrorCode::Encryption,
             ErrorKind::Input => ErrorCode::Input,
             ErrorKind::Lock => ErrorCode::Lock,
+            ErrorKind::NotFound => ErrorCode::NotFound,
             ErrorKind::Timeout => ErrorCode::Timeout,
             ErrorKind::Unexpected => ErrorCode::Unexpected,
             ErrorKind::Unsupported => ErrorCode::Unsupported,

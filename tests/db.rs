@@ -62,10 +62,20 @@ macro_rules! db_tests {
         }
 
         #[test]
-        fn create_lock_non_existing() {
+        fn create_lock_fail_non_existing() {
             block_on(async {
                 let db = $init.await?;
-                super::utils::db_create_lock_non_existing(&db).await?;
+                super::utils::db_create_lock_fail_non_existing(&db).await?;
+                KvResult::Ok(())
+            })
+            .unwrap()
+        }
+
+        #[test]
+        fn create_lock_new_non_existing() {
+            block_on(async {
+                let db = $init.await?;
+                super::utils::db_create_lock_new_non_existing(&db).await?;
                 KvResult::Ok(())
             })
             .unwrap()

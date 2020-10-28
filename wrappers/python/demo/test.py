@@ -51,10 +51,7 @@ async def basic_test():
             log("Scan result:", row)
 
         # Create a new record lock and perform an associated update
-        lock_entry = UpdateEntry(
-            "category", "name", b"value", {"~plaintag": "a", "enctag": "b"}
-        )
-        async with store.create_lock(lock_entry) as lock:
+        async with store.create_lock("category", "name", b"init-value") as lock:
             log("Lock entry:", lock.entry, "\nNew record:", lock.new_record)
 
             entry2 = UpdateEntry("category2", "name2", b"value2")

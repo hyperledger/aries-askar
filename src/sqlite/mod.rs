@@ -14,8 +14,8 @@ use sqlx::{
 };
 
 use super::db_utils::{
-    encode_tag_filter, expiry_timestamp, extend_query, hash_lock_info, prepare_update,
-    PreparedUpdate, QueryParams, QueryPrepare, PAGE_SIZE,
+    encode_tag_filter, expiry_timestamp, extend_query, hash_lock_info, prepare_single_update,
+    prepare_update, PreparedUpdate, QueryParams, QueryPrepare, PAGE_SIZE,
 };
 use super::error::Result as KvResult;
 use super::future::{sleep_ms, spawn_ok};
@@ -47,6 +47,10 @@ const SCAN_QUERY: &'static str = "SELECT id, name, value FROM items i
 const TAG_QUERY: &'static str = "SELECT item_id, name, value, plaintext FROM items_tags";
 const TAG_INSERT_QUERY: &'static str = "INSERT INTO items_tags (item_id, name, value, plaintext)
     VALUES(?1, ?2, ?3, ?4)";
+const LOCK_INSERT_QUERY: &'static str = "INSERT INTO items_locks (id, expiry) VALUES (?1, ?2)
+    ON CONFLICT (id) DO UPDATE SET expiry=excluded.expiry
+    WHERE expiry <= datetime('now')";
+const LOCK_DELETE_QUERY: &'static str = "DELETE FROM items_locks WHERE id=?1 AND expiry=?2";
 
 struct TagRetriever {
     batch_size: usize,
@@ -486,10 +490,12 @@ impl RawStore for SqliteStore {
         acquire_timeout_ms: Option<i64>,
     ) -> KvResult<(Entry, EntryLock)> {
         let (profile_id, key) = self.get_profile_key(profile).await?;
-        let raw_entry = lock_info.entry.clone();
-        let hash = hash_lock_info(profile_id, kind, &lock_info);
-        let (enc_entry, enc_tags) = key.encrypt_entry(lock_info.entry).await?;
-        let expiry = lock_info.expire_ms.map(expiry_timestamp).transpose()?;
+        let category = lock_info.category.clone();
+        let name = lock_info.name.clone();
+        let value = lock_info.value.clone();
+        let tags = lock_info.tags.clone();
+        let hash = hash_lock_info(profile_id, kind, category.as_str(), name.as_str());
+        let update = prepare_single_update(profile_id, kind, key.clone(), lock_info).await?;
 
         let interval = 50;
         let expire = acquire_timeout_ms.map(|offs| {
@@ -497,16 +503,12 @@ impl RawStore for SqliteStore {
         });
         let lock_expiry = loop {
             let lock_expiry = expiry_timestamp(LOCK_EXPIRY)?;
-            let upserted = sqlx::query(
-                "INSERT INTO items_locks (id, expiry) VALUES (?1, ?2)
-                ON CONFLICT (id) DO UPDATE SET expiry=excluded.expiry
-                WHERE expiry <= datetime('now')",
-            )
-            .bind(hash)
-            .bind(lock_expiry)
-            .execute(&self.conn_pool)
-            .await?
-            .rows_affected();
+            let upserted = sqlx::query(LOCK_INSERT_QUERY)
+                .bind(hash)
+                .bind(lock_expiry)
+                .execute(&self.conn_pool)
+                .await?
+                .rows_affected();
             if upserted > 0 {
                 break lock_expiry;
             }
@@ -530,7 +532,7 @@ impl RawStore for SqliteStore {
                 if let Some(pool) = self.pool.take() {
                     let (hash, expiry) = (self.hash, self.expiry);
                     spawn_ok(async move {
-                        sqlx::query("DELETE FROM items_locks WHERE id=?1 AND expiry=?2")
+                        sqlx::query(LOCK_DELETE_QUERY)
                             .bind(hash)
                             .bind(expiry)
                             .execute(&pool)
@@ -552,8 +554,8 @@ impl RawStore for SqliteStore {
         let (entry, is_new) = match sqlx::query(FETCH_QUERY)
             .bind(profile_id)
             .bind(kind as i32)
-            .bind(enc_entry.category.as_ref())
-            .bind(enc_entry.name.as_ref())
+            .bind(&update.enc_category)
+            .bind(&update.enc_name)
             .fetch_optional(&mut txn)
             .await?
         {
@@ -564,8 +566,8 @@ impl RawStore for SqliteStore {
                         .await?;
                 (
                     Entry {
-                        category: raw_entry.category.clone(),
-                        name: raw_entry.name.clone(),
+                        category,
+                        name,
                         value,
                         tags: Some(tags),
                     },
@@ -573,17 +575,26 @@ impl RawStore for SqliteStore {
                 )
             }
             None => {
+                if update.enc_value.is_none() {
+                    sqlx::query(LOCK_DELETE_QUERY)
+                        .bind(lock_handle.hash)
+                        .bind(lock_handle.expiry)
+                        .execute(&mut txn)
+                        .await?;
+                    return Err(err_msg!(NotFound, "Record not found for lock"));
+                }
+                let expiry = update.expire_ms.map(expiry_timestamp).transpose()?;
                 let row_id = sqlx::query(INSERT_QUERY)
                     .bind(profile_id)
                     .bind(kind as i32)
-                    .bind(enc_entry.category.as_ref())
-                    .bind(enc_entry.name.as_ref())
-                    .bind(enc_entry.value.as_ref())
+                    .bind(update.enc_category)
+                    .bind(update.enc_name)
+                    .bind(update.enc_value.unwrap())
                     .bind(expiry)
                     .execute(&mut txn)
                     .await?
                     .last_insert_rowid();
-                if let Some(tags) = enc_tags {
+                if let Some(tags) = update.enc_tags {
                     for tag in tags {
                         sqlx::query(TAG_INSERT_QUERY)
                             .bind(row_id)
@@ -595,7 +606,15 @@ impl RawStore for SqliteStore {
                     }
                 }
                 txn.commit().await?;
-                (raw_entry, true)
+                (
+                    Entry {
+                        category,
+                        name,
+                        value: value.unwrap(),
+                        tags,
+                    },
+                    true,
+                )
             }
         };
 
@@ -609,7 +628,7 @@ impl RawStore for SqliteStore {
                 let updates = prepare_update(profile_id, kind, key, entries).await?;
                 let mut txn = lock_handle.pool.as_ref().unwrap().begin().await?; // deferred write txn
                 txn = perform_update(txn, updates).await?;
-                if sqlx::query("DELETE FROM items_locks WHERE id=?1 AND expiry=?2")
+                if sqlx::query(LOCK_DELETE_QUERY)
                     .bind(lock_handle.hash)
                     .bind(lock_handle.expiry)
                     .execute(&mut txn)
@@ -702,25 +721,27 @@ async fn perform_update(
         let PreparedUpdate {
             profile_id,
             kind,
-            enc_entry,
+            enc_category,
+            enc_name,
+            enc_value,
             enc_tags,
             expire_ms,
         } = upd;
         sqlx::query(DELETE_QUERY)
             .bind(profile_id)
-            .bind(enc_entry.category.as_ref())
-            .bind(enc_entry.name.as_ref())
+            .bind(&enc_category)
+            .bind(&enc_name)
             .execute(&mut txn)
             .await?;
 
-        if expire_ms != Some(0) {
+        if let Some(enc_value) = enc_value {
             trace!("Insert entry");
             let row_id = sqlx::query(INSERT_QUERY)
                 .bind(profile_id)
                 .bind(kind as i32)
-                .bind(enc_entry.category.as_ref())
-                .bind(enc_entry.name.as_ref())
-                .bind(enc_entry.value.as_ref())
+                .bind(&enc_category)
+                .bind(&enc_name)
+                .bind(&enc_value)
                 .bind(expire_ms.map(expiry_timestamp).transpose()?)
                 .execute(&mut txn)
                 .await?

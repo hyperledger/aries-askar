@@ -185,8 +185,15 @@ class Store:
         await bindings.store_update(self.handle, entries)
 
     def create_lock(
-        self, lock_info: UpdateEntry, acquire_timeout_ms: int = None
+        self,
+        category: str,
+        name: str,
+        init_value: [str, bytes] = None,
+        init_tags: dict = None,
+        init_expire_ms: int = None,
+        acquire_timeout_ms: int = None,
     ) -> Lock:
+        lock_info = UpdateEntry(category, name, init_value, init_tags, init_expire_ms)
         return Lock(self, lock_info, acquire_timeout_ms)
 
     async def create_keypair(

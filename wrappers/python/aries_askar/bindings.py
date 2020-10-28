@@ -93,18 +93,12 @@ class FfiUpdateEntry(Structure):
 
     @classmethod
     def encode(cls, upd: UpdateEntry) -> "FfiUpdateEntry":
-        if upd.tags:
-            tags = encode_str(json.dumps(upd.tags))
-        else:
-            tags = None
-        category = encode_str(upd.category)
-        name = encode_str(upd.name)
         entry = FfiEntry(
-            category,
-            name,
-            len(upd.value),
-            cast(upd.value, c_void_p),
-            tags,
+            encode_str(upd.category),
+            encode_str(upd.name),
+            None if upd.value is None else len(upd.value),
+            None if upd.value is None else cast(upd.value, c_void_p),
+            encode_str(None if upd.tags is None else json.dumps(upd.tags)),
         )
         return FfiUpdateEntry(
             entry,
@@ -439,14 +433,16 @@ async def store_update(handle: StoreHandle, entries: Sequence[UpdateEntry]):
 
 
 async def store_create_lock(
-    handle: StoreHandle, lock_info: UpdateEntry, acquire_timeout_ms: int = None
+    handle: StoreHandle,
+    lock_info: UpdateEntry,
+    acquire_timeout_ms: int = None,
 ) -> LockHandle:
-    ffi_info = FfiUpdateEntry.encode(lock_info)
+    ffi_update = FfiUpdateEntry.encode(lock_info)
     timeout = c_long(acquire_timeout_ms if acquire_timeout_ms is not None else -1)
     return await do_call_async(
         "askar_store_create_lock",
         handle,
-        pointer(ffi_info),
+        pointer(ffi_update),
         timeout,
         return_type=LockHandle,
     )

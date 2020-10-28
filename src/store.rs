@@ -333,16 +333,14 @@ impl<T: RawStore + ?Sized> Store<T> {
         };
 
         let keypair = UpdateEntry {
-            entry: Entry {
-                category: category.as_str().to_owned(),
-                name: ident.clone(),
-                value: params.to_vec()?,
-                tags: tags.clone(),
-            },
+            category: category.as_str().to_owned(),
+            name: ident.clone(),
+            value: Some(params.to_vec()?),
+            tags: tags.clone(),
             expire_ms: None,
         };
 
-        let (_entry, lock) = self
+        let (lock_entry, lock) = self
             .inner
             .create_lock(profile, EntryKind::Key, keypair, None)
             .await?;
@@ -408,14 +406,11 @@ impl<T: RawStore + ?Sized> Store<T> {
         ident: String,
     ) -> Result<()> {
         let update = UpdateEntry {
-            entry: Entry {
-                category: category.as_str().to_owned(),
-                name: ident,
-                value: vec![],
-                tags: None,
-            },
-            // expire immediately
-            expire_ms: Some(0),
+            category: category.as_str().to_owned(),
+            name: ident,
+            value: None,
+            tags: None,
+            expire_ms: None,
         };
         self.inner
             .update(profile, EntryKind::Key, vec![update])

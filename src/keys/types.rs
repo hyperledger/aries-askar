@@ -66,6 +66,13 @@ impl KeyCategory {
             Self::Other(other) => other.as_str(),
         }
     }
+
+    pub fn into_string(self) -> String {
+        match self {
+            Self::Other(other) => other,
+            _ => self.as_str().to_owned(),
+        }
+    }
 }
 
 serde_as_str_impl!(KeyCategory);

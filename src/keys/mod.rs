@@ -173,6 +173,25 @@ impl<T: EntryEncryptor + Send + Sync + 'static> AsyncEncryptor<T> {
         }
     }
 
+    // pub async fn encrypt_entry_value(&self, value: Vec<u8>) -> Result<Vec<u8>> {
+    //     if let Some(key) = self.0.clone() {
+    //         blocking(move || key.encrypt_entry_value(&value)).await
+    //     } else {
+    //         NullEncryptor {}.encrypt_entry_value(&value)
+    //     }
+    // }
+
+    // pub async fn encrypt_entry_tags(&self, tags: Vec<EntryTag>) -> Result<Vec<EncEntryTag>> {
+    //     if tags.is_empty() {
+    //         return Ok(vec![]);
+    //     }
+    //     if let Some(key) = self.0.clone() {
+    //         blocking(move || key.encrypt_entry_tags(&tags)).await
+    //     } else {
+    //         NullEncryptor {}.encrypt_entry_tags(&tags)
+    //     }
+    // }
+
     pub async fn decrypt_entry_value(&self, enc_value: Vec<u8>) -> Result<Vec<u8>> {
         if let Some(key) = self.0.clone() {
             blocking(move || key.decrypt_entry_value(&enc_value)).await

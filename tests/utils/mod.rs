@@ -23,12 +23,10 @@ pub async fn db_add_fetch<DB: RawStore>(db: &Store<DB>) -> KvResult<()> {
     let options = EntryFetchOptions::new(true);
 
     let updates = vec![UpdateEntry {
-        entry: Entry {
-            category: test_row.category.clone(),
-            name: test_row.name.clone(),
-            value: test_row.value.clone(),
-            tags: None,
-        },
+        category: test_row.category.clone(),
+        name: test_row.name.clone(),
+        value: Some(test_row.value.clone()),
+        tags: None,
         expire_ms: None,
     }];
     db.update(None, updates).await?;
@@ -63,12 +61,10 @@ pub async fn db_add_fetch_tags<DB: RawStore>(db: &Store<DB>) -> KvResult<()> {
     let options = EntryFetchOptions::new(true);
 
     let updates = vec![UpdateEntry {
-        entry: Entry {
-            category: test_row.category.clone(),
-            name: test_row.name.clone(),
-            value: test_row.value.clone(),
-            tags: test_row.tags.clone(),
-        },
+        category: test_row.category.clone(),
+        name: test_row.name.clone(),
+        value: Some(test_row.value.clone()),
+        tags: test_row.tags.clone(),
         expire_ms: None,
     }];
     db.update(None, updates).await?;
@@ -101,12 +97,10 @@ pub async fn db_count<DB: RawStore>(db: &Store<DB>) -> KvResult<()> {
     let updates = test_rows
         .iter()
         .map(|row| UpdateEntry {
-            entry: Entry {
-                category: row.category.clone(),
-                name: row.name.clone(),
-                value: row.value.clone(),
-                tags: row.tags.clone(),
-            },
+            category: row.category.clone(),
+            name: row.name.clone(),
+            value: Some(row.value.clone()),
+            tags: row.tags.clone(),
             expire_ms: None,
         })
         .collect();
@@ -135,12 +129,10 @@ pub async fn db_scan<DB: RawStore>(db: &Store<DB>) -> KvResult<()> {
     let updates = test_rows
         .iter()
         .map(|row| UpdateEntry {
-            entry: Entry {
-                category: row.category.clone(),
-                name: row.name.clone(),
-                value: row.value.clone(),
-                tags: row.tags.clone(),
-            },
+            category: row.category.clone(),
+            name: row.name.clone(),
+            value: Some(row.value.clone()),
+            tags: row.tags.clone(),
             expire_ms: None,
         })
         .collect();
@@ -183,58 +175,102 @@ pub async fn db_scan<DB: RawStore>(db: &Store<DB>) -> KvResult<()> {
     Ok(())
 }
 
-pub async fn db_create_lock_non_existing<DB: RawStore>(db: &Store<DB>) -> KvResult<()> {
-    let update = UpdateEntry {
-        entry: Entry {
-            category: "cat".to_string(),
-            name: "name".to_string(),
-            value: b"value".to_vec(),
-            tags: None,
-        },
+pub async fn db_create_lock_fail_non_existing<DB: RawStore>(db: &Store<DB>) -> KvResult<()> {
+    let lock_info = UpdateEntry {
+        category: "cat".to_string(),
+        name: "name".to_string(),
+        value: None,
+        tags: None,
         expire_ms: None,
     };
-    let lock_update = update.clone();
-    let (entry, _lock) = db.create_lock(None, lock_update, None).await?;
-    assert_eq!(entry, update.entry);
+    let result = db.create_lock(None, lock_info, None).await;
+    assert_eq!(result.is_err(), true);
+
+    Ok(())
+}
+
+pub async fn db_create_lock_new_non_existing<DB: RawStore>(db: &Store<DB>) -> KvResult<()> {
+    let entry = Entry {
+        category: "cat".to_string(),
+        name: "name".to_string(),
+        value: b"value".to_vec(),
+        tags: None,
+    };
+    let lock_info = UpdateEntry {
+        category: "cat".to_string(),
+        name: "name".to_string(),
+        value: Some(entry.value.clone()),
+        tags: None,
+        expire_ms: None,
+    };
+    let (lock_entry, lock) = db.create_lock(None, lock_info, None).await?;
+    assert_eq!(lock_entry, entry);
+    assert_eq!(lock.is_new_record(), true);
 
     Ok(())
 }
 
 pub async fn db_create_lock_timeout<DB: RawStore>(db: &Store<DB>) -> KvResult<()> {
-    let update = UpdateEntry {
-        entry: Entry {
-            category: "cat".to_string(),
-            name: "name".to_string(),
-            value: b"value".to_vec(),
-            tags: None,
-        },
+    let entry = Entry {
+        category: "cat".to_string(),
+        name: "name".to_string(),
+        value: b"value".to_vec(),
+        tags: None,
+    };
+    let lock_info = UpdateEntry {
+        category: "cat".to_string(),
+        name: "name".to_string(),
+        value: Some(entry.value.clone()),
+        tags: None,
         expire_ms: None,
     };
-    let (entry, _lock) = db.create_lock(None, update.clone(), Some(100)).await?;
-    assert_eq!(entry, update.entry);
+    let (lock_entry, lock) = db.create_lock(None, lock_info, Some(100)).await?;
+    assert_eq!(lock_entry, entry);
+    assert_eq!(lock.is_new_record(), true);
 
-    let lock2 = db.create_lock(None, update.clone(), Some(100)).await;
+    let lock_info2 = UpdateEntry {
+        category: "cat".to_string(),
+        name: "name".to_string(),
+        value: None,
+        tags: None,
+        expire_ms: None,
+    };
+    let lock2 = db.create_lock(None, lock_info2, Some(100)).await;
     assert!(lock2.is_err());
 
     Ok(())
 }
 
 pub async fn db_create_lock_drop_expire<DB: RawStore>(db: &Store<DB>) -> KvResult<()> {
-    let update = UpdateEntry {
-        entry: Entry {
-            category: "cat".to_string(),
-            name: "name".to_string(),
-            value: b"value".to_vec(),
-            tags: None,
-        },
+    let entry = Entry {
+        category: "cat".to_string(),
+        name: "name".to_string(),
+        value: b"value".to_vec(),
+        tags: None,
+    };
+    let lock_info = UpdateEntry {
+        category: "cat".to_string(),
+        name: "name".to_string(),
+        value: Some(entry.value.clone()),
+        tags: None,
         expire_ms: None,
     };
-    let (entry, lock) = db.create_lock(None, update.clone(), Some(100)).await?;
-    assert_eq!(entry, update.entry);
+    let (lock_entry, lock) = db.create_lock(None, lock_info, Some(100)).await?;
+    assert_eq!(lock_entry, entry);
+    assert_eq!(lock.is_new_record(), true);
+    // release lock
     drop(lock);
 
-    let (entry2, _lock2) = db.create_lock(None, update.clone(), Some(100)).await?;
-    assert_eq!(entry2, update.entry);
+    let lock_info2 = UpdateEntry {
+        category: "cat".to_string(),
+        name: "name".to_string(),
+        value: None,
+        tags: None,
+        expire_ms: None,
+    };
+    let (lock_entry2, lock2) = db.create_lock(None, lock_info2, Some(100)).await?;
+    assert_eq!(lock_entry2, entry);
+    assert_eq!(lock2.is_new_record(), false);
 
     Ok(())
 }

@@ -96,8 +96,46 @@ pub struct EncEntry<'a> {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct UpdateEntry {
-    pub entry: Entry,
+    pub category: String,
+    pub name: String,
+    pub value: Option<Vec<u8>>,
+    pub tags: Option<Vec<EntryTag>>,
     pub expire_ms: Option<i64>,
+}
+
+impl UpdateEntry {
+    pub(crate) fn into_parts(
+        self,
+    ) -> (
+        String,
+        String,
+        Option<Vec<u8>>,
+        Option<Vec<EntryTag>>,
+        Option<i64>,
+    ) {
+        let slf = ManuallyDrop::new(self);
+        unsafe {
+            (
+                ptr::read(&slf.category),
+                ptr::read(&slf.name),
+                ptr::read(&slf.value),
+                ptr::read(&slf.tags),
+                slf.expire_ms,
+            )
+        }
+    }
+}
+
+impl Drop for UpdateEntry {
+    fn drop(&mut self) {
+        self.zeroize();
+    }
+}
+
+impl Zeroize for UpdateEntry {
+    fn zeroize(&mut self) {
+        self.value.zeroize()
+    }
 }
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Zeroize)]
