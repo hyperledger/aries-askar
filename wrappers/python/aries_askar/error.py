@@ -12,9 +12,10 @@ class StoreErrorCode(IntEnum):
     ENCRYPTION = 5
     INPUT = 6
     LOCK = 7
-    TIMEOUT = 8
-    UNEXPECTED = 9
-    UNSUPPORTED = 10
+    NOT_FOUND = 8
+    TIMEOUT = 9
+    UNEXPECTED = 10
+    UNSUPPORTED = 11
     WRAPPER = 99
 
 
