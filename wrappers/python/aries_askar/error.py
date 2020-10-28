@@ -8,12 +8,13 @@ class StoreErrorCode(IntEnum):
     BACKEND = 1
     BUSY = 2
     DISCONNECTED = 3
-    ENCRYPTION = 4
-    INPUT = 5
-    LOCK = 6
-    TIMEOUT = 7
-    UNEXPECTED = 8
-    UNSUPPORTED = 9
+    DUPLICATE = 4
+    ENCRYPTION = 5
+    INPUT = 6
+    LOCK = 7
+    TIMEOUT = 8
+    UNEXPECTED = 9
+    UNSUPPORTED = 10
     WRAPPER = 99
 
 

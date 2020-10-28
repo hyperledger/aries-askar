@@ -8,7 +8,6 @@ import sys
 from ctypes import (
     CDLL,
     CFUNCTYPE,
-    POINTER,
     byref,
     cast,
     pointer,
@@ -25,7 +24,7 @@ from ctypes.util import find_library
 from typing import Optional, Union, Sequence
 
 from .error import StoreError, StoreErrorCode
-from .types import Entry, UpdateEntry
+from .types import Entry, KeyAlg, UpdateEntry
 
 
 CALLBACKS = {}
@@ -65,35 +64,18 @@ class EntrySetHandle(c_int64):
         return f"{self.__class__.__name__}({self.value})"
 
 
-class FfiTag(Structure):
-    _fields_ = [
-        ("name", c_char_p),
-        ("value", c_char_p),
-    ]
-
-
 class FfiEntry(Structure):
     _fields_ = [
         ("category", c_char_p),
         ("name", c_char_p),
-        ("value", c_void_p),
         ("value_len", c_int64),
-        ("tags", POINTER(FfiTag)),
-        ("tags_len", c_int64),
+        ("value", c_void_p),
+        ("tags", c_char_p),
     ]
 
     def decode(self) -> Entry:
         value = bytes((c_ubyte * self.value_len).from_address(self.value))
-        if self.tags_len % sizeof(FfiTag) != 0:
-            raise StoreError(StoreErrorCode.WRAPPER, "Invalid length for tags")
-        tag_count = self.tags_len // sizeof(FfiTag)
-        if tag_count:
-            tags_lst = cast(self.tags, POINTER(FfiTag * tag_count)).contents
-            tags = {}
-            for tag in tags_lst:
-                tags[decode_str(tag.name)] = decode_str(tag.value)
-        else:
-            tags = None
+        tags = json.loads(decode_str(self.tags)) if self.tags is not None else None
         return Entry(
             decode_str(self.category),
             decode_str(self.name),
@@ -111,27 +93,17 @@ class FfiUpdateEntry(Structure):
     @classmethod
     def encode(cls, upd: UpdateEntry) -> "FfiUpdateEntry":
         if upd.tags:
-            tags = (FfiTag * len(upd.tags))()
-            tag_idx = 0
-            for tag_name, tag_value in upd.tags.items():
-                tags[tag_idx] = FfiTag(
-                    encode_str(tag_name),
-                    encode_str(tag_value),
-                )
-                tag_idx += 1
-            tags_len = sizeof(tags)
+            tags = encode_str(json.dumps(upd.tags))
         else:
             tags = None
-            tags_len = 0
         category = encode_str(upd.category)
         name = encode_str(upd.name)
         entry = FfiEntry(
             category,
             name,
-            cast(upd.value, c_void_p),
             len(upd.value),
+            cast(upd.value, c_void_p),
             tags,
-            tags_len,
         )
         return FfiUpdateEntry(
             entry,
@@ -317,10 +289,7 @@ def encode_str(arg: Optional[Union[str, bytes]]) -> c_char_p:
 
 def encode_bytes(arg: Optional[Union[str, bytes]]) -> FfiByteBuffer:
     buf = FfiByteBuffer()
-    if arg is None:
-        buf.len = 0
-        buf.value = c_char_p.from_address(0)
-    else:
+    if arg is not None:
         if isinstance(arg, str):
             arg = arg.encode("utf-8")
         buf.len = len(arg)
@@ -347,6 +316,14 @@ def get_current_error(expect: bool = False) -> StoreError:
         if not expect:
             return None
     return StoreError(StoreErrorCode.WRAPPER, "Unknown error")
+
+
+def derive_verkey(key_alg: KeyAlg, seed: [str, bytes]) -> str:
+    alg = encode_str(key_alg.value)
+    seed = encode_bytes(seed)
+    verkey = lib_string()
+    do_call("askar_derive_verkey", alg, seed, byref(verkey))
+    return str(verkey)
 
 
 def generate_raw_key() -> str:
@@ -385,7 +362,7 @@ async def store_open(uri: str, pass_key: str = None) -> StoreHandle:
 
 
 async def store_count(
-    handle: StoreHandle, category: [str, bytes], tag_filter: [str, dict] = None
+    handle: StoreHandle, category: str, tag_filter: [str, dict] = None
 ) -> int:
     """Count rows in the Store."""
     category = encode_str(category)
@@ -399,9 +376,7 @@ async def store_count(
     )
 
 
-async def store_fetch(
-    handle: StoreHandle, category: [str, bytes], name: [str, bytes]
-) -> EntrySetHandle:
+async def store_fetch(handle: StoreHandle, category: str, name: str) -> EntrySetHandle:
     """Fetch a row from the Store."""
     category = encode_str(category)
     name = encode_str(name)
@@ -411,7 +386,7 @@ async def store_fetch(
 
 
 async def store_scan_start(
-    handle: StoreHandle, category: [str, bytes], tag_filter: [str, dict] = None
+    handle: StoreHandle, category: str, tag_filter: [str, dict] = None
 ) -> ScanHandle:
     """Fetch a row from the Store."""
     category = encode_str(category)
@@ -458,8 +433,7 @@ async def store_update(handle: StoreHandle, entries: Sequence[UpdateEntry]):
     return await do_call_async(
         "askar_store_update",
         handle,
-        updates,
-        sizeof(updates),
+        FfiByteBuffer(sizeof(updates), cast(updates, c_char_p)),
     )
 
 
@@ -504,19 +478,34 @@ async def store_create_keypair(
     handle: StoreHandle,
     alg: str,
     metadata: str = None,
-    seed: str = None,
-) -> EntrySetHandle:
+    seed: [str, bytes] = None,
+) -> str:
     alg = encode_str(alg)
     metadata = encode_str(metadata)
-    seed = encode_str(seed)
+    seed = encode_bytes(seed)
     return await do_call_async(
         "askar_store_create_keypair",
         handle,
         alg,
         metadata,
         seed,
-        return_type=EntrySetHandle,
+        return_type=lib_string,
     )
+
+
+async def store_fetch_keypair(
+    handle: StoreHandle,
+    ident: str,
+) -> Optional[EntrySetHandle]:
+    ident = encode_str(ident)
+    ptr = await do_call_async(
+        "askar_store_fetch_keypair",
+        handle,
+        ident,
+        return_type=c_void_p,
+    )
+    if ptr:
+        return EntrySetHandle(ptr)
 
 
 async def store_sign_message(

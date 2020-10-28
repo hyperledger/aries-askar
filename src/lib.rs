@@ -39,6 +39,7 @@ pub mod sqlite;
 
 mod keys;
 pub use self::keys::{
+    derive_verkey,
     wrap::{generate_raw_wrap_key, WrapKeyMethod},
     KeyAlg, KeyCategory, KeyEntry, KeyParams,
 };

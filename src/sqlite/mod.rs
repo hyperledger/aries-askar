@@ -546,7 +546,7 @@ impl RawStore for SqliteStore {
 
         let mut txn = self.conn_pool.begin().await?;
 
-        let entry = match sqlx::query(FETCH_QUERY)
+        let (entry, is_new) = match sqlx::query(FETCH_QUERY)
             .bind(profile_id)
             .bind(kind as i32)
             .bind(enc_entry.category.as_ref())
@@ -556,12 +556,15 @@ impl RawStore for SqliteStore {
         {
             Some(row) => {
                 let value = key.decrypt_entry_value(row.try_get(1)?).await?;
-                Entry {
-                    category: raw_entry.category.clone(),
-                    name: raw_entry.name.clone(),
-                    value,
-                    tags: None, // FIXME fetch tags
-                }
+                (
+                    Entry {
+                        category: raw_entry.category.clone(),
+                        name: raw_entry.name.clone(),
+                        value,
+                        tags: None, // FIXME fetch tags
+                    },
+                    false,
+                )
             }
             None => {
                 let row_id = sqlx::query(INSERT_QUERY)
@@ -586,13 +589,13 @@ impl RawStore for SqliteStore {
                     }
                 }
                 txn.commit().await?;
-                raw_entry
+                (raw_entry, true)
             }
         };
 
         Ok((
             entry,
-            EntryLock::new(move |entries| async move {
+            EntryLock::new(is_new, move |entries| async move {
                 if entries.is_empty() {
                     debug!("Skip update: no entries");
                     return Ok(());

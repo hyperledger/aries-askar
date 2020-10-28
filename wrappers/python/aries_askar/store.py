@@ -1,13 +1,14 @@
 """Handling of Store instances."""
 
 import asyncio
+import json
 
 from typing import Optional, Sequence
 
 from . import bindings
 
 from .error import StoreError, StoreErrorCode
-from .types import Entry, KeyAlg, UpdateEntry
+from .types import Entry, KeyAlg, KeyEntry, UpdateEntry
 
 
 class EntrySet:
@@ -155,22 +156,18 @@ class Store:
         if self.handle:
             bindings.store_close_immed(self.handle)
 
-    async def count(
-        self, category: [str, bytes], tag_filter: [str, dict] = None
-    ) -> int:
+    async def count(self, category: str, tag_filter: [str, dict] = None) -> int:
         if not self.handle:
             raise StoreError(StoreErrorCode.WRAPPER, "Cannot count from closed store")
         return await bindings.store_count(self.handle, category, tag_filter)
 
-    async def fetch(
-        self, category: [str, bytes], name: [str, bytes]
-    ) -> Optional[Entry]:
+    async def fetch(self, category: str, name: str) -> Optional[Entry]:
         if not self.handle:
             raise StoreError(StoreErrorCode.WRAPPER, "Cannot fetch from closed store")
         result_handle = await bindings.store_fetch(self.handle, category, name)
         return next(EntrySet(result_handle), None) if result_handle else None
 
-    def scan(self, category: [str, bytes], tag_filter: [str, dict] = None) -> Scan:
+    def scan(self, category: str, tag_filter: [str, dict] = None) -> Scan:
         return Scan(self, category, tag_filter)
 
     async def update(self, entries: Sequence[UpdateEntry]):
@@ -184,16 +181,29 @@ class Store:
         return Lock(self, lock_info, acquire_timeout_ms)
 
     async def create_keypair(
-        self, key_alg: KeyAlg, metadata: str = None, seed: str = None
+        self, key_alg: KeyAlg, metadata: str = None, seed: [str, bytes] = None
     ) -> str:
         if not self.handle:
             raise StoreError(
                 StoreErrorCode.WRAPPER, "Cannot create keypair with closed store"
             )
-        result_handle = await bindings.store_create_keypair(
-            self.handle, key_alg.value, metadata, seed
+        return str(
+            await bindings.store_create_keypair(
+                self.handle, key_alg.value, metadata, seed
+            )
         )
-        return next(EntrySet(result_handle)).name if result_handle else None
+
+    async def fetch_keypair(self, ident: str) -> Optional[KeyEntry]:
+        if not self.handle:
+            raise StoreError(
+                StoreErrorCode.WRAPPER, "Cannot fetch keypair from closed store"
+            )
+        handle = await bindings.store_fetch_keypair(self.handle, ident)
+        if handle:
+            entry = next(EntrySet(handle))
+            return KeyEntry(
+                entry.category, entry.name, json.loads(entry.value), entry.tags
+            )
 
     async def sign_message(self, key_ident: str, message: [str, bytes]) -> bytes:
         if not self.handle:

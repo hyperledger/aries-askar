@@ -1,8 +1,10 @@
 use std::convert::Infallible;
 use std::fmt::{self, Debug, Display, Formatter};
+use std::mem::ManuallyDrop;
+use std::ptr;
 use std::str::FromStr;
 
-use indy_utils::keys::{KeyType as IndyKeyAlg, SignKey, VerKey};
+use indy_utils::keys::{EncodedVerKey, KeyType as IndyKeyAlg, PrivateKey, VerKey};
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
@@ -128,7 +130,7 @@ impl KeyParams {
     }
 }
 
-#[derive(Clone, Eq, Zeroize)]
+#[derive(Clone, Eq)]
 pub struct KeyEntry {
     pub category: KeyCategory,
     pub ident: String,
@@ -137,15 +139,30 @@ pub struct KeyEntry {
 }
 
 impl KeyEntry {
-    pub fn sorted_tags(&self) -> Option<Vec<&EntryTag>> {
-        self.tags.as_ref().and_then(sorted_tags)
+    pub(crate) fn into_parts(self) -> (KeyCategory, String, KeyParams, Option<Vec<EntryTag>>) {
+        let slf = ManuallyDrop::new(self);
+        unsafe {
+            (
+                ptr::read(&slf.category),
+                ptr::read(&slf.ident),
+                ptr::read(&slf.params),
+                ptr::read(&slf.tags),
+            )
+        }
     }
 
-    pub(crate) fn is_local(&self) -> bool {
+    pub fn is_local(&self) -> bool {
         self.params.reference.is_none()
     }
 
-    pub(crate) fn ver_key(&self) -> Result<VerKey, Error> {
+    pub fn encoded_verkey(&self) -> Result<EncodedVerKey, Error> {
+        Ok(self
+            .verkey()?
+            .as_base58()
+            .map_err(err_map!("Error encoding verkey"))?)
+    }
+
+    pub fn verkey(&self) -> Result<VerKey, Error> {
         match (&self.params.alg, &self.params.pub_key) {
             (KeyAlg::ED25519, Some(pub_key)) => Ok(VerKey::new(pub_key, Some(IndyKeyAlg::ED25519))),
             (_, None) => Err(err_msg!("Undefined public key")),
@@ -153,14 +170,18 @@ impl KeyEntry {
         }
     }
 
-    pub(crate) fn sign_key(&self) -> Result<SignKey, Error> {
+    pub fn private_key(&self) -> Result<PrivateKey, Error> {
         match (&self.params.alg, &self.params.prv_key) {
             (KeyAlg::ED25519, Some(prv_key)) => {
-                Ok(SignKey::new(prv_key, Some(IndyKeyAlg::ED25519)))
+                Ok(PrivateKey::new(prv_key, Some(IndyKeyAlg::ED25519)))
             }
             (_, None) => Err(err_msg!("Undefined private key")),
             _ => Err(err_msg!("Unsupported key algorithm")),
         }
+    }
+
+    pub fn sorted_tags(&self) -> Option<Vec<&EntryTag>> {
+        self.tags.as_ref().and_then(sorted_tags)
     }
 }
 
@@ -187,6 +208,12 @@ impl PartialEq for KeyEntry {
             && self.ident == rhs.ident
             && self.params == rhs.params
             && self.sorted_tags() == rhs.sorted_tags()
+    }
+}
+
+impl Zeroize for KeyEntry {
+    fn zeroize(&mut self) {
+        self.params.zeroize();
     }
 }
 

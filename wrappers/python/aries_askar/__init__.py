@@ -6,6 +6,7 @@ from .store import Store
 from .types import Entry, KeyAlg, UpdateEntry
 
 __all__ = [
+    "derive_verkey",
     "generate_raw_key",
     "set_config",
     "set_protocol_version",

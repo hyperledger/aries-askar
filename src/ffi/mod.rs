@@ -1,7 +1,8 @@
 use std::marker::PhantomData;
 use std::os::raw::c_char;
+use std::str::FromStr;
 
-use ffi_support::rust_string_to_c;
+use ffi_support::{rust_string_to_c, ByteBuffer, FfiStr};
 
 pub static LIB_VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -14,6 +15,7 @@ mod store;
 
 use self::error::ErrorCode;
 use crate::error::Error;
+use crate::keys::{derive_verkey, KeyAlg};
 
 pub type CallbackId = i64;
 
@@ -51,6 +53,22 @@ pub extern "C" fn askar_set_default_logger() -> ErrorCode {
     catch_err! {
         env_logger::init();
         debug!("Initialized default logger");
+        Ok(ErrorCode::Success)
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn askar_derive_verkey(
+    alg: FfiStr,
+    seed: ByteBuffer,
+    verkey: *mut *const c_char,
+) -> ErrorCode {
+    catch_err! {
+        trace!("Derive verkey");
+        let alg = alg.as_opt_str().map(|alg| KeyAlg::from_str(alg).unwrap()).ok_or_else(|| err_msg!("Key algorithm not provided"))?;
+        let vk_result = derive_verkey(alg, seed.as_slice())?;
+        unsafe { *verkey = rust_string_to_c(vk_result) };
+
         Ok(ErrorCode::Success)
     }
 }

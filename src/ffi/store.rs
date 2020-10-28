@@ -23,29 +23,29 @@ use crate::error::Result as KvResult;
 use crate::future::spawn_ok;
 use crate::keys::{
     wrap::{generate_raw_wrap_key, WrapKeyMethod},
-    KeyAlg, KeyEntry,
+    KeyAlg, KeyCategory, KeyEntry,
 };
-use crate::store::{ArcStore, EntryLock, OpenStore, ProvisionStore, ProvisionStoreSpec, Scan};
-use crate::types::{Entry, EntryTag, UpdateEntry};
+use crate::store::{AnyStore, EntryLock, OpenStore, ProvisionStore, ProvisionStoreSpec, Scan};
+use crate::types::{Entry, EntryTagSet, UpdateEntry};
 
 new_handle_type!(StoreHandle, FFI_STORE_COUNTER);
 new_handle_type!(ScanHandle, FFI_SCAN_COUNTER);
 
-static STORES: Lazy<Mutex<BTreeMap<StoreHandle, ArcStore>>> =
+static FFI_STORES: Lazy<Mutex<BTreeMap<StoreHandle, AnyStore>>> =
     Lazy::new(|| Mutex::new(BTreeMap::new()));
-static SCANS: Lazy<Mutex<BTreeMap<ScanHandle, Option<Scan<Entry>>>>> =
+static FFI_SCANS: Lazy<Mutex<BTreeMap<ScanHandle, Option<Scan<Entry>>>>> =
     Lazy::new(|| Mutex::new(BTreeMap::new()));
 
 impl StoreHandle {
-    pub async fn create(value: ArcStore) -> Self {
+    pub async fn create(value: AnyStore) -> Self {
         let handle = Self::next();
-        let mut repo = STORES.lock().await;
+        let mut repo = FFI_STORES.lock().await;
         repo.insert(handle, value);
         handle
     }
 
-    pub async fn load(&self) -> KvResult<ArcStore> {
-        STORES
+    pub async fn load(&self) -> KvResult<AnyStore> {
+        FFI_STORES
             .lock()
             .await
             .get(self)
@@ -53,8 +53,8 @@ impl StoreHandle {
             .ok_or_else(|| err_msg!("Invalid store handle"))
     }
 
-    pub async fn remove(&self) -> KvResult<ArcStore> {
-        STORES
+    pub async fn remove(&self) -> KvResult<AnyStore> {
+        FFI_STORES
             .lock()
             .await
             .remove(self)
@@ -65,13 +65,13 @@ impl StoreHandle {
 impl ScanHandle {
     pub async fn create(value: Scan<Entry>) -> Self {
         let handle = Self::next();
-        let mut repo = SCANS.lock().await;
+        let mut repo = FFI_SCANS.lock().await;
         repo.insert(handle, Some(value));
         handle
     }
 
     pub async fn borrow(&self) -> KvResult<Scan<Entry>> {
-        SCANS
+        FFI_SCANS
             .lock()
             .await
             .get_mut(self)
@@ -81,7 +81,7 @@ impl ScanHandle {
     }
 
     pub async fn release(&self, value: Scan<Entry>) -> KvResult<()> {
-        SCANS
+        FFI_SCANS
             .lock()
             .await
             .get_mut(self)
@@ -91,7 +91,7 @@ impl ScanHandle {
     }
 
     pub async fn remove(&self) -> KvResult<Scan<Entry>> {
-        SCANS
+        FFI_SCANS
             .lock()
             .await
             .remove(self)
@@ -114,7 +114,7 @@ impl LockHandle {
 
     pub fn get_entry(&self) -> KvResult<FfiEntry> {
         let el = unsafe { mem::ManuallyDrop::new(Arc::from_raw(self.0)) };
-        Ok(el.entry.get_ref())
+        Ok(el.entry.clone())
     }
 
     pub async fn take(&self) -> KvResult<EntryLock> {
@@ -138,119 +138,16 @@ impl LockHandle {
 unsafe impl Send for LockHandle {}
 unsafe impl Sync for LockHandle {}
 
-struct FfiTagBuf {
-    name: Vec<u8>,
-    value: Vec<u8>,
-}
-
-#[repr(C)]
-pub struct FfiTag {
-    name: *const u8,
-    value: *const u8,
-}
-
-impl FfiTag {
-    pub fn decode(&self) -> KvResult<EntryTag> {
-        let name = unsafe { FfiStr::from_raw(self.name as *const c_char) }
-            .as_opt_str()
-            .ok_or_else(|| err_msg!("Invalid tag name"))?;
-        let value = unsafe { FfiStr::from_raw(self.value as *const c_char) }
-            .into_opt_string()
-            .ok_or_else(|| err_msg!("Invalid tag value"))?;
-        Ok(if name.chars().next() == Some('~') {
-            EntryTag::Plaintext(name[1..].to_owned(), value)
-        } else {
-            EntryTag::Encrypted(name.to_owned(), value)
-        })
-    }
-}
-
-struct FfiEntryBuf {
-    category: Vec<u8>,
-    name: Vec<u8>,
-    value: Vec<u8>,
-    #[allow(unused)] // referenced by tags_ref
-    tags: Vec<FfiTagBuf>,
-    tags_ref: Vec<FfiTag>,
-}
-
-unsafe impl Send for FfiEntryBuf {}
-unsafe impl Sync for FfiEntryBuf {}
-
-impl FfiEntryBuf {
-    pub fn get_ref(&self) -> FfiEntry {
-        FfiEntry {
-            category: self.category.as_ptr(),
-            name: self.name.as_ptr(),
-            value: self.value.as_ptr(),
-            value_len: self.value.len() as i64,
-            tags: self.tags_ref.as_ptr(),
-            tags_len: (self.tags_ref.len() * mem::size_of::<FfiTag>()) as i64,
-        }
-    }
-}
-
-impl From<Entry> for FfiEntryBuf {
-    fn from(entry: Entry) -> Self {
-        let category = make_c_string(&entry.category);
-        let name = make_c_string(&entry.name);
-        let tags_count = entry.tags.as_ref().map(Vec::len).unwrap_or_default();
-        let mut tags = Vec::with_capacity(tags_count);
-        let mut tags_ref = Vec::with_capacity(tags_count);
-        let mut tags_idx = 0;
-        if let Some(entry_tags) = entry.tags.as_ref() {
-            for tag in entry_tags {
-                let (name, value) = match tag {
-                    EntryTag::Encrypted(tag_name, tag_value) => {
-                        (make_c_string(tag_name), make_c_string(tag_value))
-                    }
-                    EntryTag::Plaintext(tag_name, tag_value) => {
-                        let mut name = String::with_capacity(tag_name.len() + 1);
-                        name.push('~');
-                        name.push_str(&tag_name);
-                        (
-                            CString::new(name.into_bytes())
-                                .unwrap()
-                                .into_bytes_with_nul(),
-                            make_c_string(tag_value),
-                        )
-                    }
-                };
-                tags.push(FfiTagBuf { name, value });
-                tags_ref.push(FfiTag {
-                    name: tags[tags_idx].name.as_ptr(),
-                    value: tags[tags_idx].value.as_ptr(),
-                });
-                tags_idx += 1;
-            }
-        }
-        Self {
-            category,
-            name,
-            value: entry.value.clone(),
-            tags,
-            tags_ref,
-        }
-    }
-}
-
-impl Zeroize for FfiEntryBuf {
-    fn zeroize(&mut self) {
-        self.value.zeroize();
-    }
-}
-
 pub struct FfiEntrySet {
     pos: AtomicUsize,
-    rows: Vec<FfiEntryBuf>,
+    rows: Vec<FfiEntry>,
 }
 
 impl FfiEntrySet {
     pub fn next(&self) -> Option<FfiEntry> {
         let pos = self.pos.fetch_add(1, Ordering::Release);
         if pos < self.rows.len() {
-            let row = &self.rows[pos];
-            Some(row.get_ref())
+            Some(self.rows[pos].clone())
         } else {
             None
         }
@@ -261,7 +158,7 @@ impl From<Entry> for FfiEntrySet {
     fn from(entry: Entry) -> Self {
         Self {
             pos: AtomicUsize::default(),
-            rows: vec![entry.into()],
+            rows: vec![FfiEntry::new(entry)],
         }
     }
 }
@@ -272,7 +169,7 @@ impl From<Vec<Entry>> for FfiEntrySet {
             pos: AtomicUsize::default(),
             rows: {
                 let mut acc = Vec::with_capacity(entries.len());
-                acc.extend(entries.into_iter().map(Into::into));
+                acc.extend(entries.into_iter().map(FfiEntry::new));
                 acc
             },
         }
@@ -281,21 +178,53 @@ impl From<Vec<Entry>> for FfiEntrySet {
 
 impl Drop for FfiEntrySet {
     fn drop(&mut self) {
-        self.rows.zeroize();
+        self.rows.drain(..).for_each(FfiEntry::destroy);
     }
 }
 
 #[repr(C)]
 pub struct FfiEntry {
-    category: *const u8,
-    name: *const u8,
-    value: *const u8,
-    value_len: i64,
-    tags: *const FfiTag,
-    tags_len: i64,
+    category: *const c_char,
+    name: *const c_char,
+    value: ByteBuffer,
+    tags: *const c_char,
+}
+
+unsafe impl Send for FfiEntry {}
+unsafe impl Sync for FfiEntry {}
+
+impl Clone for FfiEntry {
+    fn clone(&self) -> Self {
+        Self {
+            category: self.category,
+            name: self.name,
+            value: unsafe { ptr::read(&self.value) },
+            tags: self.tags,
+        }
+    }
 }
 
 impl FfiEntry {
+    pub fn new(entry: Entry) -> Self {
+        let (category, name, value, tags) = entry.into_parts();
+        let category = CString::new(category).unwrap().into_raw();
+        let name = CString::new(name).unwrap().into_raw();
+        let value = ByteBuffer::from_vec(value);
+        let tags = match tags {
+            Some(tags) => {
+                let tags = serde_json::to_vec(&EntryTagSet::new(tags)).unwrap();
+                CString::new(tags).unwrap().into_raw()
+            }
+            None => ptr::null(),
+        };
+        Self {
+            category,
+            name,
+            value,
+            tags,
+        }
+    }
+
     pub fn decode(&self) -> KvResult<Entry> {
         let category = unsafe { FfiStr::from_raw(self.category as *const c_char) }
             .into_opt_string()
@@ -303,29 +232,49 @@ impl FfiEntry {
         let name = unsafe { FfiStr::from_raw(self.name as *const c_char) }
             .into_opt_string()
             .ok_or_else(|| err_msg!("Entry name not provided"))?;
-        let value = unsafe { slice::from_raw_parts(self.value, self.value_len as usize) };
-        if self.tags_len % (mem::size_of::<FfiTag>() as i64) != 0 {
-            return Err(err_msg!("Invalid length for entry tags"));
-        }
-        let tags_count = self.tags_len / (mem::size_of::<FfiTag>() as i64);
-        let tags = unsafe { slice::from_raw_parts(self.tags, tags_count as usize) };
+        let value = self.value.as_slice();
+        let tags = if let Some(tags) =
+            unsafe { FfiStr::from_raw(self.tags as *const c_char) }.as_opt_str()
+        {
+            Some(
+                serde_json::from_str::<EntryTagSet>(tags)
+                    .map_err(err_map!("Error decoding tags"))?
+                    .into_inner(),
+            )
+        } else {
+            None
+        };
         let entry = Entry {
             category,
             name,
             value: value.to_vec(),
-            tags: Some(tags.into_iter().try_fold(vec![], |mut acc, tag| {
-                acc.push(tag.decode()?);
-                KvResult::Ok(acc)
-            })?),
+            tags,
         };
         Ok(entry)
+    }
+
+    pub fn destroy(self) {
+        unsafe {
+            CString::from_raw(self.category as *mut c_char);
+            CString::from_raw(self.name as *mut c_char);
+            self.value.destroy_into_vec().zeroize();
+            if !self.tags.is_null() {
+                CString::from_raw(self.tags as *mut c_char);
+            }
+        }
     }
 }
 
 #[repr(C)]
 pub struct FfiEntryLock {
     lock: Mutex<Option<EntryLock>>,
-    entry: FfiEntryBuf,
+    entry: FfiEntry,
+}
+
+impl Drop for FfiEntryLock {
+    fn drop(&mut self) {
+        self.entry.clone().destroy();
+    }
 }
 
 impl RefUnwindSafe for FfiEntryLock {}
@@ -598,23 +547,24 @@ pub extern "C" fn askar_store_results_free(result: *mut FfiEntrySet) {
 #[no_mangle]
 pub extern "C" fn askar_store_update(
     handle: StoreHandle,
-    updates: *const FfiUpdateEntry,
-    updates_len: i64,
+    updates: ByteBuffer,
     cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode)>,
     cb_id: CallbackId,
 ) -> ErrorCode {
     catch_err! {
         trace!("Update store");
         let cb = cb.ok_or_else(|| err_msg!("No callback provided"))?;
-        if updates_len <= 0 || updates_len % (mem::size_of::<FfiUpdateEntry>() as i64) != 0 {
+        let updates = updates.as_slice();
+        let updates_len = updates.len();
+        if updates_len <= 0 || updates_len % mem::size_of::<FfiUpdateEntry>() != 0 {
             return Err(err_msg!("Invalid length for updates"));
         }
-        let upd_count = (updates_len as usize) / mem::size_of::<FfiUpdateEntry>();
-        let updates = unsafe { slice::from_raw_parts(updates, upd_count) };
+        let upd_count = updates_len / mem::size_of::<FfiUpdateEntry>();
+        let updates = unsafe { slice::from_raw_parts(updates as *const _ as *const FfiUpdateEntry, upd_count) };
         let entries = updates.into_iter().try_fold(
             Vec::with_capacity(upd_count),
             |mut acc, entry| {
-                acc.push(FfiUpdateEntry::decode(entry)?);
+                acc.push(entry.decode()?);
                 KvResult::Ok(acc)
             }
         )?;
@@ -661,7 +611,7 @@ pub extern "C" fn askar_store_create_lock(
                 let (entry, lock) = store.create_lock(None, update, timeout).await?;
                 let lock_buf = FfiEntryLock {
                     lock: Mutex::new(Some(lock)),
-                    entry: entry.into(),
+                    entry: FfiEntry::new(entry),
                 };
                 Ok(LockHandle::new(lock_buf))
             }.await;
@@ -737,8 +687,8 @@ pub extern "C" fn askar_store_create_keypair(
     handle: StoreHandle,
     alg: FfiStr,
     metadata: FfiStr,
-    seed: FfiStr,
-    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, results: *const FfiEntrySet)>,
+    seed: ByteBuffer,
+    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, results: *const c_char)>,
     cb_id: CallbackId,
 ) -> ErrorCode {
     catch_err! {
@@ -746,13 +696,16 @@ pub extern "C" fn askar_store_create_keypair(
         let cb = cb.ok_or_else(|| err_msg!("No callback provided"))?;
         let alg = alg.as_opt_str().map(|alg| KeyAlg::from_str(alg).unwrap()).ok_or_else(|| err_msg!("Key algorithm not provided"))?;
         let metadata = metadata.into_opt_string();
-        let seed = seed.into_opt_string();
+        let seed = if seed.as_slice().len() > 0 {
+            Some(seed.as_slice().to_vec())
+        } else {
+            None
+        };
 
         let cb = EnsureCallback::new(move |result|
                 match result {
-                    Ok(entry) => {
-                        let results = Box::into_raw(Box::new(FfiEntrySet::from(entry)));
-                        cb(cb_id, ErrorCode::Success, results)
+                    Ok(ident) => {
+                        cb(cb_id, ErrorCode::Success, rust_string_to_c(ident))
                     }
                     Err(err) => cb(cb_id, set_last_error(Some(err)), ptr::null()),
                 }
@@ -765,11 +718,52 @@ pub extern "C" fn askar_store_create_keypair(
                         None,
                         alg,
                         metadata,
-                        seed,
+                        seed.as_ref().map(Vec::as_ref),
                         None,
                 ).await?;
-                let entry = export_key_entry(key_entry)?;
-                Ok(entry)
+                Ok(key_entry.ident.clone())
+            }.await;
+            cb.resolve(result);
+        });
+        Ok(ErrorCode::Success)
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn askar_store_fetch_keypair(
+    handle: StoreHandle,
+    ident: FfiStr,
+    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, results: *const FfiEntrySet)>,
+    cb_id: CallbackId,
+) -> ErrorCode {
+    catch_err! {
+        trace!("Fetch keypair");
+        let cb = cb.ok_or_else(|| err_msg!("No callback provided"))?;
+        let ident = ident.into_opt_string().ok_or_else(|| err_msg!("No key ident provided"))?;
+
+        let cb = EnsureCallback::new(move |result|
+                match result {
+                    Ok(Some(entry)) => {
+                        let results = Box::into_raw(Box::new(FfiEntrySet::from(entry)));
+                        cb(cb_id, ErrorCode::Success, results)
+                    }
+                    Ok(None) => {
+                        cb(cb_id, ErrorCode::Success, ptr::null())
+                    }
+                    Err(err) => cb(cb_id, set_last_error(Some(err)), ptr::null()),
+                }
+            );
+
+        spawn_ok(async move {
+            let result = async {
+                let store = handle.load().await?;
+                let key_entry = store.fetch_key(
+                        None,
+                        KeyCategory::KeyPair,
+                        ident,
+                        Default::default()
+                ).await?;
+                Ok(key_entry.map(export_key_entry).transpose()?)
             }.await;
             cb.resolve(result);
         });
@@ -933,7 +927,7 @@ pub extern "C" fn askar_store_unpack_message(
                         )
                     }
                     Err(err) => {
-                        println!("err: {:?}", &err);
+                        eprintln!("err: {:?}", &err);
                         cb(cb_id, set_last_error(Some(err)), FfiUnpackResult { unpacked: ByteBuffer::default(), recipient: ptr::null(), sender: ptr::null() })
                     }
                 }
@@ -946,7 +940,7 @@ pub extern "C" fn askar_store_unpack_message(
                     None,
                     message
                 ).await?;
-                Ok((unpacked, recipient, sender))
+                Ok((unpacked, recipient.to_string(), sender.map(|s| s.to_string())))
             }.await;
             cb.resolve(result);
         });
@@ -984,21 +978,16 @@ pub extern "C" fn askar_store_close(
     }
 }
 
-#[inline]
-// note: using a Vec to allow in-place zeroize, which CString does not
-fn make_c_string(value: &str) -> Vec<u8> {
-    let mut buf = Vec::with_capacity(value.len() + 1);
-    buf.extend_from_slice(value.as_bytes());
-    CString::new(buf).unwrap().into_bytes_with_nul()
-}
-
 fn export_key_entry(key_entry: KeyEntry) -> KvResult<Entry> {
+    let (category, name, mut params, tags) = key_entry.into_parts();
+    let value = serde_json::to_string(&params)
+        .map_err(err_map!("Error converting key entry to JSON"))?
+        .into_bytes();
+    params.zeroize();
     Ok(Entry {
-        category: key_entry.category.to_string(),
-        name: key_entry.ident.clone(),
-        value: serde_json::to_string(&key_entry.params)
-            .map_err(err_map!("Error converting key entry to JSON"))?
-            .into_bytes(),
-        tags: key_entry.tags.clone(),
+        category: category.to_string(),
+        name,
+        value,
+        tags,
     })
 }

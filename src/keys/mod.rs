@@ -14,8 +14,27 @@ pub use self::types::{KeyAlg, KeyCategory, KeyEntry, KeyParams};
 
 pub mod wrap;
 
+use indy_utils::keys::PrivateKey;
+
 // #[cfg(target_os = "macos")]
 // mod keychain;
+
+pub fn derive_verkey(alg: KeyAlg, seed: &[u8]) -> Result<String> {
+    match alg {
+        KeyAlg::ED25519 => (),
+        _ => return Err(err_msg!("Unsupported key algorithm")),
+    }
+
+    let sk =
+        PrivateKey::from_seed(seed).map_err(err_map!(Unexpected, "Error generating keypair"))?;
+    let pk = sk
+        .public_key()
+        .map_err(err_map!(Unexpected, "Error generating public key"))?
+        .as_base58()
+        .map_err(err_map!(Unexpected, "Error encoding public key"))?
+        .long_form();
+    Ok(pk)
+}
 
 pub trait EntryEncryptor {
     fn encrypt_entry_category(&self, category: &str) -> Result<Vec<u8>>;

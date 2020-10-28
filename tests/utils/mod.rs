@@ -310,7 +310,7 @@ pub async fn db_keypair_pack_unpack_anon<DB: RawStore>(db: &Store<DB>) -> KvResu
 
     let (unpacked, p_recip, p_send) = db.unpack_message(None, packed.clone()).await?;
     assert_eq!(unpacked, msg);
-    assert_eq!(p_recip, recip_key.ident);
+    assert_eq!(p_recip, recip_key.encoded_verkey().unwrap());
     assert_eq!(p_send, None);
 
     Ok(())
@@ -337,8 +337,8 @@ pub async fn db_keypair_pack_unpack_auth<DB: RawStore>(db: &Store<DB>) -> KvResu
 
     let (unpacked, p_recip, p_send) = db.unpack_message(None, packed.clone()).await?;
     assert_eq!(unpacked, msg);
-    assert_eq!(p_recip, recip_key.ident);
-    assert_eq!(p_send, Some(sender_key.ident.clone()));
+    assert_eq!(p_recip, recip_key.encoded_verkey().unwrap());
+    assert_eq!(p_send, Some(sender_key.encoded_verkey().unwrap()));
 
     Ok(())
 }

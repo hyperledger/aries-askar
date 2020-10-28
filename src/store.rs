@@ -7,8 +7,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use futures_lite::stream::{Stream, StreamExt};
 use indy_utils::{
-    base58,
-    keys::{EncodedVerKey, KeyEncoding as IndyKeyEncoding, KeyType as IndyKeyAlg, SignKey},
+    keys::{EncodedVerKey, KeyType as IndyKeyAlg, PrivateKey},
     pack::{pack_message, unpack_message, KeyLookup},
     Validatable,
 };
@@ -187,6 +186,15 @@ impl<T: RawStore> Store<T> {
     pub(crate) fn into_inner(self) -> Arc<T> {
         self.inner
     }
+
+    pub(crate) fn into_any(self) -> Store<dyn RawStore>
+    where
+        T: 'static,
+    {
+        Store {
+            inner: self.inner as Arc<dyn RawStore>,
+        }
+    }
 }
 
 impl<T: RawStore + ?Sized> Store<T> {
@@ -286,17 +294,12 @@ impl<T: RawStore + ?Sized> Store<T> {
             .await
     }
 
-    /// Close the store instance, waiting for any shutdown procedures to complete.
-    pub async fn close(&self) -> Result<()> {
-        self.inner.close().await
-    }
-
     pub async fn create_keypair(
         &self,
         profile: Option<String>,
         alg: KeyAlg,
         metadata: Option<String>,
-        seed: Option<String>,
+        seed: Option<&[u8]>,
         tags: Option<Vec<EntryTag>>,
         // backend
     ) -> Result<KeyEntry> {
@@ -306,11 +309,8 @@ impl<T: RawStore + ?Sized> Store<T> {
         }
 
         let sk = match seed {
-            None => SignKey::generate(Some(IndyKeyAlg::ED25519)),
-            Some(s) => {
-                let s = base58::decode(s).map_err(err_map!("Invalid seed"))?;
-                SignKey::from_seed(&s)
-            }
+            None => PrivateKey::generate(Some(IndyKeyAlg::ED25519)),
+            Some(s) => PrivateKey::from_seed(s),
         }
         .map_err(err_map!(Unexpected, "Error generating keypair"))?;
 
@@ -332,7 +332,7 @@ impl<T: RawStore + ?Sized> Store<T> {
             prv_key: Some(sk.key_bytes()),
         };
 
-        let entries = vec![UpdateEntry {
+        let keypair = UpdateEntry {
             entry: Entry {
                 category: category.as_str().to_owned(),
                 name: ident.clone(),
@@ -340,8 +340,16 @@ impl<T: RawStore + ?Sized> Store<T> {
                 tags: tags.clone(),
             },
             expire_ms: None,
-        }];
-        self.inner.update(profile, EntryKind::Key, entries).await?;
+        };
+
+        let (_entry, lock) = self
+            .inner
+            .create_lock(profile, EntryKind::Key, keypair, None)
+            .await?;
+
+        if !lock.is_new_record() {
+            return Err(err_msg!(Duplicate, "Duplicate key record"));
+        }
 
         Ok(KeyEntry {
             category,
@@ -362,6 +370,12 @@ impl<T: RawStore + ?Sized> Store<T> {
         ident: String,
         options: EntryFetchOptions,
     ) -> Result<Option<KeyEntry>> {
+        // normalize ident
+        let ident = EncodedVerKey::from_str(&ident)
+            .and_then(|k| k.as_base58())
+            .map_err(err_map!("Invalid key"))?
+            .long_form();
+
         Ok(
             if let Some(row) = self
                 .inner
@@ -400,6 +414,7 @@ impl<T: RawStore + ?Sized> Store<T> {
                 value: vec![],
                 tags: None,
             },
+            // expire immediately
             expire_ms: Some(0),
         };
         self.inner
@@ -446,7 +461,7 @@ impl<T: RawStore + ?Sized> Store<T> {
             )
             .await?
         {
-            let sk = key.sign_key()?;
+            let sk = key.private_key()?;
             sk.sign(&data)
                 .map_err(|e| err_msg!("Signature error: {}", e))
         } else {
@@ -468,24 +483,6 @@ impl<T: RawStore + ?Sized> Store<T> {
             .unwrap_or(false))
     }
 
-    pub async fn encrypt_message(
-        &self,
-        profile: Option<String>,
-        key_ident: String,
-        data: Vec<u8>,
-    ) -> Result<Vec<u8>> {
-        unimplemented!();
-    }
-
-    pub async fn decrypt_message(
-        &self,
-        profile: Option<String>,
-        key_ident: String,
-        data: Vec<u8>,
-    ) -> Result<Vec<u8>> {
-        unimplemented!();
-    }
-
     pub async fn pack_message(
         &self,
         profile: Option<String>,
@@ -503,7 +500,7 @@ impl<T: RawStore + ?Sized> Store<T> {
                 )
                 .await?
                 .ok_or_else(|| err_msg!("Unknown sender key"))?;
-            Some(sk.sign_key()?)
+            Some(sk.private_key()?)
         } else {
             None
         };
@@ -523,7 +520,7 @@ impl<T: RawStore + ?Sized> Store<T> {
         &self,
         profile: Option<String>,
         data: Vec<u8>,
-    ) -> Result<(Vec<u8>, String, Option<String>)> {
+    ) -> Result<(Vec<u8>, EncodedVerKey, Option<EncodedVerKey>)> {
         struct Lookup<T: RawStore + ?Sized> {
             profile: Option<String>,
             store: Store<T>,
@@ -533,12 +530,11 @@ impl<T: RawStore + ?Sized> Store<T> {
             fn find<'f>(
                 &'f self,
                 keys: &'f Vec<EncodedVerKey>,
-            ) -> std::pin::Pin<Box<dyn Future<Output = Option<(usize, SignKey)>> + Send + 'f>>
+            ) -> std::pin::Pin<Box<dyn Future<Output = Option<(usize, PrivateKey)>> + Send + 'f>>
             {
                 let profile = self.profile.clone();
                 let store = self.store.clone();
                 Box::pin(async move {
-                    println!("keys: {:?}", &keys);
                     for (idx, key) in keys.into_iter().enumerate() {
                         if let Ok(Some(key)) = store
                             .fetch_key(
@@ -549,7 +545,7 @@ impl<T: RawStore + ?Sized> Store<T> {
                             )
                             .await
                         {
-                            if let Ok(sk) = key.sign_key() {
+                            if let Ok(sk) = key.private_key() {
                                 return Some((idx, sk));
                             }
                         }
@@ -564,11 +560,14 @@ impl<T: RawStore + ?Sized> Store<T> {
             store: self.clone(),
         };
         match unpack_message(data, lookup).await {
-            Ok((message, recip, sender)) => {
-                Ok((message, recip.to_string(), sender.map(|s| s.to_string())))
-            }
+            Ok((message, recip, sender)) => Ok((message, recip, sender)),
             Err(err) => Err(err_msg!("Error unpacking message").with_cause(err)),
         }
+    }
+
+    /// Close the store instance, waiting for any shutdown procedures to complete.
+    pub async fn close(&self) -> Result<()> {
+        self.inner.close().await
     }
 }
 
@@ -615,20 +614,26 @@ impl<T> Scan<T> {
 }
 
 pub struct EntryLock {
+    new_record: bool,
     update_fn: Box<
         dyn FnOnce(Vec<UpdateEntry>) -> Pin<Box<dyn Future<Output = Result<()>> + Send>> + Send,
     >,
 }
 
 impl EntryLock {
-    pub fn new<F, G>(update: F) -> Self
+    pub fn new<F, G>(new_record: bool, update: F) -> Self
     where
         F: FnOnce(Vec<UpdateEntry>) -> G + Send + 'static,
         G: Future<Output = Result<()>> + Send + 'static,
     {
         Self {
+            new_record,
             update_fn: Box::new(|entries| Box::pin(update(entries))),
         }
+    }
+
+    pub fn is_new_record(&self) -> bool {
+        self.new_record
     }
 
     pub async fn update(self, entries: Vec<UpdateEntry>) -> Result<()> {
@@ -675,7 +680,7 @@ pub trait OpenStore {
     async fn open_store(self, pass_key: Option<&str>) -> Result<Self::Store>;
 }
 
-pub type ArcStore = Store<dyn RawStore>;
+pub type AnyStore = Store<dyn RawStore>;
 
 #[async_trait]
 pub trait ProvisionStore: OpenStore {
@@ -684,28 +689,27 @@ pub trait ProvisionStore: OpenStore {
 
 #[async_trait]
 impl OpenStore for &str {
-    type Store = ArcStore;
+    type Store = AnyStore;
 
     async fn open_store(self, pass_key: Option<&str>) -> Result<Self::Store> {
         let opts = self.into_options()?;
         debug!("Open store with options: {:?}", &opts);
 
-        let inner: Arc<dyn RawStore> = match opts.schema.as_ref() {
+        Ok(match opts.schema.as_ref() {
             #[cfg(feature = "postgres")]
             "postgres" => {
                 let opts = super::postgres::PostgresStoreOptions::new(opts)?;
-                Arc::new(opts.open_store(pass_key).await?.into_inner())
+                opts.open_store(pass_key).await?.into_any()
             }
 
             #[cfg(feature = "sqlite")]
             "sqlite" => {
                 let opts = super::sqlite::SqliteStoreOptions::new(opts)?;
-                Arc::new(opts.open_store(pass_key).await?.into_inner())
+                opts.open_store(pass_key).await?.into_any()
             }
 
             _ => return Err(ErrorKind::Unsupported.into()),
-        };
-        Ok(Store { inner })
+        })
     }
 }
 

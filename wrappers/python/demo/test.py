@@ -1,7 +1,7 @@
 import asyncio
 import sys
 
-from aries_askar.bindings import generate_raw_key, version
+from aries_askar.bindings import derive_verkey, generate_raw_key, version
 from aries_askar import KeyAlg, Store, UpdateEntry
 
 # REPO_URI = "postgres://postgres:pgpass@localhost:5432/test_wallet2"
@@ -17,73 +17,81 @@ async def basic_test():
     if ENCRYPT:
         key = generate_raw_key()
         key_method = "raw"
-        print("Generated raw key:", key)
+        log("Generated raw key:", key)
     else:
         key = None
         key_method = "none"
 
+    # Derive a verkey
+    verkey = derive_verkey(KeyAlg.ED25519, b"testseedtestseedtestseedtestseed")
+    log("Derive verkey:", verkey)
+
     # Provision the store
     async with Store.provision(REPO_URI, key_method, key) as store:
-        log(f"Provisioned store: {store}")
+        log("Provisioned store:", store)
 
         # Insert a new entry
         entry = UpdateEntry(
             "category", "name", b"value", {"~plaintag": "a", "enctag": "b"}
         )
         await store.update([entry])
-        print("inserted entry")
+        log("Inserted entry")
 
         # Count rows by category and (optional) tag filter
-        print(
-            "count:",
+        log(
+            "Row count:",
             await store.count("category", {"~plaintag": "a", "enctag": "b"}),
         )
 
         # Fetch an entry by category and name
-        print("fetched entry", await store.fetch("category", "name"))
+        log("Fetched entry:", await store.fetch("category", "name"))
 
         # Scan entries by category and (optional) tag filter)
         async for row in store.scan("category", {"~plaintag": "a", "enctag": "b"}):
-            print("scan result", row)
+            log("Scan result:", row)
 
         # Create a new record lock and perform an associated update
         lock_entry = UpdateEntry(
             "category", "name", b"value", {"~plaintag": "a", "enctag": "b"}
         )
         async with store.create_lock(lock_entry) as lock:
-            print(lock.entry)
+            log("Lock entry:", lock.entry)
 
             entry2 = UpdateEntry("category2", "name2", b"value2")
             await lock.update([entry2])
 
         # Create a new keypair
         key_ident = await store.create_keypair(KeyAlg.ED25519)
-        print("Created key:", key_ident)
+        log("Created key:", key_ident)
+
+        # Fetch keypair
+        key = await store.fetch_keypair(key_ident)
+        log("Fetch key:", key)
 
         # Sign a message
         signature = await store.sign_message(key_ident, b"my message")
-        print("Signature:", signature)
+        log("Signature:", signature)
 
         # Verify signature
         verify = await store.verify_signature(key_ident, b"my message", signature)
-        print("Verify signature:", verify)
+        log("Verify signature:", verify)
 
         # Pack message
         packed = await store.pack_message([key_ident], key_ident, b"my message")
-        print("Packed message:", packed)
+        log("Packed message:", packed)
 
         # Unpack message
         unpacked = await store.unpack_message(packed)
-        print("Unpacked message:", unpacked)
+        log("Unpacked message:", unpacked)
 
 
 async def open_test(key):
     async with Store.open(REPO_URI, key) as store:
-        log(f"Opened store: {store}")
+        log("Opened store:", store)
 
         # Scan entries by category and (optional) tag filter)
         async for row in store.scan("category"):
-            print("scan result", row)
+            log("Scan result:", row)
 
 
 if __name__ == "__main__":
@@ -96,4 +104,4 @@ if __name__ == "__main__":
     else:
         asyncio.get_event_loop().run_until_complete(basic_test())
 
-    print("done")
+    log("done")

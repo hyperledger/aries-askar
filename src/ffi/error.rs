@@ -16,12 +16,13 @@ pub enum ErrorCode {
     Backend = 1,
     Busy = 2,
     Disconnected = 3,
-    Encryption = 4,
-    Input = 5,
-    Lock = 6,
-    Timeout = 7,
-    Unexpected = 8,
-    Unsupported = 9,
+    Duplicate = 4,
+    Encryption = 5,
+    Input = 6,
+    Lock = 7,
+    Timeout = 8,
+    Unexpected = 9,
+    Unsupported = 10,
 }
 
 impl From<ErrorKind> for ErrorCode {
@@ -30,6 +31,7 @@ impl From<ErrorKind> for ErrorCode {
             ErrorKind::Backend => ErrorCode::Backend,
             ErrorKind::Busy => ErrorCode::Busy,
             ErrorKind::Disconnected => ErrorCode::Disconnected,
+            ErrorKind::Duplicate => ErrorCode::Duplicate,
             ErrorKind::Encryption => ErrorCode::Encryption,
             ErrorKind::Input => ErrorCode::Input,
             ErrorKind::Lock => ErrorCode::Lock,
