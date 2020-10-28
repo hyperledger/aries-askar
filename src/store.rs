@@ -703,7 +703,7 @@ impl OpenStore for &str {
                 opts.open_store(pass_key).await?.into_any()
             }
 
-            _ => return Err(ErrorKind::Unsupported.into()),
+            _ => return Err(err_msg!(Unsupported, "Invalid backend: {}", &opts.schema)),
         })
     }
 }
@@ -727,7 +727,7 @@ impl ProvisionStore for &str {
                 opts.provision_store(spec).await?.into_inner()
             }
 
-            _ => return Err(ErrorKind::Unsupported.into()),
+            _ => return Err(err_msg!(Unsupported, "Invalid backend: {}", &opts.schema)),
         };
         Ok(Store { inner })
     }

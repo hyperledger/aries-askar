@@ -96,10 +96,10 @@ impl WrapKeyMethod {
             PREFIX_RAW => Ok(Self::RawKey),
             PREFIX_KDF => match KdfMethod::from_str(uri) {
                 Some((method, _)) => Ok(Self::DeriveKey(method)),
-                None => Err(ErrorKind::Unsupported.into()),
+                None => Err(err_msg!(Unsupported, "Invalid key derivation method")),
             },
             PREFIX_NONE => Ok(Self::Unprotected),
-            _ => Err(ErrorKind::Unsupported.into()),
+            _ => Err(err_msg!(Unsupported, "Invalid wrap key method")),
         }
     }
 
@@ -156,10 +156,16 @@ impl WrapKeyReference {
             PREFIX_RAW => Ok(Self::RawKey),
             PREFIX_KDF => match KdfMethod::from_str(uri) {
                 Some((method, detail)) => Ok(Self::DeriveKey(method, detail)),
-                None => Err(ErrorKind::Unsupported.into()),
+                None => Err(err_msg!(
+                    Unsupported,
+                    "Invalid key derivation method for reference"
+                )),
             },
             PREFIX_NONE => Ok(Self::Unprotected),
-            _ => Err(ErrorKind::Unsupported.into()),
+            _ => Err(err_msg!(
+                Unsupported,
+                "Invalid wrap key method for reference"
+            )),
         }
     }
 
