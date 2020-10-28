@@ -96,7 +96,7 @@ class FfiUpdateEntry(Structure):
         entry = FfiEntry(
             encode_str(upd.category),
             encode_str(upd.name),
-            None if upd.value is None else len(upd.value),
+            0 if upd.value is None else len(upd.value),
             None if upd.value is None else cast(upd.value, c_void_p),
             encode_str(None if upd.tags is None else json.dumps(upd.tags)),
         )
@@ -333,7 +333,7 @@ async def store_provision(
 ) -> StoreHandle:
     """Provision a new Store and return the open handle."""
     uri_p = encode_str(uri)
-    wrap_method_p = encode_str(wrap_method)
+    wrap_method_p = encode_str(wrap_method and wrap_method.lower())
     pass_key_p = encode_str(pass_key)
     return await do_call_async(
         "askar_store_provision",

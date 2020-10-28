@@ -26,7 +26,7 @@ class Entry:
 
     @property
     def json(self):
-        None if self.value is None else _json.loads(self.value)
+        return None if self.value is None else _json.loads(self.value)
 
     def __repr__(self) -> str:
         return (
@@ -80,7 +80,7 @@ class UpdateEntry:
 
     @property
     def json(self):
-        None if self.value is None else _json.loads(self.value)
+        return None if self.value is None else _json.loads(self.value)
 
     @json.setter
     def json(self, val):
