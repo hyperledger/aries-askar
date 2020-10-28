@@ -188,12 +188,20 @@ class Store:
         self,
         category: str,
         name: str,
-        init_value: [str, bytes] = None,
-        init_tags: dict = None,
-        init_expire_ms: int = None,
+        value: [str, bytes] = None,
+        tags: dict = None,
+        expire_ms: int = None,
         acquire_timeout_ms: int = None,
+        json=None,
     ) -> Lock:
-        lock_info = UpdateEntry(category, name, init_value, init_tags, init_expire_ms)
+        lock_info = UpdateEntry(
+            category,
+            name,
+            json=json,
+            value=value,
+            tags=tags,
+            expire_ms=expire_ms,
+        )
         return Lock(self, lock_info, acquire_timeout_ms)
 
     async def create_keypair(
