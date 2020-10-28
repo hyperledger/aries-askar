@@ -14,6 +14,7 @@ from ctypes import (
     sizeof,
     c_char_p,
     c_long,
+    c_int32,
     c_int64,
     c_void_p,
     c_ubyte,
@@ -451,10 +452,11 @@ async def store_create_lock(
     )
 
 
-def store_lock_get_entry(handle: LockHandle) -> Entry:
+def store_lock_get_result(handle: LockHandle) -> (Entry, bool):
     ffi_entry = FfiEntry()
-    do_call("askar_store_lock_get_entry", handle, byref(ffi_entry))
-    return ffi_entry.decode()
+    new_record = c_int32()
+    do_call("askar_store_lock_get_result", handle, byref(ffi_entry), byref(new_record))
+    return (ffi_entry.decode(), bool(new_record))
 
 
 def store_lock_free(handle: LockHandle):
@@ -469,8 +471,7 @@ async def store_lock_update(handle: LockHandle, entries: Sequence[UpdateEntry]):
     return await do_call_async(
         "askar_store_lock_update",
         handle,
-        updates,
-        sizeof(updates),
+        FfiByteBuffer(sizeof(updates), cast(updates, c_char_p)),
     )
 
 

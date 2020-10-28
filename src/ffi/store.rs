@@ -112,9 +112,9 @@ impl LockHandle {
         Self(ptr::null_mut())
     }
 
-    pub fn get_entry(&self) -> KvResult<FfiEntry> {
+    pub fn get_result(&self) -> KvResult<(FfiEntry, bool)> {
         let el = unsafe { mem::ManuallyDrop::new(Arc::from_raw(self.0)) };
-        Ok(el.entry.clone())
+        Ok((el.entry.clone(), el.new_record))
     }
 
     pub async fn take(&self) -> KvResult<EntryLock> {
@@ -269,6 +269,7 @@ impl FfiEntry {
 pub struct FfiEntryLock {
     lock: Mutex<Option<EntryLock>>,
     entry: FfiEntry,
+    new_record: bool,
 }
 
 impl Drop for FfiEntryLock {
@@ -609,9 +610,11 @@ pub extern "C" fn askar_store_create_lock(
             let result = async {
                 let store = handle.load().await?;
                 let (entry, lock) = store.create_lock(None, update, timeout).await?;
+                let new_record = lock.is_new_record();
                 let lock_buf = FfiEntryLock {
                     lock: Mutex::new(Some(lock)),
                     entry: FfiEntry::new(entry),
+                    new_record
                 };
                 Ok(LockHandle::new(lock_buf))
             }.await;
@@ -622,15 +625,19 @@ pub extern "C" fn askar_store_create_lock(
 }
 
 #[no_mangle]
-pub extern "C" fn askar_store_lock_get_entry(
+pub extern "C" fn askar_store_lock_get_result(
     handle: LockHandle,
     entry: *mut FfiEntry,
+    new_record: *mut i32,
 ) -> ErrorCode {
     catch_err! {
         trace!("Get store lock entry");
         check_useful_c_ptr!(entry);
-        let found = handle.get_entry()?;
-        unsafe { *entry = found };
+        let (found, is_new) = handle.get_result()?;
+        unsafe {
+            *entry = found;
+            *new_record = is_new as i32;
+        };
         Ok(ErrorCode::Success)
     }
 }
@@ -638,20 +645,20 @@ pub extern "C" fn askar_store_lock_get_entry(
 #[no_mangle]
 pub extern "C" fn askar_store_lock_update(
     handle: LockHandle,
-    updates: *const FfiUpdateEntry,
-    updates_len: i64,
+    updates: ByteBuffer,
     cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode)>,
     cb_id: CallbackId,
 ) -> ErrorCode {
     catch_err! {
         trace!("Update store lock");
         let cb = cb.ok_or_else(|| err_msg!("No callback provided"))?;
-        check_useful_c_ptr!(updates);
-        if updates_len <= 0 || updates_len % (mem::size_of::<FfiUpdateEntry>() as i64) != 0 {
+        let updates = updates.as_slice();
+        let updates_len = updates.len();
+        if updates_len <= 0 || updates_len % mem::size_of::<FfiUpdateEntry>() != 0 {
             return Err(err_msg!("Invalid length for updates"));
         }
-        let upd_count = (updates_len as usize) / mem::size_of::<FfiUpdateEntry>();
-        let updates = unsafe { slice::from_raw_parts(updates, upd_count) };
+        let upd_count = updates_len / mem::size_of::<FfiUpdateEntry>();
+        let updates = unsafe { slice::from_raw_parts(updates as *const _ as *const FfiUpdateEntry, upd_count) };
         let entries = updates.into_iter().try_fold(
             Vec::with_capacity(upd_count),
             |mut acc, entry| {

@@ -10,7 +10,7 @@ use itertools::Itertools;
 
 use sqlx::{
     sqlite::{Sqlite, SqliteConnectOptions, SqlitePool, SqlitePoolOptions, SqliteRow},
-    Done, Row, Transaction,
+    Done, Executor, Row, Transaction,
 };
 
 use super::db_utils::{
@@ -62,12 +62,15 @@ impl TagRetriever {
         Self { batch_size, query }
     }
 
-    pub async fn fetch_row_tags(
-        pool: &SqlitePool,
+    pub async fn fetch_row_tags<'e, E>(
+        exec: E,
         query: &str,
         row_id: i64,
         key: AsyncEncryptor<StoreKey>,
-    ) -> KvResult<Vec<EntryTag>> {
+    ) -> KvResult<Vec<EntryTag>>
+    where
+        E: Executor<'e, Database = Sqlite>,
+    {
         let mut query = query.to_owned();
         query.push_str(" WHERE item_id=?1");
         let tags = sqlx::query(&query)
@@ -79,7 +82,7 @@ impl TagRetriever {
                     plaintext: row.try_get::<i32, _>(3)? != 0,
                 })
             })
-            .fetch_all(pool)
+            .fetch_all(exec)
             .await?;
         key.decrypt_entry_tags(tags).await
     }
@@ -556,12 +559,15 @@ impl RawStore for SqliteStore {
         {
             Some(row) => {
                 let value = key.decrypt_entry_value(row.try_get(1)?).await?;
+                let tags =
+                    TagRetriever::fetch_row_tags(&mut txn, TAG_QUERY, row.try_get(0)?, key.clone())
+                        .await?;
                 (
                     Entry {
                         category: raw_entry.category.clone(),
                         name: raw_entry.name.clone(),
                         value,
-                        tags: None, // FIXME fetch tags
+                        tags: Some(tags),
                     },
                     false,
                 )

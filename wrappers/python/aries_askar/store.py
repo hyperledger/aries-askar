@@ -84,6 +84,8 @@ class Lock:
     ):
         """Initialize the Lock instance."""
         self.handle = None
+        self._entry: Entry = None
+        self._new_record: bool = None
         self.params = (store, lock_info, acquire_timeout_ms)
 
     async def _acquire(self):
@@ -96,6 +98,7 @@ class Lock:
                 StoreErrorCode.WRAPPER, "Cannot create lock with closed store"
             )
         self.handle = await bindings.store_create_lock(store.handle, lock_info, timeout)
+        (self._entry, self._new_record) = bindings.store_lock_get_result(self.handle)
 
     def __await__(self):
         yield from self._acquire().__await__()
@@ -110,11 +113,11 @@ class Lock:
 
     @property
     def entry(self) -> Entry:
-        if not self.handle:
-            raise StoreError(
-                StoreErrorCode.WRAPPER, "Lock must be acquired using `async with`"
-            )
-        return bindings.store_lock_get_entry(self.handle)
+        return self._entry
+
+    @property
+    def new_record(self) -> bool:
+        return self._new_record
 
     async def update(self, entries: Sequence[UpdateEntry]):
         if not self.handle:
@@ -126,6 +129,12 @@ class Lock:
     def __del__(self):
         if self.handle:
             bindings.store_lock_free(self.handle)
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__name__}(handle={self.handle}, "
+            f"entry={self._entry}, new_record={self._new_record})"
+        )
 
 
 class Store:

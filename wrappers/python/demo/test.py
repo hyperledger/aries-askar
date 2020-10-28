@@ -55,7 +55,7 @@ async def basic_test():
             "category", "name", b"value", {"~plaintag": "a", "enctag": "b"}
         )
         async with store.create_lock(lock_entry) as lock:
-            log("Lock entry:", lock.entry)
+            log("Lock entry:", lock.entry, "\nNew record:", lock.new_record)
 
             entry2 = UpdateEntry("category2", "name2", b"value2")
             await lock.update([entry2])
@@ -66,7 +66,7 @@ async def basic_test():
 
         # Fetch keypair
         key = await store.fetch_keypair(key_ident)
-        log("Fetch key:", key)
+        log("Fetch key:", key, "\nKey params:", key.params)
 
         # Sign a message
         signature = await store.sign_message(key_ident, b"my message")
