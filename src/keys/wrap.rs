@@ -2,9 +2,9 @@ use indy_utils::{aead::generic_array::typenum::U32, base58, keys::ArrayKey};
 use ursa::encryption::random_bytes;
 
 use super::kdf::KdfMethod;
-use crate::error::{ErrorKind, Result};
+use crate::error::Result;
 use crate::future::blocking;
-use crate::keys::store::{decrypt, encrypt_non_searchable};
+use crate::keys::store::{decrypt, encrypt_non_searchable, random_deterministic, EncKey};
 
 pub const PREFIX_KDF: &'static str = "kdf";
 pub const PREFIX_RAW: &'static str = "raw";
@@ -12,9 +12,27 @@ pub const PREFIX_NONE: &'static str = "none";
 
 pub const RAW_KEY_SIZE: usize = 32;
 
-pub fn generate_raw_wrap_key() -> Result<String> {
-    Ok(WrapKey::random()?.to_opt_string().unwrap())
+pub fn generate_raw_wrap_key(seed: Option<&[u8]>) -> Result<String> {
+    if let Some(seed) = seed {
+        if seed.len() != RAW_KEY_SIZE {
+            return Err(err_msg!(Encryption, "Invalid length for wrap key seed"));
+        }
+        let enc_key = EncKey::from_slice(seed);
+        let raw_key = EncKey::from_slice(&random_deterministic(&enc_key, RAW_KEY_SIZE));
+        Ok(WrapKey::from(raw_key).to_opt_string().unwrap())
+    } else {
+        Ok(WrapKey::random()?.to_opt_string().unwrap())
+    }
 }
+
+// pub fn generate_raw_wrap_key(seed: Option<&[u8]>) -> Result<String> {
+//     if let Some(seed) = seed {
+//         let data = [0; RAW_KEY_SIZE];
+
+//     } else {
+//         Ok(WrapKey::random()?.to_opt_string().unwrap())
+//     }
+// }
 
 fn parse_raw_key(raw_key: &str) -> Result<WrapKey> {
     let key =
@@ -207,6 +225,7 @@ impl WrapKeyReference {
 mod tests {
     use super::*;
     use crate::future::block_on;
+    use crate::error::ErrorKind;
 
     #[test]
     fn protection_method_parse() {
@@ -220,8 +239,8 @@ mod tests {
             )))
         );
         assert_eq!(
-            parse("other:method:etc"),
-            Err(ErrorKind::Unsupported.into())
+            parse("other:method:etc").unwrap_err().kind(),
+            ErrorKind::Unsupported
         );
     }
 
@@ -256,7 +275,7 @@ mod tests {
     #[test]
     fn raw_key_wrap() {
         let input = b"test data";
-        let raw_key = generate_raw_wrap_key().unwrap();
+        let raw_key = generate_raw_wrap_key(None).unwrap();
 
         let (wrapped, key_ref) = block_on(async {
             let (key, key_ref) = WrapKeyMethod::RawKey.resolve(Some(&raw_key)).await?;

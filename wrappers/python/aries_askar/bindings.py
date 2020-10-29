@@ -321,10 +321,10 @@ def derive_verkey(key_alg: KeyAlg, seed: [str, bytes]) -> str:
     return str(verkey)
 
 
-def generate_raw_key() -> str:
+def generate_raw_key(seed: str = None) -> str:
     """Generate a new raw store wrapping key."""
     result = lib_string()
-    do_call("askar_store_generate_raw_key", byref(result))
+    do_call("askar_store_generate_raw_key", encode_str(seed), byref(result))
     return result.value.decode("utf-8")
 
 

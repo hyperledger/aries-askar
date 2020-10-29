@@ -20,7 +20,7 @@ use super::keys::{
 use super::options::IntoOptions;
 use super::types::{Entry, EntryFetchOptions, EntryKind, EntryTag, ProfileId, UpdateEntry};
 use super::wql;
-use super::{ErrorKind, Result};
+use super::{Result};
 
 pub struct KeyCache {
     profile_info: HashMap<String, (ProfileId, Arc<StoreKey>)>,
@@ -663,7 +663,7 @@ impl ProvisionStoreSpec {
     }
 
     pub async fn create_default() -> Result<Self> {
-        let key = generate_raw_wrap_key()?;
+        let key = generate_raw_wrap_key(None)?;
         Self::create(WrapKeyMethod::RawKey, Some(&key)).await
     }
 }

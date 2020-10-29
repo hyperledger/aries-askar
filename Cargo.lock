@@ -35,6 +35,7 @@ dependencies = [
  "async-stream",
  "async-trait",
  "blocking",
+ "chacha20",
  "chrono",
  "env_logger",
  "ffi-support",

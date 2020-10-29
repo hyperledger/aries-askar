@@ -153,6 +153,20 @@ pub fn encrypt_non_searchable(enc_key: &EncKey, input: &[u8]) -> KvResult<Vec<u8
     Ok(result)
 }
 
+/// Written to match randombytes_deterministic in libsodium,
+/// used to generate a deterministic wallet raw key.
+pub fn random_deterministic(enc_key: &EncKey, len: usize) -> Vec<u8> {
+    // ursa does not re-export chacha20 crate
+    use chacha20::stream_cipher::{NewStreamCipher, SyncStreamCipher};
+    use chacha20::ChaCha20;
+
+    let nonce = GenericArray::from_slice(b"LibsodiumDRG");
+    let mut cipher = ChaCha20::new(&enc_key, &nonce);
+    let mut data = vec![0; len];
+    cipher.apply_keystream(data.as_mut_slice());
+    data
+}
+
 /// Decrypt a previously encrypted value with nonce attached
 pub fn decrypt(enc_key: &EncKey, input: &[u8]) -> KvResult<Vec<u8>> {
     if input.len() < NonceSize::to_usize() + TagSize::to_usize() {
@@ -318,7 +332,7 @@ mod tests {
     }
 
     #[test]
-    fn wallet_key_non_searchable() {
+    fn store_key_non_searchable() {
         let input = b"hello";
         let key = random_key().unwrap();
         let enc = encrypt_non_searchable(&key, input).unwrap();
@@ -331,7 +345,7 @@ mod tests {
     }
 
     #[test]
-    fn wallet_key_searchable() {
+    fn store_key_searchable() {
         let input = b"hello";
         let key = random_key().unwrap();
         let hmac_key = random_key().unwrap();
@@ -346,10 +360,20 @@ mod tests {
 
     #[cfg(feature = "serde")]
     #[test]
-    fn wallet_key_serde() {
+    fn store_key_serde() {
         let key = WalletKey::new().unwrap();
         let key_json = serde_json::to_string(&key).unwrap();
         let key_cmp = serde_json::from_str(&key_json).unwrap();
         assert_eq!(key, key_cmp);
+    }
+
+    #[test]
+    fn random_det() {
+        let key = EncKey::from_slice(b"00000000000000000000000000000My1");
+        let ret = random_deterministic(&key, ENC_KEY_BYTES);
+        assert_eq!(
+            base58::encode(ret),
+            "CwMHrEQJnwvuE8q9zbR49jyYtVxVBHNTjCPEPk1aV3cP"
+        );
     }
 }

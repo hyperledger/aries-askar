@@ -15,7 +15,7 @@ def log(*args):
 
 async def basic_test():
     if ENCRYPT:
-        key = generate_raw_key()
+        key = generate_raw_key(b"00000000000000000000000000000My1")
         key_method = "raw"
         log("Generated raw key:", key)
     else:

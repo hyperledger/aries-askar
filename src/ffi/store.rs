@@ -375,11 +375,15 @@ pub extern "C" fn askar_store_open(
 }
 
 #[no_mangle]
-pub extern "C" fn askar_store_generate_raw_key(result_p: *mut *const c_char) -> ErrorCode {
+pub extern "C" fn askar_store_generate_raw_key(
+    seed: FfiStr,
+    result_p: *mut *const c_char,
+) -> ErrorCode {
     catch_err! {
         trace!("Create raw key");
         check_useful_c_ptr!(result_p);
-        let key = generate_raw_wrap_key()?;
+        let seed = seed.as_opt_str().map(str::as_bytes);
+        let key = generate_raw_wrap_key(seed)?;
         unsafe { *result_p = rust_string_to_c(key); }
         Ok(ErrorCode::Success)
     }
