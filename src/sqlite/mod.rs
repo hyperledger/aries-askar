@@ -729,6 +729,7 @@ async fn perform_update(
         } = upd;
         sqlx::query(DELETE_QUERY)
             .bind(profile_id)
+            .bind(kind as i32)
             .bind(&enc_category)
             .bind(&enc_name)
             .execute(&mut txn)
@@ -739,9 +740,9 @@ async fn perform_update(
             let row_id = sqlx::query(INSERT_QUERY)
                 .bind(profile_id)
                 .bind(kind as i32)
-                .bind(&enc_category)
-                .bind(&enc_name)
-                .bind(&enc_value)
+                .bind(enc_category)
+                .bind(enc_name)
+                .bind(enc_value)
                 .bind(expire_ms.map(expiry_timestamp).transpose()?)
                 .execute(&mut txn)
                 .await?

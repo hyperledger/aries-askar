@@ -275,6 +275,48 @@ pub async fn db_create_lock_drop_expire<DB: RawStore>(db: &Store<DB>) -> KvResul
     Ok(())
 }
 
+pub async fn db_lock_update<DB: RawStore>(db: &Store<DB>) -> KvResult<()> {
+    let entry = Entry {
+        category: "cat".to_string(),
+        name: "name".to_string(),
+        value: b"value".to_vec(),
+        tags: None,
+    };
+    let lock_info = UpdateEntry {
+        category: "cat".to_string(),
+        name: "name".to_string(),
+        value: Some(entry.value.clone()),
+        tags: None,
+        expire_ms: None,
+    };
+    let (lock_entry, lock) = db.create_lock(None, lock_info, Some(100)).await?;
+    assert_eq!(lock_entry, entry);
+    assert_eq!(lock.is_new_record(), true);
+
+    let update_value = b"value2";
+    let update = UpdateEntry {
+        category: "cat".to_string(),
+        name: "name".to_string(),
+        value: Some(update_value.to_vec()),
+        tags: None,
+        expire_ms: None,
+    };
+    lock.update(vec![update]).await?;
+
+    let fetch = db
+        .fetch(
+            None,
+            entry.category.clone(),
+            entry.name.clone(),
+            Default::default(),
+        )
+        .await?
+        .unwrap();
+    assert_eq!(fetch.value, update_value);
+
+    Ok(())
+}
+
 pub async fn db_keypair_create_fetch<DB: RawStore>(db: &Store<DB>) -> KvResult<()> {
     let metadata = "meta".to_owned();
     let key_info = db

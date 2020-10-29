@@ -102,6 +102,16 @@ macro_rules! db_tests {
         }
 
         #[test]
+        fn lock_update() {
+            block_on(async {
+                let db = $init.await?;
+                super::utils::db_lock_update(&db).await?;
+                KvResult::Ok(())
+            })
+            .unwrap()
+        }
+
+        #[test]
         fn keypair_create_fetch() {
             block_on(async {
                 let db = $init.await?;
