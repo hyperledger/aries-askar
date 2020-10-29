@@ -253,7 +253,7 @@ class Store:
         recipient_vks: Sequence[str],
         from_key_ident: Optional[str],
         message: [str, bytes],
-    ) -> str:
+    ) -> bytes:
         if not self.handle:
             raise StoreError(
                 StoreErrorCode.WRAPPER, "Cannot pack message with closed store"
@@ -262,7 +262,7 @@ class Store:
             await bindings.store_pack_message(
                 self.handle, recipient_vks, from_key_ident, message
             )
-        ).decode("utf-8")
+        )
 
     async def unpack_message(
         self,
@@ -272,7 +272,10 @@ class Store:
             raise StoreError(
                 StoreErrorCode.WRAPPER, "Cannot unpack message with closed store"
             )
-        return await bindings.store_unpack_message(self.handle, message)
+        (unpacked, recip, sender) = await bindings.store_unpack_message(
+            self.handle, message
+        )
+        return (bytes(unpacked), recip, sender)
 
 
 async def _wrap_open_store(fut: asyncio.Future) -> Store:
