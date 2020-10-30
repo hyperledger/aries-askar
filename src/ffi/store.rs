@@ -292,7 +292,7 @@ impl FfiUpdateEntry {
         Ok(UpdateEntry {
             category,
             name,
-            value: Some(value),
+            value: if value.is_empty() { None } else { Some(value) },
             tags,
             expire_ms: if self.expire_ms < 0 {
                 None
