@@ -46,7 +46,7 @@ impl TagQueryEncoder for TagSqlEncoder {
         enc_name: Self::Arg,
         enc_value: Self::Arg,
         is_plaintext: bool,
-    ) -> KvResult<Self::Clause> {
+    ) -> KvResult<Option<Self::Clause>> {
         let idx = self.arguments.len();
         let op_prefix = op.as_sql_str_for_prefix().map(|pfx_op| {
             format!(
@@ -65,7 +65,7 @@ impl TagQueryEncoder for TagSqlEncoder {
         );
         self.arguments.push(enc_name);
         self.arguments.push(enc_value);
-        Ok(query)
+        Ok(Some(query))
     }
 
     fn encode_in_clause(
@@ -74,7 +74,7 @@ impl TagQueryEncoder for TagSqlEncoder {
         enc_values: Vec<Self::Arg>,
         is_plaintext: bool,
         negate: bool,
-    ) -> KvResult<Self::Clause> {
+    ) -> KvResult<Option<Self::Clause>> {
         let args_in = std::iter::repeat("$$")
             .take(enc_values.len())
             .intersperse(", ")
@@ -87,16 +87,23 @@ impl TagQueryEncoder for TagSqlEncoder {
         );
         self.arguments.push(enc_name);
         self.arguments.extend(enc_values);
-        Ok(query)
+        Ok(Some(query))
     }
 
     fn encode_conj_clause(
         &mut self,
         op: ConjunctionOp,
         clauses: Vec<Self::Clause>,
-    ) -> KvResult<Self::Clause> {
-        let mut s = String::new();
+    ) -> KvResult<Option<Self::Clause>> {
         let qc = clauses.len();
+        if qc == 0 {
+            if op == ConjunctionOp::Or {
+                return Ok(Some("0".to_string()));
+            } else {
+                return Ok(None);
+            }
+        }
+        let mut s = String::new();
         if qc > 1 {
             s.push('(');
         }
@@ -109,7 +116,7 @@ impl TagQueryEncoder for TagSqlEncoder {
         if qc > 1 {
             s.push(')');
         }
-        Ok(s)
+        Ok(Some(s))
     }
 }
 
@@ -145,7 +152,7 @@ mod tests {
             |name: &str| Ok(format!("--{}--", name).into_bytes()),
             |value: &str| Ok(format!("~~{}~~", value).into_bytes()),
         );
-        let query_str = enc.encode_query(&query).unwrap();
+        let query_str = enc.encode_query(&query).unwrap().unwrap();
         assert_eq!(query_str, "((i.id IN (SELECT item_id FROM items_tags WHERE name = $1 AND value = $2 AND SUBSTR(value, 0, 12) = SUBSTR($2, 0, 12) AND plaintext = 0) AND i.id IN (SELECT item_id FROM items_tags WHERE name = $3 AND value = $4 AND SUBSTR(value, 0, 12) = SUBSTR($4, 0, 12) AND plaintext = 1)) OR (i.id IN (SELECT item_id FROM items_tags WHERE name = $5 AND value = $6 AND SUBSTR(value, 0, 12) = SUBSTR($6, 0, 12) AND plaintext = 0) AND i.id IN (SELECT item_id FROM items_tags WHERE name = $7 AND value != $8 AND SUBSTR(value, 0, 12) != SUBSTR($8, 0, 12) AND plaintext = 1)))");
         let args = enc.arguments;
         assert_eq!(

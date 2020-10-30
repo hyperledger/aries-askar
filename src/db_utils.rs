@@ -156,9 +156,12 @@ pub async fn encode_tag_filter<Q: QueryPrepare>(
                     |value| Ok(value.as_bytes().to_vec()),
                 )
             };
-            let filter: String = enc.encode_query(&tag_query)?;
-            let filter = replace_arg_placeholders::<Q>(&filter, (offset as i64) + 1);
-            Ok(Some((filter, enc.arguments)))
+            if let Some(filter) = enc.encode_query(&tag_query)? {
+                let filter = replace_arg_placeholders::<Q>(&filter, (offset as i64) + 1);
+                Ok(Some((filter, enc.arguments)))
+            } else {
+                Ok(None)
+            }
         })
         .await
     } else {

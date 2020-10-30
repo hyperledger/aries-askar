@@ -47,7 +47,7 @@ pub trait TagQueryEncoder {
     type Arg;
     type Clause;
 
-    fn encode_query(&mut self, query: &TagQuery) -> KvResult<Self::Clause>
+    fn encode_query(&mut self, query: &TagQuery) -> KvResult<Option<Self::Clause>>
     where
         Self: Sized,
     {
@@ -64,7 +64,7 @@ pub trait TagQueryEncoder {
         enc_name: Self::Arg,
         enc_value: Self::Arg,
         is_plaintext: bool,
-    ) -> KvResult<Self::Clause>;
+    ) -> KvResult<Option<Self::Clause>>;
 
     fn encode_in_clause(
         &mut self,
@@ -72,15 +72,16 @@ pub trait TagQueryEncoder {
         enc_values: Vec<Self::Arg>,
         is_plaintext: bool,
         negate: bool,
-    ) -> KvResult<Self::Clause>;
+    ) -> KvResult<Option<Self::Clause>>;
 
     fn encode_conj_clause(
         &mut self,
         op: ConjunctionOp,
         clauses: Vec<Self::Clause>,
-    ) -> KvResult<Self::Clause>;
+    ) -> KvResult<Option<Self::Clause>>;
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CompareOp {
     Eq,
     Neq,
@@ -130,6 +131,7 @@ impl CompareOp {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConjunctionOp {
     And,
     Or,
@@ -151,7 +153,7 @@ impl ConjunctionOp {
     }
 }
 
-fn encode_tag_query<V, E>(query: &TagQuery, enc: &mut E, negate: bool) -> KvResult<V>
+fn encode_tag_query<V, E>(query: &TagQuery, enc: &mut E, negate: bool) -> KvResult<Option<V>>
 where
     E: TagQueryEncoder<Clause = V>,
 {
@@ -192,7 +194,7 @@ fn encode_tag_op<V, E>(
     value: &String,
     enc: &mut E,
     negate: bool,
-) -> KvResult<V>
+) -> KvResult<Option<V>>
 where
     E: TagQueryEncoder<Clause = V>,
 {
@@ -212,7 +214,7 @@ fn encode_tag_in<V, E>(
     values: &Vec<String>,
     enc: &mut E,
     negate: bool,
-) -> KvResult<V>
+) -> KvResult<Option<V>>
 where
     E: TagQueryEncoder<Clause = V>,
 {
@@ -234,14 +236,14 @@ fn encode_tag_conj<V, E>(
     subqueries: &Vec<TagQuery>,
     enc: &mut E,
     negate: bool,
-) -> KvResult<V>
+) -> KvResult<Option<V>>
 where
     E: TagQueryEncoder<Clause = V>,
 {
     let op = if negate { op.negate() } else { op };
     let clauses = subqueries
         .into_iter()
-        .map(|q| encode_tag_query(q, enc, negate))
+        .flat_map(|q| encode_tag_query(q, enc, negate).transpose())
         .collect::<Result<Vec<_>, _>>()?;
 
     enc.encode_conj_clause(op, clauses)
@@ -274,8 +276,8 @@ mod tests {
             name: Self::Arg,
             value: Self::Arg,
             _is_plaintext: bool,
-        ) -> KvResult<Self::Clause> {
-            Ok(format!("{} {} {}", name, op.as_sql_str(), value))
+        ) -> KvResult<Option<Self::Clause>> {
+            Ok(Some(format!("{} {} {}", name, op.as_sql_str(), value)))
         }
 
         fn encode_in_clause(
@@ -284,21 +286,21 @@ mod tests {
             values: Vec<Self::Arg>,
             _is_plaintext: bool,
             negate: bool,
-        ) -> KvResult<Self::Clause> {
+        ) -> KvResult<Option<Self::Clause>> {
             let op = if negate { "NOT IN " } else { "IN" };
             let value = values
                 .iter()
                 .map(|v| v.as_str())
                 .intersperse(", ")
                 .collect::<String>();
-            Ok(format!("{} {} ({})", name, op, value))
+            Ok(Some(format!("{} {} ({})", name, op, value)))
         }
 
         fn encode_conj_clause(
             &mut self,
             op: ConjunctionOp,
             clauses: Vec<Self::Clause>,
-        ) -> KvResult<Self::Clause> {
+        ) -> KvResult<Option<Self::Clause>> {
             let mut r = String::new();
             r.push_str("(");
             r.extend(
@@ -308,7 +310,7 @@ mod tests {
                     .intersperse(op.as_sql_str()),
             );
             r.push_str(")");
-            Ok(r)
+            Ok(Some(r))
         }
     }
 
@@ -376,7 +378,7 @@ mod tests {
             ))),
         ]);
         let query = TagQuery::Or(vec![condition_1, condition_2]);
-        let query_str = TestEncoder {}.encode_query(&query).unwrap();
+        let query_str = TestEncoder {}.encode_query(&query).unwrap().unwrap();
         assert_eq!(query_str, "((enctag = encval AND ~plaintag = plainval) OR (enctag = encval AND ~plaintag != eggs))")
     }
 
@@ -403,7 +405,7 @@ mod tests {
             ))),
         ]);
         let query = TagQuery::Not(Box::new(TagQuery::Or(vec![condition_1, condition_2])));
-        let query_str = TestEncoder {}.encode_query(&query).unwrap();
+        let query_str = TestEncoder {}.encode_query(&query).unwrap().unwrap();
         assert_eq!(query_str, "((enctag != encval OR ~plaintag != plainval) AND (enctag != encval OR ~plaintag = eggs))")
     }
 }

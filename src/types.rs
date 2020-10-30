@@ -259,6 +259,7 @@ impl Serialize for EntryTagSet {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct EncEntryTag {
     pub name: Vec<u8>,
     pub value: Vec<u8>,

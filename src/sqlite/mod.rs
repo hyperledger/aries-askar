@@ -1,16 +1,14 @@
 use std::borrow::Cow;
-use std::collections::BTreeMap;
 use std::str::FromStr;
 use std::time::{Duration, Instant};
 
 use async_stream::try_stream;
 use async_trait::async_trait;
 use futures_lite::stream::StreamExt;
-use itertools::Itertools;
 
 use sqlx::{
-    sqlite::{Sqlite, SqliteConnectOptions, SqlitePool, SqlitePoolOptions, SqliteRow},
-    Done, Executor, Row, Transaction,
+    sqlite::{Sqlite, SqliteConnectOptions, SqlitePool, SqlitePoolOptions},
+    Done, Row, Transaction,
 };
 
 use super::db_utils::{
@@ -25,7 +23,7 @@ use super::store::{
     EntryLock, KeyCache, OpenStore, ProvisionStore, ProvisionStoreSpec, RawStore, Scan, Store,
 };
 use super::types::{
-    EncEntryTag, Entry, EntryFetchOptions, EntryKind, EntryTag, Expiry, ProfileId, UpdateEntry,
+    EncEntryTag, Entry, EntryFetchOptions, EntryKind, Expiry, ProfileId, UpdateEntry,
 };
 use super::wql;
 
@@ -35,16 +33,25 @@ const COUNT_QUERY: &'static str = "SELECT COUNT(*) FROM items i
     AND (expiry IS NULL OR expiry > datetime('now'))";
 const DELETE_QUERY: &'static str = "DELETE FROM items
     WHERE profile_id = ?1 AND kind = ?2 AND category = ?3 AND name = ?4";
-const FETCH_QUERY: &'static str = "SELECT id, value FROM items i
-    WHERE profile_id = ?1 AND kind = ?2 AND category = ?3 AND name = ?4
-    AND (expiry IS NULL OR expiry > datetime('now'))";
+const FETCH_QUERY: &'static str = "SELECT i.id, i.value,
+    GROUP_CONCAT(
+        CASE WHEN it.name IS NULL THEN NULL ELSE
+        it.plaintext || ':' || hex(it.name) || ':' || hex(it.value)
+    END) AS tags
+    FROM items i LEFT OUTER JOIN items_tags it ON it.item_id = i.id
+    WHERE i.profile_id = ?1 AND i.kind = ?2 AND i.category = ?3 AND i.name = ?4
+    AND (i.expiry IS NULL OR i.expiry > datetime('now'))";
 const INSERT_QUERY: &'static str =
     "INSERT INTO items (profile_id, kind, category, name, value, expiry)
     VALUES(?1, ?2, ?3, ?4, ?5, ?6)";
-const SCAN_QUERY: &'static str = "SELECT id, name, value FROM items i
-    WHERE profile_id = ?1 AND kind = ?2 AND category = ?3
-    AND (expiry IS NULL OR expiry > datetime('now'))";
-const TAG_QUERY: &'static str = "SELECT item_id, name, value, plaintext FROM items_tags";
+const SCAN_QUERY: &'static str = "SELECT i.id, i.name, i.value,
+    GROUP_CONCAT(
+        CASE WHEN it.name IS NULL THEN NULL ELSE
+        it.plaintext || ':' || hex(it.name) || ':' || hex(it.value)
+    END) AS tags
+    FROM items i LEFT OUTER JOIN items_tags it ON it.item_id = i.id
+    WHERE i.profile_id = ?1 AND i.kind = ?2 AND i.category = ?3
+    AND (i.expiry IS NULL OR i.expiry > datetime('now'))";
 const TAG_INSERT_QUERY: &'static str = "INSERT INTO items_tags (item_id, name, value, plaintext)
     VALUES(?1, ?2, ?3, ?4)";
 const LOCK_INSERT_QUERY: &'static str = "INSERT INTO items_locks (id, expiry) VALUES (?1, ?2)
@@ -52,108 +59,47 @@ const LOCK_INSERT_QUERY: &'static str = "INSERT INTO items_locks (id, expiry) VA
     WHERE expiry <= datetime('now')";
 const LOCK_DELETE_QUERY: &'static str = "DELETE FROM items_locks WHERE id=?1 AND expiry=?2";
 
-struct TagRetriever {
-    batch_size: usize,
-    query: String,
-}
-
-impl TagRetriever {
-    pub fn new(query: &str, batch_size: usize) -> Self {
-        let mut query = query.to_owned();
-        query.push_str(" WHERE item_id IN (");
-        query.extend(std::iter::repeat("?").take(batch_size).intersperse(", "));
-        query.push(')');
-        Self { batch_size, query }
-    }
-
-    pub async fn fetch_row_tags<'e, E>(
-        exec: E,
-        query: &str,
-        row_id: i64,
-        key: AsyncEncryptor<StoreKey>,
-    ) -> KvResult<Vec<EntryTag>>
-    where
-        E: Executor<'e, Database = Sqlite>,
-    {
-        let mut query = query.to_owned();
-        query.push_str(" WHERE item_id=?1");
-        let tags = sqlx::query(&query)
-            .bind(row_id)
-            .try_map(|row: SqliteRow| {
-                Ok(EncEntryTag {
-                    name: row.try_get(1)?,
-                    value: row.try_get(2)?,
-                    plaintext: row.try_get::<i32, _>(3)? != 0,
-                })
-            })
-            .fetch_all(exec)
-            .await?;
-        key.decrypt_entry_tags(tags).await
-    }
-
-    pub async fn fetch_tags<'e, E>(
-        &self,
-        exec: E,
-        key: &AsyncEncryptor<StoreKey>,
-        ids: &[i32],
-    ) -> KvResult<BTreeMap<i32, Vec<EntryTag>>>
-    where
-        E: Executor<'e, Database = Sqlite>,
-    {
-        let count = ids.len();
-        if count > self.batch_size {
-            return Err(err_msg!(
-                Unexpected,
-                "Number of item IDs exceeds batch size in tag retriever"
-            ));
+fn decode_tags(tags: &[u8]) -> Result<Vec<EncEntryTag>, ()> {
+    let mut idx = 0;
+    let mut plaintext;
+    let mut name_start;
+    let mut name_end;
+    let mut enc_tags = vec![];
+    let end = tags.len();
+    loop {
+        if idx >= end {
+            break;
         }
-        let mut enc_tags = BTreeMap::new();
-        let mut stmt = sqlx::query(&self.query);
-        for id in ids {
-            enc_tags.insert(*id, vec![]);
-            stmt = stmt.bind(*id);
-        }
-        for _ in count..self.batch_size {
-            stmt = stmt.bind(0i32);
-        }
-        let mut scan = stmt.fetch(exec);
-        while let Some(tag_row) = scan.next().await {
-            let tag_row = tag_row?;
-            let row_id = tag_row.try_get(0)?;
-            let entry = enc_tags
-                .get_mut(&row_id)
-                .ok_or_else(|| err_msg!(Unexpected, "Unexpected result for tag query"))?;
-            entry.push(EncEntryTag {
-                name: tag_row.try_get(1)?,
-                value: tag_row.try_get(2)?,
-                plaintext: tag_row.try_get::<i32, _>(3)? != 0,
-            });
-        }
-        let mut results = BTreeMap::new();
-        for (id, tags) in enc_tags {
-            results.insert(id, key.decrypt_entry_tags(tags).await?);
-        }
-        Ok(results)
-    }
-
-    pub async fn populate_tags<'e, E>(
-        &self,
-        exec: E,
-        key: &AsyncEncryptor<StoreKey>,
-        rows: &mut Vec<Entry>,
-        ids: &[i32],
-    ) -> KvResult<()>
-    where
-        E: Executor<'e, Database = Sqlite>,
-    {
-        let mut tags = self.fetch_tags(exec, key, ids).await?;
-        for (idx, id) in ids.into_iter().enumerate() {
-            if let Some(t) = tags.remove(id) {
-                rows[idx].tags.replace(t);
+        plaintext = tags[idx] == b'1';
+        // assert ':' at idx + 1
+        idx += 2;
+        name_start = idx;
+        name_end = 0;
+        loop {
+            if idx >= end || tags[idx] == b',' {
+                if name_end == 0 {
+                    return Err(());
+                }
+                let name = hex::decode(&tags[(name_start)..(name_end)]).map_err(|_| ())?;
+                let value = hex::decode(&tags[(name_end + 1)..(idx)]).map_err(|_| ())?;
+                enc_tags.push(EncEntryTag {
+                    name,
+                    value,
+                    plaintext,
+                });
+                break;
             }
+            if tags[idx] == b':' {
+                if name_end != 0 {
+                    return Err(());
+                }
+                name_end = idx;
+            }
+            idx += 1;
         }
-        Ok(())
+        idx += 1;
     }
+    Ok(enc_tags)
 }
 
 #[derive(Debug)]
@@ -404,7 +350,7 @@ impl RawStore for SqliteStore {
         kind: EntryKind,
         category: String,
         name: String,
-        options: EntryFetchOptions,
+        _options: EntryFetchOptions,
     ) -> KvResult<Option<Entry>> {
         let (profile_id, key) = self.get_profile_key(profile).await?;
         let raw_category = category.clone();
@@ -418,21 +364,11 @@ impl RawStore for SqliteStore {
             .fetch_optional(&self.conn_pool)
             .await?
         {
-            let tags = if options.retrieve_tags {
-                // FIXME use the same connection to fetch all tags
-                Some(
-                    TagRetriever::fetch_row_tags(
-                        &self.conn_pool,
-                        TAG_QUERY,
-                        row.try_get(0)?,
-                        key.clone(),
-                    )
-                    .await?,
-                )
-            } else {
-                None
-            };
             let value = key.decrypt_entry_value(row.try_get(1)?).await?;
+            let enc_tags =
+                decode_tags(row.try_get(2)?).map_err(|_| err_msg!("Error decoding tags"))?;
+            let tags = Some(key.decrypt_entry_tags(enc_tags).await?);
+
             Ok(Some(Entry {
                 category: raw_category,
                 name: raw_name,
@@ -449,7 +385,7 @@ impl RawStore for SqliteStore {
         profile: Option<String>,
         kind: EntryKind,
         category: String,
-        options: EntryFetchOptions,
+        _options: EntryFetchOptions,
         tag_filter: Option<wql::Query>,
         offset: Option<i64>,
         max_rows: Option<i64>,
@@ -458,15 +394,7 @@ impl RawStore for SqliteStore {
         let pool = self.conn_pool.clone();
 
         perform_scan(
-            pool,
-            profile_id,
-            kind,
-            key,
-            category,
-            tag_filter,
-            offset,
-            max_rows,
-            options.retrieve_tags,
+            pool, profile_id, kind, key, category, tag_filter, offset, max_rows,
         )
         .await
     }
@@ -567,15 +495,15 @@ impl RawStore for SqliteStore {
         {
             Some(row) => {
                 let value = key.decrypt_entry_value(row.try_get(1)?).await?;
-                let tags =
-                    TagRetriever::fetch_row_tags(&mut txn, TAG_QUERY, row.try_get(0)?, key.clone())
-                        .await?;
+                let enc_tags =
+                    decode_tags(row.try_get(3)?).map_err(|_| err_msg!("Error decoding tags"))?;
+                let tags = Some(key.decrypt_entry_tags(enc_tags).await?);
                 (
                     Entry {
                         category,
                         name,
                         value,
-                        tags: Some(tags),
+                        tags,
                     },
                     false,
                 )
@@ -666,7 +594,6 @@ async fn perform_scan(
     tag_filter: Option<wql::Query>,
     offset: Option<i64>,
     max_rows: Option<i64>,
-    retrieve_tags: bool,
 ) -> KvResult<Scan<Entry>> {
     let raw_category = category.clone();
     let category = key.encrypt_entry_category(category).await?;
@@ -679,39 +606,27 @@ async fn perform_scan(
         let tag_filter = encode_tag_filter::<SqliteStore>(tag_filter, key.0.clone(), params.len()).await?;
         let query = extend_query::<SqliteStore>(SCAN_QUERY, &mut params, tag_filter, offset, max_rows)?;
         let mut batch = Vec::<Entry>::with_capacity(PAGE_SIZE);
-        let mut ids = Vec::<i32>::with_capacity(PAGE_SIZE);
-        let mut tag_retriever = if retrieve_tags {
-            Some(TagRetriever::new(TAG_QUERY, PAGE_SIZE))
-        } else {
-            None
-        };
 
         let mut rows = sqlx::query_with(query.as_str(), params).fetch(&pool);
         while let Some(row) = rows.next().await {
             let row = row?;
-            let row_id = row.try_get(0)?;
             let (name, value) = key.decrypt_entry_name_value(row.try_get(1)?, row.try_get(2)?).await?;
+            let enc_tags = decode_tags(row.try_get(3)?).map_err(|_| err_msg!("Error decoding tags"))?;
+            let tags = Some(key.decrypt_entry_tags(enc_tags).await?);
             batch.push(Entry {
                 category: raw_category.clone(),
                 name,
                 value,
-            tags: None});
-            ids.push(row_id);
+                tags
+            });
 
             if batch.len() == PAGE_SIZE {
-                if let Some(retr) = tag_retriever.as_mut() {
-                    retr.populate_tags(&pool, &key, &mut batch, ids.as_slice()).await?;
-                }
                 yield batch.split_off(0);
-                ids.clear();
             }
         }
         drop(rows);
 
-        if batch.len() > 0 {
-            if let Some(retr) = tag_retriever.as_mut() {
-                retr.populate_tags(&pool, &key, &mut batch, ids.as_slice()).await?;
-            }
+        if !batch.is_empty() {
             yield batch;
         }
         drop(query);
