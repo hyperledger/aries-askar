@@ -20,7 +20,7 @@ use super::keys::{
 use super::options::IntoOptions;
 use super::types::{Entry, EntryFetchOptions, EntryKind, EntryTag, ProfileId, UpdateEntry};
 use super::wql;
-use super::{Result};
+use super::Result;
 
 pub struct KeyCache {
     profile_info: HashMap<String, (ProfileId, Arc<StoreKey>)>,
@@ -340,7 +340,7 @@ impl<T: RawStore + ?Sized> Store<T> {
             expire_ms: None,
         };
 
-        let (lock_entry, lock) = self
+        let (_lock_entry, lock) = self
             .inner
             .create_lock(profile, EntryKind::Key, keypair, None)
             .await?;
@@ -669,24 +669,22 @@ impl ProvisionStoreSpec {
 }
 
 #[async_trait]
-pub trait OpenStore {
-    type Store;
-
+pub trait OpenStore: ProvisionStore {
     async fn open_store(self, pass_key: Option<&str>) -> Result<Self::Store>;
 }
 
 pub type AnyStore = Store<dyn RawStore>;
 
 #[async_trait]
-pub trait ProvisionStore: OpenStore {
+pub trait ProvisionStore {
+    type Store;
+
     async fn provision_store(self, spec: ProvisionStoreSpec) -> Result<Self::Store>;
 }
 
 #[async_trait]
 impl OpenStore for &str {
-    type Store = AnyStore;
-
-    async fn open_store(self, pass_key: Option<&str>) -> Result<Self::Store> {
+    async fn open_store(self, pass_key: Option<&str>) -> Result<<Self as ProvisionStore>::Store> {
         let opts = self.into_options()?;
         debug!("Open store with options: {:?}", &opts);
 
@@ -710,7 +708,9 @@ impl OpenStore for &str {
 
 #[async_trait]
 impl ProvisionStore for &str {
-    async fn provision_store(self, spec: ProvisionStoreSpec) -> Result<<Self as OpenStore>::Store> {
+    type Store = AnyStore;
+
+    async fn provision_store(self, spec: ProvisionStoreSpec) -> Result<Self::Store> {
         let opts = self.into_options()?;
         debug!("Provision store with options: {:?}", &opts);
 

@@ -91,12 +91,15 @@ impl TagRetriever {
         key.decrypt_entry_tags(tags).await
     }
 
-    pub async fn fetch_tags(
+    pub async fn fetch_tags<'e, E>(
         &self,
-        pool: &SqlitePool,
+        exec: E,
         key: &AsyncEncryptor<StoreKey>,
         ids: &[i32],
-    ) -> KvResult<BTreeMap<i32, Vec<EntryTag>>> {
+    ) -> KvResult<BTreeMap<i32, Vec<EntryTag>>>
+    where
+        E: Executor<'e, Database = Sqlite>,
+    {
         let count = ids.len();
         if count > self.batch_size {
             return Err(err_msg!(
@@ -113,7 +116,7 @@ impl TagRetriever {
         for _ in count..self.batch_size {
             stmt = stmt.bind(0i32);
         }
-        let mut scan = stmt.fetch(pool);
+        let mut scan = stmt.fetch(exec);
         while let Some(tag_row) = scan.next().await {
             let tag_row = tag_row?;
             let row_id = tag_row.try_get(0)?;
@@ -133,14 +136,17 @@ impl TagRetriever {
         Ok(results)
     }
 
-    pub async fn populate_tags(
+    pub async fn populate_tags<'e, E>(
         &self,
-        pool: &SqlitePool,
+        exec: E,
         key: &AsyncEncryptor<StoreKey>,
         rows: &mut Vec<Entry>,
         ids: &[i32],
-    ) -> KvResult<()> {
-        let mut tags = self.fetch_tags(pool, key, ids).await?;
+    ) -> KvResult<()>
+    where
+        E: Executor<'e, Database = Sqlite>,
+    {
+        let mut tags = self.fetch_tags(exec, key, ids).await?;
         for (idx, id) in ids.into_iter().enumerate() {
             if let Some(t) = tags.remove(id) {
                 rows[idx].tags.replace(t);
@@ -178,9 +184,7 @@ impl<'a> SqliteStoreOptions<'a> {
 
 #[async_trait]
 impl<'a> OpenStore for SqliteStoreOptions<'a> {
-    type Store = Store<SqliteStore>;
-
-    async fn open_store(self, pass_key: Option<&str>) -> KvResult<Self::Store> {
+    async fn open_store(self, pass_key: Option<&str>) -> KvResult<Store<SqliteStore>> {
         let conn_opts = SqliteConnectOptions::from_str(self.path.as_ref())?;
         let conn_pool = self.options.connect_with(conn_opts).await?;
 
@@ -244,6 +248,8 @@ impl<'a> OpenStore for SqliteStoreOptions<'a> {
 
 #[async_trait]
 impl<'a> ProvisionStore for SqliteStoreOptions<'a> {
+    type Store = Store<SqliteStore>;
+
     async fn provision_store(self, spec: ProvisionStoreSpec) -> KvResult<Store<SqliteStore>> {
         let conn_opts = SqliteConnectOptions::from_str(self.path.as_ref())?.create_if_missing(true);
         let conn_pool = self.options.connect_with(conn_opts).await?;
