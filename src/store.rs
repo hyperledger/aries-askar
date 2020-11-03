@@ -10,12 +10,13 @@ use indy_utils::{
     pack::{pack_message, unpack_message, KeyLookup},
     Validatable,
 };
+use zeroize::Zeroize;
 
 use super::future::BoxFuture;
 use super::keys::{
     store::StoreKey,
     wrap::{generate_raw_wrap_key, WrapKey, WrapKeyMethod},
-    AsyncEncryptor, KeyAlg, KeyCategory, KeyEntry, KeyParams,
+    KeyAlg, KeyCategory, KeyEntry, KeyParams,
 };
 use super::types::{Entry, EntryKind, EntryTag, ProfileId};
 use super::wql;
@@ -71,7 +72,7 @@ impl Default for QueryFetchOptions {
     }
 }
 
-pub trait Backend {
+pub trait Backend: Send + Sync {
     type Session: QueryBackend;
     type Transaction: QueryBackend;
 
@@ -92,20 +93,20 @@ pub trait Backend {
     fn close(&self) -> BoxFuture<Result<()>>;
 }
 
-pub trait QueryBackend {
-    fn count(
-        &mut self,
+pub trait QueryBackend: Send {
+    fn count<'q>(
+        &'q mut self,
         kind: EntryKind,
-        category: String,
+        category: &'q str,
         tag_filter: Option<wql::Query>,
-    ) -> BoxFuture<Result<i64>>;
+    ) -> BoxFuture<'q, Result<i64>>;
 
-    fn fetch(
-        &mut self,
+    fn fetch<'q>(
+        &'q mut self,
         kind: EntryKind,
-        category: String,
-        name: String,
-    ) -> BoxFuture<Result<Option<Entry>>>;
+        category: &'q str,
+        name: &'q str,
+    ) -> BoxFuture<'q, Result<Option<Entry>>>;
 
     // async fn fetch_all(
     //     self,
@@ -118,33 +119,33 @@ pub trait QueryBackend {
     //     max_rows: Option<i64>,
     // ) -> Result<Vec<Entry>>;
 
-    fn update(
-        &mut self,
+    fn update<'q>(
+        &'q mut self,
         kind: EntryKind,
         operation: EntryOperation,
-        category: String,
-        name: String,
-        value: Option<Vec<u8>>,
-        tags: Option<Vec<EntryTag>>,
-    ) -> BoxFuture<Result<()>>;
+        category: &'q str,
+        name: &'q str,
+        value: Option<&'q [u8]>,
+        tags: Option<&'q [EntryTag]>,
+    ) -> BoxFuture<'q, Result<()>>;
 }
 
 impl<Q: QueryBackend + ?Sized> QueryBackend for Box<Q> {
-    fn count(
-        &mut self,
+    fn count<'q>(
+        &'q mut self,
         kind: EntryKind,
-        category: String,
+        category: &'q str,
         tag_filter: Option<wql::Query>,
-    ) -> BoxFuture<Result<i64>> {
+    ) -> BoxFuture<'q, Result<i64>> {
         (&mut **self).count(kind, category, tag_filter)
     }
 
-    fn fetch(
-        &mut self,
+    fn fetch<'q>(
+        &'q mut self,
         kind: EntryKind,
-        category: String,
-        name: String,
-    ) -> BoxFuture<Result<Option<Entry>>> {
+        category: &'q str,
+        name: &'q str,
+    ) -> BoxFuture<'q, Result<Option<Entry>>> {
         (&mut **self).fetch(kind, category, name)
     }
 
@@ -159,15 +160,15 @@ impl<Q: QueryBackend + ?Sized> QueryBackend for Box<Q> {
     //     max_rows: Option<i64>,
     // ) -> Result<Vec<Entry>>;
 
-    fn update(
-        &mut self,
+    fn update<'q>(
+        &'q mut self,
         kind: EntryKind,
         operation: EntryOperation,
-        category: String,
-        name: String,
-        value: Option<Vec<u8>>,
-        tags: Option<Vec<EntryTag>>,
-    ) -> BoxFuture<Result<()>> {
+        category: &'q str,
+        name: &'q str,
+        value: Option<&'q [u8]>,
+        tags: Option<&'q [EntryTag]>,
+    ) -> BoxFuture<'q, Result<()>> {
         (&mut **self).update(kind, operation, category, name, value, tags)
     }
 }
@@ -179,6 +180,7 @@ impl<B: Backend> Store<B> {
         Self(inner)
     }
 
+    #[cfg(test)]
     pub(crate) fn inner(&self) -> &B {
         &self.0
     }
@@ -234,7 +236,7 @@ impl<Q: QueryBackend> Session<Q> {
 
 impl<Q: QueryBackend> Session<Q> {
     /// Count the number of entries for a given record category
-    pub async fn count(&mut self, category: String, tag_filter: Option<wql::Query>) -> Result<i64> {
+    pub async fn count(&mut self, category: &str, tag_filter: Option<wql::Query>) -> Result<i64> {
         Ok(self.0.count(EntryKind::Item, category, tag_filter).await?)
     }
 
@@ -243,16 +245,16 @@ impl<Q: QueryBackend> Session<Q> {
     /// A specific `key_id` may be given, otherwise all relevant keys for the provided
     /// `profile_id` are searched in reverse order of creation, returning the first
     /// result found if any.
-    pub async fn fetch(&mut self, category: String, name: String) -> Result<Option<Entry>> {
+    pub async fn fetch(&mut self, category: &str, name: &str) -> Result<Option<Entry>> {
         Ok(self.0.fetch(EntryKind::Item, category, name).await?)
     }
 
     pub async fn insert(
         &mut self,
-        category: String,
-        name: String,
-        value: Vec<u8>,
-        tags: Option<Vec<EntryTag>>,
+        category: &str,
+        name: &str,
+        value: &[u8],
+        tags: Option<&[EntryTag]>,
     ) -> Result<()> {
         Ok(self
             .0
@@ -267,7 +269,7 @@ impl<Q: QueryBackend> Session<Q> {
             .await?)
     }
 
-    pub async fn remove(&mut self, category: String, name: String) -> Result<()> {
+    pub async fn remove(&mut self, category: &str, name: &str) -> Result<()> {
         Ok(self
             .0
             .update(
@@ -283,10 +285,10 @@ impl<Q: QueryBackend> Session<Q> {
 
     pub async fn replace(
         &mut self,
-        category: String,
-        name: String,
-        value: Vec<u8>,
-        tags: Option<Vec<EntryTag>>,
+        category: &str,
+        name: &str,
+        value: &[u8],
+        tags: Option<&[EntryTag]>,
     ) -> Result<()> {
         Ok(self
             .0
@@ -304,9 +306,9 @@ impl<Q: QueryBackend> Session<Q> {
     pub async fn create_keypair(
         &mut self,
         alg: KeyAlg,
-        metadata: Option<String>,
+        metadata: Option<&str>,
         seed: Option<&[u8]>,
-        tags: Option<Vec<EntryTag>>,
+        tags: Option<&[EntryTag]>,
         // backend
     ) -> Result<KeyEntry> {
         match alg {
@@ -332,28 +334,30 @@ impl<Q: QueryBackend> Session<Q> {
 
         let params = KeyParams {
             alg,
-            metadata,
+            metadata: metadata.map(str::to_string),
             reference: None,
             pub_key: Some(pk.key_bytes()),
             prv_key: Some(sk.key_bytes()),
         };
+        let mut value = params.to_vec()?;
 
         self.0
             .update(
                 EntryKind::Key,
                 EntryOperation::Insert,
-                category.as_str().to_owned(),
-                ident.to_owned(),
-                Some(params.to_vec()?),
+                category.as_str(),
+                &ident,
+                Some(value.as_slice()),
                 tags.clone(),
             )
             .await?;
+        value.zeroize();
 
         Ok(KeyEntry {
             category,
             ident,
             params,
-            tags,
+            tags: tags.map(|t| t.to_vec()),
         })
     }
 
@@ -364,7 +368,7 @@ impl<Q: QueryBackend> Session<Q> {
     pub async fn fetch_key(
         &mut self,
         category: KeyCategory,
-        ident: String,
+        ident: &str,
     ) -> Result<Option<KeyEntry>> {
         // normalize ident
         let ident = EncodedVerKey::from_str(&ident)
@@ -375,7 +379,7 @@ impl<Q: QueryBackend> Session<Q> {
         Ok(
             if let Some(row) = self
                 .0
-                .fetch(EntryKind::Key, category.as_str().to_owned(), ident)
+                .fetch(EntryKind::Key, category.as_str(), &ident)
                 .await?
             {
                 let params = KeyParams::from_slice(&row.value)?;
@@ -391,7 +395,7 @@ impl<Q: QueryBackend> Session<Q> {
         )
     }
 
-    pub async fn remove_key(&mut self, category: KeyCategory, ident: String) -> Result<()> {
+    pub async fn remove_key(&mut self, category: KeyCategory, ident: &str) -> Result<()> {
         // normalize ident
         let ident = EncodedVerKey::from_str(&ident)
             .and_then(|k| k.as_base58())
@@ -402,8 +406,8 @@ impl<Q: QueryBackend> Session<Q> {
             .update(
                 EntryKind::Key,
                 EntryOperation::Remove,
-                category.as_str().to_owned(),
-                ident,
+                category.as_str(),
+                &ident,
                 None,
                 None,
             )
@@ -434,7 +438,7 @@ impl<Q: QueryBackend> Session<Q> {
 
     // update_key_tags
 
-    pub async fn sign_message(&mut self, key_ident: String, data: Vec<u8>) -> Result<Vec<u8>> {
+    pub async fn sign_message(&mut self, key_ident: &str, data: &[u8]) -> Result<Vec<u8>> {
         if let Some(key) = self.fetch_key(KeyCategory::KeyPair, key_ident).await? {
             let sk = key.private_key()?;
             sk.sign(&data)
@@ -446,9 +450,9 @@ impl<Q: QueryBackend> Session<Q> {
 
     pub async fn pack_message(
         &mut self,
-        recipient_vks: Vec<String>,
-        from_key_ident: Option<String>,
-        data: Vec<u8>,
+        recipient_vks: Vec<&str>,
+        from_key_ident: Option<&str>,
+        data: &[u8],
     ) -> Result<Vec<u8>> {
         let sign_key = if let Some(ident) = from_key_ident {
             let sk = self
@@ -471,54 +475,36 @@ impl<Q: QueryBackend> Session<Q> {
         Ok(pack_message(data, vks, sign_key).map_err(err_map!("Error packing message"))?)
     }
 
-    // pub async fn unpack_message(
-    //     &self,
-    //     profile: Option<String>,
-    //     data: Vec<u8>,
-    // ) -> Result<(Vec<u8>, EncodedVerKey, Option<EncodedVerKey>)> {
-    //     struct Lookup<T: RawStore + ?Sized> {
-    //         profile: Option<String>,
-    //         store: Store<T>,
-    //     }
+    pub async fn unpack_message(
+        &mut self,
+        data: &[u8],
+    ) -> Result<(Vec<u8>, EncodedVerKey, Option<EncodedVerKey>)> {
+        match unpack_message(data, self).await {
+            Ok((message, recip, sender)) => Ok((message, recip, sender)),
+            Err(err) => Err(err_msg!("Error unpacking message").with_cause(err)),
+        }
+    }
+}
 
-    //     impl<T: RawStore + ?Sized> KeyLookup for Lookup<T> {
-    //         fn find<'f>(
-    //             &'f self,
-    //             keys: &'f Vec<EncodedVerKey>,
-    //         ) -> std::pin::Pin<Box<dyn Future<Output = Option<(usize, PrivateKey)>> + Send + 'f>>
-    //         {
-    //             let profile = self.profile.clone();
-    //             let store = self.store.clone();
-    //             Box::pin(async move {
-    //                 for (idx, key) in keys.into_iter().enumerate() {
-    //                     if let Ok(Some(key)) = store
-    //                         .fetch_key(
-    //                             profile.clone(),
-    //                             KeyCategory::KeyPair,
-    //                             key.long_form(),
-    //                             EntryFetchOptions::new(false),
-    //                         )
-    //                         .await
-    //                     {
-    //                         if let Ok(sk) = key.private_key() {
-    //                             return Some((idx, sk));
-    //                         }
-    //                     }
-    //                 }
-    //                 return None;
-    //             })
-    //         }
-    //     }
-
-    //     let lookup = Lookup {
-    //         profile,
-    //         store: self.clone(),
-    //     };
-    //     match unpack_message(data, lookup).await {
-    //         Ok((message, recip, sender)) => Ok((message, recip, sender)),
-    //         Err(err) => Err(err_msg!("Error unpacking message").with_cause(err)),
-    //     }
-    // }
+impl<'a, Q: QueryBackend> KeyLookup<'a> for &'a mut Session<Q> {
+    fn find<'f>(
+        self,
+        keys: &'f Vec<EncodedVerKey>,
+    ) -> std::pin::Pin<Box<dyn Future<Output = Option<(usize, PrivateKey)>> + Send + 'f>>
+    where
+        'a: 'f,
+    {
+        Box::pin(async move {
+            for (idx, key) in keys.into_iter().enumerate() {
+                if let Ok(Some(key)) = self.fetch_key(KeyCategory::KeyPair, &key.key).await {
+                    if let Ok(sk) = key.private_key() {
+                        return Some((idx, sk));
+                    }
+                }
+            }
+            return None;
+        })
+    }
 }
 
 pub struct Scan<T> {

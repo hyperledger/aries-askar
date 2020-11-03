@@ -188,12 +188,12 @@ where
     E: Send,
     for<'e> &'e mut E: Executor<'e, Database = Sqlite>,
 {
-    fn count(
-        &mut self,
+    fn count<'q>(
+        &'q mut self,
         kind: EntryKind,
-        category: String,
+        category: &'q str,
         tag_filter: Option<wql::Query>,
-    ) -> BoxFuture<Result<i64>> {
+    ) -> BoxFuture<'q, Result<i64>> {
         Box::pin(async move {
             let category = self.key.encrypt_entry_category(category).await?;
             let mut params = QueryParams::new();
@@ -215,13 +215,17 @@ where
     fn fetch(
         &mut self,
         kind: EntryKind,
-        category: String,
-        name: String,
+        category: &str,
+        name: &str,
     ) -> BoxFuture<Result<Option<Entry>>> {
+        let raw_category = category.to_string();
+        let raw_name = name.to_string();
+
         Box::pin(async move {
-            let raw_category = category.clone();
-            let raw_name = name.clone();
-            let (category, name) = self.key.encrypt_entry_category_name(category, name).await?;
+            let (category, name) = self
+                .key
+                .encrypt_entry_category_name(&raw_category, &raw_name)
+                .await?;
             if let Some(row) = sqlx::query(FETCH_QUERY)
                 .bind(self.profile_id)
                 .bind(kind as i32)
@@ -230,24 +234,10 @@ where
                 .fetch_optional(&mut self.exec)
                 .await?
             {
-                println!(
-                    "got row? {} {:?} {:?} {:?} {}, {:?}",
-                    self.profile_id,
-                    kind,
-                    category,
-                    name,
-                    row.try_get::<i64, _>(0)?,
-                    row.try_get::<&[u8], _>(1)?
-                );
-                let count: i64 = sqlx::query_scalar("SELECT count(*) FROM items")
-                    .fetch_one(&mut self.exec)
-                    .await?;
-                println!("count {}", count);
-
                 let value = self.key.decrypt_entry_value(row.try_get(1)?).await?;
                 let enc_tags =
                     decode_tags(row.try_get(2)?).map_err(|_| err_msg!("Error decoding tags"))?;
-                let tags = Some(self.key.decrypt_entry_tags(enc_tags).await?);
+                let tags = Some(self.key.decrypt_entry_tags(&enc_tags).await?);
 
                 Ok(Some(Entry {
                     category: raw_category,
@@ -272,15 +262,15 @@ where
     //     max_rows: Option<i64>,
     // ) -> Result<Vec<Entry>>;
 
-    fn update(
-        &mut self,
+    fn update<'q>(
+        &'q mut self,
         kind: EntryKind,
         operation: EntryOperation,
-        category: String,
-        name: String,
-        value: Option<Vec<u8>>,
-        tags: Option<Vec<EntryTag>>,
-    ) -> BoxFuture<Result<()>> {
+        category: &'q str,
+        name: &'q str,
+        value: Option<&'q [u8]>,
+        tags: Option<&'q [EntryTag]>,
+    ) -> BoxFuture<'q, Result<()>> {
         Box::pin(async move {
             let (enc_category, enc_name) =
                 self.key.encrypt_entry_category_name(category, name).await?;
@@ -394,8 +384,8 @@ async fn perform_scan(
     offset: Option<i64>,
     limit: Option<i64>,
 ) -> Result<Scan<Entry>> {
-    let raw_category = category.clone();
-    let category = key.encrypt_entry_category(category).await?;
+    let raw_category = category;
+    let category = key.encrypt_entry_category(&raw_category).await?;
 
     let scan = try_stream! {
         let mut params = QueryParams::new();
@@ -411,7 +401,7 @@ async fn perform_scan(
             let row = row?;
             let (name, value) = key.decrypt_entry_name_value(row.try_get(1)?, row.try_get(2)?).await?;
             let enc_tags = decode_tags(row.try_get(3)?).map_err(|_| err_msg!("Error decoding tags"))?;
-            let tags = Some(key.decrypt_entry_tags(enc_tags).await?);
+            let tags = Some(key.decrypt_entry_tags(&enc_tags).await?);
             batch.push(Entry {
                 category: raw_category.clone(),
                 name,

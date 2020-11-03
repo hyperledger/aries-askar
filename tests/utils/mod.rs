@@ -4,7 +4,7 @@ use aries_askar::{
 
 pub async fn db_fetch_fail<DB: Backend>(db: &Store<DB>) -> KvResult<()> {
     let mut conn = db.session(None).await?;
-    let result = conn.fetch("cat".to_string(), "name".to_string()).await?;
+    let result = conn.fetch("cat", "name").await?;
     assert!(result.is_none());
     Ok(())
 }
@@ -20,19 +20,19 @@ pub async fn db_add_duplicate_fail<DB: Backend>(db: &Store<DB>) -> KvResult<()> 
     let mut conn = db.session(None).await?;
 
     conn.insert(
-        test_row.category.clone(),
-        test_row.name.clone(),
-        test_row.value.clone(),
-        test_row.tags.clone(),
+        &test_row.category,
+        &test_row.name,
+        &test_row.value,
+        test_row.tags.as_ref().map(|t| t.as_slice()),
     )
     .await?;
 
     assert_eq!(
         conn.insert(
-            test_row.category.clone(),
-            test_row.name.clone(),
-            test_row.value.clone(),
-            test_row.tags.clone(),
+            &test_row.category,
+            &test_row.name,
+            &test_row.value,
+            test_row.tags.as_ref().map(|t| t.as_slice()),
         )
         .await
         .is_err(),
@@ -55,16 +55,14 @@ pub async fn db_add_fetch<DB: Backend>(db: &Store<DB>) -> KvResult<()> {
     let mut conn = db.session(None).await?;
 
     conn.insert(
-        test_row.category.clone(),
-        test_row.name.clone(),
-        test_row.value.clone(),
-        test_row.tags.clone(),
+        &test_row.category,
+        &test_row.name,
+        &test_row.value,
+        test_row.tags.as_ref().map(|t| t.as_slice()),
     )
     .await?;
 
-    let row = conn
-        .fetch(test_row.category.clone(), test_row.name.clone())
-        .await?;
+    let row = conn.fetch(&test_row.category, &test_row.name).await?;
 
     assert_eq!(row.is_some(), true);
     let found = row.unwrap();
@@ -86,20 +84,20 @@ pub async fn db_count<DB: Backend>(db: &Store<DB>) -> KvResult<()> {
 
     for upd in test_rows.iter() {
         conn.insert(
-            upd.category.clone(),
-            upd.name.clone(),
-            upd.value.clone(),
-            upd.tags.clone(),
+            &upd.category,
+            &upd.name,
+            &upd.value,
+            upd.tags.as_ref().map(|t| t.as_slice()),
         )
         .await?;
     }
 
     let tag_filter = None;
-    let count = conn.count(category.clone(), tag_filter).await?;
+    let count = conn.count(&category, tag_filter).await?;
     assert_eq!(count, 1);
 
     let tag_filter = Some(wql::Query::Eq("sometag".to_string(), "someval".to_string()));
-    let count = conn.count(category.clone(), tag_filter).await?;
+    let count = conn.count(&category, tag_filter).await?;
     assert_eq!(count, 0);
 
     Ok(())
@@ -118,10 +116,10 @@ pub async fn db_scan<DB: Backend>(db: &Store<DB>) -> KvResult<()> {
 
     for upd in test_rows.iter() {
         conn.insert(
-            upd.category.clone(),
-            upd.name.clone(),
-            upd.value.clone(),
-            upd.tags.clone(),
+            &upd.category,
+            &upd.name,
+            &upd.value,
+            upd.tags.as_ref().map(|t| t.as_slice()),
         )
         .await?;
     }
@@ -153,12 +151,12 @@ pub async fn db_keypair_create_fetch<DB: Backend>(db: &Store<DB>) -> KvResult<()
 
     let metadata = "meta".to_owned();
     let key_info = conn
-        .create_keypair(KeyAlg::ED25519, Some(metadata.clone()), None, None)
+        .create_keypair(KeyAlg::ED25519, Some(&metadata), None, None)
         .await?;
     assert_eq!(key_info.params.metadata, Some(metadata));
 
     let found = conn
-        .fetch_key(key_info.category.clone(), key_info.ident.clone())
+        .fetch_key(key_info.category.clone(), &key_info.ident)
         .await?;
     assert_eq!(Some(key_info), found);
 
@@ -173,9 +171,7 @@ pub async fn db_keypair_sign_verify<DB: Backend>(db: &Store<DB>) -> KvResult<()>
         .await?;
 
     let message = b"message".to_vec();
-    let sig = conn
-        .sign_message(key_info.ident.clone(), message.clone())
-        .await?;
+    let sig = conn.sign_message(&key_info.ident, &message).await?;
 
     assert_eq!(
         verify_signature(&key_info.ident, &message, &sig).await?,
@@ -200,48 +196,47 @@ pub async fn db_keypair_sign_verify<DB: Backend>(db: &Store<DB>) -> KvResult<()>
     Ok(())
 }
 
-// pub async fn db_keypair_pack_unpack_anon<DB: Backend>(db: &Store<DB>) -> KvResult<()> {
-//     let recip_key = db
-//         .create_keypair(None, KeyAlg::ED25519, None, None, None)
-//         .await?;
+pub async fn db_keypair_pack_unpack_anon<DB: Backend>(db: &Store<DB>) -> KvResult<()> {
+    let mut conn = db.session(None).await?;
 
-//     let msg = b"message".to_vec();
+    let recip_key = conn
+        .create_keypair(KeyAlg::ED25519, None, None, None)
+        .await?;
 
-//     let packed = db
-//         .pack_message(None, vec![recip_key.ident.clone()], None, msg.clone())
-//         .await?;
+    let msg = b"message".to_vec();
 
-//     let (unpacked, p_recip, p_send) = db.unpack_message(None, packed.clone()).await?;
-//     assert_eq!(unpacked, msg);
-//     assert_eq!(p_recip, recip_key.encoded_verkey().unwrap());
-//     assert_eq!(p_send, None);
+    let packed = conn
+        .pack_message(vec![&recip_key.ident], None, &msg)
+        .await?;
 
-//     Ok(())
-// }
+    let (unpacked, p_recip, p_send) = conn.unpack_message(&packed).await?;
+    assert_eq!(unpacked, msg);
+    assert_eq!(p_recip, recip_key.encoded_verkey().unwrap());
+    assert_eq!(p_send, None);
 
-// pub async fn db_keypair_pack_unpack_auth<DB: Backend>(db: &Store<DB>) -> KvResult<()> {
-//     let sender_key = db
-//         .create_keypair(None, KeyAlg::ED25519, None, None, None)
-//         .await?;
-//     let recip_key = db
-//         .create_keypair(None, KeyAlg::ED25519, None, None, None)
-//         .await?;
+    Ok(())
+}
 
-//     let msg = b"message".to_vec();
+pub async fn db_keypair_pack_unpack_auth<DB: Backend>(db: &Store<DB>) -> KvResult<()> {
+    let mut conn = db.session(None).await?;
 
-//     let packed = db
-//         .pack_message(
-//             None,
-//             vec![recip_key.ident.clone()],
-//             Some(sender_key.ident.clone()),
-//             msg.clone(),
-//         )
-//         .await?;
+    let sender_key = conn
+        .create_keypair(KeyAlg::ED25519, None, None, None)
+        .await?;
+    let recip_key = conn
+        .create_keypair(KeyAlg::ED25519, None, None, None)
+        .await?;
 
-//     let (unpacked, p_recip, p_send) = db.unpack_message(None, packed.clone()).await?;
-//     assert_eq!(unpacked, msg);
-//     assert_eq!(p_recip, recip_key.encoded_verkey().unwrap());
-//     assert_eq!(p_send, Some(sender_key.encoded_verkey().unwrap()));
+    let msg = b"message".to_vec();
 
-//     Ok(())
-// }
+    let packed = conn
+        .pack_message(vec![&recip_key.ident], Some(&sender_key.ident), &msg)
+        .await?;
+
+    let (unpacked, p_recip, p_send) = conn.unpack_message(&packed).await?;
+    assert_eq!(unpacked, msg);
+    assert_eq!(p_recip, recip_key.encoded_verkey().unwrap());
+    assert_eq!(p_send, Some(sender_key.encoded_verkey().unwrap()));
+
+    Ok(())
+}

@@ -46,6 +46,7 @@ dependencies = [
  "itertools",
  "log",
  "once_cell",
+ "option-lock",
  "percent-encoding",
  "rand",
  "rand_chacha",
@@ -1151,6 +1152,12 @@ dependencies = [
  "pkg-config",
  "vcpkg",
 ]
+
+[[package]]
+name = "option-lock"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "27e288bc2800ed71713267f4df385c082f38b9c36e24167b9c5f057dbd8327ab"
 
 [[package]]
 name = "parking"

@@ -81,25 +81,25 @@ macro_rules! db_tests {
             .unwrap()
         }
 
-        // #[test]
-        // fn keypair_pack_unpack_anon() {
-        //     block_on(async {
-        //         let db = $init.await?;
-        //         super::utils::db_keypair_pack_unpack_anon(&db).await?;
-        //         KvResult::Ok(())
-        //     })
-        //     .unwrap()
-        // }
+        #[test]
+        fn keypair_pack_unpack_anon() {
+            block_on(async {
+                let db = $init.await?;
+                super::utils::db_keypair_pack_unpack_anon(&db).await?;
+                KvResult::Ok(())
+            })
+            .unwrap()
+        }
 
-        // #[test]
-        // fn keypair_pack_unpack_auth() {
-        //     block_on(async {
-        //         let db = $init.await?;
-        //         super::utils::db_keypair_pack_unpack_auth(&db).await?;
-        //         KvResult::Ok(())
-        //     })
-        //     .unwrap()
-        // }
+        #[test]
+        fn keypair_pack_unpack_auth() {
+            block_on(async {
+                let db = $init.await?;
+                super::utils::db_keypair_pack_unpack_auth(&db).await?;
+                KvResult::Ok(())
+            })
+            .unwrap()
+        }
     };
 }
 
