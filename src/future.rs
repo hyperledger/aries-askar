@@ -1,7 +1,10 @@
 use std::future::Future;
+use std::pin::Pin;
 use std::time::Duration;
 
 pub use async_global_executor::block_on;
+
+pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
 #[inline]
 pub async fn blocking<F, T>(f: F) -> T

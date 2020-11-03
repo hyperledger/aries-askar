@@ -94,50 +94,6 @@ pub struct EncEntry<'a> {
     pub value: Cow<'a, [u8]>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct UpdateEntry {
-    pub category: String,
-    pub name: String,
-    pub value: Option<Vec<u8>>,
-    pub tags: Option<Vec<EntryTag>>,
-    pub expire_ms: Option<i64>,
-}
-
-impl UpdateEntry {
-    pub(crate) fn into_parts(
-        self,
-    ) -> (
-        String,
-        String,
-        Option<Vec<u8>>,
-        Option<Vec<EntryTag>>,
-        Option<i64>,
-    ) {
-        let slf = ManuallyDrop::new(self);
-        unsafe {
-            (
-                ptr::read(&slf.category),
-                ptr::read(&slf.name),
-                ptr::read(&slf.value),
-                ptr::read(&slf.tags),
-                slf.expire_ms,
-            )
-        }
-    }
-}
-
-impl Drop for UpdateEntry {
-    fn drop(&mut self) {
-        self.zeroize();
-    }
-}
-
-impl Zeroize for UpdateEntry {
-    fn zeroize(&mut self) {
-        self.value.zeroize()
-    }
-}
-
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Zeroize)]
 pub enum EntryTag {
     Encrypted(String, String),
@@ -264,25 +220,6 @@ pub struct EncEntryTag {
     pub name: Vec<u8>,
     pub value: Vec<u8>,
     pub plaintext: bool,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct EntryFetchOptions {
-    pub retrieve_tags: bool,
-}
-
-impl EntryFetchOptions {
-    pub fn new(retrieve_tags: bool) -> Self {
-        Self { retrieve_tags }
-    }
-}
-
-impl Default for EntryFetchOptions {
-    fn default() -> Self {
-        return Self {
-            retrieve_tags: true,
-        };
-    }
 }
 
 struct MaybeStr<'a>(&'a [u8]);

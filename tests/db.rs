@@ -22,20 +22,20 @@ macro_rules! db_tests {
         }
 
         #[test]
-        fn add_fetch() {
+        fn add_duplicate_fail() {
             block_on(async {
                 let db = $init.await?;
-                super::utils::db_add_fetch(&db).await?;
+                super::utils::db_add_duplicate_fail(&db).await?;
                 KvResult::Ok(())
             })
             .unwrap()
         }
 
         #[test]
-        fn add_fetch_tags() {
+        fn add_fetch() {
             block_on(async {
                 let db = $init.await?;
-                super::utils::db_add_fetch_tags(&db).await?;
+                super::utils::db_add_fetch(&db).await?;
                 KvResult::Ok(())
             })
             .unwrap()
@@ -62,56 +62,6 @@ macro_rules! db_tests {
         }
 
         #[test]
-        fn create_lock_fail_non_existing() {
-            block_on(async {
-                let db = $init.await?;
-                super::utils::db_create_lock_fail_non_existing(&db).await?;
-                KvResult::Ok(())
-            })
-            .unwrap()
-        }
-
-        #[test]
-        fn create_lock_new_non_existing() {
-            block_on(async {
-                let db = $init.await?;
-                super::utils::db_create_lock_new_non_existing(&db).await?;
-                KvResult::Ok(())
-            })
-            .unwrap()
-        }
-
-        #[test]
-        fn create_lock_timeout() {
-            block_on(async {
-                let db = $init.await?;
-                super::utils::db_create_lock_timeout(&db).await?;
-                KvResult::Ok(())
-            })
-            .unwrap()
-        }
-
-        #[test]
-        fn create_lock_drop_expire() {
-            block_on(async {
-                let db = $init.await?;
-                super::utils::db_create_lock_drop_expire(&db).await?;
-                KvResult::Ok(())
-            })
-            .unwrap()
-        }
-
-        #[test]
-        fn lock_update() {
-            block_on(async {
-                let db = $init.await?;
-                super::utils::db_lock_update(&db).await?;
-                KvResult::Ok(())
-            })
-            .unwrap()
-        }
-
-        #[test]
         fn keypair_create_fetch() {
             block_on(async {
                 let db = $init.await?;
@@ -131,25 +81,25 @@ macro_rules! db_tests {
             .unwrap()
         }
 
-        #[test]
-        fn keypair_pack_unpack_anon() {
-            block_on(async {
-                let db = $init.await?;
-                super::utils::db_keypair_pack_unpack_anon(&db).await?;
-                KvResult::Ok(())
-            })
-            .unwrap()
-        }
+        // #[test]
+        // fn keypair_pack_unpack_anon() {
+        //     block_on(async {
+        //         let db = $init.await?;
+        //         super::utils::db_keypair_pack_unpack_anon(&db).await?;
+        //         KvResult::Ok(())
+        //     })
+        //     .unwrap()
+        // }
 
-        #[test]
-        fn keypair_pack_unpack_auth() {
-            block_on(async {
-                let db = $init.await?;
-                super::utils::db_keypair_pack_unpack_auth(&db).await?;
-                KvResult::Ok(())
-            })
-            .unwrap()
-        }
+        // #[test]
+        // fn keypair_pack_unpack_auth() {
+        //     block_on(async {
+        //         let db = $init.await?;
+        //         super::utils::db_keypair_pack_unpack_auth(&db).await?;
+        //         KvResult::Ok(())
+        //     })
+        //     .unwrap()
+        // }
     };
 }
 

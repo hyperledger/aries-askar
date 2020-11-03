@@ -1,13 +1,11 @@
-use std::collections::hash_map::DefaultHasher;
-use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
 use sqlx::{database::HasArguments, Arguments, Database, Encode, IntoArguments, Type};
 
 use super::error::Result as KvResult;
 use super::future::blocking;
-use super::keys::{store::StoreKey, AsyncEncryptor};
-use super::types::{EncEntryTag, Entry, EntryKind, Expiry, ProfileId, UpdateEntry};
+use super::keys::store::StoreKey;
+use super::types::Expiry;
 use super::wql::{
     self,
     sql::TagSqlEncoder,
@@ -190,75 +188,4 @@ where
         query = Q::limit_query(query, args, offset, limit);
     };
     Ok(query)
-}
-
-pub fn hash_lock_info(profile_id: ProfileId, kind: EntryKind, category: &str, name: &str) -> i64 {
-    let mut hasher = DefaultHasher::new();
-    Hash::hash(&profile_id, &mut hasher);
-    Hash::hash(&kind, &mut hasher);
-    Hash::hash_slice(category.as_bytes(), &mut hasher);
-    Hash::hash_slice(name.as_bytes(), &mut hasher);
-    hasher.finish() as i64
-}
-
-pub struct PreparedUpdate {
-    pub profile_id: ProfileId,
-    pub kind: EntryKind,
-    pub enc_category: Vec<u8>,
-    pub enc_name: Vec<u8>,
-    pub enc_value: Option<Vec<u8>>,
-    pub enc_tags: Option<Vec<EncEntryTag>>,
-    pub expire_ms: Option<i64>,
-}
-
-pub async fn prepare_single_update(
-    profile_id: ProfileId,
-    kind: EntryKind,
-    key: AsyncEncryptor<StoreKey>,
-    update: UpdateEntry,
-) -> KvResult<PreparedUpdate> {
-    let (category, name, value, tags, expire_ms) = update.into_parts();
-    if let Some(value) = value {
-        let (enc_entry, enc_tags) = key
-            .encrypt_entry(Entry {
-                category,
-                name,
-                value,
-                tags,
-            })
-            .await?;
-        Ok(PreparedUpdate {
-            profile_id,
-            kind,
-            enc_category: enc_entry.category.into_owned(),
-            enc_name: enc_entry.name.into_owned(),
-            enc_value: Some(enc_entry.value.into_owned()),
-            enc_tags,
-            expire_ms,
-        })
-    } else {
-        let (enc_category, enc_name) = key.encrypt_entry_category_name(category, name).await?;
-        Ok(PreparedUpdate {
-            profile_id,
-            kind,
-            enc_category,
-            enc_name,
-            enc_value: None,
-            enc_tags: None,
-            expire_ms,
-        })
-    }
-}
-
-pub async fn prepare_update(
-    profile_id: ProfileId,
-    kind: EntryKind,
-    key: AsyncEncryptor<StoreKey>,
-    entries: Vec<UpdateEntry>,
-) -> KvResult<Vec<PreparedUpdate>> {
-    let mut updates = Vec::with_capacity(entries.len());
-    for update in entries {
-        updates.push(prepare_single_update(profile_id, kind, key.clone(), update).await?);
-    }
-    Ok(updates)
 }

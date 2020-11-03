@@ -37,17 +37,20 @@ pub(crate) mod serde_util;
 #[cfg(feature = "sqlite")]
 pub mod sqlite;
 
+mod any;
+pub use any::AnyStore;
+
 mod keys;
 pub use self::keys::{
-    derive_verkey,
+    derive_verkey, verify_signature,
     wrap::{generate_raw_wrap_key, WrapKeyMethod},
     KeyAlg, KeyCategory, KeyEntry, KeyParams,
 };
 
 mod store;
-pub use self::store::{ProvisionStore, ProvisionStoreSpec, RawStore, Store};
+pub use self::store::{Backend, ProvisionStore, ProvisionStoreSpec, QueryBackend, Session, Store};
 
 mod types;
-pub use self::types::{Entry, EntryFetchOptions, EntryTag, UpdateEntry};
+pub use self::types::{Entry, EntryTag};
 
 pub mod wql;

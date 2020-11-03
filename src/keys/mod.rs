@@ -14,7 +14,7 @@ pub use self::types::{KeyAlg, KeyCategory, KeyEntry, KeyParams};
 
 pub mod wrap;
 
-use indy_utils::keys::PrivateKey;
+use indy_utils::keys::{EncodedVerKey, PrivateKey};
 
 // #[cfg(target_os = "macos")]
 // mod keychain;
@@ -34,6 +34,15 @@ pub fn derive_verkey(alg: KeyAlg, seed: &[u8]) -> Result<String> {
         .map_err(err_map!(Unexpected, "Error encoding public key"))?
         .long_form();
     Ok(pk)
+}
+
+pub async fn verify_signature(signer_vk: &str, data: &[u8], signature: &[u8]) -> Result<bool> {
+    let vk = EncodedVerKey::from_str(&signer_vk).map_err(err_map!("Invalid verkey"))?;
+    Ok(vk
+        .decode()
+        .map_err(err_map!("Unsupported verkey"))?
+        .verify_signature(&data, &signature)
+        .unwrap_or(false))
 }
 
 pub trait EntryEncryptor {
@@ -173,13 +182,30 @@ impl<T: EntryEncryptor + Send + Sync + 'static> AsyncEncryptor<T> {
         }
     }
 
-    // pub async fn encrypt_entry_value(&self, value: Vec<u8>) -> Result<Vec<u8>> {
-    //     if let Some(key) = self.0.clone() {
-    //         blocking(move || key.encrypt_entry_value(&value)).await
-    //     } else {
-    //         NullEncryptor {}.encrypt_entry_value(&value)
-    //     }
-    // }
+    pub async fn encrypt_entry_value_tags(
+        &self,
+        value: Vec<u8>,
+        tags: Option<Vec<EntryTag>>,
+    ) -> Result<(Vec<u8>, Option<Vec<EncEntryTag>>)> {
+        if let Some(key) = self.0.clone() {
+            blocking(move || {
+                let value = key.encrypt_entry_value(&value)?;
+                let tags = if let Some(tags) = tags {
+                    Some(key.encrypt_entry_tags(&tags)?)
+                } else {
+                    None
+                };
+                Ok((value, tags))
+            })
+            .await
+        } else {
+            Ok((
+                NullEncryptor {}.encrypt_entry_value(&value)?,
+                tags.map(|tags| NullEncryptor {}.encrypt_entry_tags(&tags))
+                    .transpose()?,
+            ))
+        }
+    }
 
     // pub async fn encrypt_entry_tags(&self, tags: Vec<EntryTag>) -> Result<Vec<EncEntryTag>> {
     //     if tags.is_empty() {
