@@ -9,23 +9,18 @@ from ctypes import (
     CDLL,
     CFUNCTYPE,
     byref,
-    cast,
-    pointer,
-    sizeof,
     c_char_p,
-    c_long,
-    c_int32,
+    c_int8,
     c_int64,
     c_void_p,
     c_ubyte,
-    c_ulong,
     Structure,
 )
 from ctypes.util import find_library
 from typing import Optional, Union, Sequence
 
 from .error import StoreError, StoreErrorCode
-from .types import Entry, KeyAlg, UpdateEntry
+from .types import Entry, EntryOperation, KeyAlg
 
 
 CALLBACKS = {}
@@ -38,6 +33,14 @@ class StoreHandle(c_int64):
 
     def __repr__(self) -> str:
         """Format store handle as a string."""
+        return f"{self.__class__.__name__}({self.value})"
+
+
+class SessionHandle(c_int64):
+    """Index of an active Session/Transaction instance."""
+
+    def __repr__(self) -> str:
+        """Format session handle as a string."""
         return f"{self.__class__.__name__}({self.value})"
 
 
@@ -82,27 +85,6 @@ class FfiEntry(Structure):
             decode_str(self.name),
             value,
             tags,
-        )
-
-
-class FfiUpdateEntry(Structure):
-    _fields_ = [
-        ("entry", FfiEntry),
-        ("expire_ms", c_ulong),
-    ]
-
-    @classmethod
-    def encode(cls, upd: UpdateEntry) -> "FfiUpdateEntry":
-        entry = FfiEntry(
-            encode_str(upd.category),
-            encode_str(upd.name),
-            0 if upd.value is None else len(upd.value),
-            None if upd.value is None else cast(upd.value, c_void_p),
-            encode_str(None if upd.tags is None else json.dumps(upd.tags)),
-        )
-        return FfiUpdateEntry(
-            entry,
-            -1 if upd.expire_ms is None else upd.expire_ms,
         )
 
 
@@ -324,8 +306,31 @@ def derive_verkey(key_alg: KeyAlg, seed: [str, bytes]) -> str:
 def generate_raw_key(seed: str = None) -> str:
     """Generate a new raw store wrapping key."""
     result = lib_string()
-    do_call("askar_store_generate_raw_key", encode_str(seed), byref(result))
+    do_call("askar_generate_raw_key", encode_str(seed), byref(result))
     return result.value.decode("utf-8")
+
+
+def verify_signature(
+    signer_vk: str,
+    message: [str, bytes],
+    signature: [str, bytes],
+) -> bool:
+    result = c_int8()
+    do_call(
+        "askar_verify_signature",
+        encode_str(signer_vk),
+        encode_bytes(message),
+        encode_bytes(signature),
+        byref(result),
+    )
+    return result.value != 0
+
+
+def version() -> str:
+    """Set the version of the installed aries-askar library."""
+    lib = get_library()
+    lib.askar_version.restype = c_void_p
+    return lib_string(lib.askar_version()).value.decode("utf-8")
 
 
 async def store_provision(
@@ -356,223 +361,6 @@ async def store_open(uri: str, pass_key: str = None) -> StoreHandle:
     )
 
 
-async def store_count(
-    handle: StoreHandle, category: str, tag_filter: [str, dict] = None
-) -> int:
-    """Count rows in the Store."""
-    category = encode_str(category)
-    if isinstance(tag_filter, dict):
-        tag_filter = json.dumps(tag_filter)
-    tag_filter = encode_str(tag_filter)
-    return int(
-        await do_call_async(
-            "askar_store_count", handle, category, tag_filter, return_type=c_int64
-        )
-    )
-
-
-async def store_fetch(handle: StoreHandle, category: str, name: str) -> EntrySetHandle:
-    """Fetch a row from the Store."""
-    category = encode_str(category)
-    name = encode_str(name)
-    return await do_call_async(
-        "askar_store_fetch", handle, category, name, return_type=EntrySetHandle
-    )
-
-
-async def store_scan_start(
-    handle: StoreHandle, category: str, tag_filter: [str, dict] = None
-) -> ScanHandle:
-    """Fetch a row from the Store."""
-    category = encode_str(category)
-    if isinstance(tag_filter, dict):
-        tag_filter = json.dumps(tag_filter)
-    tag_filter = encode_str(tag_filter)
-    return await do_call_async(
-        "askar_store_scan_start", handle, category, tag_filter, return_type=ScanHandle
-    )
-
-
-async def store_scan_next(handle: StoreHandle) -> Optional[EntrySetHandle]:
-    handle = await do_call_async(
-        "askar_store_scan_next", handle, return_type=EntrySetHandle
-    )
-    return handle or None
-
-
-def store_scan_free(handle: ScanHandle):
-    """Free an active store scan."""
-    do_call("askar_store_scan_free", handle)
-
-
-def store_results_next(handle: EntrySetHandle) -> Optional[Entry]:
-    ffi_entry = FfiEntry()
-    found = c_ubyte(0)
-    do_call("askar_store_results_next", handle, byref(ffi_entry), byref(found))
-    if found:
-        return ffi_entry.decode()
-    return None
-
-
-def store_results_free(handle: EntrySetHandle):
-    get_library().askar_store_results_free(handle)
-
-
-async def store_update(handle: StoreHandle, entries: Sequence[UpdateEntry]):
-    """Update a Store by inserting, updating, and removing records."""
-
-    updates = (FfiUpdateEntry * len(entries))()
-    for idx, upd in enumerate(entries):
-        updates[idx] = FfiUpdateEntry.encode(upd)
-
-    return await do_call_async(
-        "askar_store_update",
-        handle,
-        FfiByteBuffer(sizeof(updates), cast(updates, c_char_p)),
-    )
-
-
-async def store_create_lock(
-    handle: StoreHandle,
-    lock_info: UpdateEntry,
-    acquire_timeout_ms: int = None,
-) -> LockHandle:
-    ffi_update = FfiUpdateEntry.encode(lock_info)
-    timeout = c_long(acquire_timeout_ms if acquire_timeout_ms is not None else -1)
-    return await do_call_async(
-        "askar_store_create_lock",
-        handle,
-        pointer(ffi_update),
-        timeout,
-        return_type=LockHandle,
-    )
-
-
-def store_lock_get_result(handle: LockHandle) -> (Entry, bool):
-    ffi_entry = FfiEntry()
-    new_record = c_int32()
-    do_call("askar_store_lock_get_result", handle, byref(ffi_entry), byref(new_record))
-    return (ffi_entry.decode(), bool(new_record))
-
-
-def store_lock_free(handle: LockHandle):
-    get_library().askar_store_lock_free(handle)
-
-
-async def store_lock_update(handle: LockHandle, entries: Sequence[UpdateEntry]):
-    updates = (FfiUpdateEntry * len(entries))()
-    for idx, upd in enumerate(entries):
-        updates[idx] = FfiUpdateEntry.encode(upd)
-
-    return await do_call_async(
-        "askar_store_lock_update",
-        handle,
-        FfiByteBuffer(sizeof(updates), cast(updates, c_char_p)),
-    )
-
-
-async def store_create_keypair(
-    handle: StoreHandle,
-    alg: str,
-    metadata: str = None,
-    seed: [str, bytes] = None,
-) -> str:
-    alg = encode_str(alg)
-    metadata = encode_str(metadata)
-    seed = encode_bytes(seed)
-    return await do_call_async(
-        "askar_store_create_keypair",
-        handle,
-        alg,
-        metadata,
-        seed,
-        return_type=lib_string,
-    )
-
-
-async def store_fetch_keypair(
-    handle: StoreHandle,
-    ident: str,
-) -> Optional[EntrySetHandle]:
-    ident = encode_str(ident)
-    ptr = await do_call_async(
-        "askar_store_fetch_keypair",
-        handle,
-        ident,
-        return_type=c_void_p,
-    )
-    if ptr:
-        return EntrySetHandle(ptr)
-
-
-async def store_sign_message(
-    handle: StoreHandle,
-    key_ident: str,
-    message: [str, bytes],
-) -> lib_buffer:
-    key_ident = encode_str(key_ident)
-    message = encode_bytes(message)
-    return await do_call_async(
-        "askar_store_sign_message",
-        handle,
-        key_ident,
-        message,
-        return_type=lib_buffer,
-    )
-
-
-async def store_verify_signature(
-    handle: StoreHandle,
-    signer_vk: str,
-    message: [str, bytes],
-    signature: [str, bytes],
-) -> bool:
-    signer_vk = encode_str(signer_vk)
-    message = encode_bytes(message)
-    signature = encode_bytes(signature)
-    return (
-        await do_call_async(
-            "askar_store_verify_signature",
-            handle,
-            signer_vk,
-            message,
-            signature,
-            return_type=c_int64,
-        )
-        != 0
-    )
-
-
-async def store_pack_message(
-    handle: StoreHandle,
-    recipient_vks: Sequence[str],
-    from_key_ident: Optional[str],
-    message: [str, bytes],
-) -> lib_buffer:
-    recipient_vks = encode_str(",".join(recipient_vks))
-    from_key_ident = encode_str(from_key_ident)
-    message = encode_bytes(message)
-    return await do_call_async(
-        "askar_store_pack_message",
-        handle,
-        recipient_vks,
-        from_key_ident,
-        message,
-        return_type=lib_buffer,
-    )
-
-
-async def store_unpack_message(
-    handle: StoreHandle,
-    message: [str, bytes],
-) -> (lib_buffer, str, Optional[str]):
-    message = encode_bytes(message)
-    result = await do_call_async(
-        "askar_store_unpack_message", handle, message, return_type=lib_unpack_result
-    )
-    return (result.unpacked, str(result.recipient), result.sender.opt_str())
-
-
 async def store_close(handle: StoreHandle):
     """Close an opened store instance."""
     return await do_call_async("askar_store_close", handle)
@@ -583,8 +371,194 @@ def store_close_immed(handle: StoreHandle):
     do_call("askar_store_close", handle, c_void_p(0), c_int64(0))
 
 
-def version() -> str:
-    """Set the version of the installed aries-askar library."""
-    lib = get_library()
-    lib.askar_version.restype = c_void_p
-    return lib_string(lib.askar_version()).value.decode("utf-8")
+async def session_start(
+    handle: StoreHandle, profile: Optional[str] = None, as_transaction: bool = False
+) -> SessionHandle:
+    """Start a new session with an open Store."""
+    return await do_call_async(
+        "askar_session_start",
+        handle,
+        encode_str(profile),
+        c_int8(as_transaction),
+        return_type=SessionHandle,
+    )
+
+
+async def session_close(handle: SessionHandle, commit: bool = False):
+    """Close an existing Session."""
+    return await do_call_async(
+        "askar_session_close",
+        handle,
+        c_int8(commit),
+    )
+
+
+def session_close_immed(handle: SessionHandle):
+    """Close an existing Session."""
+    do_call("askar_session_close", handle, c_int8(0), c_int64(0))
+
+
+async def session_count(
+    handle: SessionHandle, category: str, tag_filter: [str, dict] = None
+) -> int:
+    """Count rows in the Store."""
+    category = encode_str(category)
+    if isinstance(tag_filter, dict):
+        tag_filter = json.dumps(tag_filter)
+    tag_filter = encode_str(tag_filter)
+    return int(
+        await do_call_async(
+            "askar_session_count", handle, category, tag_filter, return_type=c_int64
+        )
+    )
+
+
+async def session_fetch(
+    handle: SessionHandle, category: str, name: str
+) -> EntrySetHandle:
+    """Fetch a row from the Store."""
+    category = encode_str(category)
+    name = encode_str(name)
+    return await do_call_async(
+        "askar_session_fetch", handle, category, name, return_type=EntrySetHandle
+    )
+
+
+async def session_update(
+    handle: SessionHandle,
+    operation: EntryOperation,
+    category: str,
+    name: str,
+    value: [str, bytes] = None,
+    tags: dict = None,
+    expiry_ms: Optional[int] = None,
+):
+    """Update a Store by inserting, updating, or removing a record."""
+
+    return await do_call_async(
+        "askar_session_update",
+        handle,
+        c_int8(operation.value),
+        encode_str(category),
+        encode_str(name),
+        encode_bytes(value),
+        encode_str(None if tags is None else json.dumps(tags)),
+        c_int64(-1 if expiry_ms is None else expiry_ms),
+    )
+
+
+async def session_create_keypair(
+    handle: SessionHandle,
+    alg: str,
+    metadata: str = None,
+    seed: [str, bytes] = None,
+) -> str:
+    return await do_call_async(
+        "askar_session_create_keypair",
+        handle,
+        encode_str(alg),
+        encode_str(metadata),
+        encode_bytes(seed),
+        return_type=lib_string,
+    )
+
+
+async def session_fetch_keypair(
+    handle: SessionHandle,
+    ident: str,
+) -> Optional[EntrySetHandle]:
+    ptr = await do_call_async(
+        "askar_session_fetch_keypair",
+        handle,
+        encode_str(ident),
+        return_type=c_void_p,
+    )
+    if ptr:
+        return EntrySetHandle(ptr)
+
+
+async def session_sign_message(
+    handle: SessionHandle,
+    key_ident: str,
+    message: [str, bytes],
+) -> lib_buffer:
+    return await do_call_async(
+        "askar_session_sign_message",
+        handle,
+        encode_str(key_ident),
+        encode_bytes(message),
+        return_type=lib_buffer,
+    )
+
+
+async def session_pack_message(
+    handle: SessionHandle,
+    recipient_vks: Sequence[str],
+    from_key_ident: Optional[str],
+    message: [str, bytes],
+) -> lib_buffer:
+    recipient_vks = encode_str(",".join(recipient_vks))
+    from_key_ident = encode_str(from_key_ident)
+    message = encode_bytes(message)
+    return await do_call_async(
+        "askar_session_pack_message",
+        handle,
+        recipient_vks,
+        from_key_ident,
+        message,
+        return_type=lib_buffer,
+    )
+
+
+async def session_unpack_message(
+    handle: SessionHandle,
+    message: [str, bytes],
+) -> (lib_buffer, str, Optional[str]):
+    message = encode_bytes(message)
+    result = await do_call_async(
+        "askar_session_unpack_message", handle, message, return_type=lib_unpack_result
+    )
+    return (result.unpacked, str(result.recipient), result.sender.opt_str())
+
+
+async def scan_start(
+    handle: StoreHandle,
+    profile: Optional[str],
+    category: str,
+    tag_filter: [str, dict] = None,
+) -> ScanHandle:
+    """Create a new Scan against the Store."""
+    if isinstance(tag_filter, dict):
+        tag_filter = json.dumps(tag_filter)
+    tag_filter = encode_str(tag_filter)
+    return await do_call_async(
+        "askar_scan_start",
+        handle,
+        encode_str(profile),
+        encode_str(category),
+        tag_filter,
+        return_type=ScanHandle,
+    )
+
+
+async def scan_next(handle: StoreHandle) -> Optional[EntrySetHandle]:
+    handle = await do_call_async("askar_scan_next", handle, return_type=EntrySetHandle)
+    return handle or None
+
+
+def scan_free(handle: ScanHandle):
+    """Free an active store scan."""
+    do_call("askar_scan_free", handle)
+
+
+def entry_set_next(handle: EntrySetHandle) -> Optional[Entry]:
+    ffi_entry = FfiEntry()
+    found = c_int8(0)
+    do_call("askar_entry_set_next", handle, byref(ffi_entry), byref(found))
+    if found:
+        return ffi_entry.decode()
+    return None
+
+
+def entry_set_free(handle: EntrySetHandle):
+    get_library().askar_entry_set_free(handle)

@@ -15,7 +15,7 @@ mod store;
 
 use self::error::ErrorCode;
 use crate::error::Error;
-use crate::keys::{derive_verkey, KeyAlg};
+use crate::keys::{derive_verkey, verify_signature, wrap::generate_raw_wrap_key, KeyAlg};
 
 pub type CallbackId = i64;
 
@@ -69,6 +69,40 @@ pub extern "C" fn askar_derive_verkey(
         let vk_result = derive_verkey(alg, seed.as_slice())?;
         unsafe { *verkey = rust_string_to_c(vk_result) };
 
+        Ok(ErrorCode::Success)
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn askar_generate_raw_key(seed: FfiStr, result_p: *mut *const c_char) -> ErrorCode {
+    catch_err! {
+        trace!("Create raw key");
+        check_useful_c_ptr!(result_p);
+        let seed = seed.as_opt_str().map(str::as_bytes);
+        let key = generate_raw_wrap_key(seed)?;
+        unsafe { *result_p = rust_string_to_c(key); }
+        Ok(ErrorCode::Success)
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn askar_verify_signature(
+    signer_vk: FfiStr,
+    message: ByteBuffer,
+    signature: ByteBuffer,
+    result_p: *mut i8,
+) -> ErrorCode {
+    catch_err! {
+        trace!("Verify signature");
+        let signer_vk = signer_vk.as_opt_str().ok_or_else(|| err_msg!("Signer verkey not provided"))?;
+        let message = message.as_slice();
+        let signature = signature.as_slice();
+        let result = verify_signature(
+            signer_vk,
+            message,
+            signature
+        )?;
+        unsafe { *result_p = result as i8 };
         Ok(ErrorCode::Success)
     }
 }

@@ -1,7 +1,7 @@
 import json as _json
 
 from enum import Enum
-from typing import Mapping, Optional
+from typing import Mapping
 
 
 def _make_bytes(value: [str, bytes]) -> bytes:
@@ -55,37 +55,11 @@ class KeyEntry:
         )
 
 
-class UpdateEntry:
-    def __init__(
-        self,
-        category: str,
-        name: str,
-        value: [str, bytes] = None,
-        tags: Mapping[str, str] = None,
-        expire_ms: Optional[int] = None,
-        profile_id: Optional[int] = None,
-        json=None,
-    ) -> "Entry":
-        self.category = category
-        self.name = name
-        if value is not None:
-            self.value = _make_bytes(value)
-        elif json is not None:
-            self.value = _make_bytes(_json.dumps(json))
-        else:
-            self.value = None
-        self.tags = dict(tags) if tags else {}
-        self.expire_ms = expire_ms
-        self.profile_id = profile_id
-
-    @property
-    def json(self):
-        return None if self.value is None else _json.loads(self.value)
-
-    @json.setter
-    def json(self, val):
-        self.value = None if val is None else _make_bytes(_json.dumps(val))
-
-
 class KeyAlg(Enum):
     ED25519 = "ed25519"
+
+
+class EntryOperation(Enum):
+    INSERT = 0
+    REPLACE = 1
+    REMOVE = 2

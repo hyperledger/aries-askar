@@ -305,7 +305,6 @@ where
                         .key
                         .encrypt_entry_value_tags(value.unwrap(), tags)
                         .await?;
-                    println!("enc value: {:?}", enc_value);
                     let profile_id = self.profile_id;
                     Ok(perform_insert(
                         self,

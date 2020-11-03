@@ -1,8 +1,13 @@
 import asyncio
 import sys
 
-from aries_askar.bindings import derive_verkey, generate_raw_key, version
-from aries_askar import KeyAlg, Store, UpdateEntry
+from aries_askar.bindings import (
+    derive_verkey,
+    generate_raw_key,
+    verify_signature,
+    version,
+)
+from aries_askar import KeyAlg, Store
 
 # REPO_URI = "postgres://postgres:pgpass@localhost:5432/test_wallet2"
 REPO_URI = "sqlite://:memory:"
@@ -27,68 +32,67 @@ async def basic_test():
     log("Derive verkey:", verkey)
 
     # Provision the store
-    async with Store.provision(REPO_URI, key_method, key) as store:
-        log("Provisioned store:", store)
+    store = await Store.provision(REPO_URI, key_method, key)
+    log("Provisioned store:", store)
+
+    # start a new transaction
+    async with store.transaction() as txn:
 
         # Insert a new entry
-        entry = UpdateEntry(
+        await txn.insert(
             "category", "name", b"value", {"~plaintag": "a", "enctag": "b"}
         )
-        await store.update([entry])
         log("Inserted entry")
 
         # Count rows by category and (optional) tag filter
         log(
             "Row count:",
-            await store.count("category", {"~plaintag": "a", "enctag": "b"}),
+            await txn.count("category", {"~plaintag": "a", "enctag": "b"}),
         )
 
         # Fetch an entry by category and name
-        log("Fetched entry:", await store.fetch("category", "name"))
+        log("Fetched entry:", await txn.fetch("category", "name"))
 
-        # Scan entries by category and (optional) tag filter)
-        async for row in store.scan("category", {"~plaintag": "a", "enctag": "b"}):
-            log("Scan result:", row)
+        await txn.commit()
 
-        # Create a new record lock and perform an associated update
-        async with store.create_lock("category", "name", b"init-value") as lock:
-            log("Lock entry:", lock.entry, "\nNew record:", lock.new_record)
+    # Scan entries by category and (optional) tag filter)
+    async for row in store.scan("category", {"~plaintag": "a", "enctag": "b"}):
+        log("Scan result:", row)
 
-            entry2 = UpdateEntry("category2", "name2", b"value2")
-            await lock.update([entry2])
-
+    # test key operations in a new session
+    async with store as session:
         # Create a new keypair
-        key_ident = await store.create_keypair(KeyAlg.ED25519)
+        key_ident = await session.create_keypair(KeyAlg.ED25519)
         log("Created key:", key_ident)
 
         # Fetch keypair
-        key = await store.fetch_keypair(key_ident)
+        key = await session.fetch_keypair(key_ident)
         log("Fetch key:", key, "\nKey params:", key.params)
 
         # Sign a message
-        signature = await store.sign_message(key_ident, b"my message")
+        signature = await session.sign_message(key_ident, b"my message")
         log("Signature:", signature)
 
         # Verify signature
-        verify = await store.verify_signature(key_ident, b"my message", signature)
+        verify = verify_signature(key_ident, b"my message", signature)
         log("Verify signature:", verify)
 
         # Pack message
-        packed = await store.pack_message([key_ident], key_ident, b"my message")
+        packed = await session.pack_message([key_ident], key_ident, b"my message")
         log("Packed message:", packed)
 
         # Unpack message
-        unpacked = await store.unpack_message(packed)
+        unpacked = await session.unpack_message(packed)
         log("Unpacked message:", unpacked)
 
 
 async def open_test(key):
-    async with Store.open(REPO_URI, key) as store:
-        log("Opened store:", store)
+    store = await Store.open(REPO_URI, key)
+    log("Opened store:", store)
 
-        # Scan entries by category and (optional) tag filter)
-        async for row in store.scan("category"):
-            log("Scan result:", row)
+    # Scan entries by category and (optional) tag filter)
+    async for row in store.scan("category"):
+        log("Scan result:", row)
 
 
 if __name__ == "__main__":

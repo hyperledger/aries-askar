@@ -20,11 +20,7 @@ use super::{CallbackId, EnsureCallback, ErrorCode};
 use crate::any::{AnySession, AnyStore};
 use crate::error::Result as KvResult;
 use crate::future::spawn_ok;
-use crate::keys::{
-    verify_signature,
-    wrap::{generate_raw_wrap_key, WrapKeyMethod},
-    KeyAlg, KeyCategory, KeyEntry,
-};
+use crate::keys::{wrap::WrapKeyMethod, KeyAlg, KeyCategory, KeyEntry};
 use crate::store::{OpenStore, ProvisionStore, ProvisionStoreSpec, Scan};
 use crate::types::{Entry, EntryOperation, EntryTagSet};
 
@@ -238,40 +234,6 @@ pub struct FfiUnpackResult {
 }
 
 #[no_mangle]
-pub extern "C" fn askar_generate_raw_key(seed: FfiStr, result_p: *mut *const c_char) -> ErrorCode {
-    catch_err! {
-        trace!("Create raw key");
-        check_useful_c_ptr!(result_p);
-        let seed = seed.as_opt_str().map(str::as_bytes);
-        let key = generate_raw_wrap_key(seed)?;
-        unsafe { *result_p = rust_string_to_c(key); }
-        Ok(ErrorCode::Success)
-    }
-}
-
-#[no_mangle]
-pub extern "C" fn askar_verify_signature(
-    signer_vk: FfiStr,
-    message: ByteBuffer,
-    signature: ByteBuffer,
-    result_p: *mut i64,
-) -> ErrorCode {
-    catch_err! {
-        trace!("Verify signature");
-        let signer_vk = signer_vk.as_opt_str().ok_or_else(|| err_msg!("Signer verkey not provided"))?;
-        let message = message.as_slice();
-        let signature = signature.as_slice();
-        let result = verify_signature(
-            signer_vk,
-            message,
-            signature
-        )?;
-        unsafe { *result_p = result as i64 };
-        Ok(ErrorCode::Success)
-    }
-}
-
-#[no_mangle]
 pub extern "C" fn askar_store_provision(
     spec_uri: FfiStr,
     wrap_key_method: FfiStr,
@@ -367,6 +329,7 @@ pub extern "C" fn askar_store_close(
 #[no_mangle]
 pub extern "C" fn askar_scan_start(
     handle: StoreHandle,
+    profile: FfiStr,
     category: FfiStr,
     tag_filter: FfiStr,
     cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, handle: ScanHandle)>,
@@ -375,6 +338,7 @@ pub extern "C" fn askar_scan_start(
     catch_err! {
         trace!("Scan store start");
         let cb = cb.ok_or_else(|| err_msg!("No callback provided"))?;
+        let profile = profile.into_opt_string();
         let category = category.into_opt_string().ok_or_else(|| err_msg!("Category not provided"))?;
         let tag_filter = tag_filter.as_opt_str().map(serde_json::from_str).transpose().map_err(err_map!("Error parsing tag query"))?;
         let cb = EnsureCallback::new(move |result: KvResult<ScanHandle>|
@@ -386,7 +350,7 @@ pub extern "C" fn askar_scan_start(
         spawn_ok(async move {
             let result = async {
                 let store = handle.load().await?;
-                let scan = store.scan(None, category, tag_filter, None, None).await?;
+                let scan = store.scan(profile, category, tag_filter, None, None).await?;
                 Ok(ScanHandle::create(scan).await)
             }.await;
             cb.resolve(result);
@@ -439,10 +403,10 @@ pub extern "C" fn askar_scan_free(handle: ScanHandle) -> ErrorCode {
 }
 
 #[no_mangle]
-pub extern "C" fn askar_results_next(
+pub extern "C" fn askar_entry_set_next(
     result: *mut FfiEntrySet,
     entry: *mut FfiEntry,
-    found: *mut bool,
+    found: *mut i8,
 ) -> ErrorCode {
     catch_err! {
         check_useful_c_ptr!(entry);
@@ -450,16 +414,16 @@ pub extern "C" fn askar_results_next(
         let results = mem::ManuallyDrop::new(unsafe { Box::from_raw(result) });
         if let Some(next) = results.next() {
             unsafe { *entry = next };
-            unsafe { *found = true };
+            unsafe { *found = 1 };
         } else {
-            unsafe { *found = false };
+            unsafe { *found = 0 };
         }
         Ok(ErrorCode::Success)
     }
 }
 
 #[no_mangle]
-pub extern "C" fn askar_results_free(result: *mut FfiEntrySet) {
+pub extern "C" fn askar_entry_set_free(result: *mut FfiEntrySet) {
     unsafe { Box::from_raw(result) };
 }
 
@@ -467,7 +431,7 @@ pub extern "C" fn askar_results_free(result: *mut FfiEntrySet) {
 pub extern "C" fn askar_session_start(
     handle: StoreHandle,
     profile: FfiStr,
-    as_transaction: i64,
+    as_transaction: i8,
     cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, handle: SessionHandle)>,
     cb_id: CallbackId,
 ) -> ErrorCode {
@@ -564,7 +528,7 @@ pub extern "C" fn askar_session_fetch(
 #[no_mangle]
 pub extern "C" fn askar_session_update(
     handle: SessionHandle,
-    operation: i64,
+    operation: i8,
     category: FfiStr,
     name: FfiStr,
     value: ByteBuffer,
@@ -838,7 +802,7 @@ pub extern "C" fn askar_session_unpack_message(
 #[no_mangle]
 pub extern "C" fn askar_session_close(
     handle: SessionHandle,
-    commit: i64,
+    commit: i8,
     cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode)>,
     cb_id: CallbackId,
 ) -> ErrorCode {
