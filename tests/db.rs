@@ -179,13 +179,13 @@ mod sqlite {
     }
 }
 
-#[cfg(all(feature = "pg_test", feature = "postgres"))]
+#[cfg(feature = "pg_test")]
 mod postgres {
     use super::*;
-    use aries_askar::postgres::{PostgresStore, TestDB};
+    use aries_askar::postgres::{test_db::TestDB};
 
-    async fn init_db<'t>() -> KvResult<TestDB<'t>> {
-        let db = PostgresStore::provision_test_db().await?;
+    async fn init_db() -> KvResult<TestDB> {
+        let db = TestDB::provision().await?;
         Ok(db)
     }
 

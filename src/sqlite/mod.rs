@@ -42,49 +42,6 @@ const SCAN_QUERY: &'static str = "SELECT i.id, i.name, i.value,
 const TAG_INSERT_QUERY: &'static str = "INSERT INTO items_tags
     (item_id, name, value, plaintext) VALUES(?1, ?2, ?3, ?4)";
 
-fn decode_tags(tags: &[u8]) -> std::result::Result<Vec<EncEntryTag>, ()> {
-    let mut idx = 0;
-    let mut plaintext;
-    let mut name_start;
-    let mut name_end;
-    let mut enc_tags = vec![];
-    let end = tags.len();
-    loop {
-        if idx >= end {
-            break;
-        }
-        plaintext = tags[idx] == b'1';
-        // assert ':' at idx + 1
-        idx += 2;
-        name_start = idx;
-        name_end = 0;
-        loop {
-            if idx >= end || tags[idx] == b',' {
-                if name_end == 0 {
-                    return Err(());
-                }
-                let name = hex::decode(&tags[(name_start)..(name_end)]).map_err(|_| ())?;
-                let value = hex::decode(&tags[(name_end + 1)..(idx)]).map_err(|_| ())?;
-                enc_tags.push(EncEntryTag {
-                    name,
-                    value,
-                    plaintext,
-                });
-                break;
-            }
-            if tags[idx] == b':' {
-                if name_end != 0 {
-                    return Err(());
-                }
-                name_end = idx;
-            }
-            idx += 1;
-        }
-        idx += 1;
-    }
-    Ok(enc_tags)
-}
-
 pub struct SqliteStore {
     conn_pool: SqlitePool,
     default_profile: String,
@@ -335,6 +292,49 @@ where
     fn close(self, commit: bool) -> BoxFuture<'static, Result<()>> {
         self.exec.close(commit)
     }
+}
+
+fn decode_tags(tags: &[u8]) -> std::result::Result<Vec<EncEntryTag>, ()> {
+    let mut idx = 0;
+    let mut plaintext;
+    let mut name_start;
+    let mut name_end;
+    let mut enc_tags = vec![];
+    let end = tags.len();
+    loop {
+        if idx >= end {
+            break;
+        }
+        plaintext = tags[idx] == b'1';
+        // assert ':' at idx + 1
+        idx += 2;
+        name_start = idx;
+        name_end = 0;
+        loop {
+            if idx >= end || tags[idx] == b',' {
+                if name_end == 0 {
+                    return Err(());
+                }
+                let name = hex::decode(&tags[(name_start)..(name_end)]).map_err(|_| ())?;
+                let value = hex::decode(&tags[(name_end + 1)..(idx)]).map_err(|_| ())?;
+                enc_tags.push(EncEntryTag {
+                    name,
+                    value,
+                    plaintext,
+                });
+                break;
+            }
+            if tags[idx] == b':' {
+                if name_end != 0 {
+                    return Err(());
+                }
+                name_end = idx;
+            }
+            idx += 1;
+        }
+        idx += 1;
+    }
+    Ok(enc_tags)
 }
 
 async fn perform_insert<E>(

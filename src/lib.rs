@@ -37,7 +37,9 @@ pub(crate) mod serde_util;
 #[cfg(feature = "sqlite")]
 pub mod sqlite;
 
+#[cfg(feature = "any")]
 mod any;
+#[cfg(feature = "any")]
 pub use any::AnyStore;
 
 mod keys;

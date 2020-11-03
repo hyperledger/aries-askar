@@ -188,12 +188,6 @@ impl<'a> SqliteStoreOptions<'a> {
     }
 }
 
-impl<'a> OpenStore<'a> for SqliteStoreOptions<'a> {
-    fn open_store(self, pass_key: Option<&'a str>) -> BoxFuture<'a, Result<Store<SqliteStore>>> {
-        Box::pin(async move { self.open(pass_key).await })
-    }
-}
-
 impl<'a> ProvisionStore<'a> for SqliteStoreOptions<'a> {
     type Store = Store<SqliteStore>;
 
@@ -201,6 +195,12 @@ impl<'a> ProvisionStore<'a> for SqliteStoreOptions<'a> {
         self,
         spec: ProvisionStoreSpec,
     ) -> BoxFuture<'a, Result<Store<SqliteStore>>> {
-        Box::pin(async move { self.provision(spec).await })
+        Box::pin(self.provision(spec))
+    }
+}
+
+impl<'a> OpenStore<'a> for SqliteStoreOptions<'a> {
+    fn open_store(self, pass_key: Option<&'a str>) -> BoxFuture<'a, Result<Store<SqliteStore>>> {
+        Box::pin(self.open(pass_key))
     }
 }
