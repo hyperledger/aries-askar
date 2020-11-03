@@ -1,9 +1,8 @@
-use std::borrow::Cow;
 use std::sync::Arc;
 
 use super::error::Result;
 use super::future::blocking_scoped;
-use super::types::{EncEntry, EncEntryTag, Entry, EntryTag};
+use super::types::{EncEntryTag, EntryTag};
 
 pub mod kdf;
 
@@ -36,7 +35,7 @@ pub fn derive_verkey(alg: KeyAlg, seed: &[u8]) -> Result<String> {
     Ok(pk)
 }
 
-pub async fn verify_signature(signer_vk: &str, data: &[u8], signature: &[u8]) -> Result<bool> {
+pub fn verify_signature(signer_vk: &str, data: &[u8], signature: &[u8]) -> Result<bool> {
     let vk = EncodedVerKey::from_str(&signer_vk).map_err(err_map!("Invalid verkey"))?;
     Ok(vk
         .decode()
@@ -55,37 +54,6 @@ pub trait EntryEncryptor {
     fn decrypt_entry_name(&self, enc_name: &[u8]) -> Result<String>;
     fn decrypt_entry_value(&self, enc_value: &[u8]) -> Result<Vec<u8>>;
     fn decrypt_entry_tags(&self, enc_tags: &[EncEntryTag]) -> Result<Vec<EntryTag>>;
-
-    fn encrypt_entry(
-        &self,
-        entry: &Entry,
-    ) -> Result<(EncEntry<'static>, Option<Vec<EncEntryTag>>)> {
-        let enc_entry = EncEntry {
-            category: Cow::Owned(self.encrypt_entry_category(&entry.category)?),
-            name: Cow::Owned(self.encrypt_entry_name(&entry.name)?),
-            value: Cow::Owned(self.encrypt_entry_value(&entry.value)?),
-        };
-        let enc_tags = entry
-            .tags
-            .as_ref()
-            .map(|t| self.encrypt_entry_tags(t))
-            .transpose()?;
-        Ok((enc_entry, enc_tags))
-    }
-
-    fn decrypt_entry(
-        &self,
-        enc_entry: &EncEntry,
-        enc_tags: Option<&Vec<EncEntryTag>>,
-    ) -> Result<Entry> {
-        let tags = enc_tags.map(|t| self.decrypt_entry_tags(t)).transpose()?;
-        Ok(Entry {
-            category: self.decrypt_entry_category(&enc_entry.category)?,
-            name: self.decrypt_entry_name(&enc_entry.name)?,
-            value: self.decrypt_entry_value(&enc_entry.value)?,
-            tags,
-        })
-    }
 }
 
 pub struct NullEncryptor;

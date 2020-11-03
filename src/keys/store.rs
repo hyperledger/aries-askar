@@ -322,12 +322,22 @@ mod tests {
                 EntryTag::Encrypted("enctag".to_string(), "envtagval".to_string()),
             ]),
         };
-        let (enc_record, enc_tags) = key.encrypt_entry(&test_record).unwrap();
-        assert!(enc_record.category.as_ref() != test_record.category.as_bytes());
-        assert!(enc_record.name.as_ref() != test_record.name.as_bytes());
-        assert!(enc_record.value.as_ref() != test_record.value.as_slice());
-        assert!(enc_tags.is_some());
-        let cmp_record = key.decrypt_entry(&enc_record, enc_tags.as_ref()).unwrap();
+        let enc_category = key.encrypt_entry_category(&test_record.category).unwrap();
+        let enc_name = key.encrypt_entry_name(&test_record.name).unwrap();
+        let enc_value = key.encrypt_entry_value(&test_record.value).unwrap();
+        let enc_tags = key
+            .encrypt_entry_tags(&test_record.tags.as_ref().unwrap())
+            .unwrap();
+        assert_ne!(enc_category.as_slice(), test_record.category.as_bytes());
+        assert_ne!(enc_name.as_slice(), test_record.name.as_bytes());
+        assert_ne!(enc_value.as_slice(), test_record.value.as_slice());
+
+        let cmp_record = Entry {
+            category: key.decrypt_entry_category(&enc_category).unwrap(),
+            name: key.decrypt_entry_name(&enc_name).unwrap(),
+            value: key.decrypt_entry_value(&enc_value).unwrap(),
+            tags: Some(key.decrypt_entry_tags(&enc_tags).unwrap()),
+        };
         assert_eq!(test_record, cmp_record);
     }
 

@@ -18,7 +18,7 @@ use super::keys::{
     wrap::{generate_raw_wrap_key, WrapKey, WrapKeyMethod},
     KeyAlg, KeyCategory, KeyEntry, KeyParams,
 };
-use super::types::{Entry, EntryKind, EntryTag, ProfileId};
+use super::types::{Entry, EntryKind, EntryOperation, EntryTag, ProfileId};
 use super::wql;
 use super::Result;
 
@@ -52,13 +52,6 @@ impl KeyCache {
     pub fn get_wrap_key(&self) -> &WrapKey {
         &self.wrap_key
     }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum EntryOperation {
-    Insert,
-    Replace,
-    Remove,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -127,50 +120,10 @@ pub trait QueryBackend: Send {
         name: &'q str,
         value: Option<&'q [u8]>,
         tags: Option<&'q [EntryTag]>,
+        expiry_ms: Option<i64>,
     ) -> BoxFuture<'q, Result<()>>;
-}
 
-impl<Q: QueryBackend + ?Sized> QueryBackend for Box<Q> {
-    fn count<'q>(
-        &'q mut self,
-        kind: EntryKind,
-        category: &'q str,
-        tag_filter: Option<wql::Query>,
-    ) -> BoxFuture<'q, Result<i64>> {
-        (&mut **self).count(kind, category, tag_filter)
-    }
-
-    fn fetch<'q>(
-        &'q mut self,
-        kind: EntryKind,
-        category: &'q str,
-        name: &'q str,
-    ) -> BoxFuture<'q, Result<Option<Entry>>> {
-        (&mut **self).fetch(kind, category, name)
-    }
-
-    // async fn fetch_all(
-    //     self,
-    //     profile: Option<String>,
-    //     kind: EntryKind,
-    //     category: String,
-    //     options: EntryFetchOptions,
-    //     tag_filter: Option<wql::Query>,
-    //     offset: Option<i64>,
-    //     max_rows: Option<i64>,
-    // ) -> Result<Vec<Entry>>;
-
-    fn update<'q>(
-        &'q mut self,
-        kind: EntryKind,
-        operation: EntryOperation,
-        category: &'q str,
-        name: &'q str,
-        value: Option<&'q [u8]>,
-        tags: Option<&'q [EntryTag]>,
-    ) -> BoxFuture<'q, Result<()>> {
-        (&mut **self).update(kind, operation, category, name, value, tags)
-    }
+    fn close(self, commit: bool) -> BoxFuture<'static, Result<()>>;
 }
 
 pub struct Store<B: Backend>(B);
@@ -221,7 +174,11 @@ impl<B: Backend> Store<B> {
     }
 
     /// Close the store instance, waiting for any shutdown procedures to complete.
-    pub async fn close(&self) -> Result<()> {
+    pub async fn close(self) -> Result<()> {
+        Ok(self.0.close().await?)
+    }
+
+    pub(crate) async fn arc_close(self: Arc<Self>) -> Result<()> {
         Ok(self.0.close().await?)
     }
 }
@@ -255,6 +212,7 @@ impl<Q: QueryBackend> Session<Q> {
         name: &str,
         value: &[u8],
         tags: Option<&[EntryTag]>,
+        expiry_ms: Option<i64>,
     ) -> Result<()> {
         Ok(self
             .0
@@ -265,6 +223,7 @@ impl<Q: QueryBackend> Session<Q> {
                 name,
                 Some(value),
                 tags,
+                expiry_ms,
             )
             .await?)
     }
@@ -279,6 +238,7 @@ impl<Q: QueryBackend> Session<Q> {
                 name,
                 None,
                 None,
+                None,
             )
             .await?)
     }
@@ -289,6 +249,7 @@ impl<Q: QueryBackend> Session<Q> {
         name: &str,
         value: &[u8],
         tags: Option<&[EntryTag]>,
+        expiry_ms: Option<i64>,
     ) -> Result<()> {
         Ok(self
             .0
@@ -299,6 +260,30 @@ impl<Q: QueryBackend> Session<Q> {
                 name,
                 Some(value),
                 tags,
+                expiry_ms,
+            )
+            .await?)
+    }
+
+    pub async fn update(
+        &mut self,
+        operation: EntryOperation,
+        category: &str,
+        name: &str,
+        value: Option<&[u8]>,
+        tags: Option<&[EntryTag]>,
+        expiry_ms: Option<i64>,
+    ) -> Result<()> {
+        Ok(self
+            .0
+            .update(
+                EntryKind::Item,
+                operation,
+                category,
+                name,
+                value,
+                tags,
+                expiry_ms,
             )
             .await?)
     }
@@ -349,6 +334,7 @@ impl<Q: QueryBackend> Session<Q> {
                 &ident,
                 Some(value.as_slice()),
                 tags.clone(),
+                None,
             )
             .await?;
         value.zeroize();
@@ -410,6 +396,7 @@ impl<Q: QueryBackend> Session<Q> {
                 &ident,
                 None,
                 None,
+                None,
             )
             .await
     }
@@ -450,7 +437,7 @@ impl<Q: QueryBackend> Session<Q> {
 
     pub async fn pack_message(
         &mut self,
-        recipient_vks: Vec<&str>,
+        recipient_vks: impl IntoIterator<Item = &str>,
         from_key_ident: Option<&str>,
         data: &[u8],
     ) -> Result<Vec<u8>> {
@@ -483,6 +470,14 @@ impl<Q: QueryBackend> Session<Q> {
             Ok((message, recip, sender)) => Ok((message, recip, sender)),
             Err(err) => Err(err_msg!("Error unpacking message").with_cause(err)),
         }
+    }
+
+    pub async fn commit(self) -> Result<()> {
+        Ok(self.0.close(true).await?)
+    }
+
+    pub async fn rollback(self) -> Result<()> {
+        Ok(self.0.close(false).await?)
     }
 }
 

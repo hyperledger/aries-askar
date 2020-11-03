@@ -1,4 +1,3 @@
-use std::borrow::Cow;
 use std::fmt::{self, Debug, Formatter};
 use std::mem::ManuallyDrop;
 use std::ptr;
@@ -88,10 +87,11 @@ pub enum EntryKind {
     Item = 2,
 }
 
-pub struct EncEntry<'a> {
-    pub category: Cow<'a, [u8]>,
-    pub name: Cow<'a, [u8]>,
-    pub value: Cow<'a, [u8]>,
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EntryOperation {
+    Insert,
+    Replace,
+    Remove,
 }
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Zeroize)]

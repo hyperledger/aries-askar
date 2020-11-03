@@ -2,15 +2,17 @@ use super::error::Result;
 use super::future::BoxFuture;
 use super::options::IntoOptions;
 use super::store::{
-    Backend, OpenStore, ProvisionStore, ProvisionStoreSpec, QueryBackend, Scan, Store,
+    Backend, OpenStore, ProvisionStore, ProvisionStoreSpec, QueryBackend, Scan, Session, Store,
 };
-use super::types::{Entry, EntryKind};
+use super::types::{Entry, EntryKind, EntryOperation, EntryTag};
 use super::wql;
 
 #[cfg(feature = "sqlite")]
 use super::sqlite::SqliteStore;
 
 pub type AnyStore = Store<AnyBackend>;
+
+pub type AnySession = Session<AnyQueryBackend>;
 
 pub enum AnyBackend {
     #[cfg(feature = "sqlite")]
@@ -20,8 +22,8 @@ pub enum AnyBackend {
 }
 
 impl Backend for AnyBackend {
-    type Session = Box<dyn QueryBackend>;
-    type Transaction = Box<dyn QueryBackend>;
+    type Session = AnyQueryBackend;
+    type Transaction = AnyQueryBackend;
 
     fn scan(
         &self,
@@ -47,7 +49,7 @@ impl Backend for AnyBackend {
                 Self::Sqlite(store) => {
                     // FIXME - avoid double boxed futures by exposing public method
                     let session = store.session(profile).await?;
-                    Ok(Box::new(session) as Box<dyn QueryBackend>)
+                    Ok(AnyQueryBackend::SqliteSession(session))
                 }
                 _ => unreachable!(),
             }
@@ -61,7 +63,7 @@ impl Backend for AnyBackend {
                 Self::Sqlite(store) => {
                     // FIXME - avoid double boxed futures by exposing public method
                     let session = store.transaction(profile).await?;
-                    Ok(Box::new(session) as Box<dyn QueryBackend>)
+                    Ok(AnyQueryBackend::SqliteTxn(session))
                 }
                 _ => unreachable!(),
             }
@@ -72,6 +74,95 @@ impl Backend for AnyBackend {
         match self {
             #[cfg(feature = "sqlite")]
             Self::Sqlite(store) => store.close(),
+
+            _ => unreachable!(),
+        }
+    }
+}
+
+pub enum AnyQueryBackend {
+    #[cfg(feature = "sqlite")]
+    SqliteSession(<SqliteStore as Backend>::Session),
+    #[cfg(feature = "sqlite")]
+    SqliteTxn(<SqliteStore as Backend>::Transaction),
+    #[allow(unused)]
+    Other,
+}
+
+impl QueryBackend for AnyQueryBackend {
+    fn count<'q>(
+        &'q mut self,
+        kind: EntryKind,
+        category: &'q str,
+        tag_filter: Option<wql::Query>,
+    ) -> BoxFuture<'q, Result<i64>> {
+        match self {
+            #[cfg(feature = "sqlite")]
+            Self::SqliteSession(session) => session.count(kind, category, tag_filter),
+            #[cfg(feature = "sqlite")]
+            Self::SqliteTxn(txn) => txn.count(kind, category, tag_filter),
+
+            _ => unreachable!(),
+        }
+    }
+
+    fn fetch<'q>(
+        &'q mut self,
+        kind: EntryKind,
+        category: &'q str,
+        name: &'q str,
+    ) -> BoxFuture<'q, Result<Option<Entry>>> {
+        match self {
+            #[cfg(feature = "sqlite")]
+            Self::SqliteSession(session) => session.fetch(kind, category, name),
+            #[cfg(feature = "sqlite")]
+            Self::SqliteTxn(txn) => txn.fetch(kind, category, name),
+
+            _ => unreachable!(),
+        }
+    }
+
+    // async fn fetch_all(
+    //     self,
+    //     profile: Option<String>,
+    //     kind: EntryKind,
+    //     category: String,
+    //     options: EntryFetchOptions,
+    //     tag_filter: Option<wql::Query>,
+    //     offset: Option<i64>,
+    //     max_rows: Option<i64>,
+    // ) -> Result<Vec<Entry>>;
+
+    fn update<'q>(
+        &'q mut self,
+        kind: EntryKind,
+        operation: EntryOperation,
+        category: &'q str,
+        name: &'q str,
+        value: Option<&'q [u8]>,
+        tags: Option<&'q [EntryTag]>,
+        expiry_ms: Option<i64>,
+    ) -> BoxFuture<'q, Result<()>> {
+        match self {
+            #[cfg(feature = "sqlite")]
+            Self::SqliteSession(session) => {
+                session.update(kind, operation, category, name, value, tags, expiry_ms)
+            }
+            #[cfg(feature = "sqlite")]
+            Self::SqliteTxn(txn) => {
+                txn.update(kind, operation, category, name, value, tags, expiry_ms)
+            }
+
+            _ => unreachable!(),
+        }
+    }
+
+    fn close(self, commit: bool) -> BoxFuture<'static, Result<()>> {
+        match self {
+            #[cfg(feature = "sqlite")]
+            Self::SqliteSession(session) => session.close(commit),
+            #[cfg(feature = "sqlite")]
+            Self::SqliteTxn(txn) => txn.close(commit),
 
             _ => unreachable!(),
         }

@@ -13,8 +13,8 @@ use super::db_utils::{
 use super::error::Result;
 use super::future::BoxFuture;
 use super::keys::{store::StoreKey, AsyncEncryptor};
-use super::store::{Backend, EntryOperation, KeyCache, QueryBackend, Scan};
-use super::types::{EncEntryTag, Entry, EntryKind, EntryTag, ProfileId};
+use super::store::{Backend, KeyCache, QueryBackend, Scan};
+use super::types::{EncEntryTag, Entry, EntryKind, EntryOperation, EntryTag, ProfileId};
 use super::wql;
 
 mod provision;
@@ -177,6 +177,29 @@ impl Backend for SqliteStore {
     }
 }
 
+pub trait CloseActive {
+    fn close(self, commit: bool) -> BoxFuture<'static, Result<()>>;
+}
+
+impl CloseActive for PoolConnection<Sqlite> {
+    fn close(self, _commit: bool) -> BoxFuture<'static, Result<()>> {
+        Box::pin(async move { Ok(()) })
+    }
+}
+
+impl CloseActive for Transaction<'static, Sqlite> {
+    fn close(self, commit: bool) -> BoxFuture<'static, Result<()>> {
+        Box::pin(async move {
+            if commit {
+                self.commit().await
+            } else {
+                self.rollback().await
+            }
+            .map_err(err_map!("Error committing transaction"))
+        })
+    }
+}
+
 pub struct Active<E> {
     exec: E,
     profile_id: ProfileId,
@@ -185,7 +208,7 @@ pub struct Active<E> {
 
 impl<E> QueryBackend for Active<E>
 where
-    E: Send,
+    E: CloseActive + Send,
     for<'e> &'e mut E: Executor<'e, Database = Sqlite>,
 {
     fn count<'q>(
@@ -270,6 +293,7 @@ where
         name: &'q str,
         value: Option<&'q [u8]>,
         tags: Option<&'q [EntryTag]>,
+        expiry_ms: Option<i64>,
     ) -> BoxFuture<'q, Result<()>> {
         Box::pin(async move {
             let (enc_category, enc_name) =
@@ -291,7 +315,7 @@ where
                         enc_name,
                         enc_value,
                         enc_tags,
-                        None,
+                        expiry_ms,
                     )
                     .await?)
                 }
@@ -308,6 +332,10 @@ where
             }
         })
     }
+
+    fn close(self, commit: bool) -> BoxFuture<'static, Result<()>> {
+        self.exec.close(commit)
+    }
 }
 
 async fn perform_insert<E>(
@@ -318,7 +346,7 @@ async fn perform_insert<E>(
     enc_name: Vec<u8>,
     enc_value: Vec<u8>,
     enc_tags: Option<Vec<EncEntryTag>>,
-    expire_ms: Option<i64>,
+    expiry_ms: Option<i64>,
 ) -> Result<()>
 where
     for<'e> &'e mut E: Executor<'e, Database = Sqlite>,
@@ -330,7 +358,7 @@ where
         .bind(enc_category)
         .bind(enc_name)
         .bind(enc_value)
-        .bind(expire_ms.map(expiry_timestamp).transpose()?)
+        .bind(expiry_ms.map(expiry_timestamp).transpose()?)
         .execute(&mut conn.exec)
         .await?
         .last_insert_rowid();

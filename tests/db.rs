@@ -100,6 +100,46 @@ macro_rules! db_tests {
             })
             .unwrap()
         }
+
+        #[test]
+        fn txn_rollback() {
+            block_on(async {
+                let db = $init.await?;
+                super::utils::db_txn_rollback(&db).await?;
+                KvResult::Ok(())
+            })
+            .unwrap()
+        }
+
+        #[test]
+        fn txn_drop() {
+            block_on(async {
+                let db = $init.await?;
+                super::utils::db_txn_drop(&db).await?;
+                KvResult::Ok(())
+            })
+            .unwrap()
+        }
+
+        #[test]
+        fn session_drop() {
+            block_on(async {
+                let db = $init.await?;
+                super::utils::db_session_drop(&db).await?;
+                KvResult::Ok(())
+            })
+            .unwrap()
+        }
+
+        #[test]
+        fn txn_commit() {
+            block_on(async {
+                let db = $init.await?;
+                super::utils::db_txn_commit(&db).await?;
+                KvResult::Ok(())
+            })
+            .unwrap()
+        }
     };
 }
 
