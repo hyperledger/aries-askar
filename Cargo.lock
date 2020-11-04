@@ -33,7 +33,6 @@ dependencies = [
  "async-mutex",
  "async-std",
  "async-stream",
- "async-trait",
  "blocking",
  "chacha20",
  "chrono",
@@ -211,17 +210,6 @@ name = "async-task"
 version = "4.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6725e96011a83fae25074a8734932e8d67763522839be7473dcfe8a0d6a378b1"
-
-[[package]]
-name = "async-trait"
-version = "0.1.40"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "687c230d85c0a52504709705fc8a53e4a692b83a2184f03dae73e38e1e93a783"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
-]
 
 [[package]]
 name = "atoi"
