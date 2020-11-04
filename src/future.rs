@@ -1,11 +1,11 @@
+use std::cell::UnsafeCell;
 use std::future::Future;
 use std::marker::PhantomData;
-use std::mem::transmute;
+use std::mem::{transmute, MaybeUninit};
 use std::pin::Pin;
+use std::sync::atomic::{fence, AtomicU8, Ordering};
 use std::thread;
 use std::time::Duration;
-
-use option_lock::OptionLock;
 
 pub use async_global_executor::block_on;
 
@@ -36,27 +36,68 @@ where
     result
 }
 
-enum BlockingState {
-    Thread(thread::Thread),
-    Done,
+const COMPLETE_INIT: u8 = 0;
+const COMPLETE_WAKE: u8 = 1;
+const COMPLETE_DONE: u8 = 2;
+
+struct Completion {
+    state: AtomicU8,
+    thread: UnsafeCell<MaybeUninit<thread::Thread>>,
+}
+
+impl Completion {
+    #[inline]
+    pub fn new() -> Self {
+        Self {
+            state: AtomicU8::new(COMPLETE_INIT),
+            thread: UnsafeCell::new(MaybeUninit::uninit()),
+        }
+    }
+
+    #[inline]
+    pub fn wait(&self) {
+        match self.state.load(Ordering::Relaxed) {
+            COMPLETE_DONE => {
+                // synchronize with the blocking thread
+                fence(Ordering::Acquire);
+            }
+            COMPLETE_INIT => {
+                unsafe { self.thread.get().write(MaybeUninit::new(thread::current())) };
+                match self.state.compare_exchange(
+                    COMPLETE_INIT,
+                    COMPLETE_WAKE,
+                    Ordering::Acquire,
+                    Ordering::Acquire,
+                ) {
+                    Ok(_) => thread::park(),
+                    Err(COMPLETE_DONE) => (),
+                    Err(s) => panic!("Unexpected state for Completion: {}", s),
+                }
+            }
+            s => panic!("Unexpected state for Completion: {}", s),
+        }
+    }
+
+    #[inline]
+    pub fn done(&self) {
+        match self.state.swap(COMPLETE_DONE, Ordering::Release) {
+            COMPLETE_INIT => (),
+            COMPLETE_WAKE => unsafe { self.thread.get().read().assume_init() }.unpark(),
+            s => panic!("Unexpected state for Completion: {}", s),
+        }
+    }
 }
 
 struct BlockingSentinel {
-    ptr: *const OptionLock<BlockingState>,
+    ptr: *const Completion,
 }
 
 unsafe impl Send for BlockingSentinel {}
 
 impl Drop for BlockingSentinel {
     fn drop(&mut self) {
-        let lock = unsafe { &*self.ptr };
-        if let Some(mut guard) = lock.try_lock() {
-            if guard.is_none() {
-                guard.replace(BlockingState::Thread(thread::current()));
-                drop(guard);
-                thread::park();
-            }
-        }
+        let completion = unsafe { &*self.ptr };
+        completion.wait();
     }
 }
 
@@ -65,15 +106,16 @@ trait CallBlocking<T>: Send {
 }
 
 struct Blocking<F, T> {
-    state: OptionLock<BlockingState>,
+    completion: Completion,
     f: Option<F>,
     _pd: PhantomData<T>,
 }
 
 impl<F: FnOnce() -> T + Send, T: Send> Blocking<F, T> {
+    #[inline]
     fn boxed(f: F) -> Box<Self> {
         Box::new(Self {
-            state: OptionLock::empty(),
+            completion: Completion::new(),
             f: Some(f),
             _pd: PhantomData,
         })
@@ -81,8 +123,11 @@ impl<F: FnOnce() -> T + Send, T: Send> Blocking<F, T> {
 }
 
 impl<F, T> Blocking<F, T> {
+    #[inline]
     fn sentinel(self: &Box<Self>) -> BlockingSentinel {
-        BlockingSentinel { ptr: &self.state }
+        BlockingSentinel {
+            ptr: &self.completion,
+        }
     }
 }
 
@@ -91,17 +136,10 @@ where
     F: FnOnce() -> T + Send,
     T: Send,
 {
+    #[inline]
     fn call(&mut self) -> T {
         let result = (self.f.take().unwrap())();
-        let mut guard = self.state.spin_lock();
-        match guard.take() {
-            Some(BlockingState::Thread(th)) => {
-                guard.replace(BlockingState::Done);
-                drop(guard);
-                th.unpark()
-            }
-            _ => (),
-        }
+        self.completion.done();
         result
     }
 }
@@ -135,7 +173,7 @@ mod tests {
                 called.store(true, SeqCst);
             }
         });
-        // poll once to queue the fn, then drop the future
+        // poll once to queue the fn, then drop the future.
         // this should block until the closure completes
         assert_eq!(block_on(poll_once(fut)), None);
         assert_eq!(called.load(SeqCst), true);
