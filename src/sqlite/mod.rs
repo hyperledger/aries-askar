@@ -8,7 +8,7 @@ use sqlx::{
 };
 
 use super::db_utils::{
-    encode_tag_filter, expiry_timestamp, extend_query, QueryParams, QueryPrepare, PAGE_SIZE,
+    decode_tags, encode_tag_filter, expiry_timestamp, extend_query, QueryParams, QueryPrepare, PAGE_SIZE,
 };
 use super::error::Result;
 use super::future::BoxFuture;
@@ -178,7 +178,7 @@ where
             let category = self.key.encrypt_entry_category(category).await?;
             let mut params = QueryParams::new();
             params.push(self.profile_id);
-            params.push(kind as i32);
+            params.push(kind as i16);
             params.push(category);
             let tag_filter =
                 encode_tag_filter::<SqliteStore>(tag_filter, self.key.0.clone(), params.len())
@@ -208,7 +208,7 @@ where
                 .await?;
             if let Some(row) = sqlx::query(FETCH_QUERY)
                 .bind(self.profile_id)
-                .bind(kind as i32)
+                .bind(kind as i16)
                 .bind(&category)
                 .bind(&name)
                 .fetch_optional(&mut self.exec)
@@ -294,49 +294,6 @@ where
     }
 }
 
-fn decode_tags(tags: &[u8]) -> std::result::Result<Vec<EncEntryTag>, ()> {
-    let mut idx = 0;
-    let mut plaintext;
-    let mut name_start;
-    let mut name_end;
-    let mut enc_tags = vec![];
-    let end = tags.len();
-    loop {
-        if idx >= end {
-            break;
-        }
-        plaintext = tags[idx] == b'1';
-        // assert ':' at idx + 1
-        idx += 2;
-        name_start = idx;
-        name_end = 0;
-        loop {
-            if idx >= end || tags[idx] == b',' {
-                if name_end == 0 {
-                    return Err(());
-                }
-                let name = hex::decode(&tags[(name_start)..(name_end)]).map_err(|_| ())?;
-                let value = hex::decode(&tags[(name_end + 1)..(idx)]).map_err(|_| ())?;
-                enc_tags.push(EncEntryTag {
-                    name,
-                    value,
-                    plaintext,
-                });
-                break;
-            }
-            if tags[idx] == b':' {
-                if name_end != 0 {
-                    return Err(());
-                }
-                name_end = idx;
-            }
-            idx += 1;
-        }
-        idx += 1;
-    }
-    Ok(enc_tags)
-}
-
 async fn perform_insert<E>(
     conn: &mut Active<E>,
     profile_id: ProfileId,
@@ -353,7 +310,7 @@ where
     trace!("Insert entry");
     let row_id = sqlx::query(INSERT_QUERY)
         .bind(profile_id)
-        .bind(kind as i32)
+        .bind(kind as i16)
         .bind(enc_category)
         .bind(enc_name)
         .bind(enc_value)
@@ -367,7 +324,7 @@ where
                 .bind(row_id)
                 .bind(&tag.name)
                 .bind(&tag.value)
-                .bind(tag.plaintext as i32)
+                .bind(tag.plaintext as i16)
                 .execute(&mut conn.exec)
                 .await?;
         }
@@ -389,7 +346,7 @@ where
     trace!("Remove entry");
     let done = sqlx::query(DELETE_QUERY)
         .bind(profile_id)
-        .bind(kind as i32)
+        .bind(kind as i16)
         .bind(enc_category)
         .bind(enc_name)
         .execute(exec)
@@ -417,7 +374,7 @@ async fn perform_scan(
     let scan = try_stream! {
         let mut params = QueryParams::new();
         params.push(profile_id);
-        params.push(kind as i32);
+        params.push(kind as i16);
         params.push(category.clone());
         let tag_filter = encode_tag_filter::<SqliteStore>(tag_filter, key.0.clone(), params.len()).await?;
         let query = extend_query::<SqliteStore>(SCAN_QUERY, &mut params, tag_filter, offset, limit)?;

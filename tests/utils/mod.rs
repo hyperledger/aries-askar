@@ -113,7 +113,10 @@ pub async fn db_scan<DB: Backend>(db: &Store<DB>) -> KvResult<()> {
         category: category.clone(),
         name: "name".to_string(),
         value: b"value".to_vec(),
-        tags: None,
+        tags: Some(vec![
+            EntryTag::Encrypted("t1".to_string(), "v1".to_string()),
+            EntryTag::Plaintext("t2".to_string(), "v2".to_string()),
+        ]),
     }];
 
     let mut conn = db.session(None).await?;
@@ -244,7 +247,7 @@ pub async fn db_keypair_pack_unpack_auth<DB: Backend>(db: &Store<DB>) -> KvResul
     Ok(())
 }
 
-pub async fn db_txn_rollback<DB: Backend>(db: &Store<DB>) -> KvResult<()> {
+pub async fn db_txn_rollback<DB: Backend>(db: &Store<DB>) {
     let test_row = Entry {
         category: "cat".to_string(),
         name: "name".to_string(),
@@ -252,7 +255,10 @@ pub async fn db_txn_rollback<DB: Backend>(db: &Store<DB>) -> KvResult<()> {
         tags: None,
     };
 
-    let mut conn = db.transaction(None).await?;
+    let mut conn = db
+        .transaction(None)
+        .await
+        .expect("Error starting transaction");
 
     conn.insert(
         &test_row.category,
@@ -261,19 +267,23 @@ pub async fn db_txn_rollback<DB: Backend>(db: &Store<DB>) -> KvResult<()> {
         test_row.tags.as_ref().map(|t| t.as_slice()),
         None,
     )
-    .await?;
+    .await
+    .expect("Error inserting test row");
 
-    conn.rollback().await?;
+    conn.rollback()
+        .await
+        .expect("Error rolling back transaction");
 
-    let mut conn = db.session(None).await?;
+    let mut conn = db.session(None).await.expect("Error starting new session");
 
-    let row = conn.fetch(&test_row.category, &test_row.name).await?;
+    let row = conn
+        .fetch(&test_row.category, &test_row.name)
+        .await
+        .expect("Error fetching test row");
     assert_eq!(row, None);
-
-    Ok(())
 }
 
-pub async fn db_txn_drop<DB: Backend>(db: &Store<DB>) -> KvResult<()> {
+pub async fn db_txn_drop<DB: Backend>(db: &Store<DB>) {
     let test_row = Entry {
         category: "cat".to_string(),
         name: "name".to_string(),
@@ -281,7 +291,10 @@ pub async fn db_txn_drop<DB: Backend>(db: &Store<DB>) -> KvResult<()> {
         tags: None,
     };
 
-    let mut conn = db.transaction(None).await?;
+    let mut conn = db
+        .transaction(None)
+        .await
+        .expect("Error starting new transaction");
 
     conn.insert(
         &test_row.category,
@@ -290,16 +303,18 @@ pub async fn db_txn_drop<DB: Backend>(db: &Store<DB>) -> KvResult<()> {
         test_row.tags.as_ref().map(|t| t.as_slice()),
         None,
     )
-    .await?;
+    .await
+    .expect("Error inserting test row");
 
     drop(conn);
 
-    let mut conn = db.session(None).await?;
+    let mut conn = db.session(None).await.expect("Error starting new session");
 
-    let row = conn.fetch(&test_row.category, &test_row.name).await?;
+    let row = conn
+        .fetch(&test_row.category, &test_row.name)
+        .await
+        .expect("Error fetching test row");
     assert_eq!(row, None);
-
-    Ok(())
 }
 
 // test that session does NOT have transaction rollback behaviour

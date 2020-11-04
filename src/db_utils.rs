@@ -5,7 +5,7 @@ use sqlx::{database::HasArguments, Arguments, Database, Encode, IntoArguments, T
 use super::error::Result as KvResult;
 use super::future::blocking;
 use super::keys::store::StoreKey;
-use super::types::Expiry;
+use super::types::{EncEntryTag, Expiry};
 use super::wql::{
     self,
     sql::TagSqlEncoder,
@@ -126,6 +126,49 @@ pub fn replace_arg_placeholders<Q: QueryPrepare + ?Sized>(
     }
     buffer.push_str(remain);
     buffer
+}
+
+pub fn decode_tags(tags: &[u8]) -> std::result::Result<Vec<EncEntryTag>, ()> {
+    let mut idx = 0;
+    let mut plaintext;
+    let mut name_start;
+    let mut name_end;
+    let mut enc_tags = vec![];
+    let end = tags.len();
+    loop {
+        if idx >= end {
+            break;
+        }
+        plaintext = tags[idx] == b'1';
+        // assert ':' at idx + 1
+        idx += 2;
+        name_start = idx;
+        name_end = 0;
+        loop {
+            if idx >= end || tags[idx] == b',' {
+                if name_end == 0 {
+                    return Err(());
+                }
+                let name = hex::decode(&tags[(name_start)..(name_end)]).map_err(|_| ())?;
+                let value = hex::decode(&tags[(name_end + 1)..(idx)]).map_err(|_| ())?;
+                enc_tags.push(EncEntryTag {
+                    name,
+                    value,
+                    plaintext,
+                });
+                break;
+            }
+            if tags[idx] == b':' {
+                if name_end != 0 {
+                    return Err(());
+                }
+                name_end = idx;
+            }
+            idx += 1;
+        }
+        idx += 1;
+    }
+    Ok(enc_tags)
 }
 
 pub fn expiry_timestamp(expire_ms: i64) -> KvResult<Expiry> {

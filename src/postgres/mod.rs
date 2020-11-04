@@ -9,8 +9,8 @@ use sqlx::{
 };
 
 use super::db_utils::{
-    encode_tag_filter, expiry_timestamp, extend_query, replace_arg_placeholders, QueryParams,
-    QueryPrepare, PAGE_SIZE,
+    decode_tags, encode_tag_filter, expiry_timestamp, extend_query, replace_arg_placeholders,
+    QueryParams, QueryPrepare, PAGE_SIZE,
 };
 use super::error::Result;
 use super::future::BoxFuture;
@@ -24,16 +24,24 @@ const COUNT_QUERY: &'static str = "SELECT COUNT(*) FROM items i
     AND (expiry IS NULL OR expiry > CURRENT_TIMESTAMP)";
 const DELETE_QUERY: &'static str = "DELETE FROM items
     WHERE profile_id = $1 AND kind = $2 AND category = $4 AND name = $4";
-const FETCH_QUERY: &'static str = "SELECT id, value FROM items i
+const FETCH_QUERY: &'static str = "SELECT id, value,
+    (SELECT ARRAY_TO_STRING(ARRAY_AGG(it.plaintext || ':'
+        || ENCODE(it.name, 'hex') || ':' || ENCODE(it.value, 'hex')), ',')
+        FROM items_tags it WHERE it.item_id = i.id) tags
+    FROM items i
     WHERE profile_id = $1 AND kind = $2 AND category = $3 AND name = $4
     AND (expiry IS NULL OR expiry > CURRENT_TIMESTAMP)";
 const INSERT_QUERY: &'static str =
-    "INSERT INTO items(profile_id, kind, category, name, value, expiry)
-    VALUES($1, $2, $3, $4, $5, $6) RETURNING id";
-const SCAN_QUERY: &'static str = "SELECT id, name, value FROM items i WHERE profile_id = $1
-    AND kind = $2 AND category = $3 AND (expiry IS NULL OR expiry > CURRENT_TIMESTAMP)";
-const TAG_INSERT_QUERY: &'static str = "INSERT INTO items_tags(item_id, name, value, plaintext)
-    VALUES($1, $2, $3, $4)";
+    "INSERT INTO items (profile_id, kind, category, name, value, expiry)
+    VALUES ($1, $2, $3, $4, $5, $6) RETURNING id";
+const SCAN_QUERY: &'static str = "SELECT id, name, value,
+    (SELECT ARRAY_TO_STRING(ARRAY_AGG(it.plaintext || ':'
+        || ENCODE(it.name, 'hex') || ':' || ENCODE(it.value, 'hex')), ',')
+        FROM items_tags it WHERE it.item_id = i.id) tags
+    FROM items i WHERE profile_id = $1 AND kind = $2 AND category = $3
+    AND (expiry IS NULL OR expiry > CURRENT_TIMESTAMP)";
+const TAG_INSERT_QUERY: &'static str = "INSERT INTO items_tags
+    (item_id, name, value, plaintext) VALUES ($1, $2, $3, $4)";
 
 mod provision;
 pub use provision::PostgresStoreOptions;
@@ -173,7 +181,7 @@ where
             let category = self.key.encrypt_entry_category(category).await?;
             let mut params = QueryParams::new();
             params.push(self.profile_id);
-            params.push(kind as i32);
+            params.push(kind as i16);
             params.push(category);
             let tag_filter =
                 encode_tag_filter::<PostgresStore>(tag_filter, self.key.0.clone(), params.len())
@@ -203,17 +211,23 @@ where
                 .await?;
             if let Some(row) = sqlx::query(FETCH_QUERY)
                 .bind(self.profile_id)
-                .bind(kind as i32)
+                .bind(kind as i16)
                 .bind(&category)
                 .bind(&name)
                 .fetch_optional(&mut self.exec)
                 .await?
             {
                 let value = self.key.decrypt_entry_value(row.try_get(1)?).await?;
-                // let enc_tags =
-                //     decode_tags(row.try_get(2)?).map_err(|_| err_msg!("Error decoding tags"))?;
-                // let tags = Some(self.key.decrypt_entry_tags(&enc_tags).await?);
-                let tags = None;
+                let tags = if let Some(enc_tags) = row
+                    .try_get::<Option<&str>, _>(2)?
+                    .map(|t| decode_tags(t.as_bytes()))
+                    .transpose()
+                    .map_err(|_| err_msg!("Error decoding tags"))?
+                {
+                    Some(self.key.decrypt_entry_tags(&enc_tags).await?)
+                } else {
+                    Some(vec![])
+                };
 
                 Ok(Some(Entry {
                     category: raw_category,
@@ -331,9 +345,9 @@ where
     for<'e> &'e mut E: Executor<'e, Database = Postgres>,
 {
     trace!("Insert entry");
-    let row_id: i32 = sqlx::query_scalar(INSERT_QUERY)
+    let row_id: i64 = sqlx::query_scalar(INSERT_QUERY)
         .bind(profile_id)
-        .bind(kind as i32)
+        .bind(kind as i16)
         .bind(enc_category)
         .bind(enc_name)
         .bind(enc_value)
@@ -346,7 +360,7 @@ where
                 .bind(row_id)
                 .bind(&tag.name)
                 .bind(&tag.value)
-                .bind(tag.plaintext as i32)
+                .bind(tag.plaintext as i16)
                 .execute(&mut conn.exec)
                 .await?;
         }
@@ -368,7 +382,7 @@ where
     trace!("Remove entry");
     let done = sqlx::query(DELETE_QUERY)
         .bind(profile_id)
-        .bind(kind as i32)
+        .bind(kind as i16)
         .bind(enc_category)
         .bind(enc_name)
         .execute(exec)
@@ -396,7 +410,7 @@ async fn perform_scan(
     let scan = try_stream! {
         let mut params = QueryParams::new();
         params.push(profile_id);
-        params.push(kind as i32);
+        params.push(kind as i16);
         params.push(category);
         let tag_filter = encode_tag_filter::<PostgresStore>(tag_filter, key.0.clone(), params.len()).await?;
         let query = extend_query::<PostgresStore>(SCAN_QUERY, &mut params, tag_filter, offset, limit)?;
@@ -404,14 +418,18 @@ async fn perform_scan(
         let mut rows = sqlx::query_with(query.as_str(), params).fetch(&mut conn);
         while let Some(row) = rows.next().await {
             let row = row?;
-            let tags = None;
-            // let tags = if options.retrieve_tags {
-            //     // FIXME - fetch tags in batches, or better as part of the SELECT statement
-            //     fetch_row_tags(&pool, row.try_get(0)?, key.clone()).await?
-            // } else {
-            //     None
-            // };
             let (name, value) = key.decrypt_entry_name_value(row.try_get(1)?, row.try_get(2)?).await?;
+            let tags = if let Some(enc_tags) = row
+                .try_get::<Option<&str>, _>(3)?
+                .map(|t| decode_tags(t.as_bytes()))
+                .transpose()
+                .map_err(|_| err_msg!("Error decoding tags"))?
+            {
+                Some(key.decrypt_entry_tags(&enc_tags).await?)
+            } else {
+                Some(vec![])
+            };
+
             let entry = Entry {
                 category: raw_category.clone(),
                 name,
