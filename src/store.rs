@@ -77,7 +77,7 @@ pub trait Backend: Send + Sync {
         tag_filter: Option<wql::Query>,
         offset: Option<i64>,
         limit: Option<i64>,
-    ) -> BoxFuture<Result<Scan<Entry>>>;
+    ) -> BoxFuture<Result<Scan<'static, Entry>>>;
 
     fn session(&self, profile: Option<String>) -> BoxFuture<Result<Self::Session>>;
 
@@ -101,16 +101,13 @@ pub trait QueryBackend: Send {
         name: &'q str,
     ) -> BoxFuture<'q, Result<Option<Entry>>>;
 
-    // async fn fetch_all(
-    //     self,
-    //     profile: Option<String>,
-    //     kind: EntryKind,
-    //     category: String,
-    //     options: EntryFetchOptions,
-    //     tag_filter: Option<wql::Query>,
-    //     offset: Option<i64>,
-    //     max_rows: Option<i64>,
-    // ) -> Result<Vec<Entry>>;
+    fn fetch_all<'q>(
+        &'q mut self,
+        kind: EntryKind,
+        category: &'q str,
+        tag_filter: Option<wql::Query>,
+        limit: Option<i64>,
+    ) -> BoxFuture<'q, Result<Vec<Entry>>>;
 
     fn update<'q>(
         &'q mut self,
@@ -151,7 +148,7 @@ impl<B: Backend> Store<B> {
         tag_filter: Option<wql::Query>,
         offset: Option<i64>,
         limit: Option<i64>,
-    ) -> Result<Scan<Entry>> {
+    ) -> Result<Scan<'static, Entry>> {
         Ok(self
             .0
             .scan(
@@ -204,6 +201,18 @@ impl<Q: QueryBackend> Session<Q> {
     /// result found if any.
     pub async fn fetch(&mut self, category: &str, name: &str) -> Result<Option<Entry>> {
         Ok(self.0.fetch(EntryKind::Item, category, name).await?)
+    }
+
+    pub async fn fetch_all(
+        &mut self,
+        category: &str,
+        tag_filter: Option<wql::Query>,
+        limit: Option<i64>,
+    ) -> Result<Vec<Entry>> {
+        Ok(self
+            .0
+            .fetch_all(EntryKind::Item, category, tag_filter, limit)
+            .await?)
     }
 
     pub async fn insert(
@@ -502,15 +511,15 @@ impl<'a, Q: QueryBackend> KeyLookup<'a> for &'a mut Session<Q> {
     }
 }
 
-pub struct Scan<T> {
-    stream: Option<Pin<Box<dyn Stream<Item = Result<Vec<T>>> + Send>>>,
+pub struct Scan<'s, T> {
+    stream: Option<Pin<Box<dyn Stream<Item = Result<Vec<T>>> + Send + 's>>>,
     page_size: usize,
 }
 
-impl<T> Scan<T> {
+impl<'s, T> Scan<'s, T> {
     pub fn new<S>(stream: S, page_size: usize) -> Self
     where
-        S: Stream<Item = Result<Vec<T>>> + Send + 'static,
+        S: Stream<Item = Result<Vec<T>>> + Send + 's,
     {
         Self {
             stream: Some(stream.boxed()),

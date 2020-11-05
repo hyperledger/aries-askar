@@ -90,14 +90,14 @@ impl SessionHandle {
 }
 
 impl ScanHandle {
-    pub async fn create(value: Scan<Entry>) -> Self {
+    pub async fn create(value: Scan<'static, Entry>) -> Self {
         let handle = Self::next();
         let mut repo = FFI_SCANS.lock().await;
         repo.insert(handle, Some(value));
         handle
     }
 
-    pub async fn borrow(&self) -> KvResult<Scan<Entry>> {
+    pub async fn borrow(&self) -> KvResult<Scan<'static, Entry>> {
         FFI_SCANS
             .lock()
             .await
@@ -107,7 +107,7 @@ impl ScanHandle {
             .ok_or_else(|| err_msg!(Busy, "Scan handle in use"))
     }
 
-    pub async fn release(&self, value: Scan<Entry>) -> KvResult<()> {
+    pub async fn release(&self, value: Scan<'static, Entry>) -> KvResult<()> {
         FFI_SCANS
             .lock()
             .await
@@ -117,7 +117,7 @@ impl ScanHandle {
         Ok(())
     }
 
-    pub async fn remove(&self) -> KvResult<Scan<Entry>> {
+    pub async fn remove(&self) -> KvResult<Scan<'static, Entry>> {
         FFI_SCANS
             .lock()
             .await
@@ -332,6 +332,8 @@ pub extern "C" fn askar_scan_start(
     profile: FfiStr,
     category: FfiStr,
     tag_filter: FfiStr,
+    offset: i64,
+    limit: i64,
     cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, handle: ScanHandle)>,
     cb_id: CallbackId,
 ) -> ErrorCode {
@@ -350,7 +352,7 @@ pub extern "C" fn askar_scan_start(
         spawn_ok(async move {
             let result = async {
                 let store = handle.load().await?;
-                let scan = store.scan(profile, category, tag_filter, None, None).await?;
+                let scan = store.scan(profile, category, tag_filter, Some(offset), if limit < 0 { None }else {Some(limit)}).await?;
                 Ok(ScanHandle::create(scan).await)
             }.await;
             cb.resolve(result);
@@ -518,6 +520,41 @@ pub extern "C" fn askar_session_fetch(
             let result = async {
                 let mut session = handle.load().await?;
                 session.fetch(&category, &name).await
+            }.await;
+            cb.resolve(result);
+        });
+        Ok(ErrorCode::Success)
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn askar_session_fetch_all(
+    handle: SessionHandle,
+    category: FfiStr,
+    tag_filter: FfiStr,
+    limit: i64,
+    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, results: *const FfiEntrySet)>,
+    cb_id: CallbackId,
+) -> ErrorCode {
+    catch_err! {
+        trace!("Count from store");
+        let cb = cb.ok_or_else(|| err_msg!("No callback provided"))?;
+        let category = category.into_opt_string().ok_or_else(|| err_msg!("Category not provided"))?;
+        let tag_filter = tag_filter.as_opt_str().map(serde_json::from_str).transpose().map_err(err_map!("Error parsing tag query"))?;
+        let limit = if limit < 0 { None } else {Some(limit)};
+        let cb = EnsureCallback::new(move |result|
+            match result {
+                Ok(rows) => {
+                    let results = Box::into_raw(Box::new(FfiEntrySet::from(rows)));
+                    cb(cb_id, ErrorCode::Success, results)
+                }
+                Err(err) => cb(cb_id, set_last_error(Some(err)), ptr::null()),
+            }
+        );
+        spawn_ok(async move {
+            let result = async {
+                let mut session = handle.load().await?;
+                session.fetch_all(&category, tag_filter, limit).await
             }.await;
             cb.resolve(result);
         });

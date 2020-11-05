@@ -8,7 +8,8 @@ use sqlx::{
 };
 
 use super::db_utils::{
-    decode_tags, encode_tag_filter, expiry_timestamp, extend_query, QueryParams, QueryPrepare, PAGE_SIZE,
+    decode_tags, encode_tag_filter, expiry_timestamp, extend_query, CloseDbSession, DbSession,
+    DbSessionRef, QueryParams, QueryPrepare, PAGE_SIZE,
 };
 use super::error::Result;
 use super::future::BoxFuture;
@@ -80,8 +81,8 @@ impl QueryPrepare for SqliteStore {
 }
 
 impl Backend for SqliteStore {
-    type Session = Active<PoolConnection<Sqlite>>;
-    type Transaction = Active<Transaction<'static, Sqlite>>;
+    type Session = DbSession<PoolConnection<Sqlite>, Sqlite>;
+    type Transaction = DbSession<Transaction<'static, Sqlite>, Sqlite>;
 
     fn scan(
         &self,
@@ -91,38 +92,28 @@ impl Backend for SqliteStore {
         tag_filter: Option<wql::Query>,
         offset: Option<i64>,
         limit: Option<i64>,
-    ) -> BoxFuture<Result<Scan<Entry>>> {
+    ) -> BoxFuture<Result<Scan<'static, Entry>>> {
         Box::pin(async move {
-            let mut exec = self.conn_pool.acquire().await?;
-            let (profile_id, key) = self.get_profile_key(&mut exec, profile).await?;
-            perform_scan(
-                exec, profile_id, key, kind, category, tag_filter, offset, limit,
-            )
-            .await
+            let mut conn = self.conn_pool.acquire().await?;
+            let (profile_id, key) = self.get_profile_key(&mut conn, profile).await?;
+            let active = DbSessionRef::Owned(DbSession::new(conn, profile_id, key));
+            perform_scan(active, kind, category, tag_filter, offset, limit).await
         })
     }
 
     fn session(&self, profile: Option<String>) -> BoxFuture<Result<Self::Session>> {
         Box::pin(async move {
-            let mut exec = self.conn_pool.acquire().await?;
-            let (profile_id, key) = self.get_profile_key(&mut exec, profile).await?;
-            Ok(Active {
-                exec,
-                profile_id,
-                key,
-            })
+            let mut conn = self.conn_pool.acquire().await?;
+            let (profile_id, key) = self.get_profile_key(&mut conn, profile).await?;
+            Ok(DbSession::new(conn, profile_id, key))
         })
     }
 
     fn transaction(&self, profile: Option<String>) -> BoxFuture<Result<Self::Transaction>> {
         Box::pin(async move {
-            let mut exec = self.conn_pool.begin().await?;
-            let (profile_id, key) = self.get_profile_key(&mut exec, profile).await?;
-            Ok(Active {
-                exec,
-                profile_id,
-                key,
-            })
+            let mut txn = self.conn_pool.begin().await?;
+            let (profile_id, key) = self.get_profile_key(&mut txn, profile).await?;
+            Ok(DbSession::new(txn, profile_id, key))
         })
     }
 
@@ -134,38 +125,9 @@ impl Backend for SqliteStore {
     }
 }
 
-pub trait CloseActive {
-    fn close(self, commit: bool) -> BoxFuture<'static, Result<()>>;
-}
-
-impl CloseActive for PoolConnection<Sqlite> {
-    fn close(self, _commit: bool) -> BoxFuture<'static, Result<()>> {
-        Box::pin(async move { Ok(()) })
-    }
-}
-
-impl CloseActive for Transaction<'static, Sqlite> {
-    fn close(self, commit: bool) -> BoxFuture<'static, Result<()>> {
-        Box::pin(async move {
-            if commit {
-                self.commit().await
-            } else {
-                self.rollback().await
-            }
-            .map_err(err_map!("Error committing transaction"))
-        })
-    }
-}
-
-pub struct Active<E> {
-    exec: E,
-    profile_id: ProfileId,
-    key: AsyncEncryptor<StoreKey>,
-}
-
-impl<E> QueryBackend for Active<E>
+impl<E> QueryBackend for DbSession<E, Sqlite>
 where
-    E: CloseActive + Send,
+    E: CloseDbSession + Send,
     for<'e> &'e mut E: Executor<'e, Database = Sqlite>,
 {
     fn count<'q>(
@@ -231,16 +193,28 @@ where
         })
     }
 
-    // async fn fetch_all(
-    //     self,
-    //     profile: Option<String>,
-    //     kind: EntryKind,
-    //     category: String,
-    //     options: EntryFetchOptions,
-    //     tag_filter: Option<wql::Query>,
-    //     offset: Option<i64>,
-    //     max_rows: Option<i64>,
-    // ) -> Result<Vec<Entry>>;
+    fn fetch_all<'q>(
+        &'q mut self,
+        kind: EntryKind,
+        category: &'q str,
+        tag_filter: Option<wql::Query>,
+        limit: Option<i64>,
+    ) -> BoxFuture<'q, Result<Vec<Entry>>> {
+        let category = category.to_string();
+        Box::pin(async move {
+            let active = DbSessionRef::Borrowed(self);
+            let mut scan = perform_scan(active, kind, category, tag_filter, None, limit).await?;
+            let mut results = vec![];
+            loop {
+                if let Some(rows) = scan.fetch_next().await? {
+                    results.extend(rows);
+                } else {
+                    break;
+                }
+            }
+            Ok(results)
+        })
+    }
 
     fn update<'q>(
         &'q mut self,
@@ -295,7 +269,7 @@ where
 }
 
 async fn perform_insert<E>(
-    conn: &mut Active<E>,
+    active: &mut DbSession<E, Sqlite>,
     profile_id: ProfileId,
     kind: EntryKind,
     enc_category: Vec<u8>,
@@ -315,7 +289,7 @@ where
         .bind(enc_name)
         .bind(enc_value)
         .bind(expiry_ms.map(expiry_timestamp).transpose()?)
-        .execute(&mut conn.exec)
+        .execute(&mut active.exec)
         .await?
         .last_insert_rowid();
     if let Some(tags) = enc_tags {
@@ -325,24 +299,21 @@ where
                 .bind(&tag.name)
                 .bind(&tag.value)
                 .bind(tag.plaintext as i16)
-                .execute(&mut conn.exec)
+                .execute(&mut active.exec)
                 .await?;
         }
     }
     Ok(())
 }
 
-async fn perform_remove<'e, E>(
-    exec: E,
+async fn perform_remove<'e>(
+    exec: impl Executor<'e, Database = Sqlite>,
     profile_id: ProfileId,
     kind: EntryKind,
     enc_category: Vec<u8>,
     enc_name: Vec<u8>,
     ignore_error: bool,
-) -> Result<()>
-where
-    E: Executor<'e, Database = Sqlite>,
-{
+) -> Result<()> {
     trace!("Remove entry");
     let done = sqlx::query(DELETE_QUERY)
         .bind(profile_id)
@@ -358,29 +329,32 @@ where
     }
 }
 
-async fn perform_scan(
-    mut conn: PoolConnection<Sqlite>,
-    profile_id: ProfileId,
-    key: AsyncEncryptor<StoreKey>,
+async fn perform_scan<'q, E>(
+    mut active: DbSessionRef<'q, E, Sqlite>,
     kind: EntryKind,
     category: String,
     tag_filter: Option<wql::Query>,
     offset: Option<i64>,
     limit: Option<i64>,
-) -> Result<Scan<Entry>> {
+) -> Result<Scan<'q, Entry>>
+where
+    E: Send,
+    for<'e> &'e mut E: Executor<'e, Database = Sqlite>,
+{
     let raw_category = category;
-    let category = key.encrypt_entry_category(&raw_category).await?;
+    let category = active.key.encrypt_entry_category(&raw_category).await?;
 
     let scan = try_stream! {
         let mut params = QueryParams::new();
-        params.push(profile_id);
+        params.push(active.profile_id);
         params.push(kind as i16);
         params.push(category.clone());
-        let tag_filter = encode_tag_filter::<SqliteStore>(tag_filter, key.0.clone(), params.len()).await?;
+        let tag_filter = encode_tag_filter::<SqliteStore>(tag_filter, active.key.0.clone(), params.len()).await?;
         let query = extend_query::<SqliteStore>(SCAN_QUERY, &mut params, tag_filter, offset, limit)?;
         let mut batch = Vec::<Entry>::with_capacity(PAGE_SIZE);
+        let key = active.key.clone();
 
-        let mut rows = sqlx::query_with(query.as_str(), params).fetch(&mut conn);
+        let mut rows = sqlx::query_with(query.as_str(), params).fetch(&mut active.exec);
         while let Some(row) = rows.next().await {
             let row = row?;
             let (name, value) = key.decrypt_entry_name_value(row.try_get(1)?, row.try_get(2)?).await?;
@@ -398,11 +372,11 @@ async fn perform_scan(
             }
         }
         drop(rows);
+        drop(active);
 
         if !batch.is_empty() {
             yield batch;
         }
-        drop(query);
     };
     Ok(Scan::new(scan, PAGE_SIZE))
 }

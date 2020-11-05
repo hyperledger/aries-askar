@@ -40,9 +40,11 @@ class Scan:
         profile: Optional[str],
         category: [str, bytes],
         tag_filter: [str, dict] = None,
+        offset: int = None,
+        limit: int = None,
     ):
         """Initialize the Scan instance."""
-        self.params = (store, profile, category, tag_filter)
+        self.params = (store, profile, category, tag_filter, offset, limit)
         self.handle = None
         self.buffer: EntrySet = None
 
@@ -51,13 +53,13 @@ class Scan:
 
     async def __anext__(self):
         if self.handle is None:
-            (store, profile, category, tag_filter) = self.params
+            (store, profile, category, tag_filter, offset, limit) = self.params
             if not store.handle:
                 raise StoreError(
                     StoreErrorCode.WRAPPER, "Cannot scan from closed store"
                 )
             self.handle = await bindings.scan_start(
-                store.handle, profile, category, tag_filter
+                store.handle, profile, category, tag_filter, offset, limit
             )
             scan_handle = await bindings.scan_next(self.handle)
             self.buffer = EntrySet(scan_handle) if scan_handle else None
@@ -104,9 +106,14 @@ class Store:
         return await self.opener.__aexit__(exc_type, exc, tb)
 
     def scan(
-        self, category: str, tag_filter: [str, dict] = None, profile: str = None
+        self,
+        category: str,
+        tag_filter: [str, dict] = None,
+        offset: int = None,
+        limit: int = None,
+        profile: str = None,
     ) -> Scan:
-        return Scan(self, profile, category, tag_filter)
+        return Scan(self, profile, category, tag_filter, offset, limit)
 
     def session(self, profile: str = None) -> "OpenSession":
         return OpenSession(self, profile, False)
@@ -144,6 +151,15 @@ class Session:
             raise StoreError(StoreErrorCode.WRAPPER, "Cannot fetch from closed session")
         result_handle = await bindings.session_fetch(self.handle, category, name)
         return next(EntrySet(result_handle), None) if result_handle else None
+
+    async def fetch_all(
+        self, category: str, tag_filter: [str, dict] = None, limit: int = None
+    ) -> EntrySet:
+        if not self.handle:
+            raise StoreError(StoreErrorCode.WRAPPER, "Cannot fetch from closed session")
+        return EntrySet(
+            await bindings.session_fetch_all(self.handle, category, tag_filter, limit)
+        )
 
     async def insert(
         self,

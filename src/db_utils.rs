@@ -1,11 +1,16 @@
+use std::marker::PhantomData;
+use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 
-use sqlx::{database::HasArguments, Arguments, Database, Encode, IntoArguments, Type};
+use sqlx::{
+    database::HasArguments, pool::PoolConnection, Arguments, Database, Encode, Executor,
+    IntoArguments, Transaction, Type,
+};
 
-use super::error::Result as KvResult;
-use super::future::blocking;
-use super::keys::store::StoreKey;
-use super::types::{EncEntryTag, Expiry};
+use super::error::Result;
+use super::future::{blocking, BoxFuture};
+use super::keys::{store::StoreKey, AsyncEncryptor};
+use super::types::{EncEntryTag, Expiry, ProfileId};
 use super::wql::{
     self,
     sql::TagSqlEncoder,
@@ -13,6 +18,76 @@ use super::wql::{
 };
 
 pub const PAGE_SIZE: usize = 32;
+
+pub struct DbSession<E, DB> {
+    pub(crate) exec: E,
+    pub(crate) profile_id: ProfileId,
+    pub(crate) key: AsyncEncryptor<StoreKey>,
+    _pd: PhantomData<DB>,
+}
+
+impl<E, DB> DbSession<E, DB> {
+    pub fn new(exec: E, profile_id: ProfileId, key: AsyncEncryptor<StoreKey>) -> Self
+    where
+        DB: Database,
+        for<'e> &'e mut E: Executor<'e, Database = DB>,
+    {
+        Self {
+            exec,
+            profile_id,
+            key,
+            _pd: PhantomData,
+        }
+    }
+}
+
+pub trait CloseDbSession {
+    fn close(self, commit: bool) -> BoxFuture<'static, Result<()>>;
+}
+
+impl<DB: Database> CloseDbSession for PoolConnection<DB> {
+    fn close(self, _commit: bool) -> BoxFuture<'static, Result<()>> {
+        Box::pin(async move { Ok(()) })
+    }
+}
+
+impl<DB: Database> CloseDbSession for Transaction<'static, DB> {
+    fn close(self, commit: bool) -> BoxFuture<'static, Result<()>> {
+        Box::pin(async move {
+            if commit {
+                self.commit().await
+            } else {
+                self.rollback().await
+            }
+            .map_err(err_map!("Error committing transaction"))
+        })
+    }
+}
+
+pub enum DbSessionRef<'q, E, DB> {
+    Owned(DbSession<E, DB>),
+    Borrowed(&'q mut DbSession<E, DB>),
+}
+
+impl<'q, E, DB> Deref for DbSessionRef<'q, E, DB> {
+    type Target = DbSession<E, DB>;
+
+    fn deref(&self) -> &Self::Target {
+        match self {
+            Self::Owned(e) => e,
+            Self::Borrowed(e) => e,
+        }
+    }
+}
+
+impl<'q, E, DB> DerefMut for DbSessionRef<'q, E, DB> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        match self {
+            Self::Owned(e) => e,
+            Self::Borrowed(e) => e,
+        }
+    }
+}
 
 pub struct QueryParams<'q, DB: Database> {
     args: <DB as HasArguments<'q>>::Arguments,
@@ -171,7 +246,7 @@ pub fn decode_tags(tags: &[u8]) -> std::result::Result<Vec<EncEntryTag>, ()> {
     Ok(enc_tags)
 }
 
-pub fn expiry_timestamp(expire_ms: i64) -> KvResult<Expiry> {
+pub fn expiry_timestamp(expire_ms: i64) -> Result<Expiry> {
     chrono::Utc::now()
         .checked_add_signed(chrono::Duration::milliseconds(expire_ms))
         .ok_or_else(|| err_msg!(Unexpected, "Invalid expiry timestamp"))
@@ -181,7 +256,7 @@ pub async fn encode_tag_filter<Q: QueryPrepare>(
     tag_filter: Option<wql::Query>,
     key: Option<Arc<StoreKey>>,
     offset: usize,
-) -> KvResult<Option<(String, Vec<Vec<u8>>)>> {
+) -> Result<Option<(String, Vec<Vec<u8>>)>> {
     if let Some(tag_filter) = tag_filter {
         blocking(move || {
             let tag_query = tag_query(tag_filter)?;
@@ -216,7 +291,7 @@ pub fn extend_query<'q, Q: QueryPrepare>(
     tag_filter: Option<(String, Vec<Vec<u8>>)>,
     offset: Option<i64>,
     limit: Option<i64>,
-) -> KvResult<String>
+) -> Result<String>
 where
     i64: for<'e> Encode<'e, Q::DB> + Type<Q::DB>,
     Vec<u8>: for<'e> Encode<'e, Q::DB> + Type<Q::DB>,

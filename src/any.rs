@@ -40,7 +40,7 @@ impl Backend for AnyBackend {
         tag_filter: Option<wql::Query>,
         offset: Option<i64>,
         limit: Option<i64>,
-    ) -> BoxFuture<Result<Scan<Entry>>> {
+    ) -> BoxFuture<Result<Scan<'static, Entry>>> {
         match self {
             #[cfg(feature = "postgres")]
             Self::Postgres(store) => store.scan(profile, kind, category, tag_filter, offset, limit),
@@ -166,16 +166,27 @@ impl QueryBackend for AnyQueryBackend {
         }
     }
 
-    // async fn fetch_all(
-    //     self,
-    //     profile: Option<String>,
-    //     kind: EntryKind,
-    //     category: String,
-    //     options: EntryFetchOptions,
-    //     tag_filter: Option<wql::Query>,
-    //     offset: Option<i64>,
-    //     max_rows: Option<i64>,
-    // ) -> Result<Vec<Entry>>;
+    fn fetch_all<'q>(
+        &'q mut self,
+        kind: EntryKind,
+        category: &'q str,
+        tag_filter: Option<wql::Query>,
+        limit: Option<i64>,
+    ) -> BoxFuture<'q, Result<Vec<Entry>>> {
+        match self {
+            #[cfg(feature = "postgres")]
+            Self::PostgresSession(session) => session.fetch_all(kind, category, tag_filter, limit),
+            #[cfg(feature = "postgres")]
+            Self::PostgresTxn(txn) => txn.fetch_all(kind, category, tag_filter, limit),
+
+            #[cfg(feature = "sqlite")]
+            Self::SqliteSession(session) => session.fetch_all(kind, category, tag_filter, limit),
+            #[cfg(feature = "sqlite")]
+            Self::SqliteTxn(txn) => txn.fetch_all(kind, category, tag_filter, limit),
+
+            _ => unreachable!(),
+        }
+    }
 
     fn update<'q>(
         &'q mut self,

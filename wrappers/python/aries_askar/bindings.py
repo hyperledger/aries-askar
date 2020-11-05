@@ -424,6 +424,27 @@ async def session_fetch(
     )
 
 
+async def session_fetch_all(
+    handle: SessionHandle,
+    category: str,
+    tag_filter: [str, dict] = None,
+    limit: int = None,
+) -> EntrySetHandle:
+    """Fetch all matching rows in the Store."""
+    category = encode_str(category)
+    if isinstance(tag_filter, dict):
+        tag_filter = json.dumps(tag_filter)
+    tag_filter = encode_str(tag_filter)
+    return await do_call_async(
+        "askar_session_fetch_all",
+        handle,
+        category,
+        tag_filter,
+        c_int64(limit if limit is not None else -1),
+        return_type=EntrySetHandle,
+    )
+
+
 async def session_update(
     handle: SessionHandle,
     operation: EntryOperation,
@@ -526,6 +547,8 @@ async def scan_start(
     profile: Optional[str],
     category: str,
     tag_filter: [str, dict] = None,
+    offset: int = None,
+    limit: int = None,
 ) -> ScanHandle:
     """Create a new Scan against the Store."""
     if isinstance(tag_filter, dict):
@@ -537,6 +560,8 @@ async def scan_start(
         encode_str(profile),
         encode_str(category),
         tag_filter,
+        c_int64(offset or 0),
+        c_int64(limit if limit is not None else -1),
         return_type=ScanHandle,
     )
 

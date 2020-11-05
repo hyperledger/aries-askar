@@ -51,7 +51,13 @@ async def basic_test():
         )
 
         # Fetch an entry by category and name
-        log("Fetched entry:", await txn.fetch("category", "name"))
+        log("Fetch entry:", await txn.fetch("category", "name"))
+
+        # Fetch entries by category and tag filter
+        log(
+            "Fetch all:",
+            list(await txn.fetch_all("category", {"~plaintag": "a", "enctag": "b"})),
+        )
 
         await txn.commit()
 

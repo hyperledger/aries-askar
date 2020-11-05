@@ -4,9 +4,9 @@ import time
 from aries_askar.bindings import generate_raw_key, version
 from aries_askar import Store
 
-# REPO_URI = "postgres://postgres:pgpass@localhost:5432/test_wallet"
+REPO_URI = "postgres://postgres:pgpass@localhost:5432/p1"
 # REPO_URI = "sqlite://test.db"
-REPO_URI = "sqlite://:memory:"
+# REPO_URI = "sqlite://:memory:"
 
 PERF_ROWS = 10000
 
