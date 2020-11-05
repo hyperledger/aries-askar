@@ -1,3 +1,5 @@
+use std::fmt::{self, Debug, Formatter};
+
 use async_stream::try_stream;
 
 use futures_lite::stream::StreamExt;
@@ -53,14 +55,21 @@ pub struct PostgresStore {
     conn_pool: PgPool,
     default_profile: String,
     key_cache: KeyCache,
+    uri: String,
 }
 
 impl PostgresStore {
-    pub(crate) fn new(conn_pool: PgPool, default_profile: String, key_cache: KeyCache) -> Self {
+    pub(crate) fn new(
+        conn_pool: PgPool,
+        default_profile: String,
+        key_cache: KeyCache,
+        uri: String,
+    ) -> Self {
         Self {
             conn_pool,
             default_profile,
             key_cache,
+            uri,
         }
     }
 
@@ -83,8 +92,8 @@ impl PostgresStore {
 }
 
 impl Backend for PostgresStore {
-    type Session = DbSession<PoolConnection<Postgres>, Postgres>;
-    type Transaction = DbSession<Transaction<'static, Postgres>, Postgres>;
+    type Session = DbSession<'static, PoolConnection<Postgres>, Postgres>;
+    type Transaction = DbSession<'static, Transaction<'static, Postgres>, Postgres>;
 
     fn scan(
         &self,
@@ -98,7 +107,7 @@ impl Backend for PostgresStore {
         Box::pin(async move {
             let mut conn = self.conn_pool.acquire().await?;
             let (profile_id, key) = self.get_profile_key(&mut conn, profile).await?;
-            let active = DbSessionRef::Owned(DbSession::new(conn, profile_id, key));
+            let active = DbSessionRef::Owned(DbSession::new(conn, false, profile_id, key));
             perform_scan(active, kind, category, tag_filter, offset, limit).await
         })
     }
@@ -107,7 +116,7 @@ impl Backend for PostgresStore {
         Box::pin(async move {
             let mut conn = self.conn_pool.acquire().await?;
             let (profile_id, key) = self.get_profile_key(&mut conn, profile).await?;
-            Ok(DbSession::new(conn, profile_id, key))
+            Ok(DbSession::new(conn, false, profile_id, key))
         })
     }
 
@@ -115,7 +124,7 @@ impl Backend for PostgresStore {
         Box::pin(async move {
             let mut txn = self.conn_pool.begin().await?;
             let (profile_id, key) = self.get_profile_key(&mut txn, profile).await?;
-            Ok(DbSession::new(txn, profile_id, key))
+            Ok(DbSession::new(txn, true, profile_id, key))
         })
     }
 
@@ -127,7 +136,16 @@ impl Backend for PostgresStore {
     }
 }
 
-impl<E> QueryBackend for DbSession<E, Postgres>
+impl Debug for PostgresStore {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.debug_struct("PostgresStore")
+            .field("default_profile", &self.default_profile)
+            .field("uri", &self.uri)
+            .finish()
+    }
+}
+
+impl<E> QueryBackend for DbSession<'static, E, Postgres>
 where
     E: CloseDbSession + Send,
     for<'e> &'e mut E: Executor<'e, Database = Postgres>,
@@ -245,10 +263,8 @@ where
                         .key
                         .encrypt_entry_value_tags(value.unwrap(), tags)
                         .await?;
-                    let profile_id = self.profile_id;
                     Ok(perform_insert(
                         DbSessionRef::Borrowed(self),
-                        profile_id,
                         kind,
                         enc_category,
                         enc_name,
@@ -260,8 +276,7 @@ where
                 }
 
                 EntryOperation::Remove => Ok(perform_remove(
-                    &mut self.exec,
-                    self.profile_id,
+                    DbSessionRef::Borrowed(self),
                     kind,
                     enc_category,
                     enc_name,
@@ -304,9 +319,8 @@ impl QueryPrepare for PostgresStore {
     }
 }
 
-async fn perform_insert<'q, E>(
-    mut active: DbSessionRef<'q, E, Postgres>,
-    profile_id: ProfileId,
+async fn perform_insert<'q, 's, E>(
+    mut active: DbSessionRef<'q, 's, E, Postgres>,
     kind: EntryKind,
     enc_category: Vec<u8>,
     enc_name: Vec<u8>,
@@ -319,7 +333,7 @@ where
 {
     trace!("Insert entry");
     let row_id: i64 = sqlx::query_scalar(INSERT_QUERY)
-        .bind(profile_id)
+        .bind(active.profile_id)
         .bind(kind as i16)
         .bind(enc_category)
         .bind(enc_name)
@@ -341,21 +355,23 @@ where
     Ok(())
 }
 
-async fn perform_remove<'e>(
-    exec: impl Executor<'e, Database = Postgres>,
-    profile_id: ProfileId,
+async fn perform_remove<'q, 's, E>(
+    mut active: DbSessionRef<'q, 's, E, Postgres>,
     kind: EntryKind,
     enc_category: Vec<u8>,
     enc_name: Vec<u8>,
     ignore_error: bool,
-) -> Result<()> {
+) -> Result<()>
+where
+    for<'e> &'e mut E: Executor<'e, Database = Postgres>,
+{
     trace!("Remove entry");
     let done = sqlx::query(DELETE_QUERY)
-        .bind(profile_id)
+        .bind(active.profile_id)
         .bind(kind as i16)
         .bind(enc_category)
         .bind(enc_name)
-        .execute(exec)
+        .execute(&mut active.exec)
         .await?;
     if done.rows_affected() == 0 && !ignore_error {
         Err(err_msg!(NotFound, "Entry not found"))
@@ -364,8 +380,8 @@ async fn perform_remove<'e>(
     }
 }
 
-async fn perform_scan<'q, E>(
-    mut active: DbSessionRef<'q, E, Postgres>,
+async fn perform_scan<'q, 's, E>(
+    mut active: DbSessionRef<'q, 's, E, Postgres>,
     kind: EntryKind,
     category: String,
     tag_filter: Option<wql::Query>,

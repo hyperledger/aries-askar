@@ -1,10 +1,12 @@
+use std::fmt::{self, Debug, Formatter};
+
 use async_stream::try_stream;
 use futures_lite::stream::StreamExt;
 
 use sqlx::{
     pool::PoolConnection,
     sqlite::{Sqlite, SqlitePool},
-    Done, Executor, Row, Transaction,
+    Acquire, Done, Executor, Row, Transaction,
 };
 
 use super::db_utils::{
@@ -23,38 +25,45 @@ pub use provision::SqliteStoreOptions;
 
 const COUNT_QUERY: &'static str = "SELECT COUNT(*) FROM items i
     WHERE profile_id = ?1 AND kind = ?2 AND category = ?3
-    AND (expiry IS NULL OR expiry > datetime('now'))";
+    AND (expiry IS NULL OR expiry > DATETIME('now'))";
 const DELETE_QUERY: &'static str = "DELETE FROM items
     WHERE profile_id = ?1 AND kind = ?2 AND category = ?3 AND name = ?4";
 const FETCH_QUERY: &'static str = "SELECT i.id, i.value,
-    (SELECT GROUP_CONCAT(it.plaintext || ':' || hex(it.name) || ':' || hex(it.value))
+    (SELECT GROUP_CONCAT(it.plaintext || ':' || HEX(it.name) || ':' || HEX(it.value))
         FROM items_tags it WHERE it.item_id = i.id) AS tags
     FROM items i WHERE i.profile_id = ?1 AND i.kind = ?2
     AND i.category = ?3 AND i.name = ?4
-    AND (i.expiry IS NULL OR i.expiry > datetime('now'))";
+    AND (i.expiry IS NULL OR i.expiry > DATETIME('now'))";
 const INSERT_QUERY: &'static str =
-    "INSERT INTO items (profile_id, kind, category, name, value, expiry)
-    VALUES(?1, ?2, ?3, ?4, ?5, ?6)";
+    "INSERT OR IGNORE INTO items (profile_id, kind, category, name, value, expiry)
+    VALUES (?1, ?2, ?3, ?4, ?5, ?6)";
 const SCAN_QUERY: &'static str = "SELECT i.id, i.name, i.value,
-    (SELECT GROUP_CONCAT(it.plaintext || ':' || hex(it.name) || ':' || hex(it.value))
+    (SELECT GROUP_CONCAT(it.plaintext || ':' || HEX(it.name) || ':' || HEX(it.value))
         FROM items_tags it WHERE it.item_id = i.id) AS tags
     FROM items i WHERE i.profile_id = ?1 AND i.kind = ?2 AND i.category = ?3
-    AND (i.expiry IS NULL OR i.expiry > datetime('now'))";
+    AND (i.expiry IS NULL OR i.expiry > DATETIME('now'))";
 const TAG_INSERT_QUERY: &'static str = "INSERT INTO items_tags
-    (item_id, name, value, plaintext) VALUES(?1, ?2, ?3, ?4)";
+    (item_id, name, value, plaintext) VALUES (?1, ?2, ?3, ?4)";
 
 pub struct SqliteStore {
     conn_pool: SqlitePool,
     default_profile: String,
     key_cache: KeyCache,
+    uri: String,
 }
 
 impl SqliteStore {
-    pub(crate) fn new(conn_pool: SqlitePool, default_profile: String, key_cache: KeyCache) -> Self {
+    pub(crate) fn new(
+        conn_pool: SqlitePool,
+        default_profile: String,
+        key_cache: KeyCache,
+        uri: String,
+    ) -> Self {
         Self {
             conn_pool,
             default_profile,
             key_cache,
+            uri,
         }
     }
 
@@ -76,13 +85,22 @@ impl SqliteStore {
     }
 }
 
+impl Debug for SqliteStore {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SqliteStore")
+            .field("default_profile", &self.default_profile)
+            .field("uri", &self.uri)
+            .finish()
+    }
+}
+
 impl QueryPrepare for SqliteStore {
     type DB = Sqlite;
 }
 
 impl Backend for SqliteStore {
-    type Session = DbSession<PoolConnection<Sqlite>, Sqlite>;
-    type Transaction = DbSession<Transaction<'static, Sqlite>, Sqlite>;
+    type Session = DbSession<'static, PoolConnection<Sqlite>, Sqlite>;
+    type Transaction = DbSession<'static, Transaction<'static, Sqlite>, Sqlite>;
 
     fn scan(
         &self,
@@ -96,7 +114,7 @@ impl Backend for SqliteStore {
         Box::pin(async move {
             let mut conn = self.conn_pool.acquire().await?;
             let (profile_id, key) = self.get_profile_key(&mut conn, profile).await?;
-            let active = DbSessionRef::Owned(DbSession::new(conn, profile_id, key));
+            let active = DbSessionRef::Owned(DbSession::new(conn, false, profile_id, key));
             perform_scan(active, kind, category, tag_filter, offset, limit).await
         })
     }
@@ -105,7 +123,7 @@ impl Backend for SqliteStore {
         Box::pin(async move {
             let mut conn = self.conn_pool.acquire().await?;
             let (profile_id, key) = self.get_profile_key(&mut conn, profile).await?;
-            Ok(DbSession::new(conn, profile_id, key))
+            Ok(DbSession::new(conn, false, profile_id, key))
         })
     }
 
@@ -113,7 +131,7 @@ impl Backend for SqliteStore {
         Box::pin(async move {
             let mut txn = self.conn_pool.begin().await?;
             let (profile_id, key) = self.get_profile_key(&mut txn, profile).await?;
-            Ok(DbSession::new(txn, profile_id, key))
+            Ok(DbSession::new(txn, true, profile_id, key))
         })
     }
 
@@ -125,10 +143,10 @@ impl Backend for SqliteStore {
     }
 }
 
-impl<E> QueryBackend for DbSession<E, Sqlite>
+impl<E> QueryBackend for DbSession<'static, E, Sqlite>
 where
     E: CloseDbSession + Send,
-    for<'e> &'e mut E: Executor<'e, Database = Sqlite>,
+    for<'e> &'e mut E: Executor<'e, Database = Sqlite> + Acquire<'e, Database = Sqlite>,
 {
     fn count<'q>(
         &'q mut self,
@@ -231,19 +249,45 @@ where
                 self.key.encrypt_entry_category_name(category, name).await?;
 
             match operation {
-                EntryOperation::Insert | EntryOperation::Replace => {
+                EntryOperation::Insert => {
                     let (enc_value, enc_tags) = self
                         .key
                         .encrypt_entry_value_tags(value.unwrap(), tags)
                         .await?;
-                    let profile_id = self.profile_id;
-                    Ok(perform_insert(
-                        self,
-                        profile_id,
+                    //let mut txn = self.transaction().await?;
+                    perform_insert(
+                        DbSessionRef::Borrowed(&mut *self),
                         kind,
-                        enc_category,
-                        enc_name,
-                        enc_value,
+                        &enc_category,
+                        &enc_name,
+                        &enc_value,
+                        enc_tags,
+                        expiry_ms,
+                    )
+                    .await?;
+                    //txn.exec.commit().await?;
+                    Ok(())
+                }
+
+                EntryOperation::Replace => {
+                    let (enc_value, enc_tags) = self
+                        .key
+                        .encrypt_entry_value_tags(value.unwrap(), tags)
+                        .await?;
+                    perform_remove(
+                        DbSessionRef::Borrowed(&mut *self),
+                        kind,
+                        &enc_category,
+                        &enc_name,
+                        false,
+                    )
+                    .await?;
+                    Ok(perform_insert(
+                        DbSessionRef::Borrowed(&mut *self),
+                        kind,
+                        &enc_category,
+                        &enc_name,
+                        &enc_value,
                         enc_tags,
                         expiry_ms,
                     )
@@ -251,11 +295,10 @@ where
                 }
 
                 EntryOperation::Remove => Ok(perform_remove(
-                    &mut self.exec,
-                    self.profile_id,
+                    DbSessionRef::Borrowed(&mut *self),
                     kind,
-                    enc_category,
-                    enc_name,
+                    &enc_category,
+                    &enc_name,
                     false,
                 )
                 .await?),
@@ -268,13 +311,12 @@ where
     }
 }
 
-async fn perform_insert<E>(
-    active: &mut DbSession<E, Sqlite>,
-    profile_id: ProfileId,
+async fn perform_insert<'q, 's, E>(
+    mut active: DbSessionRef<'q, 's, E, Sqlite>,
     kind: EntryKind,
-    enc_category: Vec<u8>,
-    enc_name: Vec<u8>,
-    enc_value: Vec<u8>,
+    enc_category: &[u8],
+    enc_name: &[u8],
+    enc_value: &[u8],
     enc_tags: Option<Vec<EncEntryTag>>,
     expiry_ms: Option<i64>,
 ) -> Result<()>
@@ -282,16 +324,19 @@ where
     for<'e> &'e mut E: Executor<'e, Database = Sqlite>,
 {
     trace!("Insert entry");
-    let row_id = sqlx::query(INSERT_QUERY)
-        .bind(profile_id)
+    let done = sqlx::query(INSERT_QUERY)
+        .bind(active.profile_id)
         .bind(kind as i16)
         .bind(enc_category)
         .bind(enc_name)
         .bind(enc_value)
         .bind(expiry_ms.map(expiry_timestamp).transpose()?)
         .execute(&mut active.exec)
-        .await?
-        .last_insert_rowid();
+        .await?;
+    if done.rows_affected() == 0 {
+        return Err(err_msg!(Duplicate, "Duplicate row"));
+    }
+    let row_id = done.last_insert_rowid();
     if let Some(tags) = enc_tags {
         for tag in tags {
             sqlx::query(TAG_INSERT_QUERY)
@@ -306,21 +351,23 @@ where
     Ok(())
 }
 
-async fn perform_remove<'e>(
-    exec: impl Executor<'e, Database = Sqlite>,
-    profile_id: ProfileId,
+async fn perform_remove<'q, 's, E>(
+    mut active: DbSessionRef<'q, 's, E, Sqlite>,
     kind: EntryKind,
-    enc_category: Vec<u8>,
-    enc_name: Vec<u8>,
+    enc_category: &[u8],
+    enc_name: &[u8],
     ignore_error: bool,
-) -> Result<()> {
+) -> Result<()>
+where
+    for<'e> &'e mut E: Executor<'e, Database = Sqlite>,
+{
     trace!("Remove entry");
     let done = sqlx::query(DELETE_QUERY)
-        .bind(profile_id)
+        .bind(active.profile_id)
         .bind(kind as i16)
         .bind(enc_category)
         .bind(enc_name)
-        .execute(exec)
+        .execute(&mut active.exec)
         .await?;
     if done.rows_affected() == 0 && !ignore_error {
         Err(err_msg!(NotFound, "Entry not found"))
@@ -329,8 +376,8 @@ async fn perform_remove<'e>(
     }
 }
 
-async fn perform_scan<'q, E>(
-    mut active: DbSessionRef<'q, E, Sqlite>,
+async fn perform_scan<'q, 's, E>(
+    mut active: DbSessionRef<'q, 's, E, Sqlite>,
     kind: EntryKind,
     category: String,
     tag_filter: Option<wql::Query>,

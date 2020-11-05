@@ -67,6 +67,7 @@ impl PostgresStoreOptions {
             conn_pool,
             default_profile,
             key_cache,
+            self.uri.clone(),
         )))
     }
 
@@ -138,6 +139,7 @@ impl PostgresStoreOptions {
             conn_pool,
             default_profile,
             key_cache,
+            self.uri.clone(),
         )))
     }
 }

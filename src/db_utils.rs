@@ -3,7 +3,7 @@ use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 
 use sqlx::{
-    database::HasArguments, pool::PoolConnection, Arguments, Database, Encode, Executor,
+    database::HasArguments, pool::PoolConnection, Acquire, Arguments, Database, Encode, Executor,
     IntoArguments, Transaction, Type,
 };
 
@@ -19,25 +19,43 @@ use super::wql::{
 
 pub const PAGE_SIZE: usize = 32;
 
-pub struct DbSession<E, DB> {
+pub struct DbSession<'s, E, DB> {
     pub(crate) exec: E,
+    pub(crate) is_txn: bool,
     pub(crate) profile_id: ProfileId,
     pub(crate) key: AsyncEncryptor<StoreKey>,
-    _pd: PhantomData<DB>,
+    _pd: PhantomData<&'s DB>,
 }
 
-impl<E, DB> DbSession<E, DB> {
-    pub fn new(exec: E, profile_id: ProfileId, key: AsyncEncryptor<StoreKey>) -> Self
+impl<'s, E, DB> DbSession<'s, E, DB> {
+    pub fn new(exec: E, is_txn: bool, profile_id: ProfileId, key: AsyncEncryptor<StoreKey>) -> Self
     where
         DB: Database,
         for<'e> &'e mut E: Executor<'e, Database = DB>,
     {
         Self {
             exec,
+            is_txn,
             profile_id,
             key,
             _pd: PhantomData,
         }
+    }
+
+    pub async fn transaction<'t>(&'t mut self) -> Result<DbSession<'t, Transaction<'t, DB>, DB>>
+    where
+        DB: Database,
+        for<'e> &'e mut E: Acquire<'e, Database = DB>,
+        &'t mut Transaction<'t, DB>: Executor<'t, Database = DB>,
+    {
+
+        Ok(DbSession {
+            exec: self.exec.begin().await?,
+            is_txn: true,
+            profile_id: self.profile_id,
+            key: self.key.clone(),
+            _pd: PhantomData,
+        })
     }
 }
 
@@ -64,13 +82,13 @@ impl<DB: Database> CloseDbSession for Transaction<'static, DB> {
     }
 }
 
-pub enum DbSessionRef<'q, E, DB> {
-    Owned(DbSession<E, DB>),
-    Borrowed(&'q mut DbSession<E, DB>),
+pub enum DbSessionRef<'q, 's: 'q, E, DB> {
+    Owned(DbSession<'s, E, DB>),
+    Borrowed(&'q mut DbSession<'s, E, DB>),
 }
 
-impl<'q, E, DB> Deref for DbSessionRef<'q, E, DB> {
-    type Target = DbSession<E, DB>;
+impl<'q, 's: 'q, E, DB> Deref for DbSessionRef<'q, 's, E, DB> {
+    type Target = DbSession<'s, E, DB>;
 
     fn deref(&self) -> &Self::Target {
         match self {
@@ -80,7 +98,7 @@ impl<'q, E, DB> Deref for DbSessionRef<'q, E, DB> {
     }
 }
 
-impl<'q, E, DB> DerefMut for DbSessionRef<'q, E, DB> {
+impl<'q, 's: 'q, E, DB> DerefMut for DbSessionRef<'q, 's, E, DB> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         match self {
             Self::Owned(e) => e,

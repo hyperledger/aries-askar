@@ -119,6 +119,7 @@ impl<'a> SqliteStoreOptions<'a> {
             conn_pool,
             spec.profile_name,
             key_cache,
+            self.path.to_string(),
         )))
     }
 
@@ -180,6 +181,7 @@ impl<'a> SqliteStoreOptions<'a> {
             conn_pool,
             default_profile,
             key_cache,
+            self.path.to_string(),
         )))
     }
 

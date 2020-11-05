@@ -17,6 +17,7 @@ pub type AnyStore = Store<AnyBackend>;
 
 pub type AnySession = Session<AnyQueryBackend>;
 
+#[derive(Debug)]
 pub enum AnyBackend {
     #[cfg(feature = "postgres")]
     Postgres(PostgresStore),

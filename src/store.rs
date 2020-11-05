@@ -123,6 +123,7 @@ pub trait QueryBackend: Send {
     fn close(self, commit: bool) -> BoxFuture<'static, Result<()>>;
 }
 
+#[derive(Debug)]
 pub struct Store<B: Backend>(B);
 
 impl<B: Backend> Store<B> {

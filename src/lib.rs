@@ -5,7 +5,9 @@ pub use self::error::{Error, ErrorKind, Result};
 #[macro_use]
 mod macros;
 
-#[cfg(feature = "log")]
+#[cfg(any(test, feature = "logger"))]
+extern crate env_logger;
+#[cfg(any(test, feature = "log"))]
 #[macro_use]
 extern crate log;
 

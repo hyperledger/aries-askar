@@ -1,5 +1,3 @@
-use aries_askar::Result as KvResult;
-
 mod utils;
 
 macro_rules! db_tests {
@@ -8,6 +6,7 @@ macro_rules! db_tests {
 
         #[test]
         fn init() {
+            env_logger::builder().is_test(true).try_init().unwrap_or(());
             block_on($init);
         }
 
@@ -15,90 +14,88 @@ macro_rules! db_tests {
         fn fetch_fail() {
             block_on(async {
                 let db = $init.await;
-                super::utils::db_fetch_fail(&db).await?;
-                KvResult::Ok(())
+                super::utils::db_fetch_fail(&db).await;
             })
-            .unwrap()
         }
 
         #[test]
-        fn add_duplicate_fail() {
+        fn insert_fetch() {
             block_on(async {
                 let db = $init.await;
-                super::utils::db_add_duplicate_fail(&db).await?;
-                KvResult::Ok(())
+                super::utils::db_insert_fetch(&db).await;
             })
-            .unwrap()
         }
 
         #[test]
-        fn add_fetch() {
+        fn insert_duplicate() {
             block_on(async {
                 let db = $init.await;
-                super::utils::db_add_fetch(&db).await?;
-                KvResult::Ok(())
+                super::utils::db_insert_duplicate(&db).await;
             })
-            .unwrap()
+        }
+
+        #[test]
+        fn replace_fetch() {
+            block_on(async {
+                let db = $init.await;
+                super::utils::db_replace_fetch(&db).await;
+            })
+        }
+
+        #[test]
+        fn replace_missing() {
+            block_on(async {
+                let db = $init.await;
+                super::utils::db_replace_missing(&db).await;
+            })
         }
 
         #[test]
         fn count() {
             block_on(async {
                 let db = $init.await;
-                super::utils::db_count(&db).await?;
-                KvResult::Ok(())
+                super::utils::db_count(&db).await;
             })
-            .unwrap()
         }
 
         #[test]
         fn scan() {
             block_on(async {
                 let db = $init.await;
-                super::utils::db_scan(&db).await?;
-                KvResult::Ok(())
+                super::utils::db_scan(&db).await;
             })
-            .unwrap()
         }
 
         #[test]
         fn keypair_create_fetch() {
             block_on(async {
                 let db = $init.await;
-                super::utils::db_keypair_create_fetch(&db).await?;
-                KvResult::Ok(())
+                super::utils::db_keypair_create_fetch(&db).await;
             })
-            .unwrap()
         }
 
         #[test]
         fn keypair_sign_verify() {
             block_on(async {
                 let db = $init.await;
-                super::utils::db_keypair_sign_verify(&db).await?;
-                KvResult::Ok(())
+                super::utils::db_keypair_sign_verify(&db).await;
             })
-            .unwrap()
         }
 
         #[test]
         fn keypair_pack_unpack_anon() {
             block_on(async {
                 let db = $init.await;
-                super::utils::db_keypair_pack_unpack_anon(&db).await?;
-                KvResult::Ok(())
+                super::utils::db_keypair_pack_unpack_anon(&db).await;
             })
-            .unwrap()
         }
 
         #[test]
         fn keypair_pack_unpack_auth() {
             block_on(async {
                 let db = $init.await;
-                super::utils::db_keypair_pack_unpack_auth(&db).await?;
-                KvResult::Ok(())
+                super::utils::db_keypair_pack_unpack_auth(&db).await;
             })
-            .unwrap()
         }
 
         #[test]
@@ -121,27 +118,22 @@ macro_rules! db_tests {
         fn session_drop() {
             block_on(async {
                 let db = $init.await;
-                super::utils::db_session_drop(&db).await?;
-                KvResult::Ok(())
+                super::utils::db_session_drop(&db).await;
             })
-            .unwrap()
         }
 
         #[test]
         fn txn_commit() {
             block_on(async {
                 let db = $init.await;
-                super::utils::db_txn_commit(&db).await?;
-                KvResult::Ok(())
+                super::utils::db_txn_commit(&db).await;
             })
-            .unwrap()
         }
     };
 }
 
 #[cfg(feature = "sqlite")]
 mod sqlite {
-    use super::*;
     use aries_askar::sqlite::{SqliteStore, SqliteStoreOptions};
     use aries_askar::{ProvisionStore, ProvisionStoreSpec, Store};
 
@@ -161,19 +153,25 @@ mod sqlite {
     fn provision_from_str() {
         block_on(async {
             let db_url = "sqlite://:memory:";
-            let spec = ProvisionStoreSpec::create_default().await?;
-            let _db = db_url.provision_store(spec).await?;
-            KvResult::Ok(())
-        })
-        .unwrap();
+            let spec = ProvisionStoreSpec::create_default()
+                .await
+                .expect("Error creating provision spec");
+            let _db = db_url
+                .provision_store(spec)
+                .await
+                .expect("Error provisioning store");
+        });
 
-        assert!(block_on(async {
+        block_on(async {
             let db_url = "not-sqlite://test-db";
-            let spec = ProvisionStoreSpec::create_default().await?;
-            let _db = db_url.provision_store(spec).await?;
-            KvResult::Ok(())
-        })
-        .is_err());
+            let spec = ProvisionStoreSpec::create_default()
+                .await
+                .expect("Error creating provision spec");
+            let _db = db_url
+                .provision_store(spec)
+                .await
+                .expect_err("Expected provision failure");
+        });
     }
 }
 
