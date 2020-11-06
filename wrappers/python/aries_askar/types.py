@@ -25,7 +25,7 @@ class Entry:
         self.tags = dict(tags) if tags else {}
 
     @property
-    def json(self):
+    def value_json(self):
         return None if self.value is None else _json.loads(self.value)
 
     def __repr__(self) -> str:

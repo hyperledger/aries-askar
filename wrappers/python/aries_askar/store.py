@@ -132,6 +132,9 @@ class Store:
         if self.handle:
             bindings.store_close_immed(self.handle)
 
+    def __repr__(self) -> str:
+        return f"<Store(handle={self.handle})>"
+
 
 class Session:
     """An opened Session instance."""
@@ -175,12 +178,15 @@ class Session:
         self,
         category: str,
         name: str,
-        value: [str, bytes],
+        value: [str, bytes] = None,
         tags: dict = None,
         expiry_ms: int = None,
+        value_json=None,
     ):
         if not self.handle:
             raise StoreError(StoreErrorCode.WRAPPER, "Cannot update closed session")
+        if value is None and value_json is not None:
+            value = json.dumps(value_json)
         await bindings.session_update(
             self.handle, EntryOperation.INSERT, category, name, value, tags, expiry_ms
         )
@@ -189,12 +195,15 @@ class Session:
         self,
         category: str,
         name: str,
-        value: [str, bytes],
+        value: [str, bytes] = None,
         tags: dict = None,
         expiry_ms: int = None,
+        value_json=None,
     ):
         if not self.handle:
             raise StoreError(StoreErrorCode.WRAPPER, "Cannot update closed session")
+        if value is None and value_json is not None:
+            value = json.dumps(value_json)
         await bindings.session_update(
             self.handle, EntryOperation.REPLACE, category, name, value, tags, expiry_ms
         )
@@ -299,6 +308,9 @@ class Session:
         if self.handle:
             bindings.session_close_immed(self.handle)
             self.handle = None
+
+    def __repr__(self) -> str:
+        return f"<Session(handle={self.handle}, is_txn={self.is_txn})>"
 
 
 async def _open_session(handle, profile, is_txn) -> Session:
