@@ -151,17 +151,18 @@ impl QueryBackend for AnyQueryBackend {
         kind: EntryKind,
         category: &'q str,
         name: &'q str,
+        for_update: bool,
     ) -> BoxFuture<'q, Result<Option<Entry>>> {
         match self {
             #[cfg(feature = "postgres")]
-            Self::PostgresSession(session) => session.fetch(kind, category, name),
+            Self::PostgresSession(session) => session.fetch(kind, category, name, for_update),
             #[cfg(feature = "postgres")]
-            Self::PostgresTxn(txn) => txn.fetch(kind, category, name),
+            Self::PostgresTxn(txn) => txn.fetch(kind, category, name, for_update),
 
             #[cfg(feature = "sqlite")]
-            Self::SqliteSession(session) => session.fetch(kind, category, name),
+            Self::SqliteSession(session) => session.fetch(kind, category, name, for_update),
             #[cfg(feature = "sqlite")]
-            Self::SqliteTxn(txn) => txn.fetch(kind, category, name),
+            Self::SqliteTxn(txn) => txn.fetch(kind, category, name, for_update),
 
             _ => unreachable!(),
         }
@@ -173,17 +174,22 @@ impl QueryBackend for AnyQueryBackend {
         category: &'q str,
         tag_filter: Option<wql::Query>,
         limit: Option<i64>,
+        for_update: bool,
     ) -> BoxFuture<'q, Result<Vec<Entry>>> {
         match self {
             #[cfg(feature = "postgres")]
-            Self::PostgresSession(session) => session.fetch_all(kind, category, tag_filter, limit),
+            Self::PostgresSession(session) => {
+                session.fetch_all(kind, category, tag_filter, limit, for_update)
+            }
             #[cfg(feature = "postgres")]
-            Self::PostgresTxn(txn) => txn.fetch_all(kind, category, tag_filter, limit),
+            Self::PostgresTxn(txn) => txn.fetch_all(kind, category, tag_filter, limit, for_update),
 
             #[cfg(feature = "sqlite")]
-            Self::SqliteSession(session) => session.fetch_all(kind, category, tag_filter, limit),
+            Self::SqliteSession(session) => {
+                session.fetch_all(kind, category, tag_filter, limit, for_update)
+            }
             #[cfg(feature = "sqlite")]
-            Self::SqliteTxn(txn) => txn.fetch_all(kind, category, tag_filter, limit),
+            Self::SqliteTxn(txn) => txn.fetch_all(kind, category, tag_filter, limit, for_update),
 
             _ => unreachable!(),
         }

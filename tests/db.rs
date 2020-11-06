@@ -144,6 +144,14 @@ macro_rules! db_tests {
                 super::utils::db_txn_commit(&db).await;
             })
         }
+
+        #[test]
+        fn txn_fetch_for_update() {
+            block_on(async {
+                let db = $init.await;
+                super::utils::db_txn_fetch_for_update(&db).await;
+            })
+        }
     };
 }
 

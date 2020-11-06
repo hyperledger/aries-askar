@@ -178,6 +178,7 @@ where
         kind: EntryKind,
         category: &str,
         name: &str,
+        _for_update: bool,
     ) -> BoxFuture<Result<Option<Entry>>> {
         let raw_category = category.to_string();
         let raw_name = name.to_string();
@@ -218,6 +219,7 @@ where
         category: &'q str,
         tag_filter: Option<wql::Query>,
         limit: Option<i64>,
+        _for_update: bool,
     ) -> BoxFuture<'q, Result<Vec<Entry>>> {
         let category = category.to_string();
         Box::pin(async move {

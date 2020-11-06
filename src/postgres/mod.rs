@@ -33,6 +33,13 @@ const FETCH_QUERY: &'static str = "SELECT id, value,
     FROM items i
     WHERE profile_id = $1 AND kind = $2 AND category = $3 AND name = $4
     AND (expiry IS NULL OR expiry > CURRENT_TIMESTAMP)";
+const FETCH_QUERY_UPDATE: &'static str = "SELECT id, value,
+    (SELECT ARRAY_TO_STRING(ARRAY_AGG(it.plaintext || ':'
+        || ENCODE(it.name, 'hex') || ':' || ENCODE(it.value, 'hex')), ',')
+        FROM items_tags it WHERE it.item_id = i.id) tags
+    FROM items i
+    WHERE profile_id = $1 AND kind = $2 AND category = $3 AND name = $4
+    AND (expiry IS NULL OR expiry > CURRENT_TIMESTAMP) FOR UPDATE";
 const INSERT_QUERY: &'static str =
     "INSERT INTO items (profile_id, kind, category, name, value, expiry)
     VALUES ($1, $2, $3, $4, $5, $6)
@@ -109,7 +116,7 @@ impl Backend for PostgresStore {
             let mut conn = self.conn_pool.acquire().await?;
             let (profile_id, key) = self.get_profile_key(&mut conn, profile).await?;
             let active = DbSession::new(conn, false, profile_id, key).owned_ref();
-            perform_scan(active, kind, category, tag_filter, offset, limit).await
+            perform_scan(active, kind, category, tag_filter, offset, limit, false).await
         })
     }
 
@@ -181,6 +188,7 @@ where
         kind: EntryKind,
         category: &str,
         name: &str,
+        for_update: bool,
     ) -> BoxFuture<Result<Option<Entry>>> {
         let raw_category = category.to_string();
         let raw_name = name.to_string();
@@ -190,13 +198,17 @@ where
                 .key
                 .encrypt_entry_category_name(&raw_category, &raw_name)
                 .await?;
-            if let Some(row) = sqlx::query(FETCH_QUERY)
-                .bind(self.profile_id)
-                .bind(kind as i16)
-                .bind(&category)
-                .bind(&name)
-                .fetch_optional(&mut self.exec)
-                .await?
+            if let Some(row) = sqlx::query(if for_update && self.is_txn {
+                FETCH_QUERY_UPDATE
+            } else {
+                FETCH_QUERY
+            })
+            .bind(self.profile_id)
+            .bind(kind as i16)
+            .bind(&category)
+            .bind(&name)
+            .fetch_optional(&mut self.exec)
+            .await?
             {
                 let value = self.key.decrypt_entry_value(row.try_get(1)?).await?;
                 let tags = if let Some(enc_tags) = row
@@ -228,11 +240,14 @@ where
         category: &'q str,
         tag_filter: Option<wql::Query>,
         limit: Option<i64>,
+        for_update: bool,
     ) -> BoxFuture<'q, Result<Vec<Entry>>> {
         let category = category.to_string();
         Box::pin(async move {
+            let for_update = for_update && self.is_txn;
             let active = self.borrow_mut();
-            let mut scan = perform_scan(active, kind, category, tag_filter, None, limit).await?;
+            let mut scan =
+                perform_scan(active, kind, category, tag_filter, None, limit, for_update).await?;
             let mut results = vec![];
             loop {
                 if let Some(rows) = scan.fetch_next().await? {
@@ -260,16 +275,46 @@ where
                 self.key.encrypt_entry_category_name(category, name).await?;
 
             match operation {
-                op @ EntryOperation::Insert | op @ EntryOperation::Replace => {
+                EntryOperation::Insert => {
+                    let (enc_value, enc_tags) = self
+                        .key
+                        .encrypt_entry_value_tags(value.unwrap(), tags)
+                        .await?;
+                    if self.is_txn {
+                        perform_insert(
+                            self.borrow_mut(),
+                            kind,
+                            &enc_category,
+                            &enc_name,
+                            &enc_value,
+                            enc_tags,
+                            expiry_ms,
+                        )
+                        .await?;
+                    } else {
+                        let mut txn = self.transaction().await?;
+                        perform_insert(
+                            txn.borrow_mut(),
+                            kind,
+                            &enc_category,
+                            &enc_name,
+                            &enc_value,
+                            enc_tags,
+                            expiry_ms,
+                        )
+                        .await?;
+                        txn.exec.commit().await?;
+                    }
+                    Ok(())
+                }
+
+                EntryOperation::Replace => {
                     let (enc_value, enc_tags) = self
                         .key
                         .encrypt_entry_value_tags(value.unwrap(), tags)
                         .await?;
                     let mut txn = self.transaction().await?;
-                    if op == EntryOperation::Replace {
-                        perform_remove(txn.borrow_mut(), kind, &enc_category, &enc_name, false)
-                            .await?;
-                    }
+                    perform_remove(txn.borrow_mut(), kind, &enc_category, &enc_name, false).await?;
                     perform_insert(
                         txn.borrow_mut(),
                         kind,
@@ -395,6 +440,7 @@ async fn perform_scan<'q, 's, E>(
     tag_filter: Option<wql::Query>,
     offset: Option<i64>,
     limit: Option<i64>,
+    for_update: bool,
 ) -> Result<Scan<'q, Entry>>
 where
     E: Send,
@@ -409,7 +455,10 @@ where
         params.push(kind as i16);
         params.push(category);
         let tag_filter = encode_tag_filter::<PostgresStore>(tag_filter, active.key.0.clone(), params.len()).await?;
-        let query = extend_query::<PostgresStore>(SCAN_QUERY, &mut params, tag_filter, offset, limit)?;
+        let mut query = extend_query::<PostgresStore>(SCAN_QUERY, &mut params, tag_filter, offset, limit)?;
+        if for_update {
+            query.push_str(" FOR UPDATE");
+        }
         let mut batch = Vec::with_capacity(PAGE_SIZE);
         let key = active.key.clone();
 

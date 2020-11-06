@@ -146,19 +146,29 @@ class Session:
             raise StoreError(StoreErrorCode.WRAPPER, "Cannot count from closed session")
         return await bindings.session_count(self.handle, category, tag_filter)
 
-    async def fetch(self, category: str, name: str) -> Optional[Entry]:
+    async def fetch(
+        self, category: str, name: str, for_update: bool = False
+    ) -> Optional[Entry]:
         if not self.handle:
             raise StoreError(StoreErrorCode.WRAPPER, "Cannot fetch from closed session")
-        result_handle = await bindings.session_fetch(self.handle, category, name)
+        result_handle = await bindings.session_fetch(
+            self.handle, category, name, for_update
+        )
         return next(EntrySet(result_handle), None) if result_handle else None
 
     async def fetch_all(
-        self, category: str, tag_filter: [str, dict] = None, limit: int = None
+        self,
+        category: str,
+        tag_filter: [str, dict] = None,
+        limit: int = None,
+        for_update: bool = False,
     ) -> EntrySet:
         if not self.handle:
             raise StoreError(StoreErrorCode.WRAPPER, "Cannot fetch from closed session")
         return EntrySet(
-            await bindings.session_fetch_all(self.handle, category, tag_filter, limit)
+            await bindings.session_fetch_all(
+                self.handle, category, tag_filter, limit, for_update
+            )
         )
 
     async def insert(

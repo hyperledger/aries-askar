@@ -498,6 +498,7 @@ pub extern "C" fn askar_session_fetch(
     handle: SessionHandle,
     category: FfiStr,
     name: FfiStr,
+    for_update: i8,
     cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, results: *const FfiEntrySet)>,
     cb_id: CallbackId,
 ) -> ErrorCode {
@@ -519,7 +520,7 @@ pub extern "C" fn askar_session_fetch(
         spawn_ok(async move {
             let result = async {
                 let mut session = handle.load().await?;
-                session.fetch(&category, &name).await
+                session.fetch(&category, &name, for_update != 0).await
             }.await;
             cb.resolve(result);
         });
@@ -533,6 +534,7 @@ pub extern "C" fn askar_session_fetch_all(
     category: FfiStr,
     tag_filter: FfiStr,
     limit: i64,
+    for_update: i8,
     cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, results: *const FfiEntrySet)>,
     cb_id: CallbackId,
 ) -> ErrorCode {
@@ -554,7 +556,7 @@ pub extern "C" fn askar_session_fetch_all(
         spawn_ok(async move {
             let result = async {
                 let mut session = handle.load().await?;
-                session.fetch_all(&category, tag_filter, limit).await
+                session.fetch_all(&category, tag_filter, limit, for_update != 0).await
             }.await;
             cb.resolve(result);
         });

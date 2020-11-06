@@ -99,6 +99,7 @@ pub trait QueryBackend: Send {
         kind: EntryKind,
         category: &'q str,
         name: &'q str,
+        for_update: bool,
     ) -> BoxFuture<'q, Result<Option<Entry>>>;
 
     fn fetch_all<'q>(
@@ -107,6 +108,7 @@ pub trait QueryBackend: Send {
         category: &'q str,
         tag_filter: Option<wql::Query>,
         limit: Option<i64>,
+        for_update: bool,
     ) -> BoxFuture<'q, Result<Vec<Entry>>>;
 
     fn update<'q>(
@@ -200,8 +202,16 @@ impl<Q: QueryBackend> Session<Q> {
     /// A specific `key_id` may be given, otherwise all relevant keys for the provided
     /// `profile_id` are searched in reverse order of creation, returning the first
     /// result found if any.
-    pub async fn fetch(&mut self, category: &str, name: &str) -> Result<Option<Entry>> {
-        Ok(self.0.fetch(EntryKind::Item, category, name).await?)
+    pub async fn fetch(
+        &mut self,
+        category: &str,
+        name: &str,
+        for_update: bool,
+    ) -> Result<Option<Entry>> {
+        Ok(self
+            .0
+            .fetch(EntryKind::Item, category, name, for_update)
+            .await?)
     }
 
     pub async fn fetch_all(
@@ -209,10 +219,11 @@ impl<Q: QueryBackend> Session<Q> {
         category: &str,
         tag_filter: Option<wql::Query>,
         limit: Option<i64>,
+        for_update: bool,
     ) -> Result<Vec<Entry>> {
         Ok(self
             .0
-            .fetch_all(EntryKind::Item, category, tag_filter, limit)
+            .fetch_all(EntryKind::Item, category, tag_filter, limit, for_update)
             .await?)
     }
 
@@ -375,7 +386,7 @@ impl<Q: QueryBackend> Session<Q> {
         Ok(
             if let Some(row) = self
                 .0
-                .fetch(EntryKind::Key, category.as_str(), &ident)
+                .fetch(EntryKind::Key, category.as_str(), &ident, false)
                 .await?
             {
                 let params = KeyParams::from_slice(&row.value)?;

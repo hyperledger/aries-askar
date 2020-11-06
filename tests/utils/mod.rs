@@ -20,7 +20,7 @@ const ERR_UNPACK: &'static str = "Error unpacking message";
 
 pub async fn db_fetch_fail<DB: Backend>(db: &Store<DB>) {
     let mut conn = db.session(None).await.expect(ERR_SESSION);
-    let result = conn.fetch("cat", "name").await.expect(ERR_FETCH);
+    let result = conn.fetch("cat", "name", false).await.expect(ERR_FETCH);
     assert_eq!(result.is_none(), true);
 }
 
@@ -48,14 +48,14 @@ pub async fn db_insert_fetch<DB: Backend>(db: &Store<DB>) {
     .expect(ERR_INSERT);
 
     let row = conn
-        .fetch(&test_row.category, &test_row.name)
+        .fetch(&test_row.category, &test_row.name, false)
         .await
         .expect(ERR_FETCH)
         .expect(ERR_REQ_ROW);
     assert_eq!(row, test_row);
 
     let rows = conn
-        .fetch_all(&test_row.category, None, None)
+        .fetch_all(&test_row.category, None, None, false)
         .await
         .expect(ERR_FETCH_ALL);
     assert_eq!(rows.len(), 1);
@@ -160,7 +160,7 @@ pub async fn db_replace_fetch<DB: Backend>(db: &Store<DB>) {
     .expect(ERR_REPLACE);
 
     let row = conn
-        .fetch(&replace_row.category, &replace_row.name)
+        .fetch(&replace_row.category, &replace_row.name, false)
         .await
         .expect(ERR_FETCH)
         .expect(ERR_REQ_ROW);
@@ -397,7 +397,7 @@ pub async fn db_txn_rollback<DB: Backend>(db: &Store<DB>) {
     let mut conn = db.session(None).await.expect("Error starting new session");
 
     let row = conn
-        .fetch(&test_row.category, &test_row.name)
+        .fetch(&test_row.category, &test_row.name, false)
         .await
         .expect("Error fetching test row");
     assert_eq!(row, None);
@@ -431,7 +431,7 @@ pub async fn db_txn_drop<DB: Backend>(db: &Store<DB>) {
     let mut conn = db.session(None).await.expect("Error starting new session");
 
     let row = conn
-        .fetch(&test_row.category, &test_row.name)
+        .fetch(&test_row.category, &test_row.name, false)
         .await
         .expect("Error fetching test row");
     assert_eq!(row, None);
@@ -463,7 +463,7 @@ pub async fn db_session_drop<DB: Backend>(db: &Store<DB>) {
     let mut conn = db.session(None).await.expect(ERR_SESSION);
 
     let row = conn
-        .fetch(&test_row.category, &test_row.name)
+        .fetch(&test_row.category, &test_row.name, false)
         .await
         .expect(ERR_FETCH);
     assert_eq!(row, Some(test_row));
@@ -494,8 +494,47 @@ pub async fn db_txn_commit<DB: Backend>(db: &Store<DB>) {
     let mut conn = db.session(None).await.expect(ERR_SESSION);
 
     let row = conn
-        .fetch(&test_row.category, &test_row.name)
+        .fetch(&test_row.category, &test_row.name, false)
         .await
         .expect(ERR_FETCH);
     assert_eq!(row, Some(test_row));
+}
+
+pub async fn db_txn_fetch_for_update<DB: Backend>(db: &Store<DB>) {
+    let test_row = Entry {
+        category: "cat".to_string(),
+        name: "name".to_string(),
+        value: b"value".to_vec(),
+        tags: None,
+    };
+
+    let mut conn = db.transaction(None).await.expect(ERR_TRANSACTION);
+
+    conn.insert(
+        &test_row.category,
+        &test_row.name,
+        &test_row.value,
+        test_row.tags.as_ref().map(|t| t.as_slice()),
+        None,
+    )
+    .await
+    .expect(ERR_INSERT);
+
+    // could detect that a second transaction would block here?
+    // depends on the backend. just checking that no SQL errors occur for now.
+    let row = conn
+        .fetch(&test_row.category, &test_row.name, true)
+        .await
+        .expect(ERR_FETCH)
+        .expect(ERR_REQ_ROW);
+    assert_eq!(row, test_row);
+
+    let rows = conn
+        .fetch_all(&test_row.category, None, Some(2), true)
+        .await
+        .expect(ERR_FETCH_ALL);
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0], test_row);
+
+    conn.commit().await.expect("Error committing transaction");
 }

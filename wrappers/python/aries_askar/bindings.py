@@ -414,13 +414,18 @@ async def session_count(
 
 
 async def session_fetch(
-    handle: SessionHandle, category: str, name: str
+    handle: SessionHandle, category: str, name: str, for_update: bool = False
 ) -> EntrySetHandle:
     """Fetch a row from the Store."""
     category = encode_str(category)
     name = encode_str(name)
     return await do_call_async(
-        "askar_session_fetch", handle, category, name, return_type=EntrySetHandle
+        "askar_session_fetch",
+        handle,
+        category,
+        name,
+        c_int8(for_update),
+        return_type=EntrySetHandle,
     )
 
 
@@ -429,6 +434,7 @@ async def session_fetch_all(
     category: str,
     tag_filter: [str, dict] = None,
     limit: int = None,
+    for_update: bool = False,
 ) -> EntrySetHandle:
     """Fetch all matching rows in the Store."""
     category = encode_str(category)
@@ -441,6 +447,7 @@ async def session_fetch_all(
         category,
         tag_filter,
         c_int64(limit if limit is not None else -1),
+        c_int8(for_update),
         return_type=EntrySetHandle,
     )
 
