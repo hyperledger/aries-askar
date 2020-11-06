@@ -114,7 +114,7 @@ impl Backend for SqliteStore {
         Box::pin(async move {
             let mut conn = self.conn_pool.acquire().await?;
             let (profile_id, key) = self.get_profile_key(&mut conn, profile).await?;
-            let active = DbSessionRef::Owned(DbSession::new(conn, false, profile_id, key));
+            let active = DbSession::new(conn, false, profile_id, key).owned_ref();
             perform_scan(active, kind, category, tag_filter, offset, limit).await
         })
     }
@@ -145,8 +145,9 @@ impl Backend for SqliteStore {
 
 impl<E> QueryBackend for DbSession<'static, E, Sqlite>
 where
-    E: CloseDbSession + Send,
+    E: CloseDbSession<'static> + Send,
     for<'e> &'e mut E: Executor<'e, Database = Sqlite> + Acquire<'e, Database = Sqlite>,
+    for<'e, 't> &'e mut Transaction<'t, Sqlite>: Executor<'e, Database = Sqlite>,
 {
     fn count<'q>(
         &'q mut self,
@@ -220,7 +221,7 @@ where
     ) -> BoxFuture<'q, Result<Vec<Entry>>> {
         let category = category.to_string();
         Box::pin(async move {
-            let active = DbSessionRef::Borrowed(self);
+            let active = self.borrow_mut();
             let mut scan = perform_scan(active, kind, category, tag_filter, None, limit).await?;
             let mut results = vec![];
             loop {
@@ -249,14 +250,18 @@ where
                 self.key.encrypt_entry_category_name(category, name).await?;
 
             match operation {
-                EntryOperation::Insert => {
+                op @ EntryOperation::Insert | op @ EntryOperation::Replace => {
                     let (enc_value, enc_tags) = self
                         .key
                         .encrypt_entry_value_tags(value.unwrap(), tags)
                         .await?;
-                    //let mut txn = self.transaction().await?;
+                    let mut txn = self.transaction().await?;
+                    if op == EntryOperation::Replace {
+                        perform_remove(txn.borrow_mut(), kind, &enc_category, &enc_name, false)
+                            .await?;
+                    }
                     perform_insert(
-                        DbSessionRef::Borrowed(&mut *self),
+                        txn.borrow_mut(),
                         kind,
                         &enc_category,
                         &enc_name,
@@ -265,43 +270,16 @@ where
                         expiry_ms,
                     )
                     .await?;
-                    //txn.exec.commit().await?;
+                    txn.exec.commit().await?;
                     Ok(())
                 }
 
-                EntryOperation::Replace => {
-                    let (enc_value, enc_tags) = self
-                        .key
-                        .encrypt_entry_value_tags(value.unwrap(), tags)
-                        .await?;
-                    perform_remove(
-                        DbSessionRef::Borrowed(&mut *self),
-                        kind,
-                        &enc_category,
-                        &enc_name,
-                        false,
+                EntryOperation::Remove => {
+                    Ok(
+                        perform_remove(self.borrow_mut(), kind, &enc_category, &enc_name, false)
+                            .await?,
                     )
-                    .await?;
-                    Ok(perform_insert(
-                        DbSessionRef::Borrowed(&mut *self),
-                        kind,
-                        &enc_category,
-                        &enc_name,
-                        &enc_value,
-                        enc_tags,
-                        expiry_ms,
-                    )
-                    .await?)
                 }
-
-                EntryOperation::Remove => Ok(perform_remove(
-                    DbSessionRef::Borrowed(&mut *self),
-                    kind,
-                    &enc_category,
-                    &enc_name,
-                    false,
-                )
-                .await?),
             }
         })
     }

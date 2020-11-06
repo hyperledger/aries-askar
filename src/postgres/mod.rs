@@ -7,7 +7,7 @@ use futures_lite::stream::StreamExt;
 use sqlx::{
     pool::PoolConnection,
     postgres::{PgPool, Postgres},
-    Done, Executor, Row, Transaction,
+    Acquire, Done, Executor, Row, Transaction,
 };
 
 use super::db_utils::{
@@ -25,7 +25,7 @@ const COUNT_QUERY: &'static str = "SELECT COUNT(*) FROM items i
     WHERE profile_id = $1 AND kind = $2 AND category = $3
     AND (expiry IS NULL OR expiry > CURRENT_TIMESTAMP)";
 const DELETE_QUERY: &'static str = "DELETE FROM items
-    WHERE profile_id = $1 AND kind = $2 AND category = $4 AND name = $4";
+    WHERE profile_id = $1 AND kind = $2 AND category = $3 AND name = $4";
 const FETCH_QUERY: &'static str = "SELECT id, value,
     (SELECT ARRAY_TO_STRING(ARRAY_AGG(it.plaintext || ':'
         || ENCODE(it.name, 'hex') || ':' || ENCODE(it.value, 'hex')), ',')
@@ -35,7 +35,8 @@ const FETCH_QUERY: &'static str = "SELECT id, value,
     AND (expiry IS NULL OR expiry > CURRENT_TIMESTAMP)";
 const INSERT_QUERY: &'static str =
     "INSERT INTO items (profile_id, kind, category, name, value, expiry)
-    VALUES ($1, $2, $3, $4, $5, $6) RETURNING id";
+    VALUES ($1, $2, $3, $4, $5, $6)
+    ON CONFLICT DO NOTHING RETURNING id";
 const SCAN_QUERY: &'static str = "SELECT id, name, value,
     (SELECT ARRAY_TO_STRING(ARRAY_AGG(it.plaintext || ':'
         || ENCODE(it.name, 'hex') || ':' || ENCODE(it.value, 'hex')), ',')
@@ -107,7 +108,7 @@ impl Backend for PostgresStore {
         Box::pin(async move {
             let mut conn = self.conn_pool.acquire().await?;
             let (profile_id, key) = self.get_profile_key(&mut conn, profile).await?;
-            let active = DbSessionRef::Owned(DbSession::new(conn, false, profile_id, key));
+            let active = DbSession::new(conn, false, profile_id, key).owned_ref();
             perform_scan(active, kind, category, tag_filter, offset, limit).await
         })
     }
@@ -147,8 +148,9 @@ impl Debug for PostgresStore {
 
 impl<E> QueryBackend for DbSession<'static, E, Postgres>
 where
-    E: CloseDbSession + Send,
-    for<'e> &'e mut E: Executor<'e, Database = Postgres>,
+    E: CloseDbSession<'static> + Send,
+    for<'e> &'e mut E: Executor<'e, Database = Postgres> + Acquire<'e, Database = Postgres>,
+    for<'e, 't> &'e mut Transaction<'t, Postgres>: Executor<'e, Database = Postgres>,
 {
     fn count<'q>(
         &'q mut self,
@@ -229,7 +231,7 @@ where
     ) -> BoxFuture<'q, Result<Vec<Entry>>> {
         let category = category.to_string();
         Box::pin(async move {
-            let active = DbSessionRef::Borrowed(self);
+            let active = self.borrow_mut();
             let mut scan = perform_scan(active, kind, category, tag_filter, None, limit).await?;
             let mut results = vec![];
             loop {
@@ -258,31 +260,36 @@ where
                 self.key.encrypt_entry_category_name(category, name).await?;
 
             match operation {
-                EntryOperation::Insert | EntryOperation::Replace => {
+                op @ EntryOperation::Insert | op @ EntryOperation::Replace => {
                     let (enc_value, enc_tags) = self
                         .key
                         .encrypt_entry_value_tags(value.unwrap(), tags)
                         .await?;
-                    Ok(perform_insert(
-                        DbSessionRef::Borrowed(self),
+                    let mut txn = self.transaction().await?;
+                    if op == EntryOperation::Replace {
+                        perform_remove(txn.borrow_mut(), kind, &enc_category, &enc_name, false)
+                            .await?;
+                    }
+                    perform_insert(
+                        txn.borrow_mut(),
                         kind,
-                        enc_category,
-                        enc_name,
-                        enc_value,
+                        &enc_category,
+                        &enc_name,
+                        &enc_value,
                         enc_tags,
                         expiry_ms,
                     )
-                    .await?)
+                    .await?;
+                    txn.exec.commit().await?;
+                    Ok(())
                 }
 
-                EntryOperation::Remove => Ok(perform_remove(
-                    DbSessionRef::Borrowed(self),
-                    kind,
-                    enc_category,
-                    enc_name,
-                    false,
-                )
-                .await?),
+                EntryOperation::Remove => {
+                    Ok(
+                        perform_remove(self.borrow_mut(), kind, &enc_category, &enc_name, false)
+                            .await?,
+                    )
+                }
             }
         })
     }
@@ -322,9 +329,9 @@ impl QueryPrepare for PostgresStore {
 async fn perform_insert<'q, 's, E>(
     mut active: DbSessionRef<'q, 's, E, Postgres>,
     kind: EntryKind,
-    enc_category: Vec<u8>,
-    enc_name: Vec<u8>,
-    enc_value: Vec<u8>,
+    enc_category: &[u8],
+    enc_name: &[u8],
+    enc_value: &[u8],
     enc_tags: Option<Vec<EncEntryTag>>,
     expiry_ms: Option<i64>,
 ) -> Result<()>
@@ -339,8 +346,9 @@ where
         .bind(enc_name)
         .bind(enc_value)
         .bind(expiry_ms.map(expiry_timestamp).transpose()?)
-        .fetch_one(&mut active.exec)
-        .await?;
+        .fetch_optional(&mut active.exec)
+        .await?
+        .ok_or_else(|| err_msg!(Duplicate, "Duplicate row"))?;
     if let Some(tags) = enc_tags {
         for tag in tags {
             sqlx::query(TAG_INSERT_QUERY)
@@ -358,8 +366,8 @@ where
 async fn perform_remove<'q, 's, E>(
     mut active: DbSessionRef<'q, 's, E, Postgres>,
     kind: EntryKind,
-    enc_category: Vec<u8>,
-    enc_name: Vec<u8>,
+    enc_category: &[u8],
+    enc_name: &[u8],
     ignore_error: bool,
 ) -> Result<()>
 where

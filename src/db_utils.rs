@@ -42,35 +42,41 @@ impl<'s, E, DB> DbSession<'s, E, DB> {
         }
     }
 
+    pub fn borrow_mut(&mut self) -> DbSessionRef<'_, 's, E, DB> {
+        DbSessionRef::Borrowed(self)
+    }
+
+    pub fn owned_ref(self) -> DbSessionRef<'s, 's, E, DB> {
+        DbSessionRef::Owned(self)
+    }
+
     pub async fn transaction<'t>(&'t mut self) -> Result<DbSession<'t, Transaction<'t, DB>, DB>>
     where
         DB: Database,
-        for<'e> &'e mut E: Acquire<'e, Database = DB>,
-        &'t mut Transaction<'t, DB>: Executor<'t, Database = DB>,
+        &'t mut E: Acquire<'t, Database = DB>,
+        for<'a> &'a mut Transaction<'t, DB>: Executor<'a, Database = DB>,
     {
-
-        Ok(DbSession {
-            exec: self.exec.begin().await?,
-            is_txn: true,
-            profile_id: self.profile_id,
-            key: self.key.clone(),
-            _pd: PhantomData,
-        })
+        Ok(DbSession::new(
+            self.exec.begin().await?,
+            true,
+            self.profile_id,
+            self.key.clone(),
+        ))
     }
 }
 
-pub trait CloseDbSession {
-    fn close(self, commit: bool) -> BoxFuture<'static, Result<()>>;
+pub trait CloseDbSession<'t> {
+    fn close(self, commit: bool) -> BoxFuture<'t, Result<()>>;
 }
 
-impl<DB: Database> CloseDbSession for PoolConnection<DB> {
-    fn close(self, _commit: bool) -> BoxFuture<'static, Result<()>> {
+impl<'t, DB: Database> CloseDbSession<'t> for PoolConnection<DB> {
+    fn close(self, _commit: bool) -> BoxFuture<'t, Result<()>> {
         Box::pin(async move { Ok(()) })
     }
 }
 
-impl<DB: Database> CloseDbSession for Transaction<'static, DB> {
-    fn close(self, commit: bool) -> BoxFuture<'static, Result<()>> {
+impl<'t, DB: Database> CloseDbSession<'t> for Transaction<'t, DB> {
+    fn close(self, commit: bool) -> BoxFuture<'t, Result<()>> {
         Box::pin(async move {
             if commit {
                 self.commit().await

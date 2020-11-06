@@ -30,7 +30,7 @@ impl TestDB {
 
         let spec = ProvisionStoreSpec::create_default().await?;
         let (default_profile, key_cache) = init_db(&conn_pool, spec, true).await?;
-        let inst = Store::new(PostgresStore::new(conn_pool, default_profile, key_cache));
+        let inst = Store::new(PostgresStore::new(conn_pool, default_profile, key_cache, path.to_string()));
 
         Ok(TestDB { inst, txn })
     }

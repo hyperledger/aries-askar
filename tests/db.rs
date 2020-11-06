@@ -6,7 +6,6 @@ macro_rules! db_tests {
 
         #[test]
         fn init() {
-            env_logger::builder().is_test(true).try_init().unwrap_or(());
             block_on($init);
         }
 
@@ -31,6 +30,22 @@ macro_rules! db_tests {
             block_on(async {
                 let db = $init.await;
                 super::utils::db_insert_duplicate(&db).await;
+            })
+        }
+
+        #[test]
+        fn insert_remove() {
+            block_on(async {
+                let db = $init.await;
+                super::utils::db_insert_remove(&db).await;
+            })
+        }
+
+        #[test]
+        fn remove_missing() {
+            block_on(async {
+                let db = $init.await;
+                super::utils::db_remove_missing(&db).await;
             })
         }
 
@@ -138,6 +153,7 @@ mod sqlite {
     use aries_askar::{ProvisionStore, ProvisionStoreSpec, Store};
 
     async fn init_db() -> Store<SqliteStore> {
+        env_logger::builder().is_test(true).try_init().unwrap_or(());
         let spec = ProvisionStoreSpec::create_default()
             .await
             .expect("Error creating provision spec");
@@ -177,10 +193,10 @@ mod sqlite {
 
 #[cfg(feature = "pg_test")]
 mod postgres {
-    use super::*;
     use aries_askar::postgres::test_db::TestDB;
 
     async fn init_db() -> TestDB {
+        env_logger::builder().is_test(true).try_init().unwrap_or(());
         TestDB::provision()
             .await
             .expect("Error provisioning postgres test database")

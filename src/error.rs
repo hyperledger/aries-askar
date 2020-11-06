@@ -1,4 +1,3 @@
-// use async_resource::AcquireError;
 use std::error::Error as StdError;
 use std::fmt::{self, Display, Formatter};
 
@@ -80,10 +79,14 @@ impl Error {
 impl Display for Error {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         if let Some(msg) = self.message.as_ref() {
-            write!(f, "{}: {}", self.kind.as_str(), msg)
+            write!(f, "{}: {}", self.kind.as_str(), msg)?;
         } else {
-            f.write_str(self.kind.as_str())
+            f.write_str(self.kind.as_str())?;
         }
+        if let Some(cause) = self.cause.as_ref() {
+            write!(f, "Caused by: {}", cause)?;
+        }
+        Ok(())
     }
 }
 
@@ -110,20 +113,6 @@ impl From<ErrorKind> for Error {
         }
     }
 }
-
-// impl<E> From<AcquireError<E>> for Error
-// where
-//     E: Into<Error>,
-// {
-//     fn from(err: AcquireError<E>) -> Self {
-//         match err {
-//             AcquireError::PoolBusy => Error::Busy,
-//             AcquireError::PoolClosed => Error::Disconnected,
-//             AcquireError::ResourceError(err) => err.into(),
-//             AcquireError::Timeout => Error::Timeout,
-//         }
-//     }
-// }
 
 impl From<sqlx::Error> for Error {
     fn from(err: sqlx::Error) -> Self {

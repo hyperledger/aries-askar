@@ -95,6 +95,38 @@ pub async fn db_insert_duplicate<DB: Backend>(db: &Store<DB>) {
     assert_eq!(err.kind(), ErrorKind::Duplicate);
 }
 
+pub async fn db_insert_remove<DB: Backend>(db: &Store<DB>) {
+    let test_row = Entry {
+        category: "cat".to_string(),
+        name: "name".to_string(),
+        value: b"value".to_vec(),
+        tags: None,
+    };
+
+    let mut conn = db.session(None).await.expect(ERR_SESSION);
+
+    conn.insert(
+        &test_row.category,
+        &test_row.name,
+        &test_row.value,
+        test_row.tags.as_ref().map(|t| t.as_slice()),
+        None,
+    )
+    .await
+    .expect(ERR_INSERT);
+
+    conn.remove(&test_row.category, &test_row.name)
+        .await
+        .expect(ERR_REQ_ROW);
+}
+
+pub async fn db_remove_missing<DB: Backend>(db: &Store<DB>) {
+    let mut conn = db.session(None).await.expect(ERR_SESSION);
+
+    let err = conn.remove("cat", "name").await.expect_err(ERR_REQ_ERR);
+    assert_eq!(err.kind(), ErrorKind::NotFound);
+}
+
 pub async fn db_replace_fetch<DB: Backend>(db: &Store<DB>) {
     let test_row = Entry {
         category: "cat".to_string(),

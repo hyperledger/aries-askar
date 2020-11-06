@@ -265,7 +265,7 @@ impl<Q: QueryBackend> Session<Q> {
             .0
             .update(
                 EntryKind::Item,
-                EntryOperation::Remove,
+                EntryOperation::Replace,
                 category,
                 name,
                 Some(value),
