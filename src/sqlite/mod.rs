@@ -1,4 +1,5 @@
 use std::fmt::{self, Debug, Formatter};
+use std::sync::Arc;
 
 use async_stream::try_stream;
 use futures_lite::stream::StreamExt;
@@ -14,8 +15,8 @@ use super::db_utils::{
     DbSessionRef, QueryParams, QueryPrepare, PAGE_SIZE,
 };
 use super::error::Result;
-use super::future::BoxFuture;
-use super::keys::{store::StoreKey, AsyncEncryptor};
+use super::future::{blocking_scoped, BoxFuture};
+use super::keys::{store::StoreKey, EntryEncryptor};
 use super::store::{Backend, KeyCache, QueryBackend, Scan};
 use super::types::{EncEntryTag, Entry, EntryKind, EntryOperation, EntryTag, ProfileId};
 use super::wql;
@@ -71,13 +72,13 @@ impl SqliteStore {
         &self,
         exec: E,
         name: Option<String>,
-    ) -> Result<(ProfileId, AsyncEncryptor<StoreKey>)> {
+    ) -> Result<(ProfileId, Arc<StoreKey>)> {
         if let Some((pid, key)) = self.key_cache.get_profile(
             name.as_ref()
                 .map(String::as_str)
                 .unwrap_or(self.default_profile.as_str()),
         ) {
-            Ok((pid, AsyncEncryptor(Some(key))))
+            Ok((pid, key))
         } else {
             // FIXME fetch from database
             unimplemented!()
@@ -156,14 +157,14 @@ where
         tag_filter: Option<wql::Query>,
     ) -> BoxFuture<'q, Result<i64>> {
         Box::pin(async move {
-            let category = self.key.encrypt_entry_category(category).await?;
+            let key = self.key.clone();
+            let enc_category = blocking_scoped(|| key.encrypt_entry_category(category)).await?;
             let mut params = QueryParams::new();
             params.push(self.profile_id);
             params.push(kind as i16);
-            params.push(category);
+            params.push(enc_category);
             let tag_filter =
-                encode_tag_filter::<SqliteStore>(tag_filter, self.key.0.clone(), params.len())
-                    .await?;
+                encode_tag_filter::<SqliteStore>(tag_filter, Some(key), params.len()).await?;
             let query =
                 extend_query::<SqliteStore>(COUNT_QUERY, &mut params, tag_filter, None, None)?;
             let count = sqlx::query_scalar_with(query.as_str(), params)
@@ -180,30 +181,37 @@ where
         name: &str,
         _for_update: bool,
     ) -> BoxFuture<Result<Option<Entry>>> {
-        let raw_category = category.to_string();
-        let raw_name = name.to_string();
+        let category = category.to_string();
+        let name = name.to_string();
 
         Box::pin(async move {
-            let (category, name) = self
-                .key
-                .encrypt_entry_category_name(&raw_category, &raw_name)
-                .await?;
+            let key = self.key.clone();
+            let (enc_category, enc_name) = blocking_scoped(|| {
+                Result::Ok((
+                    key.encrypt_entry_category(&category)?,
+                    key.encrypt_entry_name(&name)?,
+                ))
+            })
+            .await?;
             if let Some(row) = sqlx::query(FETCH_QUERY)
                 .bind(self.profile_id)
                 .bind(kind as i16)
-                .bind(&category)
-                .bind(&name)
+                .bind(&enc_category)
+                .bind(&enc_name)
                 .fetch_optional(&mut self.exec)
                 .await?
             {
-                let value = self.key.decrypt_entry_value(row.try_get(1)?).await?;
-                let enc_tags =
-                    decode_tags(row.try_get(2)?).map_err(|_| err_msg!("Error decoding tags"))?;
-                let tags = Some(self.key.decrypt_entry_tags(&enc_tags).await?);
-
+                let (value, tags) = blocking_scoped(|| {
+                    let value = key.decrypt_entry_value(row.try_get(1)?)?;
+                    let enc_tags = decode_tags(row.try_get(2)?)
+                        .map_err(|_| err_msg!("Error decoding tags"))?;
+                    let tags = Some(key.decrypt_entry_tags(&enc_tags)?);
+                    Result::Ok((value, tags))
+                })
+                .await?;
                 Ok(Some(Entry {
-                    category: raw_category,
-                    name: raw_name,
+                    category,
+                    name,
                     value,
                     tags,
                 }))
@@ -248,15 +256,19 @@ where
         expiry_ms: Option<i64>,
     ) -> BoxFuture<'q, Result<()>> {
         Box::pin(async move {
-            let (enc_category, enc_name) =
-                self.key.encrypt_entry_category_name(category, name).await?;
+            let key = self.key.clone();
 
             match operation {
                 op @ EntryOperation::Insert | op @ EntryOperation::Replace => {
-                    let (enc_value, enc_tags) = self
-                        .key
-                        .encrypt_entry_value_tags(value.unwrap(), tags)
-                        .await?;
+                    let (enc_category, enc_name, enc_value, enc_tags) = blocking_scoped(|| {
+                        Result::Ok((
+                            key.encrypt_entry_category(&category)?,
+                            key.encrypt_entry_name(&name)?,
+                            key.encrypt_entry_value(value.unwrap())?,
+                            tags.map(|t| key.encrypt_entry_tags(t)).transpose()?,
+                        ))
+                    })
+                    .await?;
                     let mut txn = self.transaction().await?;
                     if op == EntryOperation::Replace {
                         perform_remove(txn.borrow_mut(), kind, &enc_category, &enc_name, false)
@@ -277,6 +289,13 @@ where
                 }
 
                 EntryOperation::Remove => {
+                    let (enc_category, enc_name) = blocking_scoped(|| {
+                        Result::Ok((
+                            key.encrypt_entry_category(&category)?,
+                            key.encrypt_entry_name(&name)?,
+                        ))
+                    })
+                    .await?;
                     Ok(
                         perform_remove(self.borrow_mut(), kind, &enc_category, &enc_name, false)
                             .await?,
@@ -368,27 +387,32 @@ where
     E: Send,
     for<'e> &'e mut E: Executor<'e, Database = Sqlite>,
 {
-    let raw_category = category;
-    let category = active.key.encrypt_entry_category(&raw_category).await?;
+    let key = active.key.clone();
+    let enc_category = blocking_scoped(|| key.encrypt_entry_category(&category)).await?;
 
     let scan = try_stream! {
         let mut params = QueryParams::new();
         params.push(active.profile_id);
         params.push(kind as i16);
-        params.push(category.clone());
-        let tag_filter = encode_tag_filter::<SqliteStore>(tag_filter, active.key.0.clone(), params.len()).await?;
+        params.push(enc_category);
+        let tag_filter = encode_tag_filter::<SqliteStore>(tag_filter, Some(key.clone()), params.len()).await?;
         let query = extend_query::<SqliteStore>(SCAN_QUERY, &mut params, tag_filter, offset, limit)?;
         let mut batch = Vec::<Entry>::with_capacity(PAGE_SIZE);
-        let key = active.key.clone();
 
         let mut rows = sqlx::query_with(query.as_str(), params).fetch(&mut active.exec);
         while let Some(row) = rows.next().await {
             let row = row?;
-            let (name, value) = key.decrypt_entry_name_value(row.try_get(1)?, row.try_get(2)?).await?;
-            let enc_tags = decode_tags(row.try_get(3)?).map_err(|_| err_msg!("Error decoding tags"))?;
-            let tags = Some(key.decrypt_entry_tags(&enc_tags).await?);
+            let (name, value, tags) = blocking_scoped(|| {
+                let name = key.decrypt_entry_name(row.try_get(1)?)?;
+                let value = key.decrypt_entry_value(row.try_get(2)?)?;
+                let enc_tags = decode_tags(row.try_get(3)?)
+                    .map_err(|_| err_msg!("Error decoding tags"))?;
+                let tags = Some(key.decrypt_entry_tags(&enc_tags)?);
+                Result::Ok((name, value, tags))
+            })
+            .await?;
             batch.push(Entry {
-                category: raw_category.clone(),
+                category: category.clone(),
                 name,
                 value,
                 tags

@@ -9,7 +9,7 @@ use sqlx::{
 
 use super::error::Result;
 use super::future::{blocking, BoxFuture};
-use super::keys::{store::StoreKey, AsyncEncryptor};
+use super::keys::store::StoreKey;
 use super::types::{EncEntryTag, Expiry, ProfileId};
 use super::wql::{
     self,
@@ -23,12 +23,12 @@ pub struct DbSession<'s, E, DB> {
     pub(crate) exec: E,
     pub(crate) is_txn: bool,
     pub(crate) profile_id: ProfileId,
-    pub(crate) key: AsyncEncryptor<StoreKey>,
+    pub(crate) key: Arc<StoreKey>,
     _pd: PhantomData<&'s DB>,
 }
 
 impl<'s, E, DB> DbSession<'s, E, DB> {
-    pub fn new(exec: E, is_txn: bool, profile_id: ProfileId, key: AsyncEncryptor<StoreKey>) -> Self
+    pub fn new(exec: E, is_txn: bool, profile_id: ProfileId, key: Arc<StoreKey>) -> Self
     where
         DB: Database,
         for<'e> &'e mut E: Executor<'e, Database = DB>,

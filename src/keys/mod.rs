@@ -1,7 +1,4 @@
-use std::sync::Arc;
-
 use super::error::Result;
-use super::future::blocking_scoped;
 use super::types::{EncEntryTag, EntryTag};
 
 pub mod kdf;
@@ -106,101 +103,5 @@ impl EntryEncryptor for NullEncryptor {
             });
             Result::Ok(acc)
         })?)
-    }
-}
-
-#[derive(Clone)]
-pub struct AsyncEncryptor<T>(pub Option<Arc<T>>);
-
-impl<T: EntryEncryptor + Send + Sync + 'static> AsyncEncryptor<T> {
-    pub async fn encrypt_entry_category(&self, category: &str) -> Result<Vec<u8>> {
-        if let Some(key) = self.0.clone() {
-            blocking_scoped(move || key.encrypt_entry_category(category)).await
-        } else {
-            Ok(category.as_bytes().to_vec())
-        }
-    }
-
-    pub async fn encrypt_entry_category_name<'a>(
-        &'a self,
-        category: &'a str,
-        name: &'a str,
-    ) -> Result<(Vec<u8>, Vec<u8>)> {
-        if let Some(key) = self.0.clone() {
-            blocking_scoped(move || {
-                Ok((
-                    key.encrypt_entry_category(category)?,
-                    key.encrypt_entry_name(name)?,
-                ))
-            })
-            .await
-        } else {
-            Ok((category.as_bytes().to_vec(), name.as_bytes().to_vec()))
-        }
-    }
-
-    pub async fn encrypt_entry_value_tags(
-        &self,
-        value: &[u8],
-        tags: Option<&[EntryTag]>,
-    ) -> Result<(Vec<u8>, Option<Vec<EncEntryTag>>)> {
-        if let Some(key) = self.0.clone() {
-            blocking_scoped(move || {
-                let value = key.encrypt_entry_value(value)?;
-                let tags = if let Some(tags) = tags {
-                    Some(key.encrypt_entry_tags(tags)?)
-                } else {
-                    None
-                };
-                Ok((value, tags))
-            })
-            .await
-        } else {
-            Ok((
-                NullEncryptor {}.encrypt_entry_value(value)?,
-                tags.map(|tags| NullEncryptor {}.encrypt_entry_tags(tags))
-                    .transpose()?,
-            ))
-        }
-    }
-
-    pub async fn decrypt_entry_value(&self, enc_value: &[u8]) -> Result<Vec<u8>> {
-        if let Some(key) = self.0.clone() {
-            blocking_scoped(move || key.decrypt_entry_value(&enc_value)).await
-        } else {
-            Ok(enc_value.to_vec())
-        }
-    }
-
-    pub async fn decrypt_entry_name_value(
-        &self,
-        name: &[u8],
-        value: &[u8],
-    ) -> Result<(String, Vec<u8>)> {
-        if let Some(key) = self.0.clone() {
-            blocking_scoped(move || {
-                Ok((
-                    key.decrypt_entry_name(&name)?,
-                    key.decrypt_entry_value(&value)?,
-                ))
-            })
-            .await
-        } else {
-            Ok((
-                String::from_utf8(name.to_vec()).map_err(err_map!(Encryption))?,
-                value.to_vec(),
-            ))
-        }
-    }
-
-    pub async fn decrypt_entry_tags(&self, enc_tags: &[EncEntryTag]) -> Result<Vec<EntryTag>> {
-        if enc_tags.is_empty() {
-            return Ok(vec![]);
-        }
-        if let Some(key) = self.0.clone() {
-            blocking_scoped(move || key.decrypt_entry_tags(enc_tags)).await
-        } else {
-            NullEncryptor {}.decrypt_entry_tags(enc_tags)
-        }
     }
 }
