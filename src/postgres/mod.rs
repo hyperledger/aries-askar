@@ -16,11 +16,10 @@ use super::db_utils::{
     CloseDbSession, DbSession, DbSessionRef, QueryParams, QueryPrepare, PAGE_SIZE,
 };
 use super::error::Result;
-use super::future::{BoxFuture, blocking_scoped};
+use super::future::{blocking_scoped, BoxFuture};
 use super::keys::{store::StoreKey, EntryEncryptor};
 use super::store::{Backend, KeyCache, QueryBackend, Scan};
-use super::types::{EncEntryTag, Entry, EntryKind, EntryOperation, EntryTag, ProfileId};
-use super::wql;
+use super::types::{EncEntryTag, Entry, EntryKind, EntryOperation, EntryTag, ProfileId, TagFilter};
 
 const COUNT_QUERY: &'static str = "SELECT COUNT(*) FROM items i
     WHERE profile_id = $1 AND kind = $2 AND category = $3
@@ -51,6 +50,8 @@ const SCAN_QUERY: &'static str = "SELECT id, name, value,
         FROM items_tags it WHERE it.item_id = i.id) tags
     FROM items i WHERE profile_id = $1 AND kind = $2 AND category = $3
     AND (expiry IS NULL OR expiry > CURRENT_TIMESTAMP)";
+const DELETE_ALL_QUERY: &'static str = "DELETE FROM items i
+    WHERE i.profile_id = $1 AND i.kind = $2 AND i.category = $3";
 const TAG_INSERT_QUERY: &'static str = "INSERT INTO items_tags
     (item_id, name, value, plaintext) VALUES ($1, $2, $3, $4)";
 
@@ -109,7 +110,7 @@ impl Backend for PostgresStore {
         profile: Option<String>,
         kind: EntryKind,
         category: String,
-        tag_filter: Option<wql::Query>,
+        tag_filter: Option<TagFilter>,
         offset: Option<i64>,
         limit: Option<i64>,
     ) -> BoxFuture<Result<Scan<'static, Entry>>> {
@@ -164,7 +165,7 @@ where
         &'q mut self,
         kind: EntryKind,
         category: &'q str,
-        tag_filter: Option<wql::Query>,
+        tag_filter: Option<TagFilter>,
     ) -> BoxFuture<'q, Result<i64>> {
         Box::pin(async move {
             let key = self.key.clone();
@@ -174,7 +175,7 @@ where
             params.push(kind as i16);
             params.push(enc_category);
             let tag_filter =
-                encode_tag_filter::<PostgresStore>(tag_filter, Some(key), params.len()).await?;
+                encode_tag_filter::<PostgresStore>(tag_filter, key, params.len()).await?;
             let query =
                 extend_query::<PostgresStore>(COUNT_QUERY, &mut params, tag_filter, None, None)?;
             let count = sqlx::query_scalar_with(query.as_str(), params)
@@ -247,7 +248,7 @@ where
         &'q mut self,
         kind: EntryKind,
         category: &'q str,
-        tag_filter: Option<wql::Query>,
+        tag_filter: Option<TagFilter>,
         limit: Option<i64>,
         for_update: bool,
     ) -> BoxFuture<'q, Result<Vec<Entry>>> {
@@ -266,6 +267,37 @@ where
                 }
             }
             Ok(results)
+        })
+    }
+
+    fn remove_all<'q>(
+        &'q mut self,
+        kind: EntryKind,
+        category: &'q str,
+        tag_filter: Option<TagFilter>,
+    ) -> BoxFuture<'q, Result<i64>> {
+        let key = self.key.clone();
+        Box::pin(async move {
+            let enc_category = blocking_scoped(|| key.encrypt_entry_category(&category)).await?;
+            let mut params = QueryParams::new();
+            params.push(self.profile_id);
+            params.push(kind as i16);
+            params.push(enc_category);
+            let tag_filter =
+                encode_tag_filter::<PostgresStore>(tag_filter, key, params.len()).await?;
+            let query = extend_query::<PostgresStore>(
+                DELETE_ALL_QUERY,
+                &mut params,
+                tag_filter,
+                None,
+                None,
+            )?;
+
+            let removed = sqlx::query_with(query.as_str(), params)
+                .execute(&mut self.exec)
+                .await?
+                .rows_affected();
+            Ok(removed as i64)
         })
     }
 
@@ -462,7 +494,7 @@ async fn perform_scan<'q, 's, E>(
     mut active: DbSessionRef<'q, 's, E, Postgres>,
     kind: EntryKind,
     category: String,
-    tag_filter: Option<wql::Query>,
+    tag_filter: Option<TagFilter>,
     offset: Option<i64>,
     limit: Option<i64>,
     for_update: bool,
@@ -479,13 +511,12 @@ where
         params.push(active.profile_id);
         params.push(kind as i16);
         params.push(enc_category);
-        let tag_filter = encode_tag_filter::<PostgresStore>(tag_filter, Some(key.clone()), params.len()).await?;
+        let tag_filter = encode_tag_filter::<PostgresStore>(tag_filter, key.clone(), params.len()).await?;
         let mut query = extend_query::<PostgresStore>(SCAN_QUERY, &mut params, tag_filter, offset, limit)?;
         if for_update {
             query.push_str(" FOR UPDATE");
         }
         let mut batch = Vec::with_capacity(PAGE_SIZE);
-        let key = active.key.clone();
 
         let mut rows = sqlx::query_with(query.as_str(), params).fetch(&mut active.exec);
         while let Some(row) = rows.next().await {

@@ -55,6 +55,6 @@ mod store;
 pub use self::store::{Backend, ProvisionStore, ProvisionStoreSpec, QueryBackend, Session, Store};
 
 mod types;
-pub use self::types::{Entry, EntryTag};
+pub use self::types::{Entry, EntryTag, TagFilter};
 
-pub mod wql;
+mod wql;

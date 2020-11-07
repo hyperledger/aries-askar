@@ -22,7 +22,7 @@ use crate::error::Result as KvResult;
 use crate::future::spawn_ok;
 use crate::keys::{wrap::WrapKeyMethod, KeyAlg, KeyCategory, KeyEntry};
 use crate::store::{OpenStore, ProvisionStore, ProvisionStoreSpec, Scan};
-use crate::types::{Entry, EntryOperation, EntryTagSet};
+use crate::types::{Entry, EntryOperation, EntryTagSet, TagFilter};
 
 new_handle_type!(StoreHandle, FFI_STORE_COUNTER);
 new_handle_type!(SessionHandle, FFI_SESSION_COUNTER);
@@ -342,7 +342,7 @@ pub extern "C" fn askar_scan_start(
         let cb = cb.ok_or_else(|| err_msg!("No callback provided"))?;
         let profile = profile.into_opt_string();
         let category = category.into_opt_string().ok_or_else(|| err_msg!("Category not provided"))?;
-        let tag_filter = tag_filter.as_opt_str().map(serde_json::from_str).transpose().map_err(err_map!("Error parsing tag query"))?;
+        let tag_filter = tag_filter.as_opt_str().map(TagFilter::from_str).transpose()?;
         let cb = EnsureCallback::new(move |result: KvResult<ScanHandle>|
             match result {
                 Ok(handle) => cb(cb_id, ErrorCode::Success, handle),
@@ -475,7 +475,7 @@ pub extern "C" fn askar_session_count(
         trace!("Count from store");
         let cb = cb.ok_or_else(|| err_msg!("No callback provided"))?;
         let category = category.into_opt_string().ok_or_else(|| err_msg!("Category not provided"))?;
-        let tag_filter = tag_filter.as_opt_str().map(serde_json::from_str).transpose().map_err(err_map!("Error parsing tag query"))?;
+        let tag_filter = tag_filter.as_opt_str().map(TagFilter::from_str).transpose()?;
         let cb = EnsureCallback::new(move |result: KvResult<i64>|
             match result {
                 Ok(count) => cb(cb_id, ErrorCode::Success, count),
@@ -542,7 +542,7 @@ pub extern "C" fn askar_session_fetch_all(
         trace!("Count from store");
         let cb = cb.ok_or_else(|| err_msg!("No callback provided"))?;
         let category = category.into_opt_string().ok_or_else(|| err_msg!("Category not provided"))?;
-        let tag_filter = tag_filter.as_opt_str().map(serde_json::from_str).transpose().map_err(err_map!("Error parsing tag query"))?;
+        let tag_filter = tag_filter.as_opt_str().map(TagFilter::from_str).transpose()?;
         let limit = if limit < 0 { None } else {Some(limit)};
         let cb = EnsureCallback::new(move |result|
             match result {
@@ -557,6 +557,38 @@ pub extern "C" fn askar_session_fetch_all(
             let result = async {
                 let mut session = handle.load().await?;
                 session.fetch_all(&category, tag_filter, limit, for_update != 0).await
+            }.await;
+            cb.resolve(result);
+        });
+        Ok(ErrorCode::Success)
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn askar_session_remove_all(
+    handle: SessionHandle,
+    category: FfiStr,
+    tag_filter: FfiStr,
+    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, removed: i64)>,
+    cb_id: CallbackId,
+) -> ErrorCode {
+    catch_err! {
+        trace!("Count from store");
+        let cb = cb.ok_or_else(|| err_msg!("No callback provided"))?;
+        let category = category.into_opt_string().ok_or_else(|| err_msg!("Category not provided"))?;
+        let tag_filter = tag_filter.as_opt_str().map(TagFilter::from_str).transpose()?;
+        let cb = EnsureCallback::new(move |result|
+            match result {
+                Ok(removed) => {
+                    cb(cb_id, ErrorCode::Success, removed)
+                }
+                Err(err) => cb(cb_id, set_last_error(Some(err)), 0),
+            }
+        );
+        spawn_ok(async move {
+            let result = async {
+                let mut session = handle.load().await?;
+                session.remove_all(&category, tag_filter).await
             }.await;
             cb.resolve(result);
         });

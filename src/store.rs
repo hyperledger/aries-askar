@@ -18,8 +18,7 @@ use super::keys::{
     wrap::{generate_raw_wrap_key, WrapKey, WrapKeyMethod},
     KeyAlg, KeyCategory, KeyEntry, KeyParams,
 };
-use super::types::{Entry, EntryKind, EntryOperation, EntryTag, ProfileId};
-use super::wql;
+use super::types::{Entry, EntryKind, EntryOperation, EntryTag, ProfileId, TagFilter};
 use super::Result;
 
 pub struct KeyCache {
@@ -74,7 +73,7 @@ pub trait Backend: Send + Sync {
         profile: Option<String>,
         kind: EntryKind,
         category: String,
-        tag_filter: Option<wql::Query>,
+        tag_filter: Option<TagFilter>,
         offset: Option<i64>,
         limit: Option<i64>,
     ) -> BoxFuture<Result<Scan<'static, Entry>>>;
@@ -91,7 +90,7 @@ pub trait QueryBackend: Send {
         &'q mut self,
         kind: EntryKind,
         category: &'q str,
-        tag_filter: Option<wql::Query>,
+        tag_filter: Option<TagFilter>,
     ) -> BoxFuture<'q, Result<i64>>;
 
     fn fetch<'q>(
@@ -106,10 +105,17 @@ pub trait QueryBackend: Send {
         &'q mut self,
         kind: EntryKind,
         category: &'q str,
-        tag_filter: Option<wql::Query>,
+        tag_filter: Option<TagFilter>,
         limit: Option<i64>,
         for_update: bool,
     ) -> BoxFuture<'q, Result<Vec<Entry>>>;
+
+    fn remove_all<'q>(
+        &'q mut self,
+        kind: EntryKind,
+        category: &'q str,
+        tag_filter: Option<TagFilter>,
+    ) -> BoxFuture<'q, Result<i64>>;
 
     fn update<'q>(
         &'q mut self,
@@ -148,7 +154,7 @@ impl<B: Backend> Store<B> {
         &self,
         profile: Option<String>,
         category: String,
-        tag_filter: Option<wql::Query>,
+        tag_filter: Option<TagFilter>,
         offset: Option<i64>,
         limit: Option<i64>,
     ) -> Result<Scan<'static, Entry>> {
@@ -193,7 +199,7 @@ impl<Q: QueryBackend> Session<Q> {
 
 impl<Q: QueryBackend> Session<Q> {
     /// Count the number of entries for a given record category
-    pub async fn count(&mut self, category: &str, tag_filter: Option<wql::Query>) -> Result<i64> {
+    pub async fn count(&mut self, category: &str, tag_filter: Option<TagFilter>) -> Result<i64> {
         Ok(self.0.count(EntryKind::Item, category, tag_filter).await?)
     }
 
@@ -217,7 +223,7 @@ impl<Q: QueryBackend> Session<Q> {
     pub async fn fetch_all(
         &mut self,
         category: &str,
-        tag_filter: Option<wql::Query>,
+        tag_filter: Option<TagFilter>,
         limit: Option<i64>,
         for_update: bool,
     ) -> Result<Vec<Entry>> {
@@ -283,6 +289,17 @@ impl<Q: QueryBackend> Session<Q> {
                 tags,
                 expiry_ms,
             )
+            .await?)
+    }
+
+    pub async fn remove_all(
+        &mut self,
+        category: &str,
+        tag_filter: Option<TagFilter>,
+    ) -> Result<i64> {
+        Ok(self
+            .0
+            .remove_all(EntryKind::Item, category, tag_filter)
             .await?)
     }
 
@@ -427,7 +444,7 @@ impl<Q: QueryBackend> Session<Q> {
     //     profile: Option<String>,
     //     category: String,
     //     options: EntryFetchOptions,
-    //     tag_filter: Option<wql::Query>,
+    //     tag_filter: Option<TagFilter>,
     //     offset: Option<i64>,
     //     max_rows: Option<i64>,
     // ) -> Result<Scan<KeyEntry>> {

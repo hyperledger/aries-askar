@@ -1,6 +1,7 @@
 use std::fmt::{self, Debug, Formatter};
 use std::mem::ManuallyDrop;
 use std::ptr;
+use std::str::FromStr;
 
 use serde::{
     de::{Error as SerdeError, MapAccess, Visitor},
@@ -8,6 +9,9 @@ use serde::{
     Deserialize, Deserializer, Serialize, Serializer,
 };
 use zeroize::Zeroize;
+
+use super::error::Error;
+use super::wql;
 
 pub type ProfileId = i64;
 
@@ -231,6 +235,103 @@ impl Debug for MaybeStr<'_> {
         } else {
             write!(f, "_\"{}\"", hex::encode(self.0))
         }
+    }
+}
+
+#[repr(transparent)]
+pub struct TagFilter {
+    pub(crate) query: wql::Query,
+}
+
+impl TagFilter {
+    #[inline]
+    pub fn all_of(each: Vec<TagFilter>) -> Self {
+        Self {
+            query: wql::Query::And(unsafe { std::mem::transmute(each) }),
+        }
+    }
+
+    #[inline]
+    pub fn any_of(each: Vec<TagFilter>) -> Self {
+        Self {
+            query: wql::Query::Or(unsafe { std::mem::transmute(each) }),
+        }
+    }
+
+    #[inline]
+    pub fn not(filter: TagFilter) -> Self {
+        Self {
+            query: wql::Query::Not(Box::new(filter.query)),
+        }
+    }
+
+    #[inline]
+    pub fn is_eq(name: impl Into<String>, value: impl Into<String>) -> Self {
+        Self {
+            query: wql::Query::Eq(name.into(), value.into()),
+        }
+    }
+
+    #[inline]
+    pub fn is_not_eq(name: impl Into<String>, value: impl Into<String>) -> Self {
+        Self {
+            query: wql::Query::Neq(name.into(), value.into()),
+        }
+    }
+
+    #[inline]
+    pub fn is_gt(name: impl Into<String>, value: impl Into<String>) -> Self {
+        Self {
+            query: wql::Query::Gt(name.into(), value.into()),
+        }
+    }
+
+    #[inline]
+    pub fn is_gte(name: impl Into<String>, value: impl Into<String>) -> Self {
+        Self {
+            query: wql::Query::Gte(name.into(), value.into()),
+        }
+    }
+
+    #[inline]
+    pub fn is_lt(name: impl Into<String>, value: impl Into<String>) -> Self {
+        Self {
+            query: wql::Query::Lt(name.into(), value.into()),
+        }
+    }
+
+    #[inline]
+    pub fn is_lte(name: impl Into<String>, value: impl Into<String>) -> Self {
+        Self {
+            query: wql::Query::Lte(name.into(), value.into()),
+        }
+    }
+
+    #[inline]
+    pub fn is_like(name: impl Into<String>, value: impl Into<String>) -> Self {
+        Self {
+            query: wql::Query::Like(name.into(), value.into()),
+        }
+    }
+
+    #[inline]
+    pub fn is_in(name: impl Into<String>, value: Vec<String>) -> Self {
+        Self {
+            query: wql::Query::In(name.into(), value),
+        }
+    }
+
+    pub fn to_string(&self) -> Result<String, Error> {
+        serde_json::to_string(&self.query).map_err(err_map!("Error encoding tag filter"))
+    }
+}
+
+impl FromStr for TagFilter {
+    type Err = Error;
+
+    fn from_str(query: &str) -> Result<Self, Error> {
+        let query = serde_json::from_str(query).map_err(err_map!("Error parsing tag query"))?;
+        Ok(Self { query })
     }
 }
 

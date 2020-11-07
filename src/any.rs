@@ -4,8 +4,7 @@ use super::options::IntoOptions;
 use super::store::{
     Backend, OpenStore, ProvisionStore, ProvisionStoreSpec, QueryBackend, Scan, Session, Store,
 };
-use super::types::{Entry, EntryKind, EntryOperation, EntryTag};
-use super::wql;
+use super::types::{Entry, EntryKind, EntryOperation, EntryTag, TagFilter};
 
 #[cfg(feature = "postgres")]
 use super::postgres::PostgresStore;
@@ -38,7 +37,7 @@ impl Backend for AnyBackend {
         profile: Option<String>,
         kind: EntryKind,
         category: String,
-        tag_filter: Option<wql::Query>,
+        tag_filter: Option<TagFilter>,
         offset: Option<i64>,
         limit: Option<i64>,
     ) -> BoxFuture<Result<Scan<'static, Entry>>> {
@@ -129,7 +128,7 @@ impl QueryBackend for AnyQueryBackend {
         &'q mut self,
         kind: EntryKind,
         category: &'q str,
-        tag_filter: Option<wql::Query>,
+        tag_filter: Option<TagFilter>,
     ) -> BoxFuture<'q, Result<i64>> {
         match self {
             #[cfg(feature = "postgres")]
@@ -172,7 +171,7 @@ impl QueryBackend for AnyQueryBackend {
         &'q mut self,
         kind: EntryKind,
         category: &'q str,
-        tag_filter: Option<wql::Query>,
+        tag_filter: Option<TagFilter>,
         limit: Option<i64>,
         for_update: bool,
     ) -> BoxFuture<'q, Result<Vec<Entry>>> {
@@ -190,6 +189,27 @@ impl QueryBackend for AnyQueryBackend {
             }
             #[cfg(feature = "sqlite")]
             Self::SqliteTxn(txn) => txn.fetch_all(kind, category, tag_filter, limit, for_update),
+
+            _ => unreachable!(),
+        }
+    }
+
+    fn remove_all<'q>(
+        &'q mut self,
+        kind: EntryKind,
+        category: &'q str,
+        tag_filter: Option<TagFilter>,
+    ) -> BoxFuture<'q, Result<i64>> {
+        match self {
+            #[cfg(feature = "postgres")]
+            Self::PostgresSession(session) => session.remove_all(kind, category, tag_filter),
+            #[cfg(feature = "postgres")]
+            Self::PostgresTxn(txn) => txn.remove_all(kind, category, tag_filter),
+
+            #[cfg(feature = "sqlite")]
+            Self::SqliteSession(session) => session.remove_all(kind, category, tag_filter),
+            #[cfg(feature = "sqlite")]
+            Self::SqliteTxn(txn) => txn.remove_all(kind, category, tag_filter),
 
             _ => unreachable!(),
         }

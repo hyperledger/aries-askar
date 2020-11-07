@@ -82,6 +82,14 @@ macro_rules! db_tests {
         }
 
         #[test]
+        fn remove_all() {
+            block_on(async {
+                let db = $init.await;
+                super::utils::db_remove_all(&db).await;
+            })
+        }
+
+        #[test]
         fn keypair_create_fetch() {
             block_on(async {
                 let db = $init.await;

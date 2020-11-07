@@ -1,42 +1,51 @@
+use std::marker::PhantomData;
+
 use itertools::Itertools;
 
 use super::tags::{CompareOp, ConjunctionOp, TagName, TagQueryEncoder};
-use crate::error::Result as KvResult;
+use crate::error::Result;
 
-pub struct TagSqlEncoder {
-    pub enc_name: Box<dyn FnMut(&str) -> KvResult<Vec<u8>>>,
-    pub enc_value: Box<dyn FnMut(&str) -> KvResult<Vec<u8>>>,
+pub struct TagSqlEncoder<'e, EN, EV> {
+    pub enc_name: EN,
+    pub enc_value: EV,
     pub arguments: Vec<Vec<u8>>,
+    _pd: PhantomData<&'e ()>,
 }
 
-impl TagSqlEncoder {
-    pub fn new(
-        enc_name: impl FnMut(&str) -> KvResult<Vec<u8>> + 'static,
-        enc_value: impl FnMut(&str) -> KvResult<Vec<u8>> + 'static,
-    ) -> Self {
+impl<'e, EN, EV> TagSqlEncoder<'e, EN, EV>
+where
+    EN: Fn(&str) -> Result<Vec<u8>> + 'e,
+    EV: Fn(&str) -> Result<Vec<u8>> + 'e,
+{
+    pub fn new(enc_name: EN, enc_value: EV) -> Self {
         Self {
-            enc_name: Box::new(enc_name),
-            enc_value: Box::new(enc_value),
+            enc_name,
+            enc_value,
             arguments: vec![],
+            _pd: PhantomData,
         }
     }
 }
 
-impl TagQueryEncoder for TagSqlEncoder {
+impl<'e, EN, EV> TagQueryEncoder for TagSqlEncoder<'e, EN, EV>
+where
+    EN: Fn(&str) -> Result<Vec<u8>> + 'e,
+    EV: Fn(&str) -> Result<Vec<u8>> + 'e,
+{
     type Arg = Vec<u8>;
     type Clause = String;
 
-    fn encode_name(&mut self, name: &TagName) -> KvResult<Self::Arg> {
+    fn encode_name(&mut self, name: &TagName) -> Result<Self::Arg> {
         Ok(match name {
-            TagName::Encrypted(name) | TagName::Plaintext(name) => (self.enc_name)(name)?,
+            TagName::Encrypted(name) | TagName::Plaintext(name) => (&self.enc_name)(name)?,
         })
     }
 
-    fn encode_value(&mut self, value: &String, is_plaintext: bool) -> KvResult<Self::Arg> {
+    fn encode_value(&mut self, value: &String, is_plaintext: bool) -> Result<Self::Arg> {
         Ok(if is_plaintext {
             value.as_bytes().to_vec()
         } else {
-            (self.enc_value)(value)?
+            (&self.enc_value)(value)?
         })
     }
 
@@ -46,7 +55,7 @@ impl TagQueryEncoder for TagSqlEncoder {
         enc_name: Self::Arg,
         enc_value: Self::Arg,
         is_plaintext: bool,
-    ) -> KvResult<Option<Self::Clause>> {
+    ) -> Result<Option<Self::Clause>> {
         let idx = self.arguments.len();
         let op_prefix = op.as_sql_str_for_prefix().map(|pfx_op| {
             format!(
@@ -74,7 +83,7 @@ impl TagQueryEncoder for TagSqlEncoder {
         enc_values: Vec<Self::Arg>,
         is_plaintext: bool,
         negate: bool,
-    ) -> KvResult<Option<Self::Clause>> {
+    ) -> Result<Option<Self::Clause>> {
         let args_in = std::iter::repeat("$$")
             .take(enc_values.len())
             .intersperse(", ")
@@ -94,7 +103,7 @@ impl TagQueryEncoder for TagSqlEncoder {
         &mut self,
         op: ConjunctionOp,
         clauses: Vec<Self::Clause>,
-    ) -> KvResult<Option<Self::Clause>> {
+    ) -> Result<Option<Self::Clause>> {
         let qc = clauses.len();
         if qc == 0 {
             if op == ConjunctionOp::Or {

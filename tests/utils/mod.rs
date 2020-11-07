@@ -1,4 +1,6 @@
-use aries_askar::{verify_signature, wql, Backend, Entry, EntryTag, ErrorKind, KeyAlg, Store};
+use aries_askar::{
+    verify_signature, Backend, Entry, EntryTag, ErrorKind, KeyAlg, Store, TagFilter,
+};
 
 const ERR_SESSION: &'static str = "Error starting session";
 const ERR_TRANSACTION: &'static str = "Error starting transaction";
@@ -9,6 +11,7 @@ const ERR_REQ_ROW: &'static str = "Expected row";
 const ERR_REQ_ERR: &'static str = "Expected error";
 const ERR_INSERT: &'static str = "Error inserting test row";
 const ERR_REPLACE: &'static str = "Error replacing test row";
+const ERR_REMOVE_ALL: &'static str = "Error removing test rows";
 const ERR_SCAN: &'static str = "Error starting scan";
 const ERR_SCAN_NEXT: &'static str = "Error fetching scan rows";
 const ERR_CREATE_KEYPAIR: &'static str = "Error creating keypair";
@@ -217,7 +220,7 @@ pub async fn db_count<DB: Backend>(db: &Store<DB>) {
     let count = conn.count(&category, tag_filter).await.expect(ERR_COUNT);
     assert_eq!(count, 1);
 
-    let tag_filter = Some(wql::Query::Eq("sometag".to_string(), "someval".to_string()));
+    let tag_filter = Some(TagFilter::is_eq("sometag", "someval"));
     let count = conn.count(&category, tag_filter).await.expect(ERR_COUNT);
     assert_eq!(count, 0);
 }
@@ -261,13 +264,73 @@ pub async fn db_scan<DB: Backend>(db: &Store<DB>) {
     let rows = scan.fetch_next().await.expect(ERR_SCAN_NEXT);
     assert_eq!(rows, None);
 
-    let tag_filter = Some(wql::Query::Eq("sometag".to_string(), "someval".to_string()));
+    let tag_filter = Some(TagFilter::is_eq("sometag", "someval"));
     let mut scan = db
         .scan(None, category.clone(), tag_filter, offset, limit)
         .await
         .expect(ERR_SCAN);
     let rows = scan.fetch_next().await.expect(ERR_SCAN_NEXT);
     assert_eq!(rows, None);
+}
+
+pub async fn db_remove_all<DB: Backend>(db: &Store<DB>) {
+    let test_rows = vec![
+        Entry {
+            category: "cat".to_string(),
+            name: "item1".to_string(),
+            value: b"value".to_vec(),
+            tags: Some(vec![
+                EntryTag::Encrypted("t1".to_string(), "del".to_string()),
+                EntryTag::Plaintext("t2".to_string(), "del".to_string()),
+            ]),
+        },
+        Entry {
+            category: "cat".to_string(),
+            name: "item2".to_string(),
+            value: b"value".to_vec(),
+            tags: Some(vec![
+                EntryTag::Encrypted("t1".to_string(), "del".to_string()),
+                EntryTag::Plaintext("t2".to_string(), "del".to_string()),
+            ]),
+        },
+        Entry {
+            category: "cat".to_string(),
+            name: "item3".to_string(),
+            value: b"value".to_vec(),
+            tags: Some(vec![
+                EntryTag::Encrypted("t1".to_string(), "keep".to_string()),
+                EntryTag::Plaintext("t2".to_string(), "keep".to_string()),
+            ]),
+        },
+    ];
+
+    let mut conn = db.session(None).await.expect(ERR_SESSION);
+
+    for test_row in test_rows.iter() {
+        conn.insert(
+            &test_row.category,
+            &test_row.name,
+            &test_row.value,
+            test_row.tags.as_ref().map(|t| t.as_slice()),
+            None,
+        )
+        .await
+        .expect(ERR_INSERT);
+    }
+
+    // could detect that a second transaction would block here?
+    // depends on the backend. just checking that no SQL errors occur for now.
+    let removed = conn
+        .remove_all(
+            "cat",
+            Some(TagFilter::all_of(vec![
+                TagFilter::is_eq("t1", "del"),
+                TagFilter::is_eq("~t2", "del"),
+            ])),
+        )
+        .await
+        .expect(ERR_REMOVE_ALL);
+    assert_eq!(removed, 2);
 }
 
 pub async fn db_keypair_create_fetch<DB: Backend>(db: &Store<DB>) {

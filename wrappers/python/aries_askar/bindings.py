@@ -452,6 +452,27 @@ async def session_fetch_all(
     )
 
 
+async def session_remove_all(
+    handle: SessionHandle,
+    category: str,
+    tag_filter: [str, dict] = None,
+) -> int:
+    """Remove all matching rows in the Store."""
+    category = encode_str(category)
+    if isinstance(tag_filter, dict):
+        tag_filter = json.dumps(tag_filter)
+    tag_filter = encode_str(tag_filter)
+    return int(
+        await do_call_async(
+            "askar_session_remove_all",
+            handle,
+            category,
+            tag_filter,
+            return_type=c_int64,
+        )
+    )
+
+
 async def session_update(
     handle: SessionHandle,
     operation: EntryOperation,

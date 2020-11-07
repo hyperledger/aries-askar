@@ -10,9 +10,8 @@ use sqlx::{
 use super::error::Result;
 use super::future::{blocking, BoxFuture};
 use super::keys::store::StoreKey;
-use super::types::{EncEntryTag, Expiry, ProfileId};
+use super::types::{EncEntryTag, Expiry, ProfileId, TagFilter};
 use super::wql::{
-    self,
     sql::TagSqlEncoder,
     tags::{tag_query, TagQueryEncoder},
 };
@@ -277,25 +276,17 @@ pub fn expiry_timestamp(expire_ms: i64) -> Result<Expiry> {
 }
 
 pub async fn encode_tag_filter<Q: QueryPrepare>(
-    tag_filter: Option<wql::Query>,
-    key: Option<Arc<StoreKey>>,
+    tag_filter: Option<TagFilter>,
+    key: Arc<StoreKey>,
     offset: usize,
 ) -> Result<Option<(String, Vec<Vec<u8>>)>> {
     if let Some(tag_filter) = tag_filter {
         blocking(move || {
-            let tag_query = tag_query(tag_filter)?;
-            let mut enc = if let Some(key) = key {
-                let key2 = key.clone();
-                TagSqlEncoder::new(
-                    move |name| Ok(key.encrypt_tag_name(name)?),
-                    move |value| Ok(key2.encrypt_tag_value(value)?),
-                )
-            } else {
-                TagSqlEncoder::new(
-                    |name| Ok(name.as_bytes().to_vec()),
-                    |value| Ok(value.as_bytes().to_vec()),
-                )
-            };
+            let tag_query = tag_query(tag_filter.query)?;
+            let mut enc = TagSqlEncoder::new(
+                |name| Ok(key.encrypt_tag_name(name)?),
+                |value| Ok(key.encrypt_tag_value(value)?),
+            );
             if let Some(filter) = enc.encode_query(&tag_query)? {
                 let filter = replace_arg_placeholders::<Q>(&filter, (offset as i64) + 1);
                 Ok(Some((filter, enc.arguments)))

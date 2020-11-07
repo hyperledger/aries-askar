@@ -219,6 +219,17 @@ class Session:
             self.handle, EntryOperation.REMOVE, category, name
         )
 
+    async def remove_all(
+        self,
+        category: str,
+        tag_filter: [str, dict] = None,
+    ) -> int:
+        if not self.handle:
+            raise StoreError(
+                StoreErrorCode.WRAPPER, "Cannot remove all for closed session"
+            )
+        return await bindings.session_remove_all(self.handle, category, tag_filter)
+
     async def create_keypair(
         self, key_alg: KeyAlg, metadata: str = None, seed: [str, bytes] = None
     ) -> str:

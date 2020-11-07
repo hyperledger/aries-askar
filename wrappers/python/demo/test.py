@@ -91,6 +91,12 @@ async def basic_test():
         unpacked = await session.unpack_message(packed)
         log("Unpacked message:", unpacked)
 
+        # Remove rows by category and (optional) tag filter
+        log(
+            "Removed:",
+            await session.remove_all("category", {"~plaintag": "a", "enctag": "b"}),
+        )
+
 
 async def open_test(key):
     store = await Store.open(REPO_URI, key)
