@@ -77,16 +77,17 @@ impl<'a> SqliteStoreOptions<'a> {
             CREATE UNIQUE INDEX ix_items_uniq ON items (profile_id, kind, category, name);
 
             CREATE TABLE items_tags (
+                id INTEGER NOT NULL,
                 item_id INTEGER NOT NULL,
                 name BLOB NOT NULL,
                 value BLOB NOT NULL,
                 plaintext BOOLEAN NOT NULL,
-                PRIMARY KEY (name, plaintext, item_id),
+                PRIMARY KEY (id),
                 FOREIGN KEY (item_id) REFERENCES items (id)
                     ON DELETE CASCADE ON UPDATE CASCADE
             );
             CREATE INDEX ix_items_tags_item_id ON items_tags (item_id);
-            CREATE INDEX ix_items_tags_value ON items_tags (plaintext, SUBSTR(value, 0, 12));
+            CREATE INDEX ix_items_tags_value ON items_tags (plaintext, name, SUBSTR(value, 0, 12));
 
             CREATE TABLE items_locks (
                 id INTEGER NOT NULL,

@@ -4,7 +4,7 @@ use std::ptr;
 use std::str::FromStr;
 
 use serde::{
-    de::{Error as SerdeError, MapAccess, Visitor},
+    de::{Error as SerdeError, MapAccess, SeqAccess, Visitor},
     ser::SerializeMap,
     Deserialize, Deserializer, Serialize, Serializer,
 };
@@ -170,13 +170,30 @@ impl<'de> Deserialize<'de> for EntryTagSet {
             {
                 let mut v = Vec::with_capacity(access.size_hint().unwrap_or_default());
 
-                while let Some((key, value)) = access.next_entry::<&str, String>()? {
-                    let tag = match key.chars().next() {
-                        Some('~') => EntryTag::Plaintext(key[1..].to_owned(), value),
+                while let Some((key, values)) = access.next_entry::<&str, EntryTagValues>()? {
+                    let (tag, enc) = match key.chars().next() {
+                        Some('~') => (key[1..].to_owned(), false),
                         None => return Err(M::Error::custom("invalid tag name: empty string")),
-                        _ => EntryTag::Encrypted(key.to_owned(), value),
+                        _ => (key.to_owned(), true),
                     };
-                    v.push(tag)
+                    match (values, enc) {
+                        (EntryTagValues::Single(value), true) => {
+                            v.push(EntryTag::Encrypted(tag, value))
+                        }
+                        (EntryTagValues::Single(value), false) => {
+                            v.push(EntryTag::Plaintext(tag, value))
+                        }
+                        (EntryTagValues::Multiple(values), true) => {
+                            for value in values {
+                                v.push(EntryTag::Encrypted(tag.clone(), value))
+                            }
+                        }
+                        (EntryTagValues::Multiple(values), false) => {
+                            for value in values {
+                                v.push(EntryTag::Plaintext(tag.clone(), value))
+                            }
+                        }
+                    }
                 }
 
                 Ok(EntryTagSet(v))
@@ -187,12 +204,72 @@ impl<'de> Deserialize<'de> for EntryTagSet {
     }
 }
 
+enum EntryTagValues {
+    Single(String),
+    Multiple(Vec<String>),
+}
+
+impl<'de> Deserialize<'de> for EntryTagValues {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct TagValuesVisitor;
+
+        impl<'d> Visitor<'d> for TagValuesVisitor {
+            type Value = EntryTagValues;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("a string or list of strings")
+            }
+
+            fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+            where
+                E: SerdeError,
+            {
+                Ok(EntryTagValues::Single(value.to_owned()))
+            }
+
+            fn visit_string<E>(self, value: String) -> Result<Self::Value, E>
+            where
+                E: SerdeError,
+            {
+                Ok(EntryTagValues::Single(value))
+            }
+
+            fn visit_seq<S>(self, mut access: S) -> Result<Self::Value, S::Error>
+            where
+                S: SeqAccess<'d>,
+            {
+                let mut v = Vec::with_capacity(access.size_hint().unwrap_or_default());
+                while let Some(value) = access.next_element()? {
+                    v.push(value)
+                }
+                Ok(EntryTagValues::Multiple(v))
+            }
+        }
+
+        deserializer.deserialize_any(TagValuesVisitor)
+    }
+}
+
 impl Serialize for EntryTagSet {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
+        use std::collections::BTreeMap;
+
+        #[derive(PartialOrd, Ord)]
         struct TagName<'a>(&'a str, bool);
+
+        impl<'a> PartialEq for TagName<'a> {
+            fn eq(&self, other: &Self) -> bool {
+                self.1 == other.1 && self.0 == other.0
+            }
+        }
+
+        impl<'a> Eq for TagName<'a> {}
 
         impl Serialize for TagName<'_> {
             fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
@@ -200,20 +277,29 @@ impl Serialize for EntryTagSet {
                 S: Serializer,
             {
                 if self.1 {
-                    serializer.serialize_str(self.0)
+                    serializer.serialize_str(&self.0)
                 } else {
                     serializer.collect_str(&format_args!("~{}", self.0))
                 }
             }
         }
 
-        let mut map = serializer.serialize_map(Some(self.0.len()))?;
+        let mut tags = BTreeMap::new();
         for tag in self.0.iter() {
-            let (name, value, enc) = match tag {
-                EntryTag::Encrypted(name, val) => (name.as_str(), val.as_str(), true),
-                EntryTag::Plaintext(name, val) => (name.as_str(), val.as_str(), false),
+            let (name, value) = match tag {
+                EntryTag::Encrypted(name, val) => (TagName(name.as_str(), true), val.as_str()),
+                EntryTag::Plaintext(name, val) => (TagName(name.as_str(), false), val.as_str()),
             };
-            map.serialize_entry(&TagName(name, enc), value)?;
+            tags.entry(name).or_insert_with(|| vec![]).push(value);
+        }
+
+        let mut map = serializer.serialize_map(Some(tags.len()))?;
+        for (tag_name, values) in tags.into_iter() {
+            if values.len() > 1 {
+                map.serialize_entry(&tag_name, &values)?;
+            } else {
+                map.serialize_entry(&tag_name, &values[0])?;
+            }
         }
         map.end()
     }
@@ -344,9 +430,10 @@ mod tests {
         let tags = EntryTagSet(vec![
             EntryTag::Encrypted("a".to_owned(), "aval".to_owned()),
             EntryTag::Plaintext("b".to_owned(), "bval".to_owned()),
+            EntryTag::Plaintext("b".to_owned(), "bval-2".to_owned()),
         ]);
         let ser = serde_json::to_string(&tags).unwrap();
-        assert_eq!(ser, r#"{"a":"aval","~b":"bval"}"#);
+        assert_eq!(ser, r#"{"a":"aval","~b":["bval","bval-2"]}"#);
         let tags2 = serde_json::from_str(&ser).unwrap();
         assert_eq!(tags, tags2);
     }

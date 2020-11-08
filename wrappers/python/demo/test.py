@@ -9,8 +9,13 @@ from aries_askar.bindings import (
 )
 from aries_askar import KeyAlg, Store
 
-# REPO_URI = "postgres://postgres:pgpass@localhost:5432/test_wallet2"
-REPO_URI = "sqlite://:memory:"
+if len(sys.argv) > 1:
+    REPO_URI = sys.argv[1]
+    if REPO_URI == "postgres":
+        REPO_URI = "postgres://postgres:pgpass@localhost:5432/askar"
+else:
+    REPO_URI = "sqlite://:memory:"
+
 ENCRYPT = True
 
 
@@ -40,7 +45,7 @@ async def basic_test():
 
         # Insert a new entry
         await txn.insert(
-            "category", "name", b"value", {"~plaintag": "a", "enctag": "b"}
+            "category", "name", b"value", {"~plaintag": "a", "enctag": ["b", "c"]}
         )
         log("Inserted entry")
 
@@ -94,27 +99,16 @@ async def basic_test():
         # Remove rows by category and (optional) tag filter
         log(
             "Removed:",
-            await session.remove_all("category", {"~plaintag": "a", "enctag": "b"}),
+            await session.remove_all(
+                "category",
+                {"~plaintag": "a", "$and": [{"enctag": "b"}, {"enctag": "c"}]},
+            ),
         )
-
-
-async def open_test(key):
-    store = await Store.open(REPO_URI, key)
-    log("Opened store:", store)
-
-    # Scan entries by category and (optional) tag filter)
-    async for row in store.scan("category"):
-        log("Scan result:", row)
 
 
 if __name__ == "__main__":
     log("aries-askar version:", version())
 
-    key = sys.argv[1] if len(sys.argv) > 1 else None
-
-    if key:
-        asyncio.get_event_loop().run_until_complete(open_test(key))
-    else:
-        asyncio.get_event_loop().run_until_complete(basic_test())
+    asyncio.get_event_loop().run_until_complete(basic_test())
 
     log("done")
