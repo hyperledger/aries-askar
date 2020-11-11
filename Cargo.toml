@@ -64,3 +64,9 @@ features = ["chrono", "runtime-async-std"]
 [dev-dependencies]
 rand = "0.7"
 rand_chacha = "=0.2.1"
+
+[[test]]
+name = "backends"
+
+[[test]]
+name = "faber"
