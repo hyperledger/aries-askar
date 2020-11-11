@@ -96,10 +96,13 @@ impl PostgresStoreOptions {
                 {
                     Ok(_) => (),
                     Err(SqlxError::Database(db_err))
-                        if db_err.code() == Some(Cow::Borrowed("42P04")) =>
+                        if db_err.code() == Some(Cow::Borrowed("23505"))
+                            || db_err.code() == Some(Cow::Borrowed("42P04")) =>
                     {
-                        // duplicate database error. assume another connection created the
-                        // database before we could and continue
+                        // 23505 is 'duplicate key value violates unique constraint'
+                        // 42P04 is 'duplicate database error'
+                        // in either case, assume another connection created the database
+                        // before we could and continue
                     }
                     Err(err) => {
                         return Err(err_msg!(Backend, "Error creating database").with_cause(err))
