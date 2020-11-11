@@ -21,7 +21,7 @@ use crate::any::{AnySession, AnyStore};
 use crate::error::Result as KvResult;
 use crate::future::spawn_ok;
 use crate::keys::{wrap::WrapKeyMethod, KeyAlg, KeyCategory, KeyEntry};
-use crate::store::{OpenStore, ProvisionStore, ProvisionStoreSpec, Scan};
+use crate::store::{ManageBackend, Scan};
 use crate::types::{Entry, EntryOperation, EntryTagSet, TagFilter};
 
 new_handle_type!(StoreHandle, FFI_STORE_COUNTER);
@@ -238,6 +238,7 @@ pub extern "C" fn askar_store_provision(
     spec_uri: FfiStr,
     wrap_key_method: FfiStr,
     pass_key: FfiStr,
+    recreate: i8,
     cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, handle: StoreHandle)>,
     cb_id: CallbackId,
 ) -> ErrorCode {
@@ -258,8 +259,7 @@ pub extern "C" fn askar_store_provision(
         );
         spawn_ok(async move {
             let result = async {
-                let spec = ProvisionStoreSpec::create(wrap_key_method, pass_key.as_ref().map(String::as_str)).await?;
-                let store = spec_uri.provision_store(spec).await?;
+                let store = spec_uri.provision_backend(wrap_key_method, pass_key.as_ref().map(String::as_str), recreate != 0).await?;
                 Ok(StoreHandle::create(store).await)
             }.await;
             cb.resolve(result);
@@ -271,6 +271,7 @@ pub extern "C" fn askar_store_provision(
 #[no_mangle]
 pub extern "C" fn askar_store_open(
     spec_uri: FfiStr,
+    wrap_key_method: FfiStr,
     pass_key: FfiStr,
     cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, handle: StoreHandle)>,
     cb_id: CallbackId,
@@ -279,6 +280,10 @@ pub extern "C" fn askar_store_open(
         trace!("Open store");
         let cb = cb.ok_or_else(|| err_msg!("No callback provided"))?;
         let spec_uri = spec_uri.into_opt_string().ok_or_else(|| err_msg!("No store URI provided"))?;
+        let wrap_key_method = match wrap_key_method.as_opt_str() {
+            Some(method) => Some(WrapKeyMethod::parse_uri(method)?),
+            None => None
+        };
         let pass_key = zeroize::Zeroizing::new(pass_key.into_opt_string());
         let cb = EnsureCallback::new(move |result|
             match result {
@@ -288,8 +293,35 @@ pub extern "C" fn askar_store_open(
         );
         spawn_ok(async move {
             let result = async {
-                let store = spec_uri.open_store(pass_key.as_ref().map(String::as_str)).await?;
+                let store = spec_uri.open_backend(wrap_key_method, pass_key.as_ref().map(String::as_str)).await?;
                 Ok(StoreHandle::create(store).await)
+            }.await;
+            cb.resolve(result);
+        });
+        Ok(ErrorCode::Success)
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn askar_store_remove(
+    spec_uri: FfiStr,
+    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, i8)>,
+    cb_id: CallbackId,
+) -> ErrorCode {
+    catch_err! {
+        trace!("Remove store");
+        let cb = cb.ok_or_else(|| err_msg!("No callback provided"))?;
+        let spec_uri = spec_uri.into_opt_string().ok_or_else(|| err_msg!("No store URI provided"))?;
+        let cb = EnsureCallback::new(move |result: KvResult<bool>|
+            match result {
+                Ok(removed) => cb(cb_id, ErrorCode::Success, removed as i8),
+                Err(err) => cb(cb_id, set_last_error(Some(err)), 0),
+            }
+        );
+        spawn_ok(async move {
+            let result = async {
+                let removed = spec_uri.remove_backend().await?;
+                Ok(removed)
             }.await;
             cb.resolve(result);
         });

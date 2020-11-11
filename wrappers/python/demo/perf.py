@@ -8,7 +8,7 @@ from aries_askar import Store
 if len(sys.argv) > 1:
     REPO_URI = sys.argv[1]
     if REPO_URI == "postgres":
-        REPO_URI = "postgres://postgres:pgpass@localhost:5432/askar"
+        REPO_URI = "postgres://postgres:pgpass@localhost:5432/askar-test"
 else:
     REPO_URI = "sqlite://:memory:"
 

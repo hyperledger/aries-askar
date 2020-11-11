@@ -1,6 +1,6 @@
 mod utils;
 
-macro_rules! db_tests {
+macro_rules! backend_tests {
     ($init:expr) => {
         use aries_askar::future::block_on;
 
@@ -166,41 +166,79 @@ macro_rules! db_tests {
 #[cfg(feature = "sqlite")]
 mod sqlite {
     use aries_askar::sqlite::{SqliteStore, SqliteStoreOptions};
-    use aries_askar::{ProvisionStore, ProvisionStoreSpec, Store};
+    use aries_askar::{generate_raw_wrap_key, ManageBackend, Store, WrapKeyMethod};
+    use std::path::Path;
+
+    #[test]
+    fn create_remove_db() {
+        env_logger::builder().is_test(true).try_init().unwrap_or(());
+        let fname = format!("sqlite-test-{}.db", uuid::Uuid::new_v4().to_string());
+        assert_eq!(
+            Path::new(&fname).exists(),
+            false,
+            "Oops, should be a unique filename"
+        );
+
+        let key = generate_raw_wrap_key(None).expect("Error creating raw key");
+        block_on(async move {
+            assert_eq!(
+                SqliteStoreOptions::new(fname.as_str())
+                    .expect("Error initializing sqlite store options")
+                    .remove_backend()
+                    .await
+                    .expect("Error removing sqlite store"),
+                false
+            );
+
+            SqliteStoreOptions::new(fname.as_str())
+                .expect("Error initializing sqlite store options")
+                .provision_backend(WrapKeyMethod::RawKey, Some(&key), false)
+                .await
+                .expect("Error provisioning sqlite store")
+                .close()
+                .await
+                .expect("Error closing sqlite store");
+            assert_eq!(Path::new(&fname).exists(), true);
+
+            assert_eq!(
+                SqliteStoreOptions::new(fname.as_str())
+                    .expect("Error initializing sqlite store options")
+                    .remove_backend()
+                    .await
+                    .expect("Error removing sqlite store"),
+                true
+            );
+            assert_eq!(Path::new(&fname).exists(), false);
+        })
+    }
 
     async fn init_db() -> Store<SqliteStore> {
         env_logger::builder().is_test(true).try_init().unwrap_or(());
-        let spec = ProvisionStoreSpec::create_default()
-            .await
-            .expect("Error creating provision spec");
+        let key = generate_raw_wrap_key(None).expect("Error creating raw key");
         SqliteStoreOptions::in_memory()
-            .provision_store(spec)
+            .provision(WrapKeyMethod::RawKey, Some(&key), false)
             .await
             .expect("Error provisioning sqlite store")
     }
 
-    db_tests!(init_db());
+    backend_tests!(init_db());
 
     #[test]
     fn provision_from_str() {
+        let key = generate_raw_wrap_key(None).expect("Error creating raw key");
+
         block_on(async {
             let db_url = "sqlite://:memory:";
-            let spec = ProvisionStoreSpec::create_default()
-                .await
-                .expect("Error creating provision spec");
             let _db = db_url
-                .provision_store(spec)
+                .provision_backend(WrapKeyMethod::RawKey, Some(&key), false)
                 .await
                 .expect("Error provisioning store");
         });
 
         block_on(async {
             let db_url = "not-sqlite://test-db";
-            let spec = ProvisionStoreSpec::create_default()
-                .await
-                .expect("Error creating provision spec");
             let _db = db_url
-                .provision_store(spec)
+                .provision_backend(WrapKeyMethod::RawKey, Some(&key), false)
                 .await
                 .expect_err("Expected provision failure");
         });
@@ -218,5 +256,5 @@ mod postgres {
             .expect("Error provisioning postgres test database")
     }
 
-    db_tests!(init_db());
+    backend_tests!(init_db());
 }

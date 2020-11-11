@@ -52,7 +52,7 @@ pub use self::keys::{
 };
 
 mod store;
-pub use self::store::{Backend, ProvisionStore, ProvisionStoreSpec, QueryBackend, Session, Store};
+pub use self::store::{Backend, ManageBackend, QueryBackend, Session, Store};
 
 mod types;
 pub use self::types::{Entry, EntryTag, TagFilter};

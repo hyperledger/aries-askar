@@ -1,9 +1,8 @@
 use super::error::Result;
 use super::future::BoxFuture;
+use super::keys::wrap::WrapKeyMethod;
 use super::options::IntoOptions;
-use super::store::{
-    Backend, OpenStore, ProvisionStore, ProvisionStoreSpec, QueryBackend, Scan, Session, Store,
-};
+use super::store::{Backend, ManageBackend, QueryBackend, Scan, Session, Store};
 use super::types::{Entry, EntryKind, EntryOperation, EntryTag, TagFilter};
 
 #[cfg(feature = "postgres")]
@@ -265,40 +264,14 @@ impl QueryBackend for AnyQueryBackend {
     }
 }
 
-impl<'a> ProvisionStore<'a> for &'a str {
+impl<'a> ManageBackend<'a> for &'a str {
     type Store = AnyStore;
 
-    fn provision_store(self, spec: ProvisionStoreSpec) -> BoxFuture<'a, Result<Self::Store>> {
-        Box::pin(async move {
-            let opts = self.into_options()?;
-            debug!("Provision store with options: {:?}", &opts);
-
-            match opts.schema.as_ref() {
-                #[cfg(feature = "postgres")]
-                "postgres" => {
-                    let opts = super::postgres::PostgresStoreOptions::new(opts)?;
-                    let mgr = opts.provision_store(spec).await?;
-                    Ok(Store::new(AnyBackend::Postgres(mgr.into_inner())))
-                }
-
-                #[cfg(feature = "sqlite")]
-                "sqlite" => {
-                    let opts = super::sqlite::SqliteStoreOptions::new(opts)?;
-                    let mgr = opts.provision_store(spec).await?;
-                    Ok(Store::new(AnyBackend::Sqlite(mgr.into_inner())))
-                }
-
-                _ => Err(err_msg!(Unsupported, "Invalid backend: {}", &opts.schema)),
-            }
-        })
-    }
-}
-
-impl<'a> OpenStore<'a> for &'a str {
-    fn open_store(
+    fn open_backend(
         self,
+        method: Option<WrapKeyMethod>,
         pass_key: Option<&'a str>,
-    ) -> BoxFuture<'a, Result<<Self as ProvisionStore>::Store>> {
+    ) -> BoxFuture<'a, Result<Self::Store>> {
         Box::pin(async move {
             let opts = self.into_options()?;
             debug!("Open store with options: {:?}", &opts);
@@ -307,15 +280,68 @@ impl<'a> OpenStore<'a> for &'a str {
                 #[cfg(feature = "postgres")]
                 "postgres" => {
                     let opts = super::postgres::PostgresStoreOptions::new(opts)?;
-                    let mgr = opts.open_store(pass_key).await?;
+                    let mgr = opts.open(method, pass_key).await?;
                     Ok(Store::new(AnyBackend::Postgres(mgr.into_inner())))
                 }
 
                 #[cfg(feature = "sqlite")]
                 "sqlite" => {
                     let opts = super::sqlite::SqliteStoreOptions::new(opts)?;
-                    let mgr = opts.open_store(pass_key).await?;
+                    let mgr = opts.open(method, pass_key).await?;
                     Ok(Store::new(AnyBackend::Sqlite(mgr.into_inner())))
+                }
+
+                _ => Err(err_msg!(Unsupported, "Invalid backend: {}", &opts.schema)),
+            }
+        })
+    }
+
+    fn provision_backend(
+        self,
+        method: WrapKeyMethod,
+        pass_key: Option<&'a str>,
+        recreate: bool,
+    ) -> BoxFuture<'a, Result<Self::Store>> {
+        Box::pin(async move {
+            let opts = self.into_options()?;
+            debug!("Provision store with options: {:?}", &opts);
+
+            match opts.schema.as_ref() {
+                #[cfg(feature = "postgres")]
+                "postgres" => {
+                    let opts = super::postgres::PostgresStoreOptions::new(opts)?;
+                    let mgr = opts.provision(method, pass_key, recreate).await?;
+                    Ok(Store::new(AnyBackend::Postgres(mgr.into_inner())))
+                }
+
+                #[cfg(feature = "sqlite")]
+                "sqlite" => {
+                    let opts = super::sqlite::SqliteStoreOptions::new(opts)?;
+                    let mgr = opts.provision(method, pass_key, recreate).await?;
+                    Ok(Store::new(AnyBackend::Sqlite(mgr.into_inner())))
+                }
+
+                _ => Err(err_msg!(Unsupported, "Invalid backend: {}", &opts.schema)),
+            }
+        })
+    }
+
+    fn remove_backend(self) -> BoxFuture<'a, Result<bool>> {
+        Box::pin(async move {
+            let opts = self.into_options()?;
+            debug!("Remove store with options: {:?}", &opts);
+
+            match opts.schema.as_ref() {
+                #[cfg(feature = "postgres")]
+                "postgres" => {
+                    let opts = super::postgres::PostgresStoreOptions::new(opts)?;
+                    Ok(opts.remove().await?)
+                }
+
+                #[cfg(feature = "sqlite")]
+                "sqlite" => {
+                    let opts = super::sqlite::SqliteStoreOptions::new(opts)?;
+                    Ok(opts.remove().await?)
                 }
 
                 _ => Err(err_msg!(Unsupported, "Invalid backend: {}", &opts.schema)),

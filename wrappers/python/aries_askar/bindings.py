@@ -333,31 +333,42 @@ def version() -> str:
     return lib_string(lib.askar_version()).value.decode("utf-8")
 
 
-async def store_provision(
+async def store_open(
     uri: str, wrap_method: str = None, pass_key: str = None
 ) -> StoreHandle:
-    """Provision a new Store and return the open handle."""
-    uri_p = encode_str(uri)
-    wrap_method_p = encode_str(wrap_method and wrap_method.lower())
-    pass_key_p = encode_str(pass_key)
+    """Open an existing Store and return the open handle."""
     return await do_call_async(
-        "askar_store_provision",
-        uri_p,
-        wrap_method_p,
-        pass_key_p,
+        "askar_store_open",
+        encode_str(uri),
+        encode_str(wrap_method and wrap_method.lower()),
+        encode_str(pass_key),
         return_type=StoreHandle,
     )
 
 
-async def store_open(uri: str, pass_key: str = None) -> StoreHandle:
-    """Open an existing Store and return the open handle."""
-    uri_p = encode_str(uri)
-    pass_key_p = encode_str(pass_key)
+async def store_provision(
+    uri: str, wrap_method: str = None, pass_key: str = None, recreate: bool = False
+) -> StoreHandle:
+    """Provision a new Store and return the open handle."""
     return await do_call_async(
-        "askar_store_open",
-        uri_p,
-        pass_key_p,
+        "askar_store_provision",
+        encode_str(uri),
+        encode_str(wrap_method and wrap_method.lower()),
+        encode_str(pass_key),
+        c_int8(recreate),
         return_type=StoreHandle,
+    )
+
+
+async def store_remove(uri: str) -> bool:
+    """Remove an existing Store, if any."""
+    return (
+        await do_call_async(
+            "askar_store_remove",
+            encode_str(uri),
+            return_type=c_int8,
+        )
+        != 0
     )
 
 

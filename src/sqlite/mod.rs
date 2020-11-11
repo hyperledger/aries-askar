@@ -16,8 +16,8 @@ use super::db_utils::{
 };
 use super::error::Result;
 use super::future::{blocking_scoped, BoxFuture};
-use super::keys::{store::StoreKey, EntryEncryptor};
-use super::store::{Backend, KeyCache, QueryBackend, Scan};
+use super::keys::{store::StoreKey, EntryEncryptor, KeyCache};
+use super::store::{Backend, QueryBackend, Scan};
 use super::types::{EncEntryTag, Entry, EntryKind, EntryOperation, EntryTag, ProfileId, TagFilter};
 
 mod provision;
@@ -51,7 +51,7 @@ pub struct SqliteStore {
     conn_pool: SqlitePool,
     default_profile: String,
     key_cache: KeyCache,
-    uri: String,
+    path: String,
 }
 
 impl SqliteStore {
@@ -59,13 +59,13 @@ impl SqliteStore {
         conn_pool: SqlitePool,
         default_profile: String,
         key_cache: KeyCache,
-        uri: String,
+        path: String,
     ) -> Self {
         Self {
             conn_pool,
             default_profile,
             key_cache,
-            uri,
+            path,
         }
     }
 
@@ -91,7 +91,7 @@ impl Debug for SqliteStore {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         f.debug_struct("SqliteStore")
             .field("default_profile", &self.default_profile)
-            .field("uri", &self.uri)
+            .field("path", &self.path)
             .finish()
     }
 }
@@ -464,14 +464,14 @@ mod tests {
     use super::*;
     use crate::db_utils::replace_arg_placeholders;
     use crate::future::block_on;
-    use crate::store::{ProvisionStore, ProvisionStoreSpec};
+    use crate::keys::wrap::{generate_raw_wrap_key, WrapKeyMethod};
 
     #[test]
     fn sqlite_check_expiry_timestamp() {
         block_on(async {
-            let spec = ProvisionStoreSpec::create_default().await?;
+            let key = generate_raw_wrap_key(None)?;
             let db = SqliteStoreOptions::in_memory()
-                .provision_store(spec)
+                .provision(WrapKeyMethod::RawKey, Some(&key), false)
                 .await?;
             let ts = expiry_timestamp(1000).unwrap();
             let check = sqlx::query("SELECT datetime('now'), ?1, ?1 > datetime('now')")

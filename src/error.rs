@@ -84,7 +84,7 @@ impl Display for Error {
             f.write_str(self.kind.as_str())?;
         }
         if let Some(cause) = self.cause.as_ref() {
-            write!(f, "Caused by: {}", cause)?;
+            write!(f, "\nCaused by: {}", cause)?;
         }
         Ok(())
     }
@@ -114,9 +114,11 @@ impl From<ErrorKind> for Error {
     }
 }
 
+// FIXME would be preferable to remove this auto-conversion and handle
+// all sqlx errors manually, to ensure there is some context around the error
 impl From<sqlx::Error> for Error {
     fn from(err: sqlx::Error) -> Self {
-        Error::from_msg(ErrorKind::Backend, err.to_string()).with_cause(err)
+        Error::from(ErrorKind::Backend).with_cause(err)
     }
 }
 

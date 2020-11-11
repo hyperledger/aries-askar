@@ -2,22 +2,31 @@ use std::borrow::Cow;
 use std::time::Duration;
 
 use sqlx::{
-    postgres::{PgPool, PgPoolOptions},
-    Executor, Row,
+    postgres::{PgConnection, PgPool, PgPoolOptions, Postgres},
+    Connection, Error as SqlxError, Executor, Row, Transaction,
 };
 
+use crate::db_utils::ProvisionStoreSpec;
 use crate::error::Result;
 use crate::future::BoxFuture;
-use crate::keys::wrap::WrapKeyReference;
+use crate::keys::{
+    wrap::{WrapKeyMethod, WrapKeyReference},
+    KeyCache,
+};
 use crate::options::IntoOptions;
-use crate::store::{KeyCache, OpenStore, ProvisionStore, ProvisionStoreSpec, Store};
+use crate::store::{ManageBackend, Store};
 
 use super::PostgresStore;
 
+const DEFAULT_CONNECT_TIMEOUT: u64 = 30;
+
 #[derive(Debug)]
 pub struct PostgresStoreOptions {
-    uri: String,
-    admin_uri: Option<String>,
+    pub(crate) connect_timeout: Duration,
+    pub(crate) uri: String,
+    pub(crate) admin_uri: String,
+    pub(crate) host: String,
+    pub(crate) name: String,
 }
 
 impl PostgresStoreOptions {
@@ -26,160 +35,171 @@ impl PostgresStoreOptions {
         O: IntoOptions<'a>,
     {
         let mut opts = options.into_options()?;
-        let admin_user = opts.query.remove("admin_username");
+        let admin_acct = opts.query.remove("admin_account");
         let admin_pass = opts.query.remove("admin_password");
         let uri = opts.clone().into_uri();
-        let admin_uri = if admin_user.is_some() || admin_pass.is_some() {
-            if let Some(admin_user) = admin_user {
-                opts.user = Cow::Owned(admin_user);
+        if admin_acct.is_some() || admin_pass.is_some() {
+            if let Some(admin_acct) = admin_acct {
+                opts.user = Cow::Owned(admin_acct);
             }
             if let Some(admin_pass) = admin_pass {
                 opts.password = Cow::Owned(admin_pass);
             }
-            Some(opts.into_uri())
-        } else {
-            None
-        };
-        Ok(Self { uri, admin_uri })
+        }
+        let host = opts.host.to_string();
+        let path = opts.path.as_ref();
+        if path.len() < 2 {
+            return Err(err_msg!("Missing database name"));
+        }
+        let name = (&path[1..]).to_string();
+        if name.find(|c| c == '"' || c == '\0').is_some() {
+            return Err(err_msg!(
+                "Invalid character in database name: '\"' and '\\0' are disallowed"
+            ));
+        }
+        // admin user selects no default database
+        opts.path = Cow::Borrowed("");
+        Ok(Self {
+            connect_timeout: Duration::from_secs(DEFAULT_CONNECT_TIMEOUT),
+            uri,
+            admin_uri: opts.into_uri(),
+            host,
+            name,
+        })
     }
 
-    async fn provision(self, spec: ProvisionStoreSpec) -> Result<Store<PostgresStore>> {
-        let mut conn_pool = PgPoolOptions::default()
-            .connect_timeout(Duration::from_secs(10))
-            .min_connections(1)
+    async fn pool(&self) -> std::result::Result<PgPool, SqlxError> {
+        PgPoolOptions::default()
+            .connect_timeout(self.connect_timeout)
+            .min_connections(0)
             .max_connections(10)
             .test_before_acquire(false)
-            .connect(
-                self.admin_uri
-                    .as_ref()
-                    .map(String::as_str)
-                    .unwrap_or_else(|| self.uri.as_str()),
-            )
-            .await?;
+            .connect(self.uri.as_str())
+            .await
+    }
 
-        let (default_profile, key_cache) = init_db(&conn_pool, spec, false).await?;
-
-        if self.admin_uri.is_some() {
-            conn_pool = PgPool::connect(self.uri.as_str()).await?;
+    pub(crate) async fn create_db_pool(&self) -> Result<PgPool> {
+        // try connecting normally in case the database exists
+        match self.pool().await {
+            Ok(pool) => Ok(pool),
+            Err(SqlxError::Database(db_err)) if db_err.code() == Some(Cow::Borrowed("3D000")) => {
+                // error 3D000 is INVALID CATALOG NAME in postgres,
+                // this indicates that the database does not exist
+                let mut admin_conn = PgConnection::connect(self.admin_uri.as_ref()).await?;
+                // any character except NUL is allowed in an identifier.
+                // double quotes must be escaped, but we just disallow those
+                let create_q = format!("CREATE DATABASE \"{}\"", self.name);
+                match sqlx::query(&create_q)
+                    .persistent(false)
+                    .execute(&mut admin_conn)
+                    .await
+                {
+                    Ok(_) => (),
+                    Err(SqlxError::Database(db_err))
+                        if db_err.code() == Some(Cow::Borrowed("42P04")) =>
+                    {
+                        // duplicate database error. assume another connection created the
+                        // database before we could and continue
+                    }
+                    Err(err) => {
+                        return Err(err_msg!(Backend, "Error creating database").with_cause(err))
+                    }
+                }
+                Ok(self.pool().await?)
+            }
+            Err(err) => return Err(err_msg!(Backend, "Error opening database").with_cause(err)),
         }
+    }
+
+    pub async fn provision(
+        self,
+        method: WrapKeyMethod,
+        pass_key: Option<&str>,
+        recreate: bool,
+    ) -> Result<Store<PostgresStore>> {
+        let conn_pool = self.create_db_pool().await?;
+        let mut txn = conn_pool.begin().await?;
+
+        if recreate {
+            // remove expected tables
+            reset_db(&mut *txn).await?;
+        } else {
+            if sqlx::query_scalar::<_, i64>(
+                "SELECT COUNT(*) FROM information_schema.tables
+                WHERE table_schema='public' AND table_name='config'",
+            )
+            .fetch_one(&mut txn)
+            .await?
+                == 1
+            {
+                // proceed to open, will fail if the version doesn't match
+                return open_db(conn_pool, Some(method), pass_key, self.host, self.name).await;
+            }
+            // no 'config' table, assume empty database
+        }
+
+        let spec = ProvisionStoreSpec::create(method, pass_key).await?;
+        let (default_profile, key_cache) = init_db(txn, spec).await?;
 
         Ok(Store::new(PostgresStore::new(
             conn_pool,
             default_profile,
             key_cache,
-            self.uri.clone(),
+            self.host,
+            self.name,
         )))
     }
 
-    async fn open(self, pass_key: Option<&str>) -> Result<Store<PostgresStore>> {
+    pub async fn open(
+        self,
+        method: Option<WrapKeyMethod>,
+        pass_key: Option<&str>,
+    ) -> Result<Store<PostgresStore>> {
         let conn_pool = PgPoolOptions::default()
             .connect_timeout(Duration::from_secs(10))
-            .min_connections(1)
+            .min_connections(0)
             .max_connections(10)
             .test_before_acquire(false)
-            .connect(
-                self.admin_uri
-                    .as_ref()
-                    .map(String::as_str)
-                    .unwrap_or_else(|| self.uri.as_str()),
-            )
+            .connect(self.uri.as_str())
             .await?;
 
-        let mut conn = conn_pool.acquire().await?;
-        let mut ver_ok = false;
-        let mut default_profile: Option<String> = None;
-        let mut wrap_key_ref: Option<String> = None;
+        open_db(conn_pool, method, pass_key, self.host, self.name).await
+    }
 
-        let config = sqlx::query(
-            r#"SELECT name, value FROM config
-            WHERE name IN ('default_profile', 'version', 'wrap_key')"#,
-        )
-        .fetch_all(&mut conn)
-        .await?;
-        for row in config {
-            match row.try_get(0)? {
-                "default_profile" => {
-                    default_profile.replace(row.try_get(1)?);
-                }
-                "version" => {
-                    if row.try_get::<&str, _>(1)? != "1" {
-                        return Err(err_msg!(Unsupported, "Unsupported store version"));
-                    }
-                    ver_ok = true;
-                }
-                "wrap_key" => {
-                    wrap_key_ref.replace(row.try_get(1)?);
-                }
-                _ => (),
-            }
-        }
-        if !ver_ok {
-            return Err(err_msg!(Unsupported, "Store version not found"));
-        }
-        let default_profile = default_profile
-            .ok_or_else(|| err_msg!(Unsupported, "Default store profile not found"))?;
-        let wrap_key = if let Some(wrap_key_ref) = wrap_key_ref {
-            WrapKeyReference::parse_uri(&wrap_key_ref)?
-                .resolve(pass_key)
-                .await?
-        } else {
-            return Err(err_msg!(Unsupported, "Store wrap key not found"));
-        };
-        let mut key_cache = KeyCache::new(wrap_key);
-
-        let row = sqlx::query("SELECT id, store_key FROM profiles WHERE name = $1")
-            .bind(&default_profile)
-            .fetch_one(&mut conn)
-            .await?;
-        let profile_id = row.try_get(0)?;
-        let store_key = key_cache.load_key(row.try_get(1)?).await?;
-        key_cache.add_profile(default_profile.clone(), profile_id, store_key);
-
-        Ok(Store::new(PostgresStore::new(
-            conn_pool,
-            default_profile,
-            key_cache,
-            self.uri.clone(),
-        )))
+    pub async fn remove(self) -> Result<bool> {
+        Ok(false)
     }
 }
 
-impl<'a> ProvisionStore<'a> for PostgresStoreOptions {
+impl<'a> ManageBackend<'a> for PostgresStoreOptions {
     type Store = Store<PostgresStore>;
 
-    fn provision_store(
+    fn open_backend(
         self,
-        spec: ProvisionStoreSpec,
+        method: Option<WrapKeyMethod>,
+        pass_key: Option<&'a str>,
     ) -> BoxFuture<'a, Result<Store<PostgresStore>>> {
-        Box::pin(self.provision(spec))
+        Box::pin(self.open(method, pass_key))
+    }
+
+    fn provision_backend(
+        self,
+        method: WrapKeyMethod,
+        pass_key: Option<&'a str>,
+        recreate: bool,
+    ) -> BoxFuture<'a, Result<Store<PostgresStore>>> {
+        Box::pin(self.provision(method, pass_key, recreate))
+    }
+
+    fn remove_backend(self) -> BoxFuture<'a, Result<bool>> {
+        Box::pin(self.remove())
     }
 }
 
-impl<'a> OpenStore<'a> for PostgresStoreOptions {
-    fn open_store(self, pass_key: Option<&'a str>) -> BoxFuture<'a, Result<Store<PostgresStore>>> {
-        Box::pin(self.open(pass_key))
-    }
-}
-
-pub(crate) async fn init_db(
-    conn_pool: &PgPool,
+pub(crate) async fn init_db<'t>(
+    mut txn: Transaction<'t, Postgres>,
     spec: ProvisionStoreSpec,
-    reset: bool,
 ) -> Result<(String, KeyCache)> {
-    if reset {
-        conn_pool
-            .execute(
-                "
-                DROP TABLE IF EXISTS
-                  config, profiles,
-                  store_keys, keys,
-                  items, items_tags;
-                ",
-            )
-            .await?;
-    }
-
-    let mut txn = conn_pool.begin().await?;
     txn.execute(
         "
         CREATE TABLE config (
@@ -254,18 +274,99 @@ pub(crate) async fn init_db(
     Ok((spec.profile_name, key_cache))
 }
 
+pub(crate) async fn reset_db(conn: &mut PgConnection) -> Result<()> {
+    conn.execute(
+        "
+        DROP TABLE IF EXISTS
+          config, profiles,
+          store_keys, keys,
+          items, items_tags;
+        ",
+    )
+    .await?;
+    Ok(())
+}
+
+pub(crate) async fn open_db(
+    conn_pool: PgPool,
+    method: Option<WrapKeyMethod>,
+    pass_key: Option<&str>,
+    host: String,
+    name: String,
+) -> Result<Store<PostgresStore>> {
+    let mut conn = conn_pool.acquire().await?;
+    let mut ver_ok = false;
+    let mut default_profile: Option<String> = None;
+    let mut wrap_key_ref: Option<String> = None;
+
+    let config = sqlx::query(
+        r#"SELECT name, value FROM config
+        WHERE name IN ('default_profile', 'version', 'wrap_key')"#,
+    )
+    .fetch_all(&mut conn)
+    .await?;
+    for row in config {
+        match row.try_get(0)? {
+            "default_profile" => {
+                default_profile.replace(row.try_get(1)?);
+            }
+            "version" => {
+                if row.try_get::<&str, _>(1)? != "1" {
+                    return Err(err_msg!(Unsupported, "Unsupported store version"));
+                }
+                ver_ok = true;
+            }
+            "wrap_key" => {
+                wrap_key_ref.replace(row.try_get(1)?);
+            }
+            _ => (),
+        }
+    }
+    if !ver_ok {
+        return Err(err_msg!(Unsupported, "Store version not found"));
+    }
+    let default_profile =
+        default_profile.ok_or_else(|| err_msg!(Unsupported, "Default store profile not found"))?;
+    let wrap_key = if let Some(wrap_key_ref) = wrap_key_ref {
+        let wrap_ref = WrapKeyReference::parse_uri(&wrap_key_ref)?;
+        if let Some(method) = method {
+            if !wrap_ref.compare_method(&method) {
+                return Err(err_msg!("Store key wrap method mismatch"));
+            }
+        }
+        wrap_ref.resolve(pass_key).await?
+    } else {
+        return Err(err_msg!(Unsupported, "Store wrap key not found"));
+    };
+    let mut key_cache = KeyCache::new(wrap_key);
+
+    let row = sqlx::query("SELECT id, store_key FROM profiles WHERE name = $1")
+        .bind(&default_profile)
+        .fetch_one(&mut conn)
+        .await?;
+    let profile_id = row.try_get(0)?;
+    let store_key = key_cache.load_key(row.try_get(1)?).await?;
+    key_cache.add_profile(default_profile.clone(), profile_id, store_key);
+
+    Ok(Store::new(PostgresStore::new(
+        conn_pool,
+        default_profile,
+        key_cache,
+        host,
+        name,
+    )))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn postgres_parse_uri() {
-        let uri = "postgres://user:pass@host?admin_username=user2&admin_password=pass2&test=1";
+        let uri =
+            "postgres://user:pass@host/db_name?admin_account=user2&admin_password=pass2&test=1";
         let opts = PostgresStoreOptions::new(uri).unwrap();
-        assert_eq!(opts.uri, "postgres://user:pass@host?test=1");
-        assert_eq!(
-            opts.admin_uri,
-            Some("postgres://user2:pass2@host?test=1".to_owned())
-        );
+        assert_eq!(opts.uri, "postgres://user:pass@host/db_name?test=1");
+        assert_eq!(opts.admin_uri, "postgres://user2:pass2@host?test=1");
     }
 }

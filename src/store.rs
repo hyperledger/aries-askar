@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
 use std::str::FromStr;
@@ -13,45 +12,9 @@ use indy_utils::{
 use zeroize::Zeroize;
 
 use super::future::BoxFuture;
-use super::keys::{
-    store::StoreKey,
-    wrap::{generate_raw_wrap_key, WrapKey, WrapKeyMethod},
-    KeyAlg, KeyCategory, KeyEntry, KeyParams,
-};
-use super::types::{Entry, EntryKind, EntryOperation, EntryTag, ProfileId, TagFilter};
+use super::keys::{wrap::WrapKeyMethod, KeyAlg, KeyCategory, KeyEntry, KeyParams};
+use super::types::{Entry, EntryKind, EntryOperation, EntryTag, TagFilter};
 use super::Result;
-
-pub struct KeyCache {
-    profile_info: HashMap<String, (ProfileId, Arc<StoreKey>)>,
-    wrap_key: WrapKey,
-}
-
-impl KeyCache {
-    pub fn new(wrap_key: WrapKey) -> Self {
-        Self {
-            profile_info: HashMap::new(),
-            wrap_key,
-        }
-    }
-
-    pub async fn load_key(&self, ciphertext: Vec<u8>) -> Result<StoreKey> {
-        serde_json::from_slice(&self.wrap_key.unwrap_data(ciphertext).await?)
-            .map_err(err_map!(Unsupported, "Invalid store key"))
-    }
-
-    pub fn add_profile(&mut self, ident: String, pid: ProfileId, key: StoreKey) {
-        self.profile_info.insert(ident, (pid, Arc::new(key)));
-    }
-
-    pub fn get_profile(&self, name: &str) -> Option<(ProfileId, Arc<StoreKey>)> {
-        self.profile_info.get(name).cloned()
-    }
-
-    #[allow(unused)]
-    pub fn get_wrap_key(&self) -> &WrapKey {
-        &self.wrap_key
-    }
-}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct QueryFetchOptions {
@@ -83,6 +46,25 @@ pub trait Backend: Send + Sync {
     fn transaction(&self, profile: Option<String>) -> BoxFuture<Result<Self::Transaction>>;
 
     fn close(&self) -> BoxFuture<Result<()>>;
+}
+
+pub trait ManageBackend<'a> {
+    type Store;
+
+    fn open_backend(
+        self,
+        method: Option<WrapKeyMethod>,
+        pass_key: Option<&'a str>,
+    ) -> BoxFuture<'a, Result<Self::Store>>;
+
+    fn provision_backend(
+        self,
+        method: WrapKeyMethod,
+        pass_key: Option<&'a str>,
+        recreate: bool,
+    ) -> BoxFuture<'a, Result<Self::Store>>;
+
+    fn remove_backend(self) -> BoxFuture<'a, Result<bool>>;
 }
 
 pub trait QueryBackend: Send {
@@ -572,45 +554,4 @@ impl<'s, T> Scan<'s, T> {
             Ok(None)
         }
     }
-}
-
-#[derive(Debug)]
-pub struct ProvisionStoreSpec {
-    pub enc_store_key: Vec<u8>,
-    pub profile_name: String,
-    pub store_key: StoreKey,
-    pub wrap_key: WrapKey,
-    pub wrap_key_ref: String,
-}
-
-impl ProvisionStoreSpec {
-    pub async fn create(method: WrapKeyMethod, pass_key: Option<&str>) -> Result<Self> {
-        let store_key = StoreKey::new()?;
-        let key_data = serde_json::to_vec(&store_key).map_err(err_map!(Unexpected))?;
-        let (wrap_key, wrap_key_ref) = method.resolve(pass_key).await?;
-        let enc_store_key = wrap_key.wrap_data(key_data).await?;
-        let profile_name = uuid::Uuid::new_v4().to_string();
-        Ok(Self {
-            enc_store_key,
-            profile_name,
-            store_key,
-            wrap_key,
-            wrap_key_ref: wrap_key_ref.into_uri(),
-        })
-    }
-
-    pub async fn create_default() -> Result<Self> {
-        let key = generate_raw_wrap_key(None)?;
-        Self::create(WrapKeyMethod::RawKey, Some(&key)).await
-    }
-}
-
-pub trait ProvisionStore<'a> {
-    type Store;
-
-    fn provision_store(self, spec: ProvisionStoreSpec) -> BoxFuture<'a, Result<Self::Store>>;
-}
-
-pub trait OpenStore<'a>: ProvisionStore<'a> {
-    fn open_store(self, pass_key: Option<&'a str>) -> BoxFuture<'a, Result<Self::Store>>;
 }

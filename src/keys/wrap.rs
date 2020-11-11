@@ -187,6 +187,18 @@ impl WrapKeyReference {
         }
     }
 
+    pub fn compare_method(&self, method: &WrapKeyMethod) -> bool {
+        match self {
+            Self::ManagedKey(_keyref) => matches!(method, WrapKeyMethod::CreateManagedKey(..)),
+            Self::DeriveKey(kdf_method, _detail) => match method {
+                WrapKeyMethod::DeriveKey(m) if m == kdf_method => true,
+                _ => false,
+            },
+            Self::RawKey => *method == WrapKeyMethod::RawKey,
+            Self::Unprotected => *method == WrapKeyMethod::Unprotected,
+        }
+    }
+
     pub fn into_uri(self) -> String {
         match self {
             Self::ManagedKey(keyref) => keyref,
@@ -224,8 +236,8 @@ impl WrapKeyReference {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::future::block_on;
     use crate::error::ErrorKind;
+    use crate::future::block_on;
 
     #[test]
     fn protection_method_parse() {

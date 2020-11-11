@@ -89,13 +89,23 @@ class Store:
 
     @classmethod
     async def provision(
-        cls, uri: str, wrap_method: str = None, pass_key: str = None
+        cls,
+        uri: str,
+        wrap_method: str = None,
+        pass_key: str = None,
+        recreate: bool = False,
     ) -> "Store":
-        return Store(await bindings.store_provision(uri, wrap_method, pass_key))
+        return Store(
+            await bindings.store_provision(uri, wrap_method, pass_key, recreate)
+        )
 
     @classmethod
     async def open(cls, uri: str, pass_key: str = None) -> "Store":
-        return Store(await bindings.store_open(uri, pass_key))
+        return Store(await bindings.store_open(uri, None, pass_key))
+
+    @classmethod
+    async def remove(cls, uri: str) -> bool:
+        return await bindings.store_remove(uri)
 
     async def __aenter__(self) -> "Session":
         if not self.opener:

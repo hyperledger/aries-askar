@@ -1,14 +1,19 @@
+use std::collections::HashMap;
+use std::sync::Arc;
+
 use super::error::Result;
-use super::types::{EncEntryTag, EntryTag};
+use super::types::{EncEntryTag, EntryTag, ProfileId};
 
 pub mod kdf;
 
 pub mod store;
+use self::store::StoreKey;
 
 mod types;
 pub use self::types::{KeyAlg, KeyCategory, KeyEntry, KeyParams};
 
 pub mod wrap;
+use self::wrap::WrapKey;
 
 use indy_utils::keys::{EncodedVerKey, PrivateKey};
 
@@ -39,6 +44,38 @@ pub fn verify_signature(signer_vk: &str, data: &[u8], signature: &[u8]) -> Resul
         .map_err(err_map!("Unsupported verkey"))?
         .verify_signature(&data, &signature)
         .unwrap_or(false))
+}
+
+pub struct KeyCache {
+    profile_info: HashMap<String, (ProfileId, Arc<StoreKey>)>,
+    wrap_key: WrapKey,
+}
+
+impl KeyCache {
+    pub fn new(wrap_key: WrapKey) -> Self {
+        Self {
+            profile_info: HashMap::new(),
+            wrap_key,
+        }
+    }
+
+    pub async fn load_key(&self, ciphertext: Vec<u8>) -> Result<StoreKey> {
+        serde_json::from_slice(&self.wrap_key.unwrap_data(ciphertext).await?)
+            .map_err(err_map!(Unsupported, "Invalid store key"))
+    }
+
+    pub fn add_profile(&mut self, ident: String, pid: ProfileId, key: StoreKey) {
+        self.profile_info.insert(ident, (pid, Arc::new(key)));
+    }
+
+    pub fn get_profile(&self, name: &str) -> Option<(ProfileId, Arc<StoreKey>)> {
+        self.profile_info.get(name).cloned()
+    }
+
+    #[allow(unused)]
+    pub fn get_wrap_key(&self) -> &WrapKey {
+        &self.wrap_key
+    }
 }
 
 pub trait EntryEncryptor {

@@ -17,8 +17,8 @@ use super::db_utils::{
 };
 use super::error::Result;
 use super::future::{blocking_scoped, BoxFuture};
-use super::keys::{store::StoreKey, EntryEncryptor};
-use super::store::{Backend, KeyCache, QueryBackend, Scan};
+use super::keys::{store::StoreKey, EntryEncryptor, KeyCache};
+use super::store::{Backend, QueryBackend, Scan};
 use super::types::{EncEntryTag, Entry, EntryKind, EntryOperation, EntryTag, ProfileId, TagFilter};
 
 const COUNT_QUERY: &'static str = "SELECT COUNT(*) FROM items i
@@ -65,7 +65,8 @@ pub struct PostgresStore {
     conn_pool: PgPool,
     default_profile: String,
     key_cache: KeyCache,
-    uri: String,
+    host: String,
+    name: String,
 }
 
 impl PostgresStore {
@@ -73,13 +74,15 @@ impl PostgresStore {
         conn_pool: PgPool,
         default_profile: String,
         key_cache: KeyCache,
-        uri: String,
+        host: String,
+        name: String,
     ) -> Self {
         Self {
             conn_pool,
             default_profile,
             key_cache,
-            uri,
+            host,
+            name
         }
     }
 
@@ -150,7 +153,8 @@ impl Debug for PostgresStore {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         f.debug_struct("PostgresStore")
             .field("default_profile", &self.default_profile)
-            .field("uri", &self.uri)
+            .field("host", &self.host)
+            .field("name", &self.name)
             .finish()
     }
 }
