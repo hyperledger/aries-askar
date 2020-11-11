@@ -734,6 +734,7 @@ pub extern "C" fn askar_session_create_keypair(
 pub extern "C" fn askar_session_fetch_keypair(
     handle: SessionHandle,
     ident: FfiStr,
+    for_update: i8,
     cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, results: *const FfiEntrySet)>,
     cb_id: CallbackId,
 ) -> ErrorCode {
@@ -761,6 +762,7 @@ pub extern "C" fn askar_session_fetch_keypair(
                 let key_entry = session.fetch_key(
                     KeyCategory::KeyPair,
                     &ident,
+                    for_update != 0
                 ).await?;
                 Ok(key_entry.map(export_key_entry).transpose()?)
             }.await;

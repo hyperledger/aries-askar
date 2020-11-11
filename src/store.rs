@@ -375,6 +375,7 @@ impl<Q: QueryBackend> Session<Q> {
         &mut self,
         category: KeyCategory,
         ident: &str,
+        for_update: bool,
     ) -> Result<Option<KeyEntry>> {
         // normalize ident
         let ident = EncodedVerKey::from_str(&ident)
@@ -385,7 +386,7 @@ impl<Q: QueryBackend> Session<Q> {
         Ok(
             if let Some(row) = self
                 .0
-                .fetch(EntryKind::Key, category.as_str(), &ident, false)
+                .fetch(EntryKind::Key, category.as_str(), &ident, for_update)
                 .await?
             {
                 let params = KeyParams::from_slice(&row.value)?;
@@ -446,7 +447,10 @@ impl<Q: QueryBackend> Session<Q> {
     // update_key_tags
 
     pub async fn sign_message(&mut self, key_ident: &str, data: &[u8]) -> Result<Vec<u8>> {
-        if let Some(key) = self.fetch_key(KeyCategory::KeyPair, key_ident).await? {
+        if let Some(key) = self
+            .fetch_key(KeyCategory::KeyPair, key_ident, false)
+            .await?
+        {
             let sk = key.private_key()?;
             sk.sign(&data)
                 .map_err(|e| err_msg!("Signature error: {}", e))
@@ -463,7 +467,7 @@ impl<Q: QueryBackend> Session<Q> {
     ) -> Result<Vec<u8>> {
         let sign_key = if let Some(ident) = from_key_ident {
             let sk = self
-                .fetch_key(KeyCategory::KeyPair, ident)
+                .fetch_key(KeyCategory::KeyPair, ident, false)
                 .await?
                 .ok_or_else(|| err_msg!("Unknown sender key"))?;
             Some(sk.private_key()?)
@@ -511,7 +515,7 @@ impl<'a, Q: QueryBackend> KeyLookup<'a> for &'a mut Session<Q> {
     {
         Box::pin(async move {
             for (idx, key) in keys.into_iter().enumerate() {
-                if let Ok(Some(key)) = self.fetch_key(KeyCategory::KeyPair, &key.key).await {
+                if let Ok(Some(key)) = self.fetch_key(KeyCategory::KeyPair, &key.key, false).await {
                     if let Ok(sk) = key.private_key() {
                         return Some((idx, sk));
                     }

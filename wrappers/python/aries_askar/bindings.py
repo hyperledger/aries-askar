@@ -524,13 +524,13 @@ async def session_create_keypair(
 
 
 async def session_fetch_keypair(
-    handle: SessionHandle,
-    ident: str,
+    handle: SessionHandle, ident: str, for_update: bool = False
 ) -> Optional[EntrySetHandle]:
     ptr = await do_call_async(
         "askar_session_fetch_keypair",
         handle,
         encode_str(ident),
+        c_int8(for_update),
         return_type=c_void_p,
     )
     if ptr:

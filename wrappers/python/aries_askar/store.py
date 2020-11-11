@@ -260,12 +260,14 @@ class Session:
             )
         )
 
-    async def fetch_keypair(self, ident: str) -> Optional[KeyEntry]:
+    async def fetch_keypair(
+        self, ident: str, for_update: bool = False
+    ) -> Optional[KeyEntry]:
         if not self.handle:
             raise StoreError(
                 StoreErrorCode.WRAPPER, "Cannot fetch keypair from closed session"
             )
-        handle = await bindings.session_fetch_keypair(self.handle, ident)
+        handle = await bindings.session_fetch_keypair(self.handle, ident, for_update)
         if handle:
             entry = next(EntrySet(handle))
             return KeyEntry(

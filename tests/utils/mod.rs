@@ -344,7 +344,7 @@ pub async fn db_keypair_create_fetch<DB: Backend>(db: &Store<DB>) {
     assert_eq!(key_info.params.metadata, Some(metadata));
 
     let found = conn
-        .fetch_key(key_info.category.clone(), &key_info.ident)
+        .fetch_key(key_info.category.clone(), &key_info.ident, false)
         .await
         .expect(ERR_FETCH_KEY);
     assert_eq!(Some(key_info), found);
