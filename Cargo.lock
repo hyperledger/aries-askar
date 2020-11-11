@@ -883,6 +883,8 @@ dependencies = [
 [[package]]
 name = "indy-utils"
 version = "0.3.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "22e2e49646c8480561d434cb15d96e41a501ad18829bd3dedb1b90279ec3a2e9"
 dependencies = [
  "aead",
  "base64",
