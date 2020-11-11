@@ -175,7 +175,7 @@ pub fn decrypt(enc_key: &EncKey, input: &[u8]) -> KvResult<Vec<u8>> {
     let nonce = Nonce::from_slice(&input[0..NonceSize::to_usize()]);
     let key = ChaChaKey::new(enc_key);
     key.decrypt(&nonce, &input[NonceSize::to_usize()..])
-        .map_err(|e| err_msg!(Encryption, "{}", e))
+        .map_err(|e| err_msg!(Encryption, "Error decrypting record: {}", e))
 }
 
 impl EntryEncryptor for StoreKey {

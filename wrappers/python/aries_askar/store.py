@@ -101,8 +101,10 @@ class Store:
         )
 
     @classmethod
-    async def open(cls, uri: str, pass_key: str = None) -> "Store":
-        return Store(await bindings.store_open(uri, None, pass_key), uri)
+    async def open(
+        cls, uri: str, wrap_method: str = None, pass_key: str = None
+    ) -> "Store":
+        return Store(await bindings.store_open(uri, wrap_method, pass_key), uri)
 
     @classmethod
     async def remove(cls, uri: str) -> bool:
@@ -132,18 +134,15 @@ class Store:
     def transaction(self, profile: str = None) -> "OpenSession":
         return OpenSession(self, profile, True)
 
-    async def close(self):
+    async def close(self, remove: bool = False) -> bool:
         """Close and free the pool instance."""
         if self.handle:
             await bindings.store_close(self.handle)
             self.handle = None
-
-    async def close_and_remove(self) -> bool:
-        """Close and free the pool instance, and remove the store."""
-        if self.handle:
-            await bindings.store_close(self.handle)
-            self.handle = None
-        return await Store.remove(self.uri)
+        if remove:
+            return await Store.remove(self.uri)
+        else:
+            return False
 
     def __del__(self):
         """Close the pool instance when there are no more references to this object."""

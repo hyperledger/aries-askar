@@ -60,8 +60,12 @@ impl KeyCache {
     }
 
     pub async fn load_key(&self, ciphertext: Vec<u8>) -> Result<StoreKey> {
-        serde_json::from_slice(&self.wrap_key.unwrap_data(ciphertext).await?)
-            .map_err(err_map!(Unsupported, "Invalid store key"))
+        let data = self
+            .wrap_key
+            .unwrap_data(ciphertext)
+            .await
+            .map_err(err_map!(Encryption, "Error decrypting store key"))?;
+        serde_json::from_slice(&data).map_err(err_map!(Unsupported, "Invalid store key"))
     }
 
     pub fn add_profile(&mut self, ident: String, pid: ProfileId, key: StoreKey) {

@@ -13,7 +13,7 @@ path = "src/lib.rs"
 crate-type = ["staticlib", "rlib", "cdylib"]
 
 [features]
-default = ["ffi", "logger", "postgres", "sqlite"]
+default = ["any", "ffi", "logger", "postgres", "sqlite"]
 any = []
 ffi = ["any", "ffi-support", "logger"]
 logger = ["env_logger", "log"]

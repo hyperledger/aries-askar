@@ -23,6 +23,7 @@ pub const PAGE_SIZE: usize = 32;
 
 pub struct DbSession<'s, E, DB> {
     pub(crate) exec: E,
+    #[allow(unused)]
     pub(crate) is_txn: bool,
     pub(crate) profile_id: ProfileId,
     pub(crate) key: Arc<StoreKey>,

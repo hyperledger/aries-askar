@@ -91,7 +91,7 @@ impl<'a> SqliteStoreOptions<'a> {
 
     pub async fn remove(self) -> Result<bool> {
         if self.in_memory {
-            Ok(false)
+            Ok(true)
         } else {
             try_remove_file(self.path.as_ref()).await
         }

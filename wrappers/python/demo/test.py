@@ -27,7 +27,7 @@ async def basic_test():
     if ENCRYPT:
         key = generate_raw_key(b"00000000000000000000000000000My1")
         key_method = "raw"
-        log("Generated raw key:", key)
+        log("Generated raw wallet key:", key)
     else:
         key = None
         key_method = "none"
@@ -37,7 +37,7 @@ async def basic_test():
     log("Derive verkey:", verkey)
 
     # Provision the store
-    store = await Store.provision(REPO_URI, key_method, key)
+    store = await Store.provision(REPO_URI, key_method, key, True)
     log("Provisioned store:", store)
 
     # start a new transaction
@@ -105,7 +105,7 @@ async def basic_test():
             ),
         )
 
-    log("Removed store:", await store.close_and_remove())
+    log("Removed store:", await store.close(remove=True))
 
 
 if __name__ == "__main__":

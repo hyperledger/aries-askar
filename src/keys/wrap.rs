@@ -79,7 +79,7 @@ impl WrapKey {
         match &self.0 {
             Some(key_data) => {
                 let key = key_data.clone();
-                blocking(move || Ok(decrypt(&key, &ciphertext)?)).await
+                blocking(move || decrypt(&key, &ciphertext)).await
             }
             None => Ok(ciphertext),
         }
