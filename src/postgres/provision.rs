@@ -155,19 +155,26 @@ impl PostgresStoreOptions {
         method: Option<WrapKeyMethod>,
         pass_key: Option<&str>,
     ) -> Result<Store<PostgresStore>> {
-        let conn_pool = PgPoolOptions::default()
-            .connect_timeout(Duration::from_secs(10))
-            .min_connections(0)
-            .max_connections(10)
-            .test_before_acquire(false)
-            .connect(self.uri.as_str())
-            .await?;
-
-        open_db(conn_pool, method, pass_key, self.host, self.name).await
+        open_db(self.pool().await?, method, pass_key, self.host, self.name).await
     }
 
     pub async fn remove(self) -> Result<bool> {
-        Ok(false)
+        let mut admin_conn = PgConnection::connect(self.admin_uri.as_ref()).await?;
+        // any character except NUL is allowed in an identifier.
+        // double quotes must be escaped, but we just disallow those
+        let drop_q = format!("DROP DATABASE \"{}\"", self.name);
+        match sqlx::query(&drop_q)
+            .persistent(false)
+            .execute(&mut admin_conn)
+            .await
+        {
+            Ok(_) => Ok(true),
+            Err(SqlxError::Database(db_err)) if db_err.code() == Some(Cow::Borrowed("3D000")) => {
+                // invalid catalog name is raised if the database does not exist
+                Ok(false)
+            }
+            Err(err) => Err(err_msg!(Backend, "Error removing database").with_cause(err)),
+        }
     }
 }
 

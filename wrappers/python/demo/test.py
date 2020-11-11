@@ -98,12 +98,14 @@ async def basic_test():
 
         # Remove rows by category and (optional) tag filter
         log(
-            "Removed:",
+            "Removed entry count:",
             await session.remove_all(
                 "category",
                 {"~plaintag": "a", "$and": [{"enctag": "b"}, {"enctag": "c"}]},
             ),
         )
+
+    log("Removed store:", await store.close_and_remove())
 
 
 if __name__ == "__main__":

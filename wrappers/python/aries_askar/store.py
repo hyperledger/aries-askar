@@ -81,11 +81,12 @@ class Scan:
 class Store:
     """An opened Store instance."""
 
-    def __init__(self, handle: bindings.StoreHandle):
+    def __init__(self, handle: bindings.StoreHandle, uri: str):
         """Initialize the Store instance."""
         self.handle = handle
-        self.session = None
         self.opener = None
+        self.session = None
+        self.uri = uri
 
     @classmethod
     async def provision(
@@ -96,12 +97,12 @@ class Store:
         recreate: bool = False,
     ) -> "Store":
         return Store(
-            await bindings.store_provision(uri, wrap_method, pass_key, recreate)
+            await bindings.store_provision(uri, wrap_method, pass_key, recreate), uri
         )
 
     @classmethod
     async def open(cls, uri: str, pass_key: str = None) -> "Store":
-        return Store(await bindings.store_open(uri, None, pass_key))
+        return Store(await bindings.store_open(uri, None, pass_key), uri)
 
     @classmethod
     async def remove(cls, uri: str) -> bool:
@@ -136,6 +137,13 @@ class Store:
         if self.handle:
             await bindings.store_close(self.handle)
             self.handle = None
+
+    async def close_and_remove(self) -> bool:
+        """Close and free the pool instance, and remove the store."""
+        if self.handle:
+            await bindings.store_close(self.handle)
+            self.handle = None
+        return await Store.remove(self.uri)
 
     def __del__(self):
         """Close the pool instance when there are no more references to this object."""
