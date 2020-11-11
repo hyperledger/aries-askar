@@ -17,7 +17,7 @@ from ctypes import (
     Structure,
 )
 from ctypes.util import find_library
-from typing import Optional, Union, Sequence
+from typing import Optional, Sequence, Union
 
 from .error import StoreError, StoreErrorCode
 from .types import Entry, EntryOperation, KeyAlg
@@ -78,7 +78,7 @@ class FfiEntry(Structure):
     ]
 
     def decode(self) -> Entry:
-        value = bytes((c_ubyte * self.value_len).from_address(self.value))
+        value = memoryview((c_ubyte * self.value_len).from_address(self.value))
         tags = json.loads(decode_str(self.tags)) if self.tags is not None else None
         return Entry(
             decode_str(self.category),
@@ -253,18 +253,18 @@ def decode_str(value: c_char_p) -> str:
     return value.decode("utf-8")
 
 
-def encode_str(arg: Optional[Union[str, bytes]]) -> c_char_p:
+def encode_str(arg: Optional[Union[str, bytes, memoryview]]) -> c_char_p:
     """Encode an optional input argument as a string.
     Returns: None if the argument is None, otherwise the value encoded utf-8.
     """
     if arg is None:
         return None
-    if isinstance(arg, bytes):
-        return c_char_p(arg)
-    return c_char_p(arg.encode("utf-8"))
+    if isinstance(arg, str):
+        return c_char_p(arg.encode("utf-8"))
+    return c_char_p(arg)
 
 
-def encode_bytes(arg: Optional[Union[str, bytes]]) -> FfiByteBuffer:
+def encode_bytes(arg: Optional[Union[str, bytes, memoryview]]) -> FfiByteBuffer:
     buf = FfiByteBuffer()
     if arg is not None:
         if isinstance(arg, str):
@@ -295,11 +295,14 @@ def get_current_error(expect: bool = False) -> StoreError:
     return StoreError(StoreErrorCode.WRAPPER, "Unknown error")
 
 
-def derive_verkey(key_alg: KeyAlg, seed: [str, bytes]) -> str:
-    alg = encode_str(key_alg.value)
-    seed = encode_bytes(seed)
+def derive_verkey(key_alg: KeyAlg, seed: Union[str, bytes, memoryview]) -> str:
     verkey = lib_string()
-    do_call("askar_derive_verkey", alg, seed, byref(verkey))
+    do_call(
+        "askar_derive_verkey",
+        encode_str(key_alg.value),
+        encode_bytes(seed),
+        byref(verkey),
+    )
     return str(verkey)
 
 
@@ -312,8 +315,8 @@ def generate_raw_key(seed: str = None) -> str:
 
 def verify_signature(
     signer_vk: str,
-    message: [str, bytes],
-    signature: [str, bytes],
+    message: Union[str, bytes, memoryview],
+    signature: Union[str, bytes, memoryview],
 ) -> bool:
     result = c_int8()
     do_call(
@@ -410,7 +413,7 @@ def session_close_immed(handle: SessionHandle):
 
 
 async def session_count(
-    handle: SessionHandle, category: str, tag_filter: [str, dict] = None
+    handle: SessionHandle, category: str, tag_filter: Union[str, dict] = None
 ) -> int:
     """Count rows in the Store."""
     category = encode_str(category)
@@ -443,7 +446,7 @@ async def session_fetch(
 async def session_fetch_all(
     handle: SessionHandle,
     category: str,
-    tag_filter: [str, dict] = None,
+    tag_filter: Union[str, dict] = None,
     limit: int = None,
     for_update: bool = False,
 ) -> EntrySetHandle:
@@ -466,7 +469,7 @@ async def session_fetch_all(
 async def session_remove_all(
     handle: SessionHandle,
     category: str,
-    tag_filter: [str, dict] = None,
+    tag_filter: Union[str, dict] = None,
 ) -> int:
     """Remove all matching rows in the Store."""
     category = encode_str(category)
@@ -489,7 +492,7 @@ async def session_update(
     operation: EntryOperation,
     category: str,
     name: str,
-    value: [str, bytes] = None,
+    value: Union[str, bytes, memoryview] = None,
     tags: dict = None,
     expiry_ms: Optional[int] = None,
 ):
@@ -511,7 +514,7 @@ async def session_create_keypair(
     handle: SessionHandle,
     alg: str,
     metadata: str = None,
-    seed: [str, bytes] = None,
+    seed: Union[str, bytes, memoryview] = None,
 ) -> str:
     return await do_call_async(
         "askar_session_create_keypair",
@@ -540,7 +543,7 @@ async def session_fetch_keypair(
 async def session_sign_message(
     handle: SessionHandle,
     key_ident: str,
-    message: [str, bytes],
+    message: Union[str, bytes, memoryview],
 ) -> lib_buffer:
     return await do_call_async(
         "askar_session_sign_message",
@@ -555,7 +558,7 @@ async def session_pack_message(
     handle: SessionHandle,
     recipient_vks: Sequence[str],
     from_key_ident: Optional[str],
-    message: [str, bytes],
+    message: Union[str, bytes, memoryview],
 ) -> lib_buffer:
     recipient_vks = encode_str(",".join(recipient_vks))
     from_key_ident = encode_str(from_key_ident)
@@ -572,7 +575,7 @@ async def session_pack_message(
 
 async def session_unpack_message(
     handle: SessionHandle,
-    message: [str, bytes],
+    message: Union[str, bytes, memoryview],
 ) -> (lib_buffer, str, Optional[str]):
     message = encode_bytes(message)
     result = await do_call_async(
@@ -585,7 +588,7 @@ async def scan_start(
     handle: StoreHandle,
     profile: Optional[str],
     category: str,
-    tag_filter: [str, dict] = None,
+    tag_filter: Union[str, dict] = None,
     offset: int = None,
     limit: int = None,
 ) -> ScanHandle:

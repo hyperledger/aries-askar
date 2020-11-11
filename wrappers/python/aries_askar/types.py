@@ -1,10 +1,10 @@
 import json as _json
 
 from enum import Enum
-from typing import Mapping
+from typing import Mapping, Union
 
 
-def _make_bytes(value: [str, bytes]) -> bytes:
+def _make_binary(value: [str, bytes, memoryview]) -> Union[bytes, memoryview]:
     if isinstance(value, str):
         return value.encode("utf-8")
     else:
@@ -16,17 +16,28 @@ class Entry:
         self,
         category: str,
         name: str,
-        value: [str, bytes],
+        value: [str, bytes, memoryview],
         tags: Mapping[str, str] = None,
     ) -> "Entry":
         self.category = category
         self.name = name
-        self.value = _make_bytes(value)
+        self._value = _make_binary(value)
         self.tags = dict(tags) if tags else {}
+        self.entry_set = None
+
+    @property
+    def value(self) -> bytes:
+        val = self._value
+        if val is None:
+            return None
+        if isinstance(val, memoryview):
+            return bytes(val)
+        return val
 
     @property
     def value_json(self):
-        return None if self.value is None else _json.loads(self.value)
+        val = self.value
+        return None if val is None else _json.loads(val)
 
     def __repr__(self) -> str:
         return (

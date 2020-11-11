@@ -2,7 +2,7 @@
 
 import json
 
-from typing import Optional, Sequence
+from typing import Optional, Sequence, Union
 
 from . import bindings
 
@@ -23,6 +23,8 @@ class EntrySet:
     def __next__(self):
         entry = bindings.entry_set_next(self.handle)
         if entry:
+            # keep reference to self so the buffer isn't dropped
+            entry.entry_set = self
             return entry
         else:
             raise StopIteration
@@ -38,8 +40,8 @@ class Scan:
         self,
         store: "Store",
         profile: Optional[str],
-        category: [str, bytes],
-        tag_filter: [str, dict] = None,
+        category: Union[str, bytes],
+        tag_filter: Union[str, dict] = None,
         offset: int = None,
         limit: int = None,
     ):
@@ -121,7 +123,7 @@ class Store:
     def scan(
         self,
         category: str,
-        tag_filter: [str, dict] = None,
+        tag_filter: Union[str, dict] = None,
         offset: int = None,
         limit: int = None,
         profile: str = None,
@@ -161,7 +163,7 @@ class Session:
         self.handle = handle
         self.is_txn = is_txn
 
-    async def count(self, category: str, tag_filter: [str, dict] = None) -> int:
+    async def count(self, category: str, tag_filter: Union[str, dict] = None) -> int:
         if not self.handle:
             raise StoreError(StoreErrorCode.WRAPPER, "Cannot count from closed session")
         return await bindings.session_count(self.handle, category, tag_filter)
@@ -179,7 +181,7 @@ class Session:
     async def fetch_all(
         self,
         category: str,
-        tag_filter: [str, dict] = None,
+        tag_filter: Union[str, dict] = None,
         limit: int = None,
         for_update: bool = False,
     ) -> EntrySet:
@@ -195,7 +197,7 @@ class Session:
         self,
         category: str,
         name: str,
-        value: [str, bytes] = None,
+        value: Union[str, bytes, memoryview] = None,
         tags: dict = None,
         expiry_ms: int = None,
         value_json=None,
@@ -212,7 +214,7 @@ class Session:
         self,
         category: str,
         name: str,
-        value: [str, bytes] = None,
+        value: Union[str, bytes, memoryview] = None,
         tags: dict = None,
         expiry_ms: int = None,
         value_json=None,
@@ -239,7 +241,7 @@ class Session:
     async def remove_all(
         self,
         category: str,
-        tag_filter: [str, dict] = None,
+        tag_filter: Union[str, dict] = None,
     ) -> int:
         if not self.handle:
             raise StoreError(
@@ -248,7 +250,10 @@ class Session:
         return await bindings.session_remove_all(self.handle, category, tag_filter)
 
     async def create_keypair(
-        self, key_alg: KeyAlg, metadata: str = None, seed: [str, bytes] = None
+        self,
+        key_alg: KeyAlg,
+        metadata: str = None,
+        seed: Union[str, bytes, memoryview] = None,
     ) -> str:
         if not self.handle:
             raise StoreError(
@@ -270,11 +275,14 @@ class Session:
         handle = await bindings.session_fetch_keypair(self.handle, ident, for_update)
         if handle:
             entry = next(EntrySet(handle))
-            return KeyEntry(
+            result = KeyEntry(
                 entry.category, entry.name, json.loads(entry.value), entry.tags
             )
+            return result
 
-    async def sign_message(self, key_ident: str, message: [str, bytes]) -> bytes:
+    async def sign_message(
+        self, key_ident: str, message: Union[str, bytes, memoryview]
+    ) -> bytes:
         if not self.handle:
             raise StoreError(
                 StoreErrorCode.WRAPPER, "Cannot sign message with closed session"
@@ -286,7 +294,7 @@ class Session:
         self,
         recipient_vks: Sequence[str],
         from_key_ident: Optional[str],
-        message: [str, bytes],
+        message: Union[str, bytes, memoryview],
     ) -> bytes:
         if not self.handle:
             raise StoreError(
@@ -300,7 +308,7 @@ class Session:
 
     async def unpack_message(
         self,
-        message: [str, bytes],
+        message: Union[str, bytes, memoryview],
     ) -> (bytes, str, Optional[str]):
         if not self.handle:
             raise StoreError(
