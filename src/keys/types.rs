@@ -101,7 +101,7 @@ impl Display for KeyCategory {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, Zeroize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 pub struct KeyParams {
     pub alg: KeyAlg,
     #[serde(default, rename = "meta", skip_serializing_if = "Option::is_none")]
@@ -134,6 +134,18 @@ impl KeyParams {
         let result = serde_json::from_slice(params)
             .map_err(|e| err_msg!(Unexpected, "Error deserializing key params: {}", e));
         result
+    }
+}
+
+impl Drop for KeyParams {
+    fn drop(&mut self) {
+        self.zeroize()
+    }
+}
+
+impl Zeroize for KeyParams {
+    fn zeroize(&mut self) {
+        self.prv_key.zeroize();
     }
 }
 
@@ -205,7 +217,7 @@ impl Debug for KeyEntry {
 
 impl Drop for KeyEntry {
     fn drop(&mut self) {
-        self.zeroize();
+        // currently nothing - KeyParams will zeroize itself on drop
     }
 }
 
@@ -215,12 +227,6 @@ impl PartialEq for KeyEntry {
             && self.ident == rhs.ident
             && self.params == rhs.params
             && self.sorted_tags() == rhs.sorted_tags()
-    }
-}
-
-impl Zeroize for KeyEntry {
-    fn zeroize(&mut self) {
-        self.params.zeroize();
     }
 }
 

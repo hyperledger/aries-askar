@@ -514,6 +514,7 @@ async def session_create_keypair(
     handle: SessionHandle,
     alg: str,
     metadata: str = None,
+    tags: dict = None,
     seed: Union[str, bytes, memoryview] = None,
 ) -> str:
     return await do_call_async(
@@ -521,6 +522,7 @@ async def session_create_keypair(
         handle,
         encode_str(alg),
         encode_str(metadata),
+        encode_str(None if tags is None else json.dumps(tags)),
         encode_bytes(seed),
         return_type=lib_string,
     )
@@ -538,6 +540,18 @@ async def session_fetch_keypair(
     )
     if ptr:
         return EntrySetHandle(ptr)
+
+
+async def session_update_keypair(
+    handle: SessionHandle, ident: str, metadata: str = None, tags: dict = None
+):
+    await do_call_async(
+        "askar_session_update_keypair",
+        handle,
+        encode_str(ident),
+        encode_str(metadata),
+        encode_str(None if tags is None else json.dumps(tags)),
+    )
 
 
 async def session_sign_message(

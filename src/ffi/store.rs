@@ -689,6 +689,7 @@ pub extern "C" fn askar_session_create_keypair(
     handle: SessionHandle,
     alg: FfiStr,
     metadata: FfiStr,
+    tags: FfiStr,
     seed: ByteBuffer,
     cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, results: *const c_char)>,
     cb_id: CallbackId,
@@ -698,6 +699,15 @@ pub extern "C" fn askar_session_create_keypair(
         let cb = cb.ok_or_else(|| err_msg!("No callback provided"))?;
         let alg = alg.as_opt_str().map(|alg| KeyAlg::from_str(alg).unwrap()).ok_or_else(|| err_msg!("Key algorithm not provided"))?;
         let metadata = metadata.into_opt_string();
+        let tags = if let Some(tags) = tags.as_opt_str() {
+            Some(
+                serde_json::from_str::<EntryTagSet>(tags)
+                    .map_err(err_map!("Error decoding tags"))?
+                    .into_inner(),
+            )
+        } else {
+            None
+        };
         let seed = if seed.as_slice().len() > 0 {
             Some(seed.as_slice().to_vec())
         } else {
@@ -720,7 +730,7 @@ pub extern "C" fn askar_session_create_keypair(
                     alg,
                     metadata.as_ref().map(String::as_str),
                     seed.as_ref().map(Vec::as_ref),
-                    None,
+                    tags.as_ref().map(Vec::as_slice),
                 ).await?;
                 Ok(key_entry.ident.clone())
             }.await;
@@ -765,6 +775,56 @@ pub extern "C" fn askar_session_fetch_keypair(
                     for_update != 0
                 ).await?;
                 Ok(key_entry.map(export_key_entry).transpose()?)
+            }.await;
+            cb.resolve(result);
+        });
+        Ok(ErrorCode::Success)
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn askar_session_update_keypair(
+    handle: SessionHandle,
+    ident: FfiStr,
+    metadata: FfiStr,
+    tags: FfiStr,
+    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode)>,
+    cb_id: CallbackId,
+) -> ErrorCode {
+    catch_err! {
+        trace!("Update keypair");
+        let cb = cb.ok_or_else(|| err_msg!("No callback provided"))?;
+        let ident = ident.into_opt_string().ok_or_else(|| err_msg!("No key ident provided"))?;
+        let metadata = metadata.into_opt_string();
+        let tags = if let Some(tags) = tags.as_opt_str() {
+            Some(
+                serde_json::from_str::<EntryTagSet>(tags)
+                    .map_err(err_map!("Error decoding tags"))?
+                    .into_inner(),
+            )
+        } else {
+            None
+        };
+
+        let cb = EnsureCallback::new(move |result|
+            match result {
+                Ok(_) => {
+                    cb(cb_id, ErrorCode::Success)
+                }
+                Err(err) => cb(cb_id, set_last_error(Some(err))),
+            }
+        );
+
+        spawn_ok(async move {
+            let result = async {
+                let mut session = handle.load().await?;
+                session.update_key(
+                    KeyCategory::KeyPair,
+                    &ident,
+                    metadata.as_ref().map(String::as_str),
+                    tags.as_ref().map(Vec::as_slice)
+                ).await?;
+                Ok(())
             }.await;
             cb.resolve(result);
         });
@@ -946,11 +1006,10 @@ pub extern "C" fn askar_session_close(
 }
 
 fn export_key_entry(key_entry: KeyEntry) -> KvResult<Entry> {
-    let (category, name, mut params, tags) = key_entry.into_parts();
+    let (category, name, params, tags) = key_entry.into_parts();
     let value = serde_json::to_string(&params)
         .map_err(err_map!("Error converting key entry to JSON"))?
         .into_bytes();
-    params.zeroize();
     Ok(Entry {
         category: category.to_string(),
         name,

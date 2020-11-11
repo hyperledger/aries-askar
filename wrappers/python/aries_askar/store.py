@@ -169,7 +169,7 @@ class Session:
         return await bindings.session_count(self.handle, category, tag_filter)
 
     async def fetch(
-        self, category: str, name: str, for_update: bool = False
+        self, category: str, name: str, *, for_update: bool = False
     ) -> Optional[Entry]:
         if not self.handle:
             raise StoreError(StoreErrorCode.WRAPPER, "Cannot fetch from closed session")
@@ -183,6 +183,7 @@ class Session:
         category: str,
         tag_filter: Union[str, dict] = None,
         limit: int = None,
+        *,
         for_update: bool = False,
     ) -> EntrySet:
         if not self.handle:
@@ -252,7 +253,9 @@ class Session:
     async def create_keypair(
         self,
         key_alg: KeyAlg,
+        *,
         metadata: str = None,
+        tags: dict = None,
         seed: Union[str, bytes, memoryview] = None,
     ) -> str:
         if not self.handle:
@@ -261,12 +264,12 @@ class Session:
             )
         return str(
             await bindings.session_create_keypair(
-                self.handle, key_alg.value, metadata, seed
+                self.handle, key_alg.value, metadata, tags, seed
             )
         )
 
     async def fetch_keypair(
-        self, ident: str, for_update: bool = False
+        self, ident: str, *, for_update: bool = False
     ) -> Optional[KeyEntry]:
         if not self.handle:
             raise StoreError(
@@ -275,10 +278,21 @@ class Session:
         handle = await bindings.session_fetch_keypair(self.handle, ident, for_update)
         if handle:
             entry = next(EntrySet(handle))
-            result = KeyEntry(
-                entry.category, entry.name, json.loads(entry.value), entry.tags
-            )
+            result = KeyEntry(entry.category, entry.name, entry.value_json, entry.tags)
             return result
+
+    async def update_keypair(
+        self,
+        ident: str,
+        *,
+        metadata: str = None,
+        tags: dict = None,
+    ):
+        if not self.handle:
+            raise StoreError(
+                StoreErrorCode.WRAPPER, "Cannot update keypair with closed session"
+            )
+        await bindings.session_update_keypair(self.handle, ident, metadata, tags)
 
     async def sign_message(
         self, key_ident: str, message: Union[str, bytes, memoryview]

@@ -434,17 +434,44 @@ impl<Q: QueryBackend> Session<Q> {
     //     unimplemented!();
     // }
 
-    // pub async fn update_key_metadata(
-    //     &self,
-    //     profile: Option<String>,
-    //     category: KeyCategory,
-    //     ident: String,
-    //     metadata: Option<String>,
-    // ) -> Result<()> {
-    //     unimplemented!();
-    // }
+    pub async fn update_key(
+        &mut self,
+        category: KeyCategory,
+        ident: &str,
+        metadata: Option<&str>,
+        tags: Option<&[EntryTag]>,
+    ) -> Result<()> {
+        // normalize ident
+        let ident = EncodedVerKey::from_str(&ident)
+            .and_then(|k| k.as_base58())
+            .map_err(err_map!("Invalid key"))?
+            .long_form();
 
-    // update_key_tags
+        let row = self
+            .0
+            .fetch(EntryKind::Key, category.as_str(), &ident, true)
+            .await?
+            .ok_or_else(|| err_msg!(NotFound, "Key entry not found"))?;
+
+        let mut params = KeyParams::from_slice(&row.value)?;
+        params.metadata = metadata.map(str::to_string);
+        let mut value = params.to_vec()?;
+
+        self.0
+            .update(
+                EntryKind::Key,
+                EntryOperation::Replace,
+                category.as_str(),
+                &ident,
+                Some(&value),
+                tags,
+                None,
+            )
+            .await?;
+        value.zeroize();
+
+        Ok(())
+    }
 
     pub async fn sign_message(&mut self, key_ident: &str, data: &[u8]) -> Result<Vec<u8>> {
         if let Some(key) = self

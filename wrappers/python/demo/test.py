@@ -73,8 +73,12 @@ async def basic_test():
     # test key operations in a new session
     async with store as session:
         # Create a new keypair
-        key_ident = await session.create_keypair(KeyAlg.ED25519)
+        key_ident = await session.create_keypair(KeyAlg.ED25519, "metadata")
         log("Created key:", key_ident)
+
+        # Update keypair
+        await session.update_keypair(key_ident, "updated metadata")
+        log("Updated key")
 
         # Fetch keypair
         key = await session.fetch_keypair(key_ident)
