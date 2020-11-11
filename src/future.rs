@@ -5,7 +5,6 @@ use std::mem::{transmute, MaybeUninit};
 use std::pin::Pin;
 use std::sync::atomic::{fence, AtomicU8, Ordering};
 use std::thread;
-use std::time::Duration;
 
 pub use async_global_executor::block_on;
 
@@ -147,10 +146,6 @@ where
 #[inline]
 pub fn spawn_ok(fut: impl Future<Output = ()> + Send + 'static) {
     async_global_executor::spawn(fut).detach();
-}
-
-pub async fn sleep_ms(dur: u64) {
-    async_io::Timer::after(Duration::from_millis(dur)).await;
 }
 
 #[cfg(test)]

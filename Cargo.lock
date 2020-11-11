@@ -29,7 +29,6 @@ name = "aries-askar"
 version = "0.1.0"
 dependencies = [
  "async-global-executor",
- "async-io",
  "async-mutex",
  "async-std",
  "async-stream",
