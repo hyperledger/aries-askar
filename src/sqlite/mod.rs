@@ -516,7 +516,7 @@ mod tests {
         block_on(async {
             let key = generate_raw_wrap_key(None)?;
             let db = SqliteStoreOptions::in_memory()
-                .provision(WrapKeyMethod::RawKey, Some(&key), false)
+                .provision(WrapKeyMethod::RawKey, Some(&key), None, false)
                 .await?;
             let ts = expiry_timestamp(1000).unwrap();
             let check = sqlx::query("SELECT datetime('now'), ?1, ?1 > datetime('now')")

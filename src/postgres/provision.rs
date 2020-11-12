@@ -119,6 +119,7 @@ impl PostgresStoreOptions {
         self,
         method: WrapKeyMethod,
         pass_key: Option<&str>,
+        profile: Option<&str>,
         recreate: bool,
     ) -> Result<Store<PostgresStore>> {
         let conn_pool = self.create_db_pool().await?;
@@ -137,12 +138,22 @@ impl PostgresStoreOptions {
                 == 1
             {
                 // proceed to open, will fail if the version doesn't match
-                return open_db(conn_pool, Some(method), pass_key, self.host, self.name).await;
+                return open_db(
+                    conn_pool,
+                    Some(method),
+                    pass_key,
+                    profile,
+                    self.host,
+                    self.name,
+                )
+                .await;
             }
             // no 'config' table, assume empty database
         }
 
-        let default_profile = random_profile_name();
+        let default_profile = profile
+            .map(str::to_string)
+            .unwrap_or_else(random_profile_name);
         let (store_key, enc_store_key, wrap_key, wrap_key_ref) =
             init_keys(method, pass_key).await?;
         let profile_id = init_db(txn, &default_profile, wrap_key_ref, enc_store_key).await?;
@@ -162,8 +173,17 @@ impl PostgresStoreOptions {
         self,
         method: Option<WrapKeyMethod>,
         pass_key: Option<&str>,
+        profile: Option<&str>,
     ) -> Result<Store<PostgresStore>> {
-        open_db(self.pool().await?, method, pass_key, self.host, self.name).await
+        open_db(
+            self.pool().await?,
+            method,
+            pass_key,
+            profile,
+            self.host,
+            self.name,
+        )
+        .await
     }
 
     pub async fn remove(self) -> Result<bool> {
@@ -193,17 +213,19 @@ impl<'a> ManageBackend<'a> for PostgresStoreOptions {
         self,
         method: Option<WrapKeyMethod>,
         pass_key: Option<&'a str>,
+        profile: Option<&'a str>,
     ) -> BoxFuture<'a, Result<Store<PostgresStore>>> {
-        Box::pin(self.open(method, pass_key))
+        Box::pin(self.open(method, pass_key, profile))
     }
 
     fn provision_backend(
         self,
         method: WrapKeyMethod,
         pass_key: Option<&'a str>,
+        profile: Option<&'a str>,
         recreate: bool,
     ) -> BoxFuture<'a, Result<Store<PostgresStore>>> {
-        Box::pin(self.provision(method, pass_key, recreate))
+        Box::pin(self.provision(method, pass_key, profile, recreate))
     }
 
     fn remove_backend(self) -> BoxFuture<'a, Result<bool>> {
@@ -305,6 +327,7 @@ pub(crate) async fn open_db(
     conn_pool: PgPool,
     method: Option<WrapKeyMethod>,
     pass_key: Option<&str>,
+    profile: Option<&str>,
     host: String,
     name: String,
 ) -> Result<Store<PostgresStore>> {
@@ -339,8 +362,10 @@ pub(crate) async fn open_db(
     if !ver_ok {
         return Err(err_msg!(Unsupported, "Store version not found"));
     }
-    let default_profile =
-        default_profile.ok_or_else(|| err_msg!(Unsupported, "Default store profile not found"))?;
+    let profile = profile
+        .map(str::to_string)
+        .or(default_profile)
+        .ok_or_else(|| err_msg!(Unsupported, "Default store profile not found"))?;
     let wrap_key = if let Some(wrap_key_ref) = wrap_key_ref {
         let wrap_ref = WrapKeyReference::parse_uri(&wrap_key_ref)?;
         if let Some(method) = method {
@@ -355,19 +380,15 @@ pub(crate) async fn open_db(
     let mut key_cache = KeyCache::new(wrap_key);
 
     let row = sqlx::query("SELECT id, store_key FROM profiles WHERE name = $1")
-        .bind(&default_profile)
+        .bind(&profile)
         .fetch_one(&mut conn)
         .await?;
     let profile_id = row.try_get(0)?;
     let store_key = key_cache.load_key(row.try_get(1)?).await?;
-    key_cache.add_profile_mut(default_profile.clone(), profile_id, store_key);
+    key_cache.add_profile_mut(profile.clone(), profile_id, store_key);
 
     Ok(Store::new(PostgresStore::new(
-        conn_pool,
-        default_profile,
-        key_cache,
-        host,
-        name,
+        conn_pool, profile, key_cache, host, name,
     )))
 }
 

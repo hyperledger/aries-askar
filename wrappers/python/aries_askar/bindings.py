@@ -337,7 +337,7 @@ def version() -> str:
 
 
 async def store_open(
-    uri: str, wrap_method: str = None, pass_key: str = None
+    uri: str, wrap_method: str = None, pass_key: str = None, profile: str = None
 ) -> StoreHandle:
     """Open an existing Store and return the open handle."""
     return await do_call_async(
@@ -345,12 +345,17 @@ async def store_open(
         encode_str(uri),
         encode_str(wrap_method and wrap_method.lower()),
         encode_str(pass_key),
+        encode_str(profile),
         return_type=StoreHandle,
     )
 
 
 async def store_provision(
-    uri: str, wrap_method: str = None, pass_key: str = None, recreate: bool = False
+    uri: str,
+    wrap_method: str = None,
+    pass_key: str = None,
+    profile: str = None,
+    recreate: bool = False,
 ) -> StoreHandle:
     """Provision a new Store and return the open handle."""
     return await do_call_async(
@@ -358,6 +363,7 @@ async def store_provision(
         encode_str(uri),
         encode_str(wrap_method and wrap_method.lower()),
         encode_str(pass_key),
+        encode_str(profile),
         c_int8(recreate),
         return_type=StoreHandle,
     )

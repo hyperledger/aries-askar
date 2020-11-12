@@ -238,6 +238,7 @@ pub extern "C" fn askar_store_provision(
     spec_uri: FfiStr,
     wrap_key_method: FfiStr,
     pass_key: FfiStr,
+    profile: FfiStr,
     recreate: i8,
     cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, handle: StoreHandle)>,
     cb_id: CallbackId,
@@ -251,6 +252,7 @@ pub extern "C" fn askar_store_provision(
             None => WrapKeyMethod::default()
         };
         let pass_key = zeroize::Zeroizing::new(pass_key.into_opt_string());
+        let profile = profile.into_opt_string();
         let cb = EnsureCallback::new(move |result|
             match result {
                 Ok(sid) => cb(cb_id, ErrorCode::Success, sid),
@@ -259,7 +261,12 @@ pub extern "C" fn askar_store_provision(
         );
         spawn_ok(async move {
             let result = async {
-                let store = spec_uri.provision_backend(wrap_key_method, pass_key.as_ref().map(String::as_str), recreate != 0).await?;
+                let store = spec_uri.provision_backend(
+                    wrap_key_method,
+                    pass_key.as_ref().map(String::as_str),
+                    profile.as_ref().map(String::as_str),
+                    recreate != 0
+                ).await?;
                 Ok(StoreHandle::create(store).await)
             }.await;
             cb.resolve(result);
@@ -273,6 +280,7 @@ pub extern "C" fn askar_store_open(
     spec_uri: FfiStr,
     wrap_key_method: FfiStr,
     pass_key: FfiStr,
+    profile: FfiStr,
     cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, handle: StoreHandle)>,
     cb_id: CallbackId,
 ) -> ErrorCode {
@@ -285,6 +293,7 @@ pub extern "C" fn askar_store_open(
             None => None
         };
         let pass_key = zeroize::Zeroizing::new(pass_key.into_opt_string());
+        let profile = profile.into_opt_string();
         let cb = EnsureCallback::new(move |result|
             match result {
                 Ok(sid) => cb(cb_id, ErrorCode::Success, sid),
@@ -293,7 +302,11 @@ pub extern "C" fn askar_store_open(
         );
         spawn_ok(async move {
             let result = async {
-                let store = spec_uri.open_backend(wrap_key_method, pass_key.as_ref().map(String::as_str)).await?;
+                let store = spec_uri.open_backend(
+                    wrap_key_method,
+                    pass_key.as_ref().map(String::as_str),
+                    profile.as_ref().map(String::as_str)
+                ).await?;
                 Ok(StoreHandle::create(store).await)
             }.await;
             cb.resolve(result);

@@ -200,7 +200,7 @@ mod sqlite {
 
             SqliteStoreOptions::new(fname.as_str())
                 .expect("Error initializing sqlite store options")
-                .provision_backend(WrapKeyMethod::RawKey, Some(&key), false)
+                .provision_backend(WrapKeyMethod::RawKey, Some(&key), None, false)
                 .await
                 .expect("Error provisioning sqlite store")
                 .close()
@@ -224,7 +224,7 @@ mod sqlite {
         env_logger::builder().is_test(true).try_init().unwrap_or(());
         let key = generate_raw_wrap_key(None).expect("Error creating raw key");
         SqliteStoreOptions::in_memory()
-            .provision(WrapKeyMethod::RawKey, Some(&key), false)
+            .provision(WrapKeyMethod::RawKey, Some(&key), None, false)
             .await
             .expect("Error provisioning sqlite store")
     }
@@ -238,7 +238,7 @@ mod sqlite {
         block_on(async {
             let db_url = "sqlite://:memory:";
             let _db = db_url
-                .provision_backend(WrapKeyMethod::RawKey, Some(&key), false)
+                .provision_backend(WrapKeyMethod::RawKey, Some(&key), None, false)
                 .await
                 .expect("Error provisioning store");
         });
@@ -246,7 +246,7 @@ mod sqlite {
         block_on(async {
             let db_url = "not-sqlite://test-db";
             let _db = db_url
-                .provision_backend(WrapKeyMethod::RawKey, Some(&key), false)
+                .provision_backend(WrapKeyMethod::RawKey, Some(&key), None, false)
                 .await
                 .expect_err("Expected provision failure");
         });

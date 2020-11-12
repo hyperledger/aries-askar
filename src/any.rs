@@ -295,6 +295,7 @@ impl<'a> ManageBackend<'a> for &'a str {
         self,
         method: Option<WrapKeyMethod>,
         pass_key: Option<&'a str>,
+        profile: Option<&'a str>,
     ) -> BoxFuture<'a, Result<Self::Store>> {
         Box::pin(async move {
             let opts = self.into_options()?;
@@ -304,14 +305,14 @@ impl<'a> ManageBackend<'a> for &'a str {
                 #[cfg(feature = "postgres")]
                 "postgres" => {
                     let opts = super::postgres::PostgresStoreOptions::new(opts)?;
-                    let mgr = opts.open(method, pass_key).await?;
+                    let mgr = opts.open(method, pass_key, profile).await?;
                     Ok(Store::new(AnyBackend::Postgres(mgr.into_inner())))
                 }
 
                 #[cfg(feature = "sqlite")]
                 "sqlite" => {
                     let opts = super::sqlite::SqliteStoreOptions::new(opts)?;
-                    let mgr = opts.open(method, pass_key).await?;
+                    let mgr = opts.open(method, pass_key, profile).await?;
                     Ok(Store::new(AnyBackend::Sqlite(mgr.into_inner())))
                 }
 
@@ -324,6 +325,7 @@ impl<'a> ManageBackend<'a> for &'a str {
         self,
         method: WrapKeyMethod,
         pass_key: Option<&'a str>,
+        profile: Option<&'a str>,
         recreate: bool,
     ) -> BoxFuture<'a, Result<Self::Store>> {
         Box::pin(async move {
@@ -334,14 +336,14 @@ impl<'a> ManageBackend<'a> for &'a str {
                 #[cfg(feature = "postgres")]
                 "postgres" => {
                     let opts = super::postgres::PostgresStoreOptions::new(opts)?;
-                    let mgr = opts.provision(method, pass_key, recreate).await?;
+                    let mgr = opts.provision(method, pass_key, profile, recreate).await?;
                     Ok(Store::new(AnyBackend::Postgres(mgr.into_inner())))
                 }
 
                 #[cfg(feature = "sqlite")]
                 "sqlite" => {
                     let opts = super::sqlite::SqliteStoreOptions::new(opts)?;
-                    let mgr = opts.provision(method, pass_key, recreate).await?;
+                    let mgr = opts.provision(method, pass_key, profile, recreate).await?;
                     Ok(Store::new(AnyBackend::Sqlite(mgr.into_inner())))
                 }
 

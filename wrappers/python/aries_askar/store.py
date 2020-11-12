@@ -96,17 +96,29 @@ class Store:
         uri: str,
         wrap_method: str = None,
         pass_key: str = None,
+        *,
+        profile: str = None,
         recreate: bool = False,
     ) -> "Store":
         return Store(
-            await bindings.store_provision(uri, wrap_method, pass_key, recreate), uri
+            await bindings.store_provision(
+                uri, wrap_method, pass_key, profile, recreate
+            ),
+            uri,
         )
 
     @classmethod
     async def open(
-        cls, uri: str, wrap_method: str = None, pass_key: str = None
+        cls,
+        uri: str,
+        wrap_method: str = None,
+        pass_key: str = None,
+        *,
+        profile: str = None,
     ) -> "Store":
-        return Store(await bindings.store_open(uri, wrap_method, pass_key), uri)
+        return Store(
+            await bindings.store_open(uri, wrap_method, pass_key, profile), uri
+        )
 
     @classmethod
     async def remove(cls, uri: str) -> bool:

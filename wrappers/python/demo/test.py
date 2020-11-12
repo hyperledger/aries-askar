@@ -37,7 +37,7 @@ async def basic_test():
     log("Derive verkey:", verkey)
 
     # Provision the store
-    store = await Store.provision(REPO_URI, key_method, key, True)
+    store = await Store.provision(REPO_URI, key_method, key, recreate=True)
     log("Provisioned store:", store)
 
     # start a new transaction

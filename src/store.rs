@@ -59,12 +59,14 @@ pub trait ManageBackend<'a> {
         self,
         method: Option<WrapKeyMethod>,
         pass_key: Option<&'a str>,
+        profile: Option<&'a str>,
     ) -> BoxFuture<'a, Result<Self::Store>>;
 
     fn provision_backend(
         self,
         method: WrapKeyMethod,
         pass_key: Option<&'a str>,
+        profile: Option<&'a str>,
         recreate: bool,
     ) -> BoxFuture<'a, Result<Self::Store>>;
 
