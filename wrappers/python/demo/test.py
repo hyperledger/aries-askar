@@ -109,6 +109,10 @@ async def basic_test():
             ),
         )
 
+    profile = await store.create_profile()
+    log("Created profile:", profile)
+    log("Removed profile:", await store.remove_profile(profile))
+
     log("Removed store:", await store.close(remove=True))
 
 

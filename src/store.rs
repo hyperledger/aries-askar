@@ -31,6 +31,10 @@ pub trait Backend: Send + Sync {
     type Session: QueryBackend;
     type Transaction: QueryBackend;
 
+    fn create_profile(&self, name: Option<&str>) -> BoxFuture<Result<String>>;
+
+    fn remove_profile(&self, name: String) -> BoxFuture<Result<bool>>;
+
     fn scan(
         &self,
         profile: Option<String>,
@@ -132,6 +136,14 @@ impl<B: Backend> Store<B> {
 }
 
 impl<B: Backend> Store<B> {
+    pub async fn create_profile(&self, name: Option<&str>) -> Result<String> {
+        Ok(self.0.create_profile(name).await?)
+    }
+
+    pub async fn remove_profile(&self, name: String) -> Result<bool> {
+        Ok(self.0.remove_profile(name).await?)
+    }
+
     pub async fn scan(
         &self,
         profile: Option<String>,

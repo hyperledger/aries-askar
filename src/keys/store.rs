@@ -1,5 +1,5 @@
 #[inline]
-pub fn decode_utf8(value: Vec<u8>) -> KvResult<String> {
+pub fn decode_utf8(value: Vec<u8>) -> Result<String> {
     String::from_utf8(value).map_err(err_map!(Encryption))
 }
 
@@ -16,7 +16,7 @@ use sha2::Sha256;
 
 use serde::Deserialize;
 
-use crate::error::Result as KvResult;
+use crate::error::Result;
 use crate::keys::EntryEncryptor;
 use crate::types::{EncEntryTag, EntryTag};
 
@@ -44,7 +44,7 @@ pub struct StoreKey {
 }
 
 impl StoreKey {
-    pub fn new() -> KvResult<Self> {
+    pub fn new() -> Result<Self> {
         Ok(Self {
             category_key: ArrayKey::random(),
             name_key: ArrayKey::random(),
@@ -56,15 +56,15 @@ impl StoreKey {
         })
     }
 
-    pub fn encrypt_category<B: AsRef<[u8]>>(&self, category: B) -> KvResult<Vec<u8>> {
+    pub fn encrypt_category<B: AsRef<[u8]>>(&self, category: B) -> Result<Vec<u8>> {
         encrypt_searchable(&self.category_key, &self.item_hmac_key, category.as_ref())
     }
 
-    pub fn encrypt_name<B: AsRef<[u8]>>(&self, name: B) -> KvResult<Vec<u8>> {
+    pub fn encrypt_name<B: AsRef<[u8]>>(&self, name: B) -> Result<Vec<u8>> {
         encrypt_searchable(&self.name_key, &self.item_hmac_key, name.as_ref())
     }
 
-    pub fn encrypt_value<B: AsRef<[u8]>>(&self, value: B) -> KvResult<Vec<u8>> {
+    pub fn encrypt_value<B: AsRef<[u8]>>(&self, value: B) -> Result<Vec<u8>> {
         let value_key = ArrayKey::random();
         let mut value = encrypt_non_searchable(&value_key, value.as_ref())?;
         let mut result = encrypt_non_searchable(&self.value_key, value_key.as_ref())?;
@@ -72,23 +72,23 @@ impl StoreKey {
         Ok(result)
     }
 
-    pub fn encrypt_tag_name<B: AsRef<[u8]>>(&self, name: B) -> KvResult<Vec<u8>> {
+    pub fn encrypt_tag_name<B: AsRef<[u8]>>(&self, name: B) -> Result<Vec<u8>> {
         encrypt_searchable(&self.tag_name_key, &self.tags_hmac_key, name.as_ref())
     }
 
-    pub fn encrypt_tag_value<B: AsRef<[u8]>>(&self, value: B) -> KvResult<Vec<u8>> {
+    pub fn encrypt_tag_value<B: AsRef<[u8]>>(&self, value: B) -> Result<Vec<u8>> {
         encrypt_searchable(&self.tag_value_key, &self.tags_hmac_key, value.as_ref())
     }
 
-    pub fn decrypt_category<B: AsRef<[u8]>>(&self, enc_category: B) -> KvResult<Vec<u8>> {
+    pub fn decrypt_category<B: AsRef<[u8]>>(&self, enc_category: B) -> Result<Vec<u8>> {
         decrypt(&self.category_key, enc_category.as_ref())
     }
 
-    pub fn decrypt_name<B: AsRef<[u8]>>(&self, enc_name: B) -> KvResult<Vec<u8>> {
+    pub fn decrypt_name<B: AsRef<[u8]>>(&self, enc_name: B) -> Result<Vec<u8>> {
         decrypt(&self.name_key, enc_name.as_ref())
     }
 
-    pub fn decrypt_value<B: AsRef<[u8]>>(&self, enc_value: B) -> KvResult<Vec<u8>> {
+    pub fn decrypt_value<B: AsRef<[u8]>>(&self, enc_value: B) -> Result<Vec<u8>> {
         let enc_value = enc_value.as_ref();
         if enc_value.len() < ENC_KEY_SIZE + TagSize::USIZE {
             return Err(err_msg!(
@@ -101,17 +101,25 @@ impl StoreKey {
         decrypt(&value_key, value)
     }
 
-    pub fn decrypt_tag_name<B: AsRef<[u8]>>(&self, enc_tag_name: B) -> KvResult<Vec<u8>> {
+    pub fn decrypt_tag_name<B: AsRef<[u8]>>(&self, enc_tag_name: B) -> Result<Vec<u8>> {
         decrypt(&self.tag_name_key, enc_tag_name.as_ref())
     }
 
-    pub fn decrypt_tag_value<B: AsRef<[u8]>>(&self, enc_tag_value: B) -> KvResult<Vec<u8>> {
+    pub fn decrypt_tag_value<B: AsRef<[u8]>>(&self, enc_tag_value: B) -> Result<Vec<u8>> {
         decrypt(&self.tag_value_key, enc_tag_value.as_ref())
+    }
+
+    pub fn to_string(&self) -> Result<String> {
+        serde_json::to_string(self).map_err(err_map!(Unexpected, "Error serializing store key"))
+    }
+
+    pub fn from_slice(input: &[u8]) -> Result<Self> {
+        serde_json::from_slice(input).map_err(err_map!(Unsupported, "Invalid store key"))
     }
 }
 
 /// Encrypt a value with a predictable nonce, making it searchable
-pub fn encrypt_searchable(enc_key: &EncKey, hmac_key: &HmacKey, input: &[u8]) -> KvResult<Vec<u8>> {
+pub fn encrypt_searchable(enc_key: &EncKey, hmac_key: &HmacKey, input: &[u8]) -> Result<Vec<u8>> {
     let chacha = ChaCha20Poly1305::new(ChaChaKey::from_slice(enc_key));
     let mut nonce_hmac =
         Hmac::<Sha256>::new_varkey(&**hmac_key).map_err(|e| err_msg!(Encryption, "{}", e))?;
@@ -127,7 +135,7 @@ pub fn encrypt_searchable(enc_key: &EncKey, hmac_key: &HmacKey, input: &[u8]) ->
 }
 
 /// Encrypt a value with a random nonce
-pub fn encrypt_non_searchable(enc_key: &EncKey, input: &[u8]) -> KvResult<Vec<u8>> {
+pub fn encrypt_non_searchable(enc_key: &EncKey, input: &[u8]) -> Result<Vec<u8>> {
     let chacha = ChaCha20Poly1305::new(ChaChaKey::from_slice(enc_key));
     let nonce = random_array();
     let mut enc = chacha
@@ -139,7 +147,7 @@ pub fn encrypt_non_searchable(enc_key: &EncKey, input: &[u8]) -> KvResult<Vec<u8
 }
 
 /// Decrypt a previously encrypted value with nonce attached
-pub fn decrypt(enc_key: &EncKey, input: &[u8]) -> KvResult<Vec<u8>> {
+pub fn decrypt(enc_key: &EncKey, input: &[u8]) -> Result<Vec<u8>> {
     if input.len() < NonceSize::USIZE + TagSize::USIZE {
         return Err(err_msg!(Encryption, "Invalid length for encrypted buffer"));
     }
@@ -151,19 +159,19 @@ pub fn decrypt(enc_key: &EncKey, input: &[u8]) -> KvResult<Vec<u8>> {
 }
 
 impl EntryEncryptor for StoreKey {
-    fn encrypt_entry_category(&self, category: &str) -> KvResult<Vec<u8>> {
+    fn encrypt_entry_category(&self, category: &str) -> Result<Vec<u8>> {
         Ok(self.encrypt_category(&category)?)
     }
 
-    fn encrypt_entry_name(&self, name: &str) -> KvResult<Vec<u8>> {
+    fn encrypt_entry_name(&self, name: &str) -> Result<Vec<u8>> {
         Ok(self.encrypt_name(&name)?)
     }
 
-    fn encrypt_entry_value(&self, value: &[u8]) -> KvResult<Vec<u8>> {
+    fn encrypt_entry_value(&self, value: &[u8]) -> Result<Vec<u8>> {
         Ok(self.encrypt_value(&value)?)
     }
 
-    fn encrypt_entry_tags(&self, tags: &[EntryTag]) -> KvResult<Vec<EncEntryTag>> {
+    fn encrypt_entry_tags(&self, tags: &[EntryTag]) -> Result<Vec<EncEntryTag>> {
         tags.into_iter()
             .map(|tag| match tag {
                 EntryTag::Plaintext(name, value) => {
@@ -187,19 +195,19 @@ impl EntryEncryptor for StoreKey {
             .collect()
     }
 
-    fn decrypt_entry_category(&self, enc_category: &[u8]) -> KvResult<String> {
+    fn decrypt_entry_category(&self, enc_category: &[u8]) -> Result<String> {
         decode_utf8(self.decrypt_category(&enc_category)?)
     }
 
-    fn decrypt_entry_name(&self, enc_name: &[u8]) -> KvResult<String> {
+    fn decrypt_entry_name(&self, enc_name: &[u8]) -> Result<String> {
         decode_utf8(self.decrypt_name(&enc_name)?)
     }
 
-    fn decrypt_entry_value(&self, enc_value: &[u8]) -> KvResult<Vec<u8>> {
+    fn decrypt_entry_value(&self, enc_value: &[u8]) -> Result<Vec<u8>> {
         Ok(self.decrypt_value(&enc_value)?)
     }
 
-    fn decrypt_entry_tags(&self, enc_tags: &[EncEntryTag]) -> KvResult<Vec<EntryTag>> {
+    fn decrypt_entry_tags(&self, enc_tags: &[EncEntryTag]) -> Result<Vec<EntryTag>> {
         enc_tags.into_iter().try_fold(vec![], |mut acc, tag| {
             let name = decode_utf8(self.decrypt_tag_name(&tag.name)?)?;
             acc.push(if tag.plaintext {
@@ -209,7 +217,7 @@ impl EntryEncryptor for StoreKey {
                 let value = decode_utf8(self.decrypt_tag_value(&tag.value)?)?;
                 EntryTag::Encrypted(name, value)
             });
-            KvResult::Ok(acc)
+            Result::Ok(acc)
         })
     }
 }
@@ -220,7 +228,7 @@ struct EncStorageKey {
     master_key_salt: Vec<u8>,
 }
 
-pub fn decode_wallet_key(enc_key: &[u8], password: &str) -> KvResult<StoreKey> {
+pub fn decode_wallet_key(enc_key: &[u8], password: &str) -> Result<StoreKey> {
     let key =
         serde_json::from_slice::<EncStorageKey>(enc_key).map_err(err_map!("Invalid wallet key"))?;
 
@@ -239,7 +247,7 @@ pub fn decode_wallet_key(enc_key: &[u8], password: &str) -> KvResult<StoreKey> {
     Ok(wallet_key)
 }
 
-fn decrypt_key(key: EncStorageKey, password: &str) -> KvResult<Vec<u8>> {
+fn decrypt_key(key: EncStorageKey, password: &str) -> Result<Vec<u8>> {
     // check for a raw key in base58 format
     if let Ok(raw_key) = base58::decode(password) {
         if raw_key.len() == 32 {

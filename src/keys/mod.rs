@@ -1,7 +1,11 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use async_mutex::Mutex;
+use zeroize::Zeroize;
+
 use super::error::Result;
+use super::future::blocking_scoped;
 use super::types::{EncEntryTag, EntryTag, ProfileId};
 
 pub mod kdf;
@@ -47,33 +51,43 @@ pub fn verify_signature(signer_vk: &str, data: &[u8], signature: &[u8]) -> Resul
 }
 
 pub struct KeyCache {
-    profile_info: HashMap<String, (ProfileId, Arc<StoreKey>)>,
+    profile_info: Mutex<HashMap<String, (ProfileId, Arc<StoreKey>)>>,
     wrap_key: WrapKey,
 }
 
 impl KeyCache {
     pub fn new(wrap_key: WrapKey) -> Self {
         Self {
-            profile_info: HashMap::new(),
+            profile_info: Mutex::new(HashMap::new()),
             wrap_key,
         }
     }
 
-    pub async fn load_key(&self, ciphertext: Vec<u8>) -> Result<StoreKey> {
-        let data = self
-            .wrap_key
-            .unwrap_data(ciphertext)
-            .await
-            .map_err(err_map!(Encryption, "Error decrypting store key"))?;
-        serde_json::from_slice(&data).map_err(err_map!(Unsupported, "Invalid store key"))
+    pub async fn load_key(&self, ciphertext: &[u8]) -> Result<StoreKey> {
+        blocking_scoped(|| {
+            let mut data = self
+                .wrap_key
+                .unwrap_data(ciphertext)
+                .map_err(err_map!(Encryption, "Error decrypting store key"))?;
+            let key = StoreKey::from_slice(&data)?;
+            data.zeroize();
+            Ok(key)
+        })
+        .await
     }
 
-    pub fn add_profile(&mut self, ident: String, pid: ProfileId, key: StoreKey) {
-        self.profile_info.insert(ident, (pid, Arc::new(key)));
+    pub fn add_profile_mut(&mut self, ident: String, pid: ProfileId, key: StoreKey) {
+        self.profile_info
+            .get_mut()
+            .insert(ident, (pid, Arc::new(key)));
     }
 
-    pub fn get_profile(&self, name: &str) -> Option<(ProfileId, Arc<StoreKey>)> {
-        self.profile_info.get(name).cloned()
+    pub async fn add_profile(&self, ident: String, pid: ProfileId, key: Arc<StoreKey>) {
+        self.profile_info.lock().await.insert(ident, (pid, key));
+    }
+
+    pub async fn get_profile(&self, name: &str) -> Option<(ProfileId, Arc<StoreKey>)> {
+        self.profile_info.lock().await.get(name).cloned()
     }
 
     #[allow(unused)]

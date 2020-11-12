@@ -9,7 +9,7 @@ use sqlx::{
 };
 
 use super::SqliteStore;
-use crate::db_utils::ProvisionStoreSpec;
+use crate::db_utils::{create_store_key, random_profile_name};
 use crate::error::Result;
 use crate::future::{blocking_scoped, BoxFuture};
 use crate::keys::{
@@ -68,8 +68,8 @@ impl<'a> SqliteStoreOptions<'a> {
             // no 'config' table, assume empty database
         }
 
-        let spec = ProvisionStoreSpec::create(method, pass_key).await?;
-        let (default_profile, key_cache) = init_db(&conn_pool, spec).await?;
+        let default_profile = random_profile_name();
+        let key_cache = init_db(&conn_pool, &default_profile, method, pass_key).await?;
 
         Ok(Store::new(SqliteStore::new(
             conn_pool,
@@ -131,8 +131,20 @@ impl<'a> ManageBackend<'a> for SqliteStoreOptions<'a> {
     }
 }
 
-async fn init_db(conn_pool: &SqlitePool, spec: ProvisionStoreSpec) -> Result<(String, KeyCache)> {
+async fn init_db(
+    conn_pool: &SqlitePool,
+    profile_name: &str,
+    method: WrapKeyMethod,
+    pass_key: Option<&str>,
+) -> Result<KeyCache> {
     let mut conn = conn_pool.acquire().await?;
+
+    let (store_key, enc_store_key, wrap_key, wrap_key_ref) = blocking_scoped(|| {
+        let (store_key, enc_store_key) = create_store_key()?;
+        let (wrap_key, wrap_key_ref) = method.resolve(pass_key)?;
+        Result::Ok((store_key, enc_store_key, wrap_key, wrap_key_ref.into_uri()))
+    })
+    .await?;
 
     sqlx::query(
         r#"
@@ -196,22 +208,22 @@ async fn init_db(conn_pool: &SqlitePool, spec: ProvisionStoreSpec) -> Result<(St
     "#,
     )
     .persistent(false)
-    .bind(&spec.profile_name)
-    .bind(spec.wrap_key_ref)
-    .bind(spec.enc_store_key)
+    .bind(profile_name)
+    .bind(wrap_key_ref)
+    .bind(enc_store_key)
     .execute(&mut conn)
     .await?;
 
-    let mut key_cache = KeyCache::new(spec.wrap_key);
+    let mut key_cache = KeyCache::new(wrap_key);
 
     let row = sqlx::query("SELECT id FROM profiles WHERE name = ?1")
         .persistent(false)
-        .bind(&spec.profile_name)
+        .bind(profile_name)
         .fetch_one(&mut conn)
         .await?;
-    key_cache.add_profile(spec.profile_name.clone(), row.try_get(0)?, spec.store_key);
+    key_cache.add_profile_mut(profile_name.to_string(), row.try_get(0)?, store_key);
 
-    Ok((spec.profile_name, key_cache))
+    Ok(key_cache)
 }
 
 async fn open_db(
@@ -260,7 +272,7 @@ async fn open_db(
                 return Err(err_msg!("Store key wrap method mismatch"));
             }
         }
-        wrap_ref.resolve(pass_key).await?
+        blocking_scoped(|| wrap_ref.resolve(pass_key)).await?
     } else {
         return Err(err_msg!(Unsupported, "Store wrap key not found"));
     };
@@ -272,7 +284,7 @@ async fn open_db(
         .await?;
     let profile_id = row.try_get(0)?;
     let store_key = key_cache.load_key(row.try_get(1)?).await?;
-    key_cache.add_profile(default_profile.clone(), profile_id, store_key);
+    key_cache.add_profile_mut(default_profile.clone(), profile_id, store_key);
 
     Ok(Store::new(SqliteStore::new(
         conn_pool,

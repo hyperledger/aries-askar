@@ -3,7 +3,6 @@ use indy_utils::{base58, keys::ArrayKey, random::random_deterministic};
 
 use super::kdf::KdfMethod;
 use crate::error::Result;
-use crate::future::blocking;
 use crate::keys::store::{decrypt, encrypt_non_searchable, EncKey};
 
 pub const PREFIX_KDF: &'static str = "kdf";
@@ -53,24 +52,17 @@ impl WrapKey {
         self.0.is_none()
     }
 
-    pub async fn wrap_data<'a>(&self, data: Vec<u8>) -> Result<Vec<u8>> {
+    pub fn wrap_data<'a>(&self, data: &[u8]) -> Result<Vec<u8>> {
         match &self.0 {
-            Some(key_data) => {
-                let key = key_data.clone();
-                let data = zeroize::Zeroizing::new(data);
-                blocking(move || Ok(encrypt_non_searchable(&key, &data)?)).await
-            }
-            None => Ok(data),
+            Some(key) => Ok(encrypt_non_searchable(key, data)?),
+            None => Ok(data.to_vec()),
         }
     }
 
-    pub async fn unwrap_data<'a>(&self, ciphertext: Vec<u8>) -> Result<Vec<u8>> {
+    pub fn unwrap_data<'a>(&self, ciphertext: &[u8]) -> Result<Vec<u8>> {
         match &self.0 {
-            Some(key_data) => {
-                let key = key_data.clone();
-                blocking(move || decrypt(&key, &ciphertext)).await
-            }
-            None => Ok(ciphertext),
+            Some(key) => Ok(decrypt(key, ciphertext)?),
+            None => Ok(ciphertext.to_vec()),
         }
     }
 
@@ -110,20 +102,15 @@ impl WrapKeyMethod {
         }
     }
 
-    pub async fn resolve(&self, pass_key: Option<&str>) -> Result<(WrapKey, WrapKeyReference)> {
+    pub fn resolve(&self, pass_key: Option<&str>) -> Result<(WrapKey, WrapKeyReference)> {
         match self {
             Self::CreateManagedKey(_mgr_ref) => unimplemented!(),
             // Self::ExistingManagedKey(String),
             Self::DeriveKey(method) => {
                 if let Some(password) = pass_key {
-                    let method = *method;
-                    let password = zeroize::Zeroizing::new(password.to_owned());
-                    blocking(move || {
-                        let (key, detail) = method.derive_new_key(&password)?;
-                        let key_ref = WrapKeyReference::DeriveKey(method, detail);
-                        Ok((key, key_ref))
-                    })
-                    .await
+                    let (key, detail) = method.derive_new_key(password)?;
+                    let key_ref = WrapKeyReference::DeriveKey(*method, detail);
+                    Ok((key, key_ref))
                 } else {
                     Err(err_msg!("Key derivation password not provided"))
                 }
@@ -197,15 +184,12 @@ impl WrapKeyReference {
         }
     }
 
-    pub async fn resolve(&self, pass_key: Option<&str>) -> Result<WrapKey> {
+    pub fn resolve(&self, pass_key: Option<&str>) -> Result<WrapKey> {
         match self {
             Self::ManagedKey(_key_ref) => unimplemented!(),
             Self::DeriveKey(method, detail) => {
                 if let Some(password) = pass_key {
-                    let method = *method;
-                    let password = zeroize::Zeroizing::new(password.to_string());
-                    let detail = detail.to_owned();
-                    blocking(move || method.derive_key(&password, &detail)).await
+                    method.derive_key(password, detail)
                 } else {
                     Err(err_msg!("Key derivation password not provided"))
                 }
@@ -226,7 +210,6 @@ impl WrapKeyReference {
 mod tests {
     use super::*;
     use crate::error::ErrorKind;
-    use crate::future::block_on;
 
     #[test]
     fn protection_method_parse() {
@@ -249,28 +232,28 @@ mod tests {
     fn derived_key_wrap() {
         let input = b"test data";
         let pass = "pass";
-        let (wrapped, key_ref) = block_on(async {
-            let (key, key_ref) = WrapKeyMethod::DeriveKey(KdfMethod::Argon2i(Default::default()))
-                .resolve(Some(pass))
-                .await?;
-            assert!(!key.is_empty());
-            let wrapped = key.wrap_data(input.to_vec()).await?;
-            Result::Ok((wrapped, key_ref))
-        })
-        .unwrap();
+        let (key, key_ref) = WrapKeyMethod::DeriveKey(KdfMethod::Argon2i(Default::default()))
+            .resolve(Some(pass))
+            .expect("Error deriving new key");
+        assert!(!key.is_empty());
+        let wrapped = key.wrap_data(input).expect("Error wrapping input");
         assert_ne!(wrapped, input);
 
         // round trip the key reference
         let key_uri = key_ref.into_uri();
-        let key_ref = WrapKeyReference::parse_uri(&key_uri).unwrap();
-        let key = block_on(key_ref.resolve(Some(pass))).unwrap();
+        let key_ref = WrapKeyReference::parse_uri(&key_uri).expect("Error parsing key ref");
+        let key = key_ref
+            .resolve(Some(pass))
+            .expect("Error deriving existing key");
 
-        let unwrapped = block_on(key.unwrap_data(wrapped.clone())).unwrap();
+        let unwrapped = key.unwrap_data(&wrapped).expect("Error unwrapping data");
         assert_eq!(unwrapped, input);
 
-        let check_bad_pass = block_on(key_ref.resolve(Some("not my pass"))).unwrap();
-        let unwrapped_err = block_on(check_bad_pass.unwrap_data(wrapped));
-        assert!(unwrapped_err.is_err());
+        let check_bad_pass = key_ref
+            .resolve(Some("not my pass"))
+            .expect("Error deriving comparison key");
+        let unwrapped_err = check_bad_pass.unwrap_data(&wrapped);
+        assert_eq!(unwrapped_err.is_err(), true);
     }
 
     #[test]
@@ -278,48 +261,51 @@ mod tests {
         let input = b"test data";
         let raw_key = generate_raw_wrap_key(None).unwrap();
 
-        let (wrapped, key_ref) = block_on(async {
-            let (key, key_ref) = WrapKeyMethod::RawKey.resolve(Some(&raw_key)).await?;
-            assert!(!key.is_empty());
-            let wrapped = key.wrap_data(input.to_vec()).await?;
-            Result::Ok((wrapped, key_ref))
-        })
-        .unwrap();
+        let (key, key_ref) = WrapKeyMethod::RawKey
+            .resolve(Some(&raw_key))
+            .expect("Error resolving raw key");
+        assert_eq!(key.is_empty(), false);
+        let wrapped = key.wrap_data(input).expect("Error wrapping input");
         assert_ne!(wrapped, input);
 
         // round trip the key reference
         let key_uri = key_ref.into_uri();
-        let key_ref = WrapKeyReference::parse_uri(&key_uri).unwrap();
-        let key = block_on(key_ref.resolve(Some(&raw_key))).unwrap();
+        let key_ref = WrapKeyReference::parse_uri(&key_uri).expect("Error parsing raw key URI");
+        let key = key_ref
+            .resolve(Some(&raw_key))
+            .expect("Error resolving raw key");
 
-        let unwrapped = block_on(key.unwrap_data(wrapped)).unwrap();
+        let unwrapped = key.unwrap_data(&wrapped).expect("Error unwrapping data");
         assert_eq!(unwrapped, input);
 
-        let check_no_key = block_on(key_ref.resolve(None));
-        assert!(check_no_key.is_err());
+        let check_no_key = key_ref.resolve(None);
+        assert_eq!(check_no_key.is_err(), true);
 
-        let check_bad_key = block_on(key_ref.resolve(Some("not the key")));
-        assert!(check_bad_key.is_err());
+        let check_bad_key = key_ref.resolve(Some("not the key"));
+        assert_eq!(check_bad_key.is_err(), true);
     }
 
     #[test]
     fn unprotected_wrap() {
         let input = b"test data";
-        let (wrapped, key_ref) = block_on(async {
-            let (key, key_ref) = WrapKeyMethod::Unprotected.resolve(None).await?;
-            assert!(key.is_empty());
-            let wrapped = key.unwrap_data(input.to_vec()).await?;
-            Result::Ok((wrapped, key_ref))
-        })
-        .unwrap();
+        let (key, key_ref) = WrapKeyMethod::Unprotected
+            .resolve(None)
+            .expect("Error resolving unprotected");
+        assert_eq!(key.is_empty(), true);
+        let wrapped = key.wrap_data(input).expect("Error wrapping unprotected");
         assert_eq!(wrapped, input);
 
         // round trip the key reference
         let key_uri = key_ref.into_uri();
-        let key_ref = WrapKeyReference::parse_uri(&key_uri).unwrap();
-        let key = block_on(key_ref.resolve(None)).unwrap();
+        let key_ref =
+            WrapKeyReference::parse_uri(&key_uri).expect("Error parsing unprotected key ref");
+        let key = key_ref
+            .resolve(None)
+            .expect("Error resolving unprotected key ref");
 
-        let unwrapped = block_on(key.unwrap_data(wrapped)).unwrap();
+        let unwrapped = key
+            .unwrap_data(&wrapped)
+            .expect("Error unwrapping unprotected");
         assert_eq!(unwrapped, input);
     }
 }

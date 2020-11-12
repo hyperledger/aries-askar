@@ -9,10 +9,7 @@ use sqlx::{
 
 use super::error::Result;
 use super::future::{blocking, BoxFuture};
-use super::keys::{
-    store::StoreKey,
-    wrap::{WrapKey, WrapKeyMethod},
-};
+use super::keys::store::StoreKey;
 use super::types::{EncEntryTag, Expiry, ProfileId, TagFilter};
 use super::wql::{
     sql::TagSqlEncoder,
@@ -230,32 +227,6 @@ pub fn replace_arg_placeholders<Q: QueryPrepare + ?Sized>(
     buffer
 }
 
-#[derive(Debug)]
-pub struct ProvisionStoreSpec {
-    pub enc_store_key: Vec<u8>,
-    pub profile_name: String,
-    pub store_key: StoreKey,
-    pub wrap_key: WrapKey,
-    pub wrap_key_ref: String,
-}
-
-impl ProvisionStoreSpec {
-    pub async fn create(method: WrapKeyMethod, pass_key: Option<&str>) -> Result<Self> {
-        let store_key = StoreKey::new()?;
-        let key_data = serde_json::to_vec(&store_key).map_err(err_map!(Unexpected))?;
-        let (wrap_key, wrap_key_ref) = method.resolve(pass_key).await?;
-        let enc_store_key = wrap_key.wrap_data(key_data).await?;
-        let profile_name = uuid::Uuid::new_v4().to_string();
-        Ok(Self {
-            enc_store_key,
-            profile_name,
-            store_key,
-            wrap_key,
-            wrap_key_ref: wrap_key_ref.into_uri(),
-        })
-    }
-}
-
 pub fn decode_tags(tags: &[u8]) -> std::result::Result<Vec<EncEntryTag>, ()> {
     let mut idx = 0;
     let mut plaintext;
@@ -351,4 +322,15 @@ where
         query = Q::limit_query(query, args, offset, limit);
     };
     Ok(query)
+}
+
+pub fn create_store_key() -> Result<(StoreKey, String)> {
+    let key = StoreKey::new()?;
+    let enc_key = key.to_string()?;
+    Ok((key, enc_key))
+}
+
+#[inline]
+pub fn random_profile_name() -> String {
+    uuid::Uuid::new_v4().to_string()
 }

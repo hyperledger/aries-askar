@@ -330,6 +330,63 @@ pub extern "C" fn askar_store_remove(
 }
 
 #[no_mangle]
+pub extern "C" fn askar_store_create_profile(
+    handle: StoreHandle,
+    profile: FfiStr,
+    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, result_p: *const c_char)>,
+    cb_id: CallbackId,
+) -> ErrorCode {
+    catch_err! {
+        trace!("Create profile");
+        let cb = cb.ok_or_else(|| err_msg!("No callback provided"))?;
+        let profile = profile.into_opt_string();
+        let cb = EnsureCallback::new(move |result|
+            match result {
+                Ok(name) => cb(cb_id, ErrorCode::Success, rust_string_to_c(name)),
+                Err(err) => cb(cb_id, set_last_error(Some(err)), ptr::null()),
+            }
+        );
+        spawn_ok(async move {
+            let result = async {
+                let store = handle.load().await?;
+                let name = store.create_profile(profile.as_ref().map(String::as_str)).await?;
+                Ok(name)
+            }.await;
+            cb.resolve(result);
+        });
+        Ok(ErrorCode::Success)
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn askar_store_remove_profile(
+    handle: StoreHandle,
+    profile: FfiStr,
+    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, removed: i8)>,
+    cb_id: CallbackId,
+) -> ErrorCode {
+    catch_err! {
+        trace!("Remove profile");
+        let cb = cb.ok_or_else(|| err_msg!("No callback provided"))?;
+        let profile = profile.into_opt_string().ok_or_else(|| err_msg!("Profile name not provided"))?;
+        let cb = EnsureCallback::new(move |result|
+            match result {
+                Ok(removed) => cb(cb_id, ErrorCode::Success, removed as i8),
+                Err(err) => cb(cb_id, set_last_error(Some(err)), 0),
+            }
+        );
+        spawn_ok(async move {
+            let result = async {
+                let store = handle.load().await?;
+                Ok(store.remove_profile(profile).await?)
+            }.await;
+            cb.resolve(result);
+        });
+        Ok(ErrorCode::Success)
+    }
+}
+
+#[no_mangle]
 pub extern "C" fn askar_store_close(
     handle: StoreHandle,
     cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode)>,

@@ -310,7 +310,7 @@ def generate_raw_key(seed: str = None) -> str:
     """Generate a new raw store wrapping key."""
     result = lib_string()
     do_call("askar_generate_raw_key", encode_str(seed), byref(result))
-    return result.value.decode("utf-8")
+    return str(result)
 
 
 def verify_signature(
@@ -333,7 +333,7 @@ def version() -> str:
     """Set the version of the installed aries-askar library."""
     lib = get_library()
     lib.askar_version.restype = c_void_p
-    return lib_string(lib.askar_version()).value.decode("utf-8")
+    return str(lib_string(lib.askar_version()))
 
 
 async def store_open(
@@ -360,6 +360,31 @@ async def store_provision(
         encode_str(pass_key),
         c_int8(recreate),
         return_type=StoreHandle,
+    )
+
+
+async def store_create_profile(handle: StoreHandle, name: str = None) -> str:
+    """Create a new profile in a Store."""
+    return str(
+        await do_call_async(
+            "askar_store_create_profile",
+            handle,
+            encode_str(name),
+            return_type=lib_string,
+        )
+    )
+
+
+async def store_remove_profile(handle: StoreHandle, name: str) -> bool:
+    """Remove an existing profile from a Store."""
+    return (
+        await do_call_async(
+            "askar_store_remove_profile",
+            handle,
+            encode_str(name),
+            return_type=c_int8,
+        )
+        != 0
     )
 
 
@@ -517,14 +542,16 @@ async def session_create_keypair(
     tags: dict = None,
     seed: Union[str, bytes, memoryview] = None,
 ) -> str:
-    return await do_call_async(
-        "askar_session_create_keypair",
-        handle,
-        encode_str(alg),
-        encode_str(metadata),
-        encode_str(None if tags is None else json.dumps(tags)),
-        encode_bytes(seed),
-        return_type=lib_string,
+    return str(
+        await do_call_async(
+            "askar_session_create_keypair",
+            handle,
+            encode_str(alg),
+            encode_str(metadata),
+            encode_str(None if tags is None else json.dumps(tags)),
+            encode_bytes(seed),
+            return_type=lib_string,
+        )
     )
 
 

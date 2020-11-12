@@ -120,6 +120,12 @@ class Store:
     async def __aexit__(self, exc_type, exc, tb):
         return await self.opener.__aexit__(exc_type, exc, tb)
 
+    async def create_profile(self, name: str = None) -> str:
+        return await bindings.store_create_profile(self.handle, name)
+
+    async def remove_profile(self, name: str) -> bool:
+        return await bindings.store_remove_profile(self.handle, name)
+
     def scan(
         self,
         category: str,

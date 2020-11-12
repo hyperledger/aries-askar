@@ -31,6 +31,30 @@ impl Backend for AnyBackend {
     type Session = AnyQueryBackend;
     type Transaction = AnyQueryBackend;
 
+    fn create_profile(&self, name: Option<&str>) -> BoxFuture<Result<String>> {
+        match self {
+            #[cfg(feature = "postgres")]
+            Self::Postgres(store) => store.create_profile(name),
+
+            #[cfg(feature = "sqlite")]
+            Self::Sqlite(store) => store.create_profile(name),
+
+            _ => unreachable!(),
+        }
+    }
+
+    fn remove_profile(&self, name: String) -> BoxFuture<Result<bool>> {
+        match self {
+            #[cfg(feature = "postgres")]
+            Self::Postgres(store) => store.remove_profile(name),
+
+            #[cfg(feature = "sqlite")]
+            Self::Sqlite(store) => store.remove_profile(name),
+
+            _ => unreachable!(),
+        }
+    }
+
     fn scan(
         &self,
         profile: Option<String>,
