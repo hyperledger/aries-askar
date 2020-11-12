@@ -22,11 +22,7 @@ def log(*args):
 async def perf_test():
     key = generate_raw_key()
 
-    store = await Store.provision(
-        REPO_URI,
-        "raw",
-        key,
-    )
+    store = await Store.provision(REPO_URI, "raw", key, recreate=True)
 
     insert_start = time.perf_counter()
     async with store.transaction() as txn:

@@ -3,22 +3,16 @@ pub fn decode_utf8(value: Vec<u8>) -> KvResult<String> {
     String::from_utf8(value).map_err(err_map!(Encryption))
 }
 
-use hmac::{Hmac, Mac};
-use indy_utils::{
+use chacha20poly1305::{
     aead::{
-        generic_array::{
-            typenum::{Unsigned, U32},
-            ArrayLength, GenericArray,
-        },
+        generic_array::typenum::{Unsigned, U32},
         Aead, NewAead,
     },
-    base58,
-    keys::ArrayKey,
+    ChaCha20Poly1305, Key as ChaChaKey, Nonce,
 };
-use ursa::{
-    encryption::{random_bytes, symm::chacha20poly1305::ChaCha20Poly1305 as ChaChaKey},
-    hash::sha2::Sha256,
-};
+use hmac::{Hmac, Mac, NewMac};
+use indy_utils::{base58, keys::ArrayKey, random::random_array};
+use sha2::Sha256;
 
 use serde::Deserialize;
 
@@ -26,24 +20,15 @@ use crate::error::Result as KvResult;
 use crate::keys::EntryEncryptor;
 use crate::types::{EncEntryTag, EntryTag};
 
-const ENC_KEY_BYTES: usize = 32;
-const ENC_KEY_SIZE: usize = 12 + ENC_KEY_BYTES + 16; // nonce + key_bytes + tag size
+const ENC_KEY_BYTES: usize = <ChaCha20Poly1305 as NewAead>::KeySize::USIZE;
+const ENC_KEY_SIZE: usize = <ChaCha20Poly1305 as Aead>::NonceSize::USIZE
+    + ENC_KEY_BYTES
+    + <ChaCha20Poly1305 as Aead>::TagSize::USIZE;
 
 pub type EncKey = ArrayKey<U32>;
 pub type HmacKey = ArrayKey<U32>;
-type NonceSize = <ChaChaKey as Aead>::NonceSize;
-type Nonce = GenericArray<u8, NonceSize>;
-type TagSize = <ChaChaKey as Aead>::TagSize;
-
-fn random_key<L: ArrayLength<u8>>() -> KvResult<ArrayKey<L>> {
-    Ok(ArrayKey::from(random_bytes().map_err(|e| {
-        err_msg!(Unexpected, "Error creating key: {}", e)
-    })?))
-}
-
-fn random_nonce() -> KvResult<Nonce> {
-    random_bytes().map_err(|e| err_msg!(Unexpected, "Error creating nonce: {}", e))
-}
+type NonceSize = <ChaCha20Poly1305 as Aead>::NonceSize;
+type TagSize = <ChaCha20Poly1305 as Aead>::TagSize;
 
 /// A store key combining the keys required to encrypt
 /// and decrypt storage records
@@ -61,13 +46,13 @@ pub struct StoreKey {
 impl StoreKey {
     pub fn new() -> KvResult<Self> {
         Ok(Self {
-            category_key: random_key()?,
-            name_key: random_key()?,
-            value_key: random_key()?,
-            item_hmac_key: random_key()?,
-            tag_name_key: random_key()?,
-            tag_value_key: random_key()?,
-            tags_hmac_key: random_key()?,
+            category_key: ArrayKey::random(),
+            name_key: ArrayKey::random(),
+            value_key: ArrayKey::random(),
+            item_hmac_key: ArrayKey::random(),
+            tag_name_key: ArrayKey::random(),
+            tag_value_key: ArrayKey::random(),
+            tags_hmac_key: ArrayKey::random(),
         })
     }
 
@@ -80,7 +65,7 @@ impl StoreKey {
     }
 
     pub fn encrypt_value<B: AsRef<[u8]>>(&self, value: B) -> KvResult<Vec<u8>> {
-        let value_key = random_key()?;
+        let value_key = ArrayKey::random();
         let mut value = encrypt_non_searchable(&value_key, value.as_ref())?;
         let mut result = encrypt_non_searchable(&self.value_key, value_key.as_ref())?;
         result.append(&mut value);
@@ -105,7 +90,7 @@ impl StoreKey {
 
     pub fn decrypt_value<B: AsRef<[u8]>>(&self, enc_value: B) -> KvResult<Vec<u8>> {
         let enc_value = enc_value.as_ref();
-        if enc_value.len() < ENC_KEY_SIZE + TagSize::to_usize() {
+        if enc_value.len() < ENC_KEY_SIZE + TagSize::USIZE {
             return Err(err_msg!(
                 Encryption,
                 "Buffer is too short to represent an encrypted value",
@@ -127,13 +112,13 @@ impl StoreKey {
 
 /// Encrypt a value with a predictable nonce, making it searchable
 pub fn encrypt_searchable(enc_key: &EncKey, hmac_key: &HmacKey, input: &[u8]) -> KvResult<Vec<u8>> {
-    let key = ChaChaKey::new(enc_key);
+    let chacha = ChaCha20Poly1305::new(ChaChaKey::from_slice(enc_key));
     let mut nonce_hmac =
         Hmac::<Sha256>::new_varkey(&**hmac_key).map_err(|e| err_msg!(Encryption, "{}", e))?;
-    nonce_hmac.input(input);
-    let result = nonce_hmac.result().code();
-    let nonce = Nonce::from_slice(&result[0..NonceSize::to_usize()]);
-    let mut enc = key
+    nonce_hmac.update(input);
+    let result = nonce_hmac.finalize().into_bytes();
+    let nonce = Nonce::from_slice(&result[0..NonceSize::USIZE]);
+    let mut enc = chacha
         .encrypt(nonce, input)
         .map_err(|e| err_msg!(Encryption, "{}", e))?;
     let mut result = nonce.to_vec();
@@ -143,9 +128,9 @@ pub fn encrypt_searchable(enc_key: &EncKey, hmac_key: &HmacKey, input: &[u8]) ->
 
 /// Encrypt a value with a random nonce
 pub fn encrypt_non_searchable(enc_key: &EncKey, input: &[u8]) -> KvResult<Vec<u8>> {
-    let key = ChaChaKey::new(enc_key);
-    let nonce = random_nonce()?;
-    let mut enc = key
+    let chacha = ChaCha20Poly1305::new(ChaChaKey::from_slice(enc_key));
+    let nonce = random_array();
+    let mut enc = chacha
         .encrypt(&nonce, input)
         .map_err(|e| err_msg!(Encryption, "{}", e))?;
     let mut result = nonce.to_vec();
@@ -153,28 +138,15 @@ pub fn encrypt_non_searchable(enc_key: &EncKey, input: &[u8]) -> KvResult<Vec<u8
     Ok(result)
 }
 
-/// Written to match randombytes_deterministic in libsodium,
-/// used to generate a deterministic wallet raw key.
-pub fn random_deterministic(enc_key: &EncKey, len: usize) -> Vec<u8> {
-    // ursa does not re-export chacha20 crate
-    use chacha20::stream_cipher::{NewStreamCipher, SyncStreamCipher};
-    use chacha20::ChaCha20;
-
-    let nonce = GenericArray::from_slice(b"LibsodiumDRG");
-    let mut cipher = ChaCha20::new(&enc_key, &nonce);
-    let mut data = vec![0; len];
-    cipher.apply_keystream(data.as_mut_slice());
-    data
-}
-
 /// Decrypt a previously encrypted value with nonce attached
 pub fn decrypt(enc_key: &EncKey, input: &[u8]) -> KvResult<Vec<u8>> {
-    if input.len() < NonceSize::to_usize() + TagSize::to_usize() {
+    if input.len() < NonceSize::USIZE + TagSize::USIZE {
         return Err(err_msg!(Encryption, "Invalid length for encrypted buffer"));
     }
-    let nonce = Nonce::from_slice(&input[0..NonceSize::to_usize()]);
-    let key = ChaChaKey::new(enc_key);
-    key.decrypt(&nonce, &input[NonceSize::to_usize()..])
+    let nonce = Nonce::from_slice(&input[0..NonceSize::USIZE]);
+    let chacha = ChaCha20Poly1305::new(ChaChaKey::from_slice(enc_key));
+    chacha
+        .decrypt(&nonce, &input[NonceSize::USIZE..])
         .map_err(|e| err_msg!(Encryption, "Error decrypting record: {}", e))
 }
 
@@ -344,12 +316,9 @@ mod tests {
     #[test]
     fn store_key_non_searchable() {
         let input = b"hello";
-        let key = random_key().unwrap();
+        let key = ArrayKey::random();
         let enc = encrypt_non_searchable(&key, input).unwrap();
-        assert_eq!(
-            enc.len(),
-            input.len() + NonceSize::to_usize() + TagSize::to_usize()
-        );
+        assert_eq!(enc.len(), input.len() + NonceSize::USIZE + TagSize::USIZE);
         let dec = decrypt(&key, enc.as_slice()).unwrap();
         assert_eq!(dec.as_slice(), input);
     }
@@ -357,33 +326,19 @@ mod tests {
     #[test]
     fn store_key_searchable() {
         let input = b"hello";
-        let key = random_key().unwrap();
-        let hmac_key = random_key().unwrap();
+        let key = ArrayKey::random();
+        let hmac_key = ArrayKey::random();
         let enc = encrypt_searchable(&key, &hmac_key, input).unwrap();
-        assert_eq!(
-            enc.len(),
-            input.len() + NonceSize::to_usize() + TagSize::to_usize()
-        );
+        assert_eq!(enc.len(), input.len() + NonceSize::USIZE + TagSize::USIZE);
         let dec = decrypt(&key, enc.as_slice()).unwrap();
         assert_eq!(dec.as_slice(), input);
     }
 
-    #[cfg(feature = "serde")]
     #[test]
     fn store_key_serde() {
-        let key = WalletKey::new().unwrap();
+        let key = StoreKey::new().unwrap();
         let key_json = serde_json::to_string(&key).unwrap();
         let key_cmp = serde_json::from_str(&key_json).unwrap();
         assert_eq!(key, key_cmp);
-    }
-
-    #[test]
-    fn random_det() {
-        let key = EncKey::from_slice(b"00000000000000000000000000000My1");
-        let ret = random_deterministic(&key, ENC_KEY_BYTES);
-        assert_eq!(
-            base58::encode(ret),
-            "CwMHrEQJnwvuE8q9zbR49jyYtVxVBHNTjCPEPk1aV3cP"
-        );
     }
 }

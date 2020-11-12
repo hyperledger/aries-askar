@@ -1,10 +1,10 @@
-use indy_utils::{aead::generic_array::typenum::U32, base58, keys::ArrayKey};
-use ursa::encryption::random_bytes;
+use chacha20poly1305::aead::generic_array::typenum::U32;
+use indy_utils::{base58, keys::ArrayKey, random::random_deterministic};
 
 use super::kdf::KdfMethod;
 use crate::error::Result;
 use crate::future::blocking;
-use crate::keys::store::{decrypt, encrypt_non_searchable, random_deterministic, EncKey};
+use crate::keys::store::{decrypt, encrypt_non_searchable, EncKey};
 
 pub const PREFIX_KDF: &'static str = "kdf";
 pub const PREFIX_RAW: &'static str = "raw";
@@ -25,16 +25,7 @@ pub fn generate_raw_wrap_key(seed: Option<&[u8]>) -> Result<String> {
     }
 }
 
-// pub fn generate_raw_wrap_key(seed: Option<&[u8]>) -> Result<String> {
-//     if let Some(seed) = seed {
-//         let data = [0; RAW_KEY_SIZE];
-
-//     } else {
-//         Ok(WrapKey::random()?.to_opt_string().unwrap())
-//     }
-// }
-
-fn parse_raw_key(raw_key: &str) -> Result<WrapKey> {
+pub fn parse_raw_key(raw_key: &str) -> Result<WrapKey> {
     let key =
         base58::decode(raw_key).map_err(|_| err_msg!("Error parsing raw key as base58 value"))?;
     if key.len() != RAW_KEY_SIZE {
@@ -55,9 +46,7 @@ impl WrapKey {
     }
 
     pub fn random() -> Result<Self> {
-        Ok(Self(Some(WrapKeyData::from(random_bytes().map_err(
-            |e| err_msg!(Encryption, "Error generating new key: {}", e),
-        )?))))
+        Ok(Self(Some(WrapKeyData::random())))
     }
 
     pub fn is_empty(&self) -> bool {

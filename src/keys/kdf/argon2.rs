@@ -1,4 +1,4 @@
-use ursa::encryption::random_vec;
+use indy_utils::random::random_vec;
 
 use crate::error::Result;
 
@@ -66,5 +66,5 @@ fn derive_key(password: &str, salt: &[u8], mem_cost: u32, time_cost: u32) -> Res
 }
 
 pub fn generate_salt() -> Vec<u8> {
-    random_vec(SALT_SIZE).unwrap()
+    random_vec(SALT_SIZE)
 }

@@ -28,33 +28,33 @@ dependencies = [
 name = "aries-askar"
 version = "0.1.0"
 dependencies = [
+ "aead",
  "async-global-executor",
  "async-mutex",
  "async-std",
  "async-stream",
  "blocking",
- "chacha20",
+ "chacha20poly1305",
  "chrono",
  "env_logger",
  "ffi-support",
  "futures-lite",
  "hex",
- "hmac 0.7.1",
+ "hmac 0.10.1",
  "indy-utils",
  "itertools",
  "log",
  "once_cell",
  "percent-encoding",
  "rand",
- "rand_chacha",
  "rmp-serde",
  "rust-argon2",
  "serde",
  "serde_bytes",
  "serde_json",
+ "sha2 0.9.1",
  "sqlx",
  "url",
- "ursa",
  "uuid",
  "zeroize",
 ]
@@ -379,24 +379,24 @@ checksum = "4785bdd1c96b2a846b2bd7cc02e86b6b3dbf14e7e53446c4f54c92a361040822"
 
 [[package]]
 name = "chacha20"
-version = "0.4.3"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "086c0f07ac275808b7bf9a39f2fd013aae1498be83632814c8c4e0bd53f2dc58"
+checksum = "ed8738f14471a99f0e316c327e68fc82a3611cc2895fcb604b89eedaf8f39d95"
 dependencies = [
- "stream-cipher",
+ "cipher",
  "zeroize",
 ]
 
 [[package]]
 name = "chacha20poly1305"
-version = "0.5.1"
+version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "18b0c90556d8e3fec7cf18d84a2f53d27b21288f2fe481b830fadcf809e48205"
+checksum = "af1fc18e6d90c40164bf6c317476f2a98f04661e310e79830366b7e914c58a8e"
 dependencies = [
  "aead",
  "chacha20",
+ "cipher",
  "poly1305",
- "stream-cipher",
  "zeroize",
 ]
 
@@ -409,6 +409,15 @@ dependencies = [
  "num-integer",
  "num-traits",
  "time",
+]
+
+[[package]]
+name = "cipher"
+version = "0.2.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "12f8e7987cbd042a63249497f41aed09f8e65add917ea6566effbc56578d6801"
+dependencies = [
+ "generic-array 0.14.4",
 ]
 
 [[package]]
@@ -513,6 +522,16 @@ name = "crypto-mac"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b584a330336237c1eecd3e94266efb216c56ed91225d634cb2991c5f3fd1aeab"
+dependencies = [
+ "generic-array 0.14.4",
+ "subtle 2.3.0",
+]
+
+[[package]]
+name = "crypto-mac"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4857fd85a0c34b3c3297875b747c1e02e06b6a0ea32dd892d8192b9ce0813ea6"
 dependencies = [
  "generic-array 0.14.4",
  "subtle 2.3.0",
@@ -861,6 +880,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "hmac"
+version = "0.10.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c1441c6b1e930e2817404b5046f1f989899143a12bf92de603b69f4e0aee1e15"
+dependencies = [
+ "crypto-mac 0.10.0",
+ "digest 0.9.0",
+]
+
+[[package]]
 name = "humantime"
 version = "1.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -882,16 +911,19 @@ dependencies = [
 
 [[package]]
 name = "indy-utils"
-version = "0.3.3"
+version = "0.3.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "22e2e49646c8480561d434cb15d96e41a501ad18829bd3dedb1b90279ec3a2e9"
+checksum = "220845095230a816a0775f4924bed6d04cdded01c211e92db99f9c03bf01643e"
 dependencies = [
  "aead",
  "base64",
  "bs58",
+ "chacha20",
+ "chacha20poly1305",
  "crypto_box",
  "hex",
  "once_cell",
+ "rand",
  "regex",
  "serde",
  "serde_json",
@@ -1809,10 +1841,8 @@ version = "0.3.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "42e50b5a83e303aa9e0a6affffbca0fe9444854d1c5fab409d401f1eaa9fa8b6"
 dependencies = [
- "aead",
  "arrayref",
  "blake2",
- "chacha20poly1305",
  "curve25519-dalek",
  "ed25519-dalek",
  "hex",
