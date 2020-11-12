@@ -2,6 +2,7 @@ use aries_askar::{
     verify_signature, Backend, Entry, EntryTag, ErrorKind, KeyAlg, Store, TagFilter,
 };
 
+const ERR_PROFILE: &'static str = "Error creating profile";
 const ERR_SESSION: &'static str = "Error starting session";
 const ERR_TRANSACTION: &'static str = "Error starting transaction";
 const ERR_COUNT: &'static str = "Error performing count";
@@ -20,6 +21,22 @@ const ERR_SIGN: &'static str = "Error signing message";
 const ERR_VERIFY: &'static str = "Error verifying signature";
 const ERR_PACK: &'static str = "Error packing message";
 const ERR_UNPACK: &'static str = "Error unpacking message";
+
+pub async fn db_create_remove_profile<DB: Backend>(db: &Store<DB>) {
+    let profile = db.create_profile(None).await.expect(ERR_PROFILE);
+    assert_eq!(
+        db.remove_profile(profile)
+            .await
+            .expect("Error removing profile"),
+        true
+    );
+    assert_eq!(
+        db.remove_profile("not a profile".to_string())
+            .await
+            .expect("Error removing profile"),
+        false
+    );
+}
 
 pub async fn db_fetch_fail<DB: Backend>(db: &Store<DB>) {
     let mut conn = db.session(None).await.expect(ERR_SESSION);

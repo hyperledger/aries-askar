@@ -13,7 +13,7 @@ use sqlx::{
 
 use super::db_utils::{
     decode_tags, encode_tag_filter, expiry_timestamp, extend_query, replace_arg_placeholders,
-    CloseDbSession, DbSession, DbSessionRef, QueryParams, QueryPrepare, PAGE_SIZE,
+    CloseDbSession, DbSession, DbSessionRef, QueryParams, QueryPrepare, PAGE_SIZE, random_profile_name
 };
 use super::error::Result;
 use super::future::{blocking_scoped, BoxFuture};
@@ -91,15 +91,27 @@ impl PostgresStore {
         exec: E,
         name: Option<String>,
     ) -> Result<(ProfileId, Arc<StoreKey>)> {
-        if let Some((pid, key)) = self.key_cache.get_profile(
-            name.as_ref()
-                .map(String::as_str)
-                .unwrap_or(self.default_profile.as_str()),
-        ) {
+        let name = name
+            .as_ref()
+            .map(String::as_str)
+            .unwrap_or(self.default_profile.as_str());
+        if let Some((pid, key)) = self.key_cache.get_profile(name).await {
             Ok((pid, key))
         } else {
-            // FIXME fetch from database
-            unimplemented!()
+            if let Some(row) = sqlx::query("SELECT id, store_key FROM profiles WHERE name=?1")
+                .bind(name)
+                .fetch_optional(exec)
+                .await?
+            {
+                let pid = row.try_get(0)?;
+                let key = Arc::new(self.key_cache.load_key(row.try_get(1)?).await?);
+                self.key_cache
+                    .add_profile(name.to_owned(), pid, key.clone())
+                    .await;
+                Ok((pid, key))
+            } else {
+                Err(err_msg!(NotFound, "Profile not found"))
+            }
         }
     }
 }
@@ -107,6 +119,42 @@ impl PostgresStore {
 impl Backend for PostgresStore {
     type Session = DbSession<'static, PoolConnection<Postgres>, Postgres>;
     type Transaction = DbSession<'static, Transaction<'static, Postgres>, Postgres>;
+
+    fn create_profile(&self, name: Option<&str>) -> BoxFuture<Result<String>> {
+        let name = name.map(str::to_owned).unwrap_or_else(random_profile_name);
+        Box::pin(async move {
+            let key = StoreKey::new()?;
+            let enc_key = key.to_string()?;
+            let mut conn = self.conn_pool.acquire().await?;
+            if let Some(pid) = sqlx::query_scalar(
+                "INSERT INTO profiles (name, store_key) VALUES ($1, $2) 
+                ON CONFLICT DO NOTHING RETURNING id"
+            )
+                .bind(&name)
+                .bind(enc_key.as_bytes())
+                .fetch_optional(&mut conn)
+                .await? {
+                self.key_cache
+                    .add_profile(name.clone(), pid, Arc::new(key))
+                    .await;
+                Ok(name)
+                } else {
+                    Err(err_msg!(Duplicate, "Duplicate profile name"))
+                }
+        })
+    }
+
+    fn remove_profile(&self, name: String) -> BoxFuture<Result<bool>> {
+        Box::pin(async move {
+            let mut conn = self.conn_pool.acquire().await?;
+            Ok(sqlx::query("DELETE FROM profiles WHERE name=$1")
+                .bind(&name)
+                .execute(&mut conn)
+                .await?
+                .rows_affected()
+                != 0)
+        })
+    }
 
     fn scan(
         &self,

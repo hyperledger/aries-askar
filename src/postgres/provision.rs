@@ -6,15 +6,16 @@ use sqlx::{
     Connection, Error as SqlxError, Executor, Row, Transaction,
 };
 
-use crate::db_utils::ProvisionStoreSpec;
+use crate::db_utils::{init_keys, random_profile_name};
 use crate::error::Result;
-use crate::future::BoxFuture;
+use crate::future::{blocking_scoped, BoxFuture};
 use crate::keys::{
     wrap::{WrapKeyMethod, WrapKeyReference},
     KeyCache,
 };
 use crate::options::IntoOptions;
 use crate::store::{ManageBackend, Store};
+use crate::types::ProfileId;
 
 use super::PostgresStore;
 
@@ -141,8 +142,12 @@ impl PostgresStoreOptions {
             // no 'config' table, assume empty database
         }
 
-        let spec = ProvisionStoreSpec::create(method, pass_key).await?;
-        let (default_profile, key_cache) = init_db(txn, spec).await?;
+        let default_profile = random_profile_name();
+        let (store_key, enc_store_key, wrap_key, wrap_key_ref) =
+            init_keys(method, pass_key).await?;
+        let profile_id = init_db(txn, &default_profile, wrap_key_ref, enc_store_key).await?;
+        let mut key_cache = KeyCache::new(wrap_key);
+        key_cache.add_profile_mut(default_profile.clone(), profile_id, store_key);
 
         Ok(Store::new(PostgresStore::new(
             conn_pool,
@@ -208,8 +213,10 @@ impl<'a> ManageBackend<'a> for PostgresStoreOptions {
 
 pub(crate) async fn init_db<'t>(
     mut txn: Transaction<'t, Postgres>,
-    spec: ProvisionStoreSpec,
-) -> Result<(String, KeyCache)> {
+    profile_name: &str,
+    wrap_key_ref: String,
+    enc_store_key: String,
+) -> Result<ProfileId> {
     txn.execute(
         "
         CREATE TABLE config (
@@ -264,24 +271,21 @@ pub(crate) async fn init_db<'t>(
             ('wrap_key', $2)",
     )
     .persistent(false)
-    .bind(&spec.profile_name)
-    .bind(spec.wrap_key_ref)
+    .bind(profile_name)
+    .bind(wrap_key_ref)
     .execute(&mut txn)
     .await?;
 
     let profile_id =
         sqlx::query_scalar("INSERT INTO profiles (name, store_key) VALUES ($1, $2) RETURNING id")
-            .bind(&spec.profile_name)
-            .bind(spec.enc_store_key)
+            .bind(profile_name)
+            .bind(enc_store_key.as_bytes())
             .fetch_one(&mut txn)
             .await?;
 
     txn.commit().await?;
 
-    let mut key_cache = KeyCache::new(spec.wrap_key);
-    key_cache.add_profile(spec.profile_name.clone(), profile_id, spec.store_key);
-
-    Ok((spec.profile_name, key_cache))
+    Ok(profile_id)
 }
 
 pub(crate) async fn reset_db(conn: &mut PgConnection) -> Result<()> {
@@ -344,7 +348,7 @@ pub(crate) async fn open_db(
                 return Err(err_msg!("Store key wrap method mismatch"));
             }
         }
-        wrap_ref.resolve(pass_key).await?
+        blocking_scoped(|| wrap_ref.resolve(pass_key)).await?
     } else {
         return Err(err_msg!(Unsupported, "Store wrap key not found"));
     };
@@ -356,7 +360,7 @@ pub(crate) async fn open_db(
         .await?;
     let profile_id = row.try_get(0)?;
     let store_key = key_cache.load_key(row.try_get(1)?).await?;
-    key_cache.add_profile(default_profile.clone(), profile_id, store_key);
+    key_cache.add_profile_mut(default_profile.clone(), profile_id, store_key);
 
     Ok(Store::new(PostgresStore::new(
         conn_pool,

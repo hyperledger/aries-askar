@@ -2,9 +2,12 @@ use sqlx::{postgres::Postgres, Executor, Transaction};
 
 use super::provision::{init_db, reset_db, PostgresStoreOptions};
 use super::PostgresStore;
-use crate::db_utils::ProvisionStoreSpec;
+use crate::db_utils::{init_keys, random_profile_name};
 use crate::error::Result;
-use crate::keys::wrap::{generate_raw_wrap_key, WrapKeyMethod};
+use crate::keys::{
+    wrap::{generate_raw_wrap_key, WrapKeyMethod},
+    KeyCache,
+};
 use crate::store::Store;
 
 pub struct TestDB {
@@ -20,8 +23,11 @@ impl TestDB {
             Ok(p) if !p.is_empty() => p,
             _ => panic!("'POSTGRES_URL' must be defined"),
         };
+
         let key = generate_raw_wrap_key(None)?;
-        let spec = ProvisionStoreSpec::create(WrapKeyMethod::RawKey, Some(&key)).await?;
+        let (store_key, enc_store_key, wrap_key, wrap_key_ref) =
+            init_keys(WrapKeyMethod::RawKey, Some(&key)).await?;
+        let default_profile = random_profile_name();
 
         let opts = PostgresStoreOptions::new(path.as_str())?;
         let conn_pool = opts.create_db_pool().await?;
@@ -35,7 +41,9 @@ impl TestDB {
 
         let mut init_txn = conn_pool.begin().await?;
         reset_db(&mut *init_txn).await?;
-        let (default_profile, key_cache) = init_db(init_txn, spec).await?;
+        let profile_id = init_db(init_txn, &default_profile, wrap_key_ref, enc_store_key).await?;
+        let mut key_cache = KeyCache::new(wrap_key);
+        key_cache.add_profile_mut(default_profile.clone(), profile_id, store_key);
         let inst = Store::new(PostgresStore::new(
             conn_pool,
             default_profile,

@@ -9,7 +9,7 @@ use sqlx::{
 };
 
 use super::SqliteStore;
-use crate::db_utils::{create_store_key, random_profile_name};
+use crate::db_utils::{init_keys, random_profile_name};
 use crate::error::Result;
 use crate::future::{blocking_scoped, BoxFuture};
 use crate::keys::{
@@ -137,14 +137,9 @@ async fn init_db(
     method: WrapKeyMethod,
     pass_key: Option<&str>,
 ) -> Result<KeyCache> {
-    let mut conn = conn_pool.acquire().await?;
+    let (store_key, enc_store_key, wrap_key, wrap_key_ref) = init_keys(method, pass_key).await?;
 
-    let (store_key, enc_store_key, wrap_key, wrap_key_ref) = blocking_scoped(|| {
-        let (store_key, enc_store_key) = create_store_key()?;
-        let (wrap_key, wrap_key_ref) = method.resolve(pass_key)?;
-        Result::Ok((store_key, enc_store_key, wrap_key, wrap_key_ref.into_uri()))
-    })
-    .await?;
+    let mut conn = conn_pool.acquire().await?;
 
     sqlx::query(
         r#"

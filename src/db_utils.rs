@@ -8,8 +8,8 @@ use sqlx::{
 };
 
 use super::error::Result;
-use super::future::{blocking, BoxFuture};
-use super::keys::store::StoreKey;
+use super::future::{blocking, BoxFuture, blocking_scoped};
+use super::keys::{store::StoreKey, wrap::{WrapKey, WrapKeyMethod}};
 use super::types::{EncEntryTag, Expiry, ProfileId, TagFilter};
 use super::wql::{
     sql::TagSqlEncoder,
@@ -328,6 +328,18 @@ pub fn create_store_key() -> Result<(StoreKey, String)> {
     let key = StoreKey::new()?;
     let enc_key = key.to_string()?;
     Ok((key, enc_key))
+}
+
+pub async fn init_keys(
+    method: WrapKeyMethod,
+    pass_key: Option<&str>,
+) -> Result<(StoreKey, String, WrapKey, String)> {
+    blocking_scoped(|| {
+        let (store_key, enc_store_key) = create_store_key()?;
+        let (wrap_key, wrap_key_ref) = method.resolve(pass_key)?;
+        Ok((store_key, enc_store_key, wrap_key, wrap_key_ref.into_uri()))
+    })
+    .await
 }
 
 #[inline]

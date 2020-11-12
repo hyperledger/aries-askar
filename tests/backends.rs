@@ -10,6 +10,14 @@ macro_rules! backend_tests {
         }
 
         #[test]
+        fn create_remove_profile() {
+            block_on(async {
+                let db = $init.await;
+                super::utils::db_create_remove_profile(&db).await;
+            })
+        }
+
+        #[test]
         fn fetch_fail() {
             block_on(async {
                 let db = $init.await;

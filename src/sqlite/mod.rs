@@ -122,14 +122,16 @@ impl Backend for SqliteStore {
             let key = StoreKey::new()?;
             let enc_key = key.to_string()?;
             let mut conn = self.conn_pool.acquire().await?;
-            let pid = sqlx::query("INSERT INTO profiles (name, store_key) VALUES (?1, ?2)")
+            let done = sqlx::query("INSERT OR IGNORE INTO profiles (name, store_key) VALUES (?1, ?2)")
                 .bind(&name)
                 .bind(enc_key)
                 .execute(&mut conn)
-                .await?
-                .last_insert_rowid();
+                .await?;
+            if done.rows_affected() == 0 {
+                return Err(err_msg!(Duplicate, "Duplicate row"));
+            }            
             self.key_cache
-                .add_profile(name.clone(), pid, Arc::new(key))
+                .add_profile(name.clone(), done.last_insert_rowid(), Arc::new(key))
                 .await;
             Ok(name)
         })
