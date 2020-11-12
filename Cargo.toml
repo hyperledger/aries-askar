@@ -1,7 +1,7 @@
 [package]
 name = "aries-askar"
 version = "0.1.0"
-authors = ["Hyperledger Indy Contributors <hyperledger-indy@lists.hyperledger.org>"]
+authors = ["Hyperledger Aries Contributors <aries@lists.hyperledger.org>"]
 edition = "2018"
 
 description = "Hyperledger Aries Askar secure storage"
