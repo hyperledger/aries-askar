@@ -14,11 +14,13 @@ extern crate log;
 #[macro_use]
 extern crate serde;
 
+#[cfg(any(feature = "postgres", feature = "sqlite"))]
 pub(crate) mod db_utils;
 
 #[doc(hidden)]
 pub mod future;
 
+#[cfg(feature = "indy_compat")]
 pub mod indy_compat;
 
 mod options;

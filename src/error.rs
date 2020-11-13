@@ -116,6 +116,7 @@ impl From<ErrorKind> for Error {
 
 // FIXME would be preferable to remove this auto-conversion and handle
 // all sqlx errors manually, to ensure there is some context around the error
+#[cfg(any(feature = "indy_compat", feature = "postgres", feature = "sqlite"))]
 impl From<sqlx::Error> for Error {
     fn from(err: sqlx::Error) -> Self {
         Error::from(ErrorKind::Backend).with_cause(err)
