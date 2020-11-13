@@ -15,7 +15,7 @@ use super::db_utils::{
     CloseDbSession, DbSession, DbSessionRef, QueryParams, QueryPrepare, PAGE_SIZE,
 };
 use super::error::Result;
-use super::future::{blocking_scoped, BoxFuture};
+use super::future::{unblock_scoped, BoxFuture};
 use super::keys::{store::StoreKey, EntryEncryptor, KeyCache};
 use super::store::{Backend, QueryBackend, Scan};
 use super::types::{EncEntryTag, Entry, EntryKind, EntryOperation, EntryTag, ProfileId, TagFilter};
@@ -204,7 +204,7 @@ where
     ) -> BoxFuture<'q, Result<i64>> {
         Box::pin(async move {
             let key = self.key.clone();
-            let enc_category = blocking_scoped(|| key.encrypt_entry_category(category)).await?;
+            let enc_category = unblock_scoped(|| key.encrypt_entry_category(category)).await?;
             let mut params = QueryParams::new();
             params.push(self.profile_id);
             params.push(kind as i16);
@@ -232,7 +232,7 @@ where
 
         Box::pin(async move {
             let key = self.key.clone();
-            let (enc_category, enc_name) = blocking_scoped(|| {
+            let (enc_category, enc_name) = unblock_scoped(|| {
                 Result::Ok((
                     key.encrypt_entry_category(&category)?,
                     key.encrypt_entry_name(&name)?,
@@ -247,7 +247,7 @@ where
                 .fetch_optional(&mut self.exec)
                 .await?
             {
-                let (value, tags) = blocking_scoped(|| {
+                let (value, tags) = unblock_scoped(|| {
                     let value = key.decrypt_entry_value(row.try_get(1)?)?;
                     let enc_tags = decode_tags(row.try_get(2)?)
                         .map_err(|_| err_msg!("Error decoding tags"))?;
@@ -299,7 +299,7 @@ where
     ) -> BoxFuture<'q, Result<i64>> {
         let key = self.key.clone();
         Box::pin(async move {
-            let enc_category = blocking_scoped(|| key.encrypt_entry_category(&category)).await?;
+            let enc_category = unblock_scoped(|| key.encrypt_entry_category(&category)).await?;
             let mut params = QueryParams::new();
             params.push(self.profile_id);
             params.push(kind as i16);
@@ -332,7 +332,7 @@ where
 
             match operation {
                 op @ EntryOperation::Insert | op @ EntryOperation::Replace => {
-                    let (enc_category, enc_name, enc_value, enc_tags) = blocking_scoped(|| {
+                    let (enc_category, enc_name, enc_value, enc_tags) = unblock_scoped(|| {
                         Result::Ok((
                             key.encrypt_entry_category(&category)?,
                             key.encrypt_entry_name(&name)?,
@@ -361,7 +361,7 @@ where
                 }
 
                 EntryOperation::Remove => {
-                    let (enc_category, enc_name) = blocking_scoped(|| {
+                    let (enc_category, enc_name) = unblock_scoped(|| {
                         Result::Ok((
                             key.encrypt_entry_category(&category)?,
                             key.encrypt_entry_name(&name)?,
@@ -460,7 +460,7 @@ where
     for<'e> &'e mut E: Executor<'e, Database = Sqlite>,
 {
     let key = active.key.clone();
-    let enc_category = blocking_scoped(|| key.encrypt_entry_category(&category)).await?;
+    let enc_category = unblock_scoped(|| key.encrypt_entry_category(&category)).await?;
 
     let scan = try_stream! {
         let mut params = QueryParams::new();
@@ -474,7 +474,7 @@ where
         let mut rows = sqlx::query_with(query.as_str(), params).fetch(&mut active.exec);
         while let Some(row) = rows.next().await {
             let row = row?;
-            let (name, value, tags) = blocking_scoped(|| {
+            let (name, value, tags) = unblock_scoped(|| {
                 let name = key.decrypt_entry_name(row.try_get(1)?)?;
                 let value = key.decrypt_entry_value(row.try_get(2)?)?;
                 let enc_tags = decode_tags(row.try_get(3)?)

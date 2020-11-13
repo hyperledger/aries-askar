@@ -11,7 +11,7 @@ use sqlx::{
 use super::SqliteStore;
 use crate::db_utils::{init_keys, random_profile_name};
 use crate::error::Result;
-use crate::future::{blocking_scoped, BoxFuture};
+use crate::future::{unblock_scoped, BoxFuture};
 use crate::keys::{
     wrap::{WrapKeyMethod, WrapKeyReference},
     KeyCache,
@@ -283,7 +283,7 @@ async fn open_db(
                 return Err(err_msg!("Store key wrap method mismatch"));
             }
         }
-        blocking_scoped(|| wrap_ref.resolve(pass_key)).await?
+        unblock_scoped(|| wrap_ref.resolve(pass_key)).await?
     } else {
         return Err(err_msg!(Unsupported, "Store wrap key not found"));
     };
@@ -303,7 +303,7 @@ async fn open_db(
 }
 
 async fn try_remove_file(path: &str) -> Result<bool> {
-    blocking_scoped(|| match remove_file(path) {
+    unblock_scoped(|| match remove_file(path) {
         Ok(()) => Ok(true),
         Err(err) if err.kind() == IoErrorKind::NotFound => Ok(false),
         Err(err) => Err(err_msg!(Backend, "Error removing file").with_cause(err)),

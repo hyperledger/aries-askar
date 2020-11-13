@@ -5,7 +5,7 @@ use async_mutex::Mutex;
 use zeroize::Zeroize;
 
 use super::error::Result;
-use super::future::blocking_scoped;
+use super::future::unblock_scoped;
 use super::types::{EncEntryTag, EntryTag, ProfileId};
 
 pub mod kdf;
@@ -64,7 +64,7 @@ impl KeyCache {
     }
 
     pub async fn load_key(&self, ciphertext: &[u8]) -> Result<StoreKey> {
-        blocking_scoped(|| {
+        unblock_scoped(|| {
             let mut data = self
                 .wrap_key
                 .unwrap_data(ciphertext)

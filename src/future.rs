@@ -1,17 +1,12 @@
-use std::cell::UnsafeCell;
 use std::future::Future;
-use std::marker::PhantomData;
-use std::mem::{transmute, MaybeUninit};
 use std::pin::Pin;
-use std::sync::atomic::{fence, AtomicU8, Ordering};
-use std::thread;
 
 pub use async_global_executor::block_on;
 
 pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
 #[inline]
-pub async fn blocking<F, T>(f: F) -> T
+pub async fn unblock<F, T>(f: F) -> T
 where
     T: Send + 'static,
     F: FnOnce() -> T + Send + 'static,
@@ -19,129 +14,172 @@ where
     blocking::unblock(f).await
 }
 
-#[inline]
-pub async fn blocking_scoped<'f, F, T>(f: F) -> T
-where
-    T: Send + 'static,
-    F: FnOnce() -> T + Send + 'f,
-{
-    let mut blk = Blocking::new(f);
-    let blk = unsafe { Pin::new_unchecked(&mut blk) };
-    let sentinel = blk.sentinel();
-    let ref_blk = unsafe {
-        transmute::<_, &'static mut dyn CallBlocking<T>>(
-            blk.get_unchecked_mut() as &mut dyn CallBlocking<T>
-        )
-    };
-    let result = blocking::unblock(move || ref_blk.call()).await;
-    std::mem::forget(sentinel);
-    result
-}
+pub use self::scoped_impl::unblock_scoped;
 
-const COMPLETE_INIT: u8 = 0;
-const COMPLETE_WAKE: u8 = 1;
-const COMPLETE_DONE: u8 = 2;
+mod scoped_impl {
+    use std::cell::UnsafeCell;
+    use std::marker::PhantomData;
+    use std::mem::{transmute, MaybeUninit};
+    use std::ops::{Deref, DerefMut};
+    use std::pin::Pin;
+    use std::sync::atomic::{fence, AtomicU8, Ordering};
+    use std::thread;
 
-struct Completion {
-    state: AtomicU8,
-    thread: UnsafeCell<MaybeUninit<thread::Thread>>,
-}
+    const COMPLETE_INIT: u8 = 0;
+    const COMPLETE_WAKE: u8 = 1;
+    const COMPLETE_DONE: u8 = 2;
 
-impl Completion {
-    #[inline]
-    pub fn new() -> Self {
-        Self {
-            state: AtomicU8::new(COMPLETE_INIT),
-            thread: UnsafeCell::new(MaybeUninit::uninit()),
-        }
+    struct Completion {
+        state: AtomicU8,
+        thread: UnsafeCell<MaybeUninit<thread::Thread>>,
     }
 
-    #[inline]
-    pub fn wait(&self) {
-        match self.state.load(Ordering::Relaxed) {
-            COMPLETE_DONE => {
-                // synchronize with the blocking thread
-                fence(Ordering::Acquire);
+    impl Completion {
+        #[inline]
+        pub fn new() -> Self {
+            Self {
+                state: AtomicU8::new(COMPLETE_INIT),
+                thread: UnsafeCell::new(MaybeUninit::uninit()),
             }
-            COMPLETE_INIT => {
-                unsafe { self.thread.get().write(MaybeUninit::new(thread::current())) };
-                match self.state.compare_exchange(
-                    COMPLETE_INIT,
-                    COMPLETE_WAKE,
-                    Ordering::Acquire,
-                    Ordering::Acquire,
-                ) {
-                    Ok(_) => thread::park(),
-                    Err(COMPLETE_DONE) => (),
-                    Err(s) => panic!("Unexpected state for Completion: {}", s),
+        }
+
+        #[inline]
+        pub fn wait(&self) {
+            match self.state.load(Ordering::Relaxed) {
+                COMPLETE_DONE => {
+                    // synchronize with the blocking thread
+                    fence(Ordering::Acquire);
                 }
+                COMPLETE_INIT => {
+                    unsafe { self.thread.get().write(MaybeUninit::new(thread::current())) };
+                    match self.state.compare_exchange(
+                        COMPLETE_INIT,
+                        COMPLETE_WAKE,
+                        Ordering::Acquire,
+                        Ordering::Acquire,
+                    ) {
+                        Ok(_) => thread::park(),
+                        Err(COMPLETE_DONE) => (),
+                        Err(s) => panic!("Unexpected state for Completion: {}", s),
+                    }
+                }
+                s => panic!("Unexpected state for Completion: {}", s),
             }
-            s => panic!("Unexpected state for Completion: {}", s),
+        }
+
+        #[inline]
+        pub fn done(&self) {
+            match self.state.swap(COMPLETE_DONE, Ordering::Release) {
+                COMPLETE_INIT => (),
+                COMPLETE_WAKE => unsafe { self.thread.get().read().assume_init() }.unpark(),
+                s => panic!("Unexpected state for Completion: {}", s),
+            }
+        }
+    }
+
+    pub struct Checker {
+        complete: *const Completion,
+    }
+
+    unsafe impl Send for Checker {}
+
+    impl Drop for Checker {
+        #[inline]
+        fn drop(&mut self) {
+            unsafe { &*self.complete }.wait();
+        }
+    }
+
+    pub struct Sentinel<T: 'static> {
+        blocking: &'static mut dyn CallBlocking<T>,
+        complete: *const Completion,
+    }
+
+    unsafe impl<T: 'static> Send for Sentinel<T> {}
+
+    impl<T: 'static> Deref for Sentinel<T> {
+        type Target = dyn CallBlocking<T>;
+
+        fn deref(&self) -> &Self::Target {
+            self.blocking
+        }
+    }
+
+    impl<T: 'static> DerefMut for Sentinel<T> {
+        #[inline]
+        fn deref_mut(&mut self) -> &mut Self::Target {
+            self.blocking
+        }
+    }
+
+    impl<T: 'static> Drop for Sentinel<T> {
+        #[inline]
+        fn drop(&mut self) {
+            unsafe { &*self.complete }.done();
+        }
+    }
+
+    pub trait CallBlocking<T>: Send {
+        fn call(&mut self) -> T;
+    }
+
+    pub struct Blocking<F, T> {
+        completion: Completion,
+        f: Option<F>,
+        _pd: PhantomData<T>,
+    }
+
+    impl<F, T> Blocking<F, T>
+    where
+        F: FnOnce() -> T + Send,
+        T: Send,
+    {
+        #[inline]
+        pub fn new(f: F) -> Self {
+            Self {
+                completion: Completion::new(),
+                f: Some(f),
+                _pd: PhantomData,
+            }
+        }
+
+        #[inline]
+        pub fn make_static(self: Pin<&mut Self>) -> (Sentinel<T>, Checker) {
+            let complete = &self.completion as *const Completion;
+            (
+                Sentinel {
+                    blocking: unsafe {
+                        transmute(self.get_unchecked_mut() as &mut dyn CallBlocking<T>)
+                    },
+                    complete,
+                },
+                Checker { complete },
+            )
+        }
+    }
+
+    impl<F, T> CallBlocking<T> for Blocking<F, T>
+    where
+        F: FnOnce() -> T + Send,
+        T: Send,
+    {
+        #[inline]
+        fn call(&mut self) -> T {
+            (self.f.take().unwrap())()
         }
     }
 
     #[inline]
-    pub fn done(&self) {
-        match self.state.swap(COMPLETE_DONE, Ordering::Release) {
-            COMPLETE_INIT => (),
-            COMPLETE_WAKE => unsafe { self.thread.get().read().assume_init() }.unpark(),
-            s => panic!("Unexpected state for Completion: {}", s),
-        }
-    }
-}
-
-struct BlockingSentinel {
-    ptr: *const Completion,
-}
-
-unsafe impl Send for BlockingSentinel {}
-
-impl Drop for BlockingSentinel {
-    fn drop(&mut self) {
-        let completion = unsafe { &*self.ptr };
-        completion.wait();
-    }
-}
-
-trait CallBlocking<T>: Send {
-    fn call(&mut self) -> T;
-}
-
-struct Blocking<F, T> {
-    completion: Completion,
-    f: Option<F>,
-    _pd: PhantomData<T>,
-}
-
-impl<F: FnOnce() -> T + Send, T: Send> Blocking<F, T> {
-    #[inline]
-    fn new(f: F) -> Self {
-        Self {
-            completion: Completion::new(),
-            f: Some(f),
-            _pd: PhantomData,
-        }
-    }
-}
-
-impl<F, T> Blocking<F, T> {
-    #[inline]
-    fn sentinel(&self) -> BlockingSentinel {
-        BlockingSentinel {
-            ptr: &self.completion,
-        }
-    }
-}
-
-impl<F, T> CallBlocking<T> for Blocking<F, T>
-where
-    F: FnOnce() -> T + Send,
-    T: Send,
-{
-    #[inline]
-    fn call(&mut self) -> T {
-        let result = (self.f.take().unwrap())();
-        self.completion.done();
+    pub async fn unblock_scoped<'f, F, T>(f: F) -> T
+    where
+        T: Send + 'static,
+        F: FnOnce() -> T + Send + 'f,
+    {
+        let mut blk = Blocking::new(f);
+        let blk = unsafe { Pin::new_unchecked(&mut blk) };
+        let (mut sentinel, checker) = blk.make_static();
+        let result = blocking::unblock(move || sentinel.call()).await;
+        std::mem::forget(checker);
         result
     }
 }
@@ -159,12 +197,13 @@ mod tests {
         atomic::{AtomicBool, Ordering::SeqCst},
         Arc,
     };
+    use std::thread;
     use std::time::Duration;
 
     #[test]
-    fn blocking_scoped_drop() {
+    fn unblock_scoped_drop() {
         let called = Arc::new(AtomicBool::new(false));
-        let fut = blocking_scoped({
+        let fut = unblock_scoped({
             let called = called.clone();
             move || {
                 thread::sleep(Duration::from_millis(50));
