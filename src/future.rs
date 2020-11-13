@@ -25,12 +25,15 @@ where
     T: Send + 'static,
     F: FnOnce() -> T + Send + 'f,
 {
-    let blk = Blocking::boxed(f);
+    let mut blk = Blocking::new(f);
+    let blk = unsafe { Pin::new_unchecked(&mut blk) };
     let sentinel = blk.sentinel();
-    let mut blk = unsafe {
-        transmute::<_, Box<dyn CallBlocking<T> + 'static>>(blk as Box<dyn CallBlocking<T> + 'f>)
+    let ref_blk = unsafe {
+        transmute::<_, &'static mut dyn CallBlocking<T>>(
+            blk.get_unchecked_mut() as &mut dyn CallBlocking<T>
+        )
     };
-    let result = blocking::unblock(move || blk.call()).await;
+    let result = blocking::unblock(move || ref_blk.call()).await;
     std::mem::forget(sentinel);
     result
 }
@@ -112,18 +115,18 @@ struct Blocking<F, T> {
 
 impl<F: FnOnce() -> T + Send, T: Send> Blocking<F, T> {
     #[inline]
-    fn boxed(f: F) -> Box<Self> {
-        Box::new(Self {
+    fn new(f: F) -> Self {
+        Self {
             completion: Completion::new(),
             f: Some(f),
             _pd: PhantomData,
-        })
+        }
     }
 }
 
 impl<F, T> Blocking<F, T> {
     #[inline]
-    fn sentinel(self: &Box<Self>) -> BlockingSentinel {
+    fn sentinel(&self) -> BlockingSentinel {
         BlockingSentinel {
             ptr: &self.completion,
         }
