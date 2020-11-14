@@ -1,8 +1,3 @@
-#[inline]
-pub fn decode_utf8(value: Vec<u8>) -> Result<String> {
-    String::from_utf8(value).map_err(err_map!(Encryption))
-}
-
 use chacha20poly1305::{
     aead::{
         generic_array::typenum::{Unsigned, U32},
@@ -11,7 +6,7 @@ use chacha20poly1305::{
     ChaCha20Poly1305, Key as ChaChaKey, Nonce,
 };
 use hmac::{Hmac, Mac, NewMac};
-use indy_utils::{base58, keys::ArrayKey, random::random_array};
+use indy_utils::{keys::ArrayKey, random::random_array};
 use sha2::Sha256;
 
 use serde::Deserialize;
@@ -222,67 +217,9 @@ impl EntryEncryptor for StoreKey {
     }
 }
 
-#[derive(Deserialize, Debug)]
-struct EncStorageKey {
-    keys: Vec<u8>,
-    master_key_salt: Vec<u8>,
-}
-
-pub fn decode_wallet_key(enc_key: &[u8], password: &str) -> Result<StoreKey> {
-    let key =
-        serde_json::from_slice::<EncStorageKey>(enc_key).map_err(err_map!("Invalid wallet key"))?;
-
-    let keys = decrypt_key(key, password)?;
-    let data = rmp_serde::from_slice::<[serde_bytes::ByteBuf; 7]>(keys.as_slice()).unwrap();
-    let wallet_key = StoreKey {
-        category_key: EncKey::from_slice(&data[0]),
-        name_key: EncKey::from_slice(&data[1]),
-        value_key: EncKey::from_slice(&data[2]),
-        item_hmac_key: HmacKey::from_slice(&data[3]),
-        tag_name_key: EncKey::from_slice(&data[4]),
-        tag_value_key: EncKey::from_slice(&data[5]),
-        tags_hmac_key: HmacKey::from_slice(&data[6]),
-    };
-
-    Ok(wallet_key)
-}
-
-fn decrypt_key(key: EncStorageKey, password: &str) -> Result<Vec<u8>> {
-    // check for a raw key in base58 format
-    if let Ok(raw_key) = base58::decode(password) {
-        if raw_key.len() == 32 {
-            let master_key = EncKey::from_slice(&raw_key);
-            return Ok(decrypt(&master_key, key.keys.as_slice())?);
-        }
-    }
-
-    let salt = &key.master_key_salt[..16];
-
-    // derive key with libsodium 'moderate' settings
-    let master_key = derive_key_argon2(password, salt, 131072, 6);
-    if let Ok(keys) = decrypt(&master_key, key.keys.as_slice()) {
-        Ok(keys)
-    } else {
-        // derive key with libsodium 'interactive' settings
-        let master_key = derive_key_argon2(password, salt, 32768, 4);
-        Ok(decrypt(&master_key, key.keys.as_slice())?)
-    }
-}
-
-fn derive_key_argon2(password: &str, salt: &[u8], mem_cost: u32, time_cost: u32) -> EncKey {
-    let config = argon2::Config {
-        variant: argon2::Variant::Argon2i,
-        version: argon2::Version::Version13,
-        mem_cost,
-        time_cost,
-        lanes: 1,
-        thread_mode: argon2::ThreadMode::Sequential,
-        secret: &[],
-        ad: &[],
-        hash_length: 32,
-    };
-    let hash = argon2::hash_raw(password.as_bytes(), salt, &config).unwrap();
-    EncKey::from_slice(hash)
+#[inline]
+fn decode_utf8(value: Vec<u8>) -> Result<String> {
+    String::from_utf8(value).map_err(err_map!(Encryption))
 }
 
 #[cfg(test)]
