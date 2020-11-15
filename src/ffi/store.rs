@@ -20,7 +20,7 @@ use super::{CallbackId, EnsureCallback, ErrorCode};
 use crate::any::{AnySession, AnyStore};
 use crate::error::Result as KvResult;
 use crate::future::spawn_ok;
-use crate::keys::{wrap::WrapKeyMethod, KeyAlg, KeyCategory, KeyEntry};
+use crate::keys::{wrap::WrapKeyMethod, KeyAlg, KeyCategory, KeyEntry, PassKey};
 use crate::store::{ManageBackend, Scan};
 use crate::types::{Entry, EntryOperation, EntryTagSet, TagFilter};
 
@@ -58,6 +58,10 @@ impl StoreHandle {
             .await
             .remove(self)
             .ok_or_else(|| err_msg!("Invalid store handle"))
+    }
+
+    pub async fn replace(&self, store: Arc<AnyStore>) {
+        FFI_STORES.lock().await.insert(*self, store);
     }
 }
 
@@ -251,7 +255,7 @@ pub extern "C" fn askar_store_provision(
             Some(method) => WrapKeyMethod::parse_uri(method)?,
             None => WrapKeyMethod::default()
         };
-        let pass_key = zeroize::Zeroizing::new(pass_key.into_opt_string());
+        let pass_key = PassKey::from(pass_key.as_opt_str()).into_owned();
         let profile = profile.into_opt_string();
         let cb = EnsureCallback::new(move |result|
             match result {
@@ -263,7 +267,7 @@ pub extern "C" fn askar_store_provision(
             let result = async {
                 let store = spec_uri.provision_backend(
                     wrap_key_method,
-                    pass_key.as_ref().map(String::as_str),
+                    pass_key,
                     profile.as_ref().map(String::as_str),
                     recreate != 0
                 ).await?;
@@ -292,7 +296,7 @@ pub extern "C" fn askar_store_open(
             Some(method) => Some(WrapKeyMethod::parse_uri(method)?),
             None => None
         };
-        let pass_key = zeroize::Zeroizing::new(pass_key.into_opt_string());
+        let pass_key = PassKey::from(pass_key.as_opt_str()).into_owned();
         let profile = profile.into_opt_string();
         let cb = EnsureCallback::new(move |result|
             match result {
@@ -304,7 +308,7 @@ pub extern "C" fn askar_store_open(
             let result = async {
                 let store = spec_uri.open_backend(
                     wrap_key_method,
-                    pass_key.as_ref().map(String::as_str),
+                    pass_key,
                     profile.as_ref().map(String::as_str)
                 ).await?;
                 Ok(StoreHandle::create(store).await)
@@ -362,7 +366,7 @@ pub extern "C" fn askar_store_create_profile(
         spawn_ok(async move {
             let result = async {
                 let store = handle.load().await?;
-                let name = store.create_profile(profile.as_ref().map(String::as_str)).await?;
+                let name = store.create_profile(profile).await?;
                 Ok(name)
             }.await;
             cb.resolve(result);
@@ -392,6 +396,49 @@ pub extern "C" fn askar_store_remove_profile(
             let result = async {
                 let store = handle.load().await?;
                 Ok(store.remove_profile(profile).await?)
+            }.await;
+            cb.resolve(result);
+        });
+        Ok(ErrorCode::Success)
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn askar_store_rekey(
+    handle: StoreHandle,
+    wrap_key_method: FfiStr,
+    pass_key: FfiStr,
+    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode)>,
+    cb_id: CallbackId,
+) -> ErrorCode {
+    catch_err! {
+        trace!("Re-key store");
+        let cb = cb.ok_or_else(|| err_msg!("No callback provided"))?;
+        let wrap_key_method = match wrap_key_method.as_opt_str() {
+            Some(method) => WrapKeyMethod::parse_uri(method)?,
+            None => WrapKeyMethod::default()
+        };
+        let pass_key = PassKey::from(pass_key.as_opt_str()).into_owned();
+        let cb = EnsureCallback::new(move |result|
+            match result {
+                Ok(_) => cb(cb_id, ErrorCode::Success),
+                Err(err) => cb(cb_id, set_last_error(Some(err))),
+            }
+        );
+        spawn_ok(async move {
+            let result = async {
+                let store = handle.remove().await?;
+                match Arc::try_unwrap(store) {
+                    Ok(mut store) => {
+                        store.rekey(wrap_key_method, pass_key.as_ref()).await?;
+                        handle.replace(Arc::new(store)).await;
+                        Ok(())
+                    }
+                    Err(arc_store) => {
+                        handle.replace(arc_store).await;
+                        Err(err_msg!("Cannot re-key store with multiple references"))
+                    }
+                }
             }.await;
             cb.resolve(result);
         });

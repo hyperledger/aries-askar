@@ -394,6 +394,20 @@ async def store_remove_profile(handle: StoreHandle, name: str) -> bool:
     )
 
 
+async def store_rekey(
+    handle: StoreHandle,
+    wrap_method: str = None,
+    pass_key: str = None,
+) -> StoreHandle:
+    """Replace the wrap key on a Store."""
+    return await do_call_async(
+        "askar_store_rekey",
+        handle,
+        encode_str(wrap_method and wrap_method.lower()),
+        encode_str(pass_key),
+    )
+
+
 async def store_remove(uri: str) -> bool:
     """Remove an existing Store, if any."""
     return (

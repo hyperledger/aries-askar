@@ -113,6 +113,10 @@ async def basic_test():
     log("Created profile:", profile)
     log("Removed profile:", await store.remove_profile(profile))
 
+    key2 = generate_raw_key(b"00000000000000000000000000000My2")
+    await store.rekey("raw", key2)
+    log("Re-keyed store")
+
     log("Removed store:", await store.close(remove=True))
 
 

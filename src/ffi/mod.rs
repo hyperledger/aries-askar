@@ -80,7 +80,7 @@ pub extern "C" fn askar_generate_raw_key(seed: FfiStr, result_p: *mut *const c_c
         check_useful_c_ptr!(result_p);
         let seed = seed.as_opt_str().map(str::as_bytes);
         let key = generate_raw_wrap_key(seed)?;
-        unsafe { *result_p = rust_string_to_c(key); }
+        unsafe { *result_p = rust_string_to_c(key.to_string()); }
         Ok(ErrorCode::Success)
     }
 }

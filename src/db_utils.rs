@@ -6,12 +6,14 @@ use sqlx::{
     database::HasArguments, pool::PoolConnection, Acquire, Arguments, Database, Encode, Executor,
     IntoArguments, Transaction, Type,
 };
+use zeroize::Zeroize;
 
 use super::error::Result;
-use super::future::{unblock, unblock_scoped, BoxFuture};
+use super::future::{unblock, BoxFuture};
 use super::keys::{
     store::StoreKey,
     wrap::{WrapKey, WrapKeyMethod},
+    PassKey,
 };
 use super::types::{EncEntryTag, Expiry, ProfileId, TagFilter};
 use super::wql::{
@@ -327,22 +329,21 @@ where
     Ok(query)
 }
 
-pub fn create_store_key() -> Result<(StoreKey, String)> {
-    let key = StoreKey::new()?;
-    let enc_key = key.to_string()?;
-    Ok((key, enc_key))
+pub fn init_keys<'a>(
+    method: WrapKeyMethod,
+    pass_key: PassKey<'a>,
+) -> Result<(StoreKey, Vec<u8>, WrapKey, String)> {
+    let (wrap_key, wrap_key_ref) = method.resolve(pass_key)?;
+    let store_key = StoreKey::new()?;
+    let enc_store_key = encode_store_key(&store_key, &wrap_key)?;
+    Ok((store_key, enc_store_key, wrap_key, wrap_key_ref.into_uri()))
 }
 
-pub async fn init_keys(
-    method: WrapKeyMethod,
-    pass_key: Option<&str>,
-) -> Result<(StoreKey, String, WrapKey, String)> {
-    unblock_scoped(|| {
-        let (store_key, enc_store_key) = create_store_key()?;
-        let (wrap_key, wrap_key_ref) = method.resolve(pass_key)?;
-        Ok((store_key, enc_store_key, wrap_key, wrap_key_ref.into_uri()))
-    })
-    .await
+pub fn encode_store_key(store_key: &StoreKey, wrap_key: &WrapKey) -> Result<Vec<u8>> {
+    let mut enc_store_key = store_key.to_string()?;
+    let result = wrap_key.wrap_data(enc_store_key.as_bytes())?;
+    enc_store_key.zeroize();
+    Ok(result)
 }
 
 #[inline]

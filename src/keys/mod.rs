@@ -14,7 +14,7 @@ pub mod store;
 use self::store::StoreKey;
 
 mod types;
-pub use self::types::{KeyAlg, KeyCategory, KeyEntry, KeyParams};
+pub use self::types::{KeyAlg, KeyCategory, KeyEntry, KeyParams, PassKey};
 
 pub mod wrap;
 use self::wrap::WrapKey;
@@ -52,7 +52,7 @@ pub fn verify_signature(signer_vk: &str, data: &[u8], signature: &[u8]) -> Resul
 
 pub struct KeyCache {
     profile_info: Mutex<HashMap<String, (ProfileId, Arc<StoreKey>)>>,
-    wrap_key: WrapKey,
+    pub(crate) wrap_key: WrapKey,
 }
 
 impl KeyCache {
@@ -88,11 +88,6 @@ impl KeyCache {
 
     pub async fn get_profile(&self, name: &str) -> Option<(ProfileId, Arc<StoreKey>)> {
         self.profile_info.lock().await.get(name).cloned()
-    }
-
-    #[allow(unused)]
-    pub fn get_wrap_key(&self) -> &WrapKey {
-        &self.wrap_key
     }
 }
 

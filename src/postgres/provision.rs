@@ -11,7 +11,7 @@ use crate::error::Result;
 use crate::future::{unblock_scoped, BoxFuture};
 use crate::keys::{
     wrap::{WrapKeyMethod, WrapKeyReference},
-    KeyCache,
+    KeyCache, PassKey,
 };
 use crate::options::IntoOptions;
 use crate::store::{ManageBackend, Store};
@@ -118,7 +118,7 @@ impl PostgresStoreOptions {
     pub async fn provision(
         self,
         method: WrapKeyMethod,
-        pass_key: Option<&str>,
+        pass_key: PassKey<'_>,
         profile: Option<&str>,
         recreate: bool,
     ) -> Result<Store<PostgresStore>> {
@@ -151,11 +151,11 @@ impl PostgresStoreOptions {
             // no 'config' table, assume empty database
         }
 
+        let (store_key, enc_store_key, wrap_key, wrap_key_ref) =
+            unblock_scoped(|| init_keys(method, pass_key)).await?;
         let default_profile = profile
             .map(str::to_string)
             .unwrap_or_else(random_profile_name);
-        let (store_key, enc_store_key, wrap_key, wrap_key_ref) =
-            init_keys(method, pass_key).await?;
         let profile_id = init_db(txn, &default_profile, wrap_key_ref, enc_store_key).await?;
         let mut key_cache = KeyCache::new(wrap_key);
         key_cache.add_profile_mut(default_profile.clone(), profile_id, store_key);
@@ -172,7 +172,7 @@ impl PostgresStoreOptions {
     pub async fn open(
         self,
         method: Option<WrapKeyMethod>,
-        pass_key: Option<&str>,
+        pass_key: PassKey<'_>,
         profile: Option<&str>,
     ) -> Result<Store<PostgresStore>> {
         open_db(
@@ -212,19 +212,21 @@ impl<'a> ManageBackend<'a> for PostgresStoreOptions {
     fn open_backend(
         self,
         method: Option<WrapKeyMethod>,
-        pass_key: Option<&'a str>,
+        pass_key: PassKey<'_>,
         profile: Option<&'a str>,
     ) -> BoxFuture<'a, Result<Store<PostgresStore>>> {
+        let pass_key = pass_key.into_owned();
         Box::pin(self.open(method, pass_key, profile))
     }
 
     fn provision_backend(
         self,
         method: WrapKeyMethod,
-        pass_key: Option<&'a str>,
+        pass_key: PassKey<'_>,
         profile: Option<&'a str>,
         recreate: bool,
     ) -> BoxFuture<'a, Result<Store<PostgresStore>>> {
+        let pass_key = pass_key.into_owned();
         Box::pin(self.provision(method, pass_key, profile, recreate))
     }
 
@@ -237,7 +239,7 @@ pub(crate) async fn init_db<'t>(
     mut txn: Transaction<'t, Postgres>,
     profile_name: &str,
     wrap_key_ref: String,
-    enc_store_key: String,
+    enc_store_key: Vec<u8>,
 ) -> Result<ProfileId> {
     txn.execute(
         "
@@ -301,7 +303,7 @@ pub(crate) async fn init_db<'t>(
     let profile_id =
         sqlx::query_scalar("INSERT INTO profiles (name, store_key) VALUES ($1, $2) RETURNING id")
             .bind(profile_name)
-            .bind(enc_store_key.as_bytes())
+            .bind(enc_store_key)
             .fetch_one(&mut txn)
             .await?;
 
@@ -326,7 +328,7 @@ pub(crate) async fn reset_db(conn: &mut PgConnection) -> Result<()> {
 pub(crate) async fn open_db(
     conn_pool: PgPool,
     method: Option<WrapKeyMethod>,
-    pass_key: Option<&str>,
+    pass_key: PassKey<'_>,
     profile: Option<&str>,
     host: String,
     name: String,

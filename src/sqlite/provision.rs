@@ -14,7 +14,7 @@ use crate::error::Result;
 use crate::future::{unblock_scoped, BoxFuture};
 use crate::keys::{
     wrap::{WrapKeyMethod, WrapKeyReference},
-    KeyCache,
+    KeyCache, PassKey,
 };
 use crate::options::IntoOptions;
 use crate::store::{ManageBackend, Store};
@@ -45,7 +45,7 @@ impl<'a> SqliteStoreOptions<'a> {
     pub async fn provision(
         self,
         method: WrapKeyMethod,
-        pass_key: Option<&'a str>,
+        pass_key: PassKey<'a>,
         profile: Option<&'a str>,
         recreate: bool,
     ) -> Result<Store<SqliteStore>> {
@@ -92,7 +92,7 @@ impl<'a> SqliteStoreOptions<'a> {
     pub async fn open(
         self,
         method: Option<WrapKeyMethod>,
-        pass_key: Option<&str>,
+        pass_key: PassKey<'_>,
         profile: Option<&'a str>,
     ) -> Result<Store<SqliteStore>> {
         let conn_opts = SqliteConnectOptions::from_str(self.path.as_ref())?;
@@ -123,7 +123,7 @@ impl<'a> ManageBackend<'a> for SqliteStoreOptions<'a> {
     fn open_backend(
         self,
         method: Option<WrapKeyMethod>,
-        pass_key: Option<&'a str>,
+        pass_key: PassKey<'a>,
         profile: Option<&'a str>,
     ) -> BoxFuture<'a, Result<Store<SqliteStore>>> {
         Box::pin(self.open(method, pass_key, profile))
@@ -132,7 +132,7 @@ impl<'a> ManageBackend<'a> for SqliteStoreOptions<'a> {
     fn provision_backend(
         self,
         method: WrapKeyMethod,
-        pass_key: Option<&'a str>,
+        pass_key: PassKey<'a>,
         profile: Option<&'a str>,
         recreate: bool,
     ) -> BoxFuture<'a, Result<Store<SqliteStore>>> {
@@ -148,9 +148,10 @@ async fn init_db(
     conn_pool: &SqlitePool,
     profile_name: &str,
     method: WrapKeyMethod,
-    pass_key: Option<&str>,
+    pass_key: PassKey<'_>,
 ) -> Result<KeyCache> {
-    let (store_key, enc_store_key, wrap_key, wrap_key_ref) = init_keys(method, pass_key).await?;
+    let (store_key, enc_store_key, wrap_key, wrap_key_ref) =
+        unblock_scoped(|| init_keys(method, pass_key)).await?;
 
     let mut conn = conn_pool.acquire().await?;
 
@@ -237,7 +238,7 @@ async fn init_db(
 async fn open_db(
     conn_pool: SqlitePool,
     method: Option<WrapKeyMethod>,
-    pass_key: Option<&str>,
+    pass_key: PassKey<'_>,
     profile: Option<&str>,
     path: String,
 ) -> Result<Store<SqliteStore>> {

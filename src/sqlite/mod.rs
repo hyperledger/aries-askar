@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::fmt::{self, Debug, Formatter};
 use std::sync::Arc;
 
@@ -11,12 +12,13 @@ use sqlx::{
 };
 
 use super::db_utils::{
-    decode_tags, encode_tag_filter, expiry_timestamp, extend_query, random_profile_name,
-    CloseDbSession, DbSession, DbSessionRef, QueryParams, QueryPrepare, PAGE_SIZE,
+    decode_tags, encode_store_key, encode_tag_filter, expiry_timestamp, extend_query,
+    random_profile_name, CloseDbSession, DbSession, DbSessionRef, QueryParams, QueryPrepare,
+    PAGE_SIZE,
 };
 use super::error::Result;
-use super::future::{unblock_scoped, BoxFuture};
-use super::keys::{store::StoreKey, EntryEncryptor, KeyCache};
+use super::future::{unblock, unblock_scoped, BoxFuture};
+use super::keys::{store::StoreKey, wrap::WrapKeyMethod, EntryEncryptor, KeyCache, PassKey};
 use super::store::{Backend, QueryBackend, Scan};
 use super::types::{EncEntryTag, Entry, EntryKind, EntryOperation, EntryTag, ProfileId, TagFilter};
 
@@ -116,20 +118,21 @@ impl Backend for SqliteStore {
     type Session = DbSession<'static, PoolConnection<Sqlite>, Sqlite>;
     type Transaction = DbSession<'static, Transaction<'static, Sqlite>, Sqlite>;
 
-    fn create_profile(&self, name: Option<&str>) -> BoxFuture<Result<String>> {
-        let name = name.map(str::to_owned).unwrap_or_else(random_profile_name);
+    fn create_profile(&self, name: Option<String>) -> BoxFuture<Result<String>> {
+        let name = name.unwrap_or_else(random_profile_name);
         Box::pin(async move {
             let key = StoreKey::new()?;
             let enc_key = key.to_string()?;
             let mut conn = self.conn_pool.acquire().await?;
-            let done = sqlx::query("INSERT OR IGNORE INTO profiles (name, store_key) VALUES (?1, ?2)")
-                .bind(&name)
-                .bind(enc_key)
-                .execute(&mut conn)
-                .await?;
+            let done =
+                sqlx::query("INSERT OR IGNORE INTO profiles (name, store_key) VALUES (?1, ?2)")
+                    .bind(&name)
+                    .bind(enc_key)
+                    .execute(&mut conn)
+                    .await?;
             if done.rows_affected() == 0 {
-                return Err(err_msg!(Duplicate, "Duplicate row"));
-            }            
+                return Err(err_msg!(Duplicate, "Duplicate profile name"));
+            }
             self.key_cache
                 .add_profile(name.clone(), done.last_insert_rowid(), Arc::new(key))
                 .await;
@@ -146,6 +149,53 @@ impl Backend for SqliteStore {
                 .await?
                 .rows_affected()
                 != 0)
+        })
+    }
+
+    fn rekey_backend(
+        &mut self,
+        method: WrapKeyMethod,
+        pass_key: PassKey<'_>,
+    ) -> BoxFuture<Result<()>> {
+        let pass_key = pass_key.into_owned();
+        Box::pin(async move {
+            let (wrap_key, wrap_key_ref) = unblock(move || method.resolve(pass_key)).await?;
+            let mut txn = self.conn_pool.begin().await?;
+            let mut rows = sqlx::query("SELECT id, store_key FROM profiles").fetch(&mut txn);
+            let mut upd_keys = BTreeMap::<ProfileId, Vec<u8>>::new();
+            while let Some(row) = rows.next().await {
+                let row = row?;
+                let pid = row.try_get(0)?;
+                let enc_key = row.try_get(1)?;
+                let store_key = self.key_cache.load_key(enc_key).await?;
+                let upd_key = unblock_scoped(|| encode_store_key(&store_key, &wrap_key)).await?;
+                upd_keys.insert(pid, upd_key);
+            }
+            drop(rows);
+            for (pid, key) in upd_keys {
+                if sqlx::query("UPDATE profiles SET store_key=?1 WHERE id=?2")
+                    .bind(key)
+                    .bind(pid)
+                    .execute(&mut txn)
+                    .await?
+                    .rows_affected()
+                    != 1
+                {
+                    return Err(err_msg!(Backend, "Error updating profile store key"));
+                }
+            }
+            if sqlx::query("UPDATE config SET value=?1 WHERE name='wrap_key'")
+                .bind(wrap_key_ref.into_uri())
+                .execute(&mut txn)
+                .await?
+                .rows_affected()
+                != 1
+            {
+                return Err(err_msg!(Backend, "Error updating wrap key"));
+            }
+            txn.commit().await?;
+            self.key_cache.wrap_key = wrap_key;
+            Ok(())
         })
     }
 
@@ -516,7 +566,7 @@ mod tests {
         block_on(async {
             let key = generate_raw_wrap_key(None)?;
             let db = SqliteStoreOptions::in_memory()
-                .provision(WrapKeyMethod::RawKey, Some(&key), None, false)
+                .provision(WrapKeyMethod::RawKey, key, None, false)
                 .await?;
             let ts = expiry_timestamp(1000).unwrap();
             let check = sqlx::query("SELECT datetime('now'), ?1, ?1 > datetime('now')")

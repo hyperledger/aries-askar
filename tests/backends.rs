@@ -198,14 +198,21 @@ mod sqlite {
                 false
             );
 
-            SqliteStoreOptions::new(fname.as_str())
+            let store = SqliteStoreOptions::new(fname.as_str())
                 .expect("Error initializing sqlite store options")
-                .provision_backend(WrapKeyMethod::RawKey, Some(&key), None, false)
+                .provision_backend(WrapKeyMethod::RawKey, key.as_ref(), None, false)
                 .await
-                .expect("Error provisioning sqlite store")
-                .close()
+                .expect("Error provisioning sqlite store");
+            assert_eq!(Path::new(&fname).exists(), true);
+
+            let store2 = SqliteStoreOptions::new(fname.as_str())
+                .expect("Error initializing sqlite store options")
+                .open_backend(Some(WrapKeyMethod::RawKey), key.as_ref(), None)
                 .await
-                .expect("Error closing sqlite store");
+                .expect("Error opening sqlite store");
+            store2.close().await.expect("Error closing sqlite store");
+
+            store.close().await.expect("Error closing sqlite store");
             assert_eq!(Path::new(&fname).exists(), true);
 
             assert_eq!(
@@ -220,11 +227,50 @@ mod sqlite {
         })
     }
 
+    #[test]
+    fn rekey_db() {
+        env_logger::builder().is_test(true).try_init().unwrap_or(());
+        let fname = format!("sqlite-test-{}.db", uuid::Uuid::new_v4().to_string());
+        let key1 = generate_raw_wrap_key(None).expect("Error creating raw key");
+        let key2 = generate_raw_wrap_key(None).expect("Error creating raw key");
+        assert_ne!(key1, key2);
+
+        block_on(async move {
+            let mut store = SqliteStoreOptions::new(fname.as_str())
+                .expect("Error initializing sqlite store options")
+                .provision_backend(WrapKeyMethod::RawKey, key1.as_ref(), None, false)
+                .await
+                .expect("Error provisioning sqlite store");
+
+            store
+                .rekey(WrapKeyMethod::RawKey, key2.as_ref())
+                .await
+                .expect("Error rekeying database");
+
+            SqliteStoreOptions::new(fname.as_str())
+                .expect("Error initializing sqlite store options")
+                .open_backend(Some(WrapKeyMethod::RawKey), key2.as_ref(), None)
+                .await
+                .expect("Error opening rekeyed store")
+                .close()
+                .await
+                .expect("Error closing store");
+
+            store.close().await.expect("Error closing store");
+
+            SqliteStoreOptions::new(fname.as_str())
+                .expect("Error initializing sqlite store options")
+                .remove_backend()
+                .await
+                .expect("Error removing sqlite store");
+        })
+    }
+
     async fn init_db() -> Store<SqliteStore> {
         env_logger::builder().is_test(true).try_init().unwrap_or(());
         let key = generate_raw_wrap_key(None).expect("Error creating raw key");
         SqliteStoreOptions::in_memory()
-            .provision(WrapKeyMethod::RawKey, Some(&key), None, false)
+            .provision(WrapKeyMethod::RawKey, key, None, false)
             .await
             .expect("Error provisioning sqlite store")
     }
@@ -238,7 +284,7 @@ mod sqlite {
         block_on(async {
             let db_url = "sqlite://:memory:";
             let _db = db_url
-                .provision_backend(WrapKeyMethod::RawKey, Some(&key), None, false)
+                .provision_backend(WrapKeyMethod::RawKey, key.as_ref(), None, false)
                 .await
                 .expect("Error provisioning store");
         });
@@ -246,7 +292,7 @@ mod sqlite {
         block_on(async {
             let db_url = "not-sqlite://test-db";
             let _db = db_url
-                .provision_backend(WrapKeyMethod::RawKey, Some(&key), None, false)
+                .provision_backend(WrapKeyMethod::RawKey, key.as_ref(), None, false)
                 .await
                 .expect_err("Expected provision failure");
         });

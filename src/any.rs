@@ -1,6 +1,6 @@
 use super::error::Result;
 use super::future::BoxFuture;
-use super::keys::wrap::WrapKeyMethod;
+use super::keys::{wrap::WrapKeyMethod, PassKey};
 use super::options::IntoOptions;
 use super::store::{Backend, ManageBackend, QueryBackend, Scan, Session, Store};
 use super::types::{Entry, EntryKind, EntryOperation, EntryTag, TagFilter};
@@ -31,7 +31,7 @@ impl Backend for AnyBackend {
     type Session = AnyQueryBackend;
     type Transaction = AnyQueryBackend;
 
-    fn create_profile(&self, name: Option<&str>) -> BoxFuture<Result<String>> {
+    fn create_profile(&self, name: Option<String>) -> BoxFuture<Result<String>> {
         match self {
             #[cfg(feature = "postgres")]
             Self::Postgres(store) => store.create_profile(name),
@@ -116,6 +116,22 @@ impl Backend for AnyBackend {
                 _ => unreachable!(),
             }
         })
+    }
+
+    fn rekey_backend(
+        &mut self,
+        method: WrapKeyMethod,
+        pass_key: PassKey<'_>,
+    ) -> BoxFuture<Result<()>> {
+        match self {
+            #[cfg(feature = "postgres")]
+            Self::Postgres(store) => store.rekey_backend(method, pass_key),
+
+            #[cfg(feature = "sqlite")]
+            Self::Sqlite(store) => store.rekey_backend(method, pass_key),
+
+            _ => unreachable!(),
+        }
     }
 
     fn close(&self) -> BoxFuture<Result<()>> {
@@ -294,7 +310,7 @@ impl<'a> ManageBackend<'a> for &'a str {
     fn open_backend(
         self,
         method: Option<WrapKeyMethod>,
-        pass_key: Option<&'a str>,
+        pass_key: PassKey<'a>,
         profile: Option<&'a str>,
     ) -> BoxFuture<'a, Result<Self::Store>> {
         Box::pin(async move {
@@ -324,7 +340,7 @@ impl<'a> ManageBackend<'a> for &'a str {
     fn provision_backend(
         self,
         method: WrapKeyMethod,
-        pass_key: Option<&'a str>,
+        pass_key: PassKey<'a>,
         profile: Option<&'a str>,
         recreate: bool,
     ) -> BoxFuture<'a, Result<Self::Store>> {

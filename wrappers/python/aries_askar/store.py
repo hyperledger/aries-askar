@@ -138,6 +138,13 @@ class Store:
     async def remove_profile(self, name: str) -> bool:
         return await bindings.store_remove_profile(self.handle, name)
 
+    async def rekey(
+        self,
+        wrap_method: str = None,
+        pass_key: str = None,
+    ):
+        await bindings.store_rekey(self.handle, wrap_method, pass_key)
+
     def scan(
         self,
         category: str,

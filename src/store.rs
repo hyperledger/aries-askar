@@ -12,7 +12,7 @@ use indy_utils::{
 use zeroize::Zeroize;
 
 use super::future::BoxFuture;
-use super::keys::{wrap::WrapKeyMethod, KeyAlg, KeyCategory, KeyEntry, KeyParams};
+use super::keys::{wrap::WrapKeyMethod, KeyAlg, KeyCategory, KeyEntry, KeyParams, PassKey};
 use super::types::{Entry, EntryKind, EntryOperation, EntryTag, TagFilter};
 use super::Result;
 
@@ -31,7 +31,7 @@ pub trait Backend: Send + Sync {
     type Session: QueryBackend;
     type Transaction: QueryBackend;
 
-    fn create_profile(&self, name: Option<&str>) -> BoxFuture<Result<String>>;
+    fn create_profile(&self, name: Option<String>) -> BoxFuture<Result<String>>;
 
     fn remove_profile(&self, name: String) -> BoxFuture<Result<bool>>;
 
@@ -49,6 +49,8 @@ pub trait Backend: Send + Sync {
 
     fn transaction(&self, profile: Option<String>) -> BoxFuture<Result<Self::Transaction>>;
 
+    fn rekey_backend(&mut self, method: WrapKeyMethod, key: PassKey<'_>) -> BoxFuture<Result<()>>;
+
     fn close(&self) -> BoxFuture<Result<()>>;
 }
 
@@ -58,14 +60,14 @@ pub trait ManageBackend<'a> {
     fn open_backend(
         self,
         method: Option<WrapKeyMethod>,
-        pass_key: Option<&'a str>,
+        pass_key: PassKey<'a>,
         profile: Option<&'a str>,
     ) -> BoxFuture<'a, Result<Self::Store>>;
 
     fn provision_backend(
         self,
         method: WrapKeyMethod,
-        pass_key: Option<&'a str>,
+        pass_key: PassKey<'a>,
         profile: Option<&'a str>,
         recreate: bool,
     ) -> BoxFuture<'a, Result<Self::Store>>;
@@ -138,7 +140,11 @@ impl<B: Backend> Store<B> {
 }
 
 impl<B: Backend> Store<B> {
-    pub async fn create_profile(&self, name: Option<&str>) -> Result<String> {
+    pub async fn rekey(&mut self, method: WrapKeyMethod, pass_key: PassKey<'_>) -> Result<()> {
+        Ok(self.0.rekey_backend(method, pass_key).await?)
+    }
+
+    pub async fn create_profile(&self, name: Option<String>) -> Result<String> {
         Ok(self.0.create_profile(name).await?)
     }
 

@@ -4,6 +4,7 @@ use super::provision::{init_db, reset_db, PostgresStoreOptions};
 use super::PostgresStore;
 use crate::db_utils::{init_keys, random_profile_name};
 use crate::error::Result;
+use crate::future::unblock;
 use crate::keys::{
     wrap::{generate_raw_wrap_key, WrapKeyMethod},
     KeyCache,
@@ -26,7 +27,7 @@ impl TestDB {
 
         let key = generate_raw_wrap_key(None)?;
         let (store_key, enc_store_key, wrap_key, wrap_key_ref) =
-            init_keys(WrapKeyMethod::RawKey, Some(&key)).await?;
+            unblock(|| init_keys(WrapKeyMethod::RawKey, key)).await?;
         let default_profile = random_profile_name();
 
         let opts = PostgresStoreOptions::new(path.as_str())?;
