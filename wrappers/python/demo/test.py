@@ -39,6 +39,7 @@ async def basic_test():
     # Provision the store
     store = await Store.provision(REPO_URI, key_method, key, recreate=True)
     log("Provisioned store:", store)
+    log("Profile name:", await store.get_profile_name())
 
     # start a new transaction
     async with store.transaction() as txn:

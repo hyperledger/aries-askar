@@ -376,6 +376,32 @@ pub extern "C" fn askar_store_create_profile(
 }
 
 #[no_mangle]
+pub extern "C" fn askar_store_get_profile_name(
+    handle: StoreHandle,
+    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, name: *const c_char)>,
+    cb_id: CallbackId,
+) -> ErrorCode {
+    catch_err! {
+        trace!("Get profile name");
+        let cb = cb.ok_or_else(|| err_msg!("No callback provided"))?;
+        let cb = EnsureCallback::new(move |result|
+            match result {
+                Ok(name) => cb(cb_id, ErrorCode::Success, rust_string_to_c(name)),
+                Err(err) => cb(cb_id, set_last_error(Some(err)), ptr::null_mut()),
+            }
+        );
+        spawn_ok(async move {
+            let result = async {
+                let store = handle.load().await?;
+                Ok(store.get_profile_name().to_string())
+            }.await;
+            cb.resolve(result);
+        });
+        Ok(ErrorCode::Success)
+    }
+}
+
+#[no_mangle]
 pub extern "C" fn askar_store_remove_profile(
     handle: StoreHandle,
     profile: FfiStr,

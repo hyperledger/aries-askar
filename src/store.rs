@@ -33,6 +33,8 @@ pub trait Backend: Send + Sync {
 
     fn create_profile(&self, name: Option<String>) -> BoxFuture<Result<String>>;
 
+    fn get_profile_name(&self) -> &str;
+
     fn remove_profile(&self, name: String) -> BoxFuture<Result<bool>>;
 
     fn scan(
@@ -140,6 +142,10 @@ impl<B: Backend> Store<B> {
 }
 
 impl<B: Backend> Store<B> {
+    pub fn get_profile_name(&self) -> &str {
+        self.0.get_profile_name()
+    }
+
     pub async fn rekey(&mut self, method: WrapKeyMethod, pass_key: PassKey<'_>) -> Result<()> {
         Ok(self.0.rekey_backend(method, pass_key).await?)
     }

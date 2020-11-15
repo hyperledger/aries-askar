@@ -381,6 +381,17 @@ async def store_create_profile(handle: StoreHandle, name: str = None) -> str:
     )
 
 
+async def store_get_profile_name(handle: StoreHandle) -> str:
+    """Get the name of the default Store instance profile."""
+    return str(
+        await do_call_async(
+            "askar_store_get_profile_name",
+            handle,
+            return_type=lib_string,
+        )
+    )
+
+
 async def store_remove_profile(handle: StoreHandle, name: str) -> bool:
     """Remove an existing profile from a Store."""
     return (

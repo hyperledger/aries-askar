@@ -135,6 +135,9 @@ class Store:
     async def create_profile(self, name: str = None) -> str:
         return await bindings.store_create_profile(self.handle, name)
 
+    async def get_profile_name(self) -> str:
+        return await bindings.store_get_profile_name(self.handle)
+
     async def remove_profile(self, name: str) -> bool:
         return await bindings.store_remove_profile(self.handle, name)
 

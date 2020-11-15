@@ -27,32 +27,34 @@ pub enum AnyBackend {
     Other,
 }
 
+macro_rules! with_backend {
+    ($slf:ident, $ident:ident, $body:expr) => {
+        match $slf {
+            #[cfg(feature = "postgres")]
+            Self::Postgres($ident) => $body,
+
+            #[cfg(feature = "sqlite")]
+            Self::Sqlite($ident) => $body,
+
+            _ => unreachable!(),
+        }
+    };
+}
+
 impl Backend for AnyBackend {
     type Session = AnyQueryBackend;
     type Transaction = AnyQueryBackend;
 
     fn create_profile(&self, name: Option<String>) -> BoxFuture<Result<String>> {
-        match self {
-            #[cfg(feature = "postgres")]
-            Self::Postgres(store) => store.create_profile(name),
+        with_backend!(self, store, store.create_profile(name))
+    }
 
-            #[cfg(feature = "sqlite")]
-            Self::Sqlite(store) => store.create_profile(name),
-
-            _ => unreachable!(),
-        }
+    fn get_profile_name(&self) -> &str {
+        with_backend!(self, store, store.get_profile_name())
     }
 
     fn remove_profile(&self, name: String) -> BoxFuture<Result<bool>> {
-        match self {
-            #[cfg(feature = "postgres")]
-            Self::Postgres(store) => store.remove_profile(name),
-
-            #[cfg(feature = "sqlite")]
-            Self::Sqlite(store) => store.remove_profile(name),
-
-            _ => unreachable!(),
-        }
+        with_backend!(self, store, store.remove_profile(name))
     }
 
     fn scan(
@@ -64,15 +66,11 @@ impl Backend for AnyBackend {
         offset: Option<i64>,
         limit: Option<i64>,
     ) -> BoxFuture<Result<Scan<'static, Entry>>> {
-        match self {
-            #[cfg(feature = "postgres")]
-            Self::Postgres(store) => store.scan(profile, kind, category, tag_filter, offset, limit),
-
-            #[cfg(feature = "sqlite")]
-            Self::Sqlite(store) => store.scan(profile, kind, category, tag_filter, offset, limit),
-
-            _ => unreachable!(),
-        }
+        with_backend!(
+            self,
+            store,
+            store.scan(profile, kind, category, tag_filter, offset, limit)
+        )
     }
 
     fn session(&self, profile: Option<String>) -> BoxFuture<Result<Self::Session>> {
@@ -123,27 +121,11 @@ impl Backend for AnyBackend {
         method: WrapKeyMethod,
         pass_key: PassKey<'_>,
     ) -> BoxFuture<Result<()>> {
-        match self {
-            #[cfg(feature = "postgres")]
-            Self::Postgres(store) => store.rekey_backend(method, pass_key),
-
-            #[cfg(feature = "sqlite")]
-            Self::Sqlite(store) => store.rekey_backend(method, pass_key),
-
-            _ => unreachable!(),
-        }
+        with_backend!(self, store, store.rekey_backend(method, pass_key))
     }
 
     fn close(&self) -> BoxFuture<Result<()>> {
-        match self {
-            #[cfg(feature = "postgres")]
-            Self::Postgres(store) => store.close(),
-
-            #[cfg(feature = "sqlite")]
-            Self::Sqlite(store) => store.close(),
-
-            _ => unreachable!(),
-        }
+        with_backend!(self, store, store.close())
     }
 }
 

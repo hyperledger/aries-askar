@@ -140,6 +140,10 @@ impl Backend for SqliteStore {
         })
     }
 
+    fn get_profile_name(&self) -> &str {
+        self.default_profile.as_str()
+    }
+
     fn remove_profile(&self, name: String) -> BoxFuture<Result<bool>> {
         Box::pin(async move {
             let mut conn = self.conn_pool.acquire().await?;
