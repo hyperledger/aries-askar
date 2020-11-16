@@ -309,12 +309,12 @@ where
                     Result::Ok((value, tags))
                 })
                 .await?;
-                Ok(Some(Entry {
+                Ok(Some(Entry::new(
                     category,
                     name,
                     value,
                     tags,
-                }))
+                )))
             } else {
                 Ok(None)
             }
@@ -537,12 +537,12 @@ where
                 Result::Ok((name, value, tags))
             })
             .await?;
-            batch.push(Entry {
-                category: category.clone(),
+            batch.push(Entry::new(
+                category.clone(),
                 name,
                 value,
                 tags
-            });
+            ));
 
             if batch.len() == PAGE_SIZE {
                 yield batch.split_off(0);

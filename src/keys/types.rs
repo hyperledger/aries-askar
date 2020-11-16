@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
 use crate::error::Error;
-use crate::types::{sorted_tags, EntryTag};
+use crate::types::{sorted_tags, EntryTag, SecretBytes};
 
 #[derive(Clone, Debug, PartialEq, Eq, Zeroize)]
 pub enum KeyAlg {
@@ -114,16 +114,16 @@ pub struct KeyParams {
         default,
         rename = "pub",
         skip_serializing_if = "Option::is_none",
-        with = "crate::serde_util::as_base58"
+        with = "crate::serde_utils::as_base58"
     )]
     pub pub_key: Option<Vec<u8>>,
     #[serde(
         default,
         rename = "prv",
         skip_serializing_if = "Option::is_none",
-        with = "crate::serde_util::as_base58"
+        with = "crate::serde_utils::as_base58"
     )]
-    pub prv_key: Option<Vec<u8>>,
+    pub prv_key: Option<SecretBytes>,
 }
 
 impl KeyParams {
@@ -336,7 +336,7 @@ mod tests {
             metadata: Some("meta".to_string()),
             reference: None,
             pub_key: Some(vec![0, 0, 0, 0]),
-            prv_key: Some(vec![1, 1, 1, 1]),
+            prv_key: Some(vec![1, 1, 1, 1].into()),
         };
         let enc_params = params.to_vec().unwrap();
         let p2 = KeyParams::from_slice(&enc_params).unwrap();

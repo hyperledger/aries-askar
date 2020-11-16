@@ -1,5 +1,5 @@
 use std::fmt::{self, Debug, Formatter};
-use std::mem::ManuallyDrop;
+use std::ops::Deref;
 use std::ptr;
 use std::str::FromStr;
 
@@ -31,20 +31,23 @@ pub(crate) fn sorted_tags(tags: &Vec<EntryTag>) -> Option<Vec<&EntryTag>> {
 pub struct Entry {
     pub category: String,
     pub name: String,
-    pub value: Vec<u8>,
+    pub value: SecretBytes,
     pub tags: Option<Vec<EntryTag>>,
 }
 
 impl Entry {
-    pub(crate) fn into_parts(self) -> (String, String, Vec<u8>, Option<Vec<EntryTag>>) {
-        let slf = ManuallyDrop::new(self);
-        unsafe {
-            (
-                ptr::read(&slf.category),
-                ptr::read(&slf.name),
-                ptr::read(&slf.value),
-                ptr::read(&slf.tags),
-            )
+    #[inline]
+    pub fn new<C: Into<String>, N: Into<String>, V: Into<SecretBytes>>(
+        category: C,
+        name: N,
+        value: V,
+        tags: Option<Vec<EntryTag>>,
+    ) -> Self {
+        Self {
+            category: category.into(),
+            name: name.into(),
+            value: value.into(),
+            tags,
         }
     }
 
@@ -58,15 +61,9 @@ impl Debug for Entry {
         f.debug_struct("Entry")
             .field("category", &self.category)
             .field("name", &self.name)
-            .field("value", &MaybeStr(&self.value))
+            .field("value", &self.value)
             .field("tags", &self.tags)
             .finish()
-    }
-}
-
-impl Drop for Entry {
-    fn drop(&mut self) {
-        self.zeroize();
     }
 }
 
@@ -76,12 +73,6 @@ impl PartialEq for Entry {
             && self.name == rhs.name
             && self.value == rhs.value
             && self.sorted_tags() == rhs.sorted_tags()
-    }
-}
-
-impl Zeroize for Entry {
-    fn zeroize(&mut self) {
-        self.value.zeroize()
     }
 }
 
@@ -321,6 +312,79 @@ impl Debug for MaybeStr<'_> {
         } else {
             write!(f, "_\"{}\"", hex::encode(self.0))
         }
+    }
+}
+
+#[derive(Clone, Hash, PartialEq, Eq, PartialOrd, Ord, Zeroize)]
+pub struct SecretBytes(Vec<u8>);
+
+impl SecretBytes {
+    pub(crate) unsafe fn unwrap(mut self) -> Vec<u8> {
+        let mut v = vec![]; // note: no heap allocation for empty vec
+        ptr::swap(&mut v, &mut self.0);
+        v
+    }
+}
+
+impl Debug for SecretBytes {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        if cfg!(test) {
+            f.debug_tuple("Secret")
+                .field(&MaybeStr(self.0.as_slice()))
+                .finish()
+        } else {
+            f.write_str("<secret>")
+        }
+    }
+}
+
+impl AsRef<[u8]> for SecretBytes {
+    fn as_ref(&self) -> &[u8] {
+        self.0.as_slice()
+    }
+}
+
+impl Deref for SecretBytes {
+    type Target = [u8];
+
+    fn deref(&self) -> &Self::Target {
+        self.0.as_slice()
+    }
+}
+
+impl Drop for SecretBytes {
+    fn drop(&mut self) {
+        self.zeroize();
+    }
+}
+
+impl From<&[u8]> for SecretBytes {
+    fn from(inner: &[u8]) -> Self {
+        Self(inner.to_vec())
+    }
+}
+
+impl From<&str> for SecretBytes {
+    fn from(inner: &str) -> Self {
+        Self(inner.as_bytes().to_vec())
+    }
+}
+
+impl From<Vec<u8>> for SecretBytes {
+    fn from(inner: Vec<u8>) -> Self {
+        Self(inner)
+    }
+}
+
+impl PartialEq<&[u8]> for SecretBytes {
+    fn eq(&self, other: &&[u8]) -> bool {
+        self.0.eq(other)
+    }
+}
+
+impl PartialEq<Vec<u8>> for SecretBytes {
+    fn eq(&self, other: &Vec<u8>) -> bool {
+        self.0.eq(other)
     }
 }
 

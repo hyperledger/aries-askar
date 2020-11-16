@@ -42,7 +42,7 @@ mod ffi;
 pub mod postgres;
 
 #[macro_use]
-pub(crate) mod serde_util;
+pub(crate) mod serde_utils;
 
 #[cfg(feature = "sqlite")]
 #[cfg_attr(docsrs, doc(cfg(feature = "sqlite")))]
@@ -65,6 +65,6 @@ mod store;
 pub use self::store::{Backend, ManageBackend, QueryBackend, Scan, Session, Store};
 
 mod types;
-pub use self::types::{Entry, EntryOperation, EntryTag, TagFilter};
+pub use self::types::{Entry, EntryOperation, EntryTag, SecretBytes, TagFilter};
 
 mod wql;

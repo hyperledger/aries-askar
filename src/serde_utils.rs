@@ -6,6 +6,8 @@ use indy_utils::base58;
 
 use serde::{de::Visitor, Deserializer, Serializer};
 
+use super::types::SecretBytes;
+
 macro_rules! serde_as_str_impl {
     ($t:ident) => {
         impl Serialize for $t {
@@ -13,7 +15,7 @@ macro_rules! serde_as_str_impl {
             where
                 S: serde::Serializer,
             {
-                $crate::serde_util::as_str::serialize(self, serializer)
+                $crate::serde_utils::as_str::serialize(self, serializer)
             }
         }
 
@@ -22,7 +24,7 @@ macro_rules! serde_as_str_impl {
             where
                 D: serde::Deserializer<'de>,
             {
-                $crate::serde_util::as_str::deserialize(deserializer)
+                $crate::serde_utils::as_str::deserialize(deserializer)
             }
         }
     };
@@ -107,6 +109,15 @@ pub mod as_base58 {
         }
     }
 
+    impl Serialize for SecretBytes {
+        fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+        {
+            serializer.serialize_str(&base58::encode(self))
+        }
+    }
+
     impl<'a, T> Serialize for &'a T
     where
         T: ?Sized + Serialize,
@@ -177,6 +188,16 @@ pub mod as_base58 {
             }
 
             deserializer.deserialize_any(FromBase58Visitor)
+        }
+    }
+
+    impl<'de> Deserialize<'de> for SecretBytes {
+        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        where
+            D: Deserializer<'de>,
+        {
+            let result = <Vec<u8> as Deserialize>::deserialize(deserializer)?;
+            Ok(Self::from(result))
         }
     }
 

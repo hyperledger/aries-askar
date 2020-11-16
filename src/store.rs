@@ -384,7 +384,7 @@ impl<Q: QueryBackend> Session<Q> {
             metadata: metadata.map(str::to_string),
             reference: None,
             pub_key: Some(pk.key_bytes()),
-            prv_key: Some(sk.key_bytes()),
+            prv_key: Some(sk.key_bytes().into()),
         };
         let mut value = params.to_vec()?;
 

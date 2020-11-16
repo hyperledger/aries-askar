@@ -6,7 +6,7 @@ use zeroize::Zeroize;
 
 use super::error::Result;
 use super::future::unblock_scoped;
-use super::types::{EncEntryTag, EntryTag, ProfileId};
+use super::types::{EncEntryTag, EntryTag, ProfileId, SecretBytes};
 
 pub mod kdf;
 
@@ -99,7 +99,7 @@ pub trait EntryEncryptor {
 
     fn decrypt_entry_category(&self, enc_category: &[u8]) -> Result<String>;
     fn decrypt_entry_name(&self, enc_name: &[u8]) -> Result<String>;
-    fn decrypt_entry_value(&self, enc_value: &[u8]) -> Result<Vec<u8>>;
+    fn decrypt_entry_value(&self, enc_value: &[u8]) -> Result<SecretBytes>;
     fn decrypt_entry_tags(&self, enc_tags: &[EncEntryTag]) -> Result<Vec<EntryTag>>;
 }
 
@@ -139,8 +139,8 @@ impl EntryEncryptor for NullEncryptor {
     fn decrypt_entry_name(&self, enc_name: &[u8]) -> Result<String> {
         Ok(String::from_utf8(enc_name.to_vec()).map_err(err_map!(Encryption))?)
     }
-    fn decrypt_entry_value(&self, enc_value: &[u8]) -> Result<Vec<u8>> {
-        Ok(enc_value.to_vec())
+    fn decrypt_entry_value(&self, enc_value: &[u8]) -> Result<SecretBytes> {
+        Ok(enc_value.to_vec().into())
     }
     fn decrypt_entry_tags(&self, enc_tags: &[EncEntryTag]) -> Result<Vec<EntryTag>> {
         Ok(enc_tags.into_iter().try_fold(vec![], |mut acc, tag| {

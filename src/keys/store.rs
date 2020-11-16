@@ -13,7 +13,7 @@ use serde::Deserialize;
 
 use crate::error::Result;
 use crate::keys::EntryEncryptor;
-use crate::types::{EncEntryTag, EntryTag};
+use crate::types::{EncEntryTag, EntryTag, SecretBytes};
 
 const ENC_KEY_BYTES: usize = <ChaCha20Poly1305 as NewAead>::KeySize::USIZE;
 const ENC_KEY_SIZE: usize = <ChaCha20Poly1305 as Aead>::NonceSize::USIZE
@@ -198,8 +198,8 @@ impl EntryEncryptor for StoreKey {
         decode_utf8(self.decrypt_name(&enc_name)?)
     }
 
-    fn decrypt_entry_value(&self, enc_value: &[u8]) -> Result<Vec<u8>> {
-        Ok(self.decrypt_value(&enc_value)?)
+    fn decrypt_entry_value(&self, enc_value: &[u8]) -> Result<SecretBytes> {
+        Ok(self.decrypt_value(&enc_value)?.into())
     }
 
     fn decrypt_entry_tags(&self, enc_tags: &[EncEntryTag]) -> Result<Vec<EntryTag>> {
@@ -230,31 +230,31 @@ mod tests {
     #[test]
     fn store_key_round_trip() {
         let key = StoreKey::new().unwrap();
-        let test_record = Entry {
-            category: "category".to_string(),
-            name: "name".to_string(),
-            value: b"value".to_vec(),
-            tags: Some(vec![
+        let test_record = Entry::new(
+            "category",
+            "name",
+            "value",
+            Some(vec![
                 EntryTag::Plaintext("plain".to_string(), "tag".to_string()),
                 EntryTag::Encrypted("enctag".to_string(), "envtagval".to_string()),
             ]),
-        };
+        );
         let enc_category = key.encrypt_entry_category(&test_record.category).unwrap();
         let enc_name = key.encrypt_entry_name(&test_record.name).unwrap();
         let enc_value = key.encrypt_entry_value(&test_record.value).unwrap();
         let enc_tags = key
             .encrypt_entry_tags(&test_record.tags.as_ref().unwrap())
             .unwrap();
-        assert_ne!(enc_category.as_slice(), test_record.category.as_bytes());
-        assert_ne!(enc_name.as_slice(), test_record.name.as_bytes());
-        assert_ne!(enc_value.as_slice(), test_record.value.as_slice());
+        assert_ne!(test_record.category.as_bytes(), enc_category.as_slice());
+        assert_ne!(test_record.name.as_bytes(), enc_name.as_slice());
+        assert_ne!(test_record.value, enc_value);
 
-        let cmp_record = Entry {
-            category: key.decrypt_entry_category(&enc_category).unwrap(),
-            name: key.decrypt_entry_name(&enc_name).unwrap(),
-            value: key.decrypt_entry_value(&enc_value).unwrap(),
-            tags: Some(key.decrypt_entry_tags(&enc_tags).unwrap()),
-        };
+        let cmp_record = Entry::new(
+            key.decrypt_entry_category(&enc_category).unwrap(),
+            key.decrypt_entry_name(&enc_name).unwrap(),
+            key.decrypt_entry_value(&enc_value).unwrap(),
+            Some(key.decrypt_entry_tags(&enc_tags).unwrap()),
+        );
         assert_eq!(test_record, cmp_record);
     }
 

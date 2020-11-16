@@ -199,10 +199,15 @@ impl Clone for FfiEntry {
 
 impl FfiEntry {
     pub fn new(entry: Entry) -> Self {
-        let (category, name, value, tags) = entry.into_parts();
+        let Entry {
+            category,
+            name,
+            value,
+            tags,
+        } = entry;
         let category = CString::new(category).unwrap().into_raw();
         let name = CString::new(name).unwrap().into_raw();
-        let value = ByteBuffer::from_vec(value);
+        let value = ByteBuffer::from_vec(unsafe { value.unwrap() });
         let tags = match tags {
             Some(tags) => {
                 let tags = serde_json::to_vec(&EntryTagSet::new(tags)).unwrap();
@@ -1153,10 +1158,5 @@ fn export_key_entry(key_entry: KeyEntry) -> KvResult<Entry> {
     let value = serde_json::to_string(&params)
         .map_err(err_map!("Error converting key entry to JSON"))?
         .into_bytes();
-    Ok(Entry {
-        category: category.to_string(),
-        name,
-        value,
-        tags,
-    })
+    Ok(Entry::new(category.to_string(), name, value, tags))
 }

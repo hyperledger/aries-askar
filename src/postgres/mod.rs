@@ -338,12 +338,12 @@ where
                 })
                 .await?;
 
-                Ok(Some(Entry {
+                Ok(Some(Entry::new(
                     category,
                     name,
                     value,
                     tags,
-                }))
+                )))
             } else {
                 Ok(None)
             }
@@ -644,13 +644,12 @@ where
             })
             .await?;
 
-            let entry = Entry {
-                category: category.clone(),
+            batch.push(Entry::new(
+                category.clone(),
                 name,
                 value,
                 tags,
-            };
-            batch.push(entry);
+            ));
             if batch.len() == PAGE_SIZE {
                 yield batch.split_off(0);
             }

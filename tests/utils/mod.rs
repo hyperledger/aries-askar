@@ -45,15 +45,15 @@ pub async fn db_fetch_fail<DB: Backend>(db: &Store<DB>) {
 }
 
 pub async fn db_insert_fetch<DB: Backend>(db: &Store<DB>) {
-    let test_row = Entry {
-        category: "cat".to_string(),
-        name: "name".to_string(),
-        value: b"value".to_vec(),
-        tags: Some(vec![
+    let test_row = Entry::new(
+        "category",
+        "name",
+        "value",
+        Some(vec![
             EntryTag::Encrypted("t1".to_string(), "v1".to_string()),
             EntryTag::Plaintext("t2".to_string(), "v2".to_string()),
         ]),
-    };
+    );
 
     let mut conn = db.session(None).await.expect(ERR_SESSION);
 
@@ -83,12 +83,7 @@ pub async fn db_insert_fetch<DB: Backend>(db: &Store<DB>) {
 }
 
 pub async fn db_insert_duplicate<DB: Backend>(db: &Store<DB>) {
-    let test_row = Entry {
-        category: "cat".to_string(),
-        name: "name".to_string(),
-        value: b"value".to_vec(),
-        tags: None,
-    };
+    let test_row = Entry::new("category", "name", "value", None);
 
     let mut conn = db.session(None).await.expect(ERR_SESSION);
 
@@ -116,12 +111,7 @@ pub async fn db_insert_duplicate<DB: Backend>(db: &Store<DB>) {
 }
 
 pub async fn db_insert_remove<DB: Backend>(db: &Store<DB>) {
-    let test_row = Entry {
-        category: "cat".to_string(),
-        name: "name".to_string(),
-        value: b"value".to_vec(),
-        tags: None,
-    };
+    let test_row = Entry::new("category", "name", "value", None);
 
     let mut conn = db.session(None).await.expect(ERR_SESSION);
 
@@ -148,12 +138,7 @@ pub async fn db_remove_missing<DB: Backend>(db: &Store<DB>) {
 }
 
 pub async fn db_replace_fetch<DB: Backend>(db: &Store<DB>) {
-    let test_row = Entry {
-        category: "cat".to_string(),
-        name: "name".to_string(),
-        value: b"value".to_vec(),
-        tags: None,
-    };
+    let test_row = Entry::new("category", "name", "value", None);
 
     let mut conn = db.session(None).await.expect(ERR_SESSION);
 
@@ -168,7 +153,7 @@ pub async fn db_replace_fetch<DB: Backend>(db: &Store<DB>) {
     .expect(ERR_INSERT);
 
     let mut replace_row = test_row.clone();
-    replace_row.value = b"new value".to_vec();
+    replace_row.value = "new value".into();
     conn.replace(
         &replace_row.category,
         &replace_row.name,
@@ -188,12 +173,7 @@ pub async fn db_replace_fetch<DB: Backend>(db: &Store<DB>) {
 }
 
 pub async fn db_replace_missing<DB: Backend>(db: &Store<DB>) {
-    let test_row = Entry {
-        category: "cat".to_string(),
-        name: "name".to_string(),
-        value: b"value".to_vec(),
-        tags: None,
-    };
+    let test_row = Entry::new("category", "name", "value", None);
 
     let mut conn = db.session(None).await.expect(ERR_SESSION);
 
@@ -211,13 +191,8 @@ pub async fn db_replace_missing<DB: Backend>(db: &Store<DB>) {
 }
 
 pub async fn db_count<DB: Backend>(db: &Store<DB>) {
-    let category = "cat".to_string();
-    let test_rows = vec![Entry {
-        category: category.clone(),
-        name: "name".to_string(),
-        value: b"value".to_vec(),
-        tags: None,
-    }];
+    let category = "category".to_string();
+    let test_rows = vec![Entry::new(&category, "name", "value", None)];
 
     let mut conn = db.session(None).await.expect(ERR_SESSION);
 
@@ -243,16 +218,16 @@ pub async fn db_count<DB: Backend>(db: &Store<DB>) {
 }
 
 pub async fn db_scan<DB: Backend>(db: &Store<DB>) {
-    let category = "cat".to_string();
-    let test_rows = vec![Entry {
-        category: category.clone(),
-        name: "name".to_string(),
-        value: b"value".to_vec(),
-        tags: Some(vec![
+    let category = "category".to_string();
+    let test_rows = vec![Entry::new(
+        &category,
+        "name",
+        "value",
+        Some(vec![
             EntryTag::Encrypted("t1".to_string(), "v1".to_string()),
             EntryTag::Plaintext("t2".to_string(), "v2".to_string()),
         ]),
-    }];
+    )];
 
     let mut conn = db.session(None).await.expect(ERR_SESSION);
 
@@ -292,33 +267,33 @@ pub async fn db_scan<DB: Backend>(db: &Store<DB>) {
 
 pub async fn db_remove_all<DB: Backend>(db: &Store<DB>) {
     let test_rows = vec![
-        Entry {
-            category: "cat".to_string(),
-            name: "item1".to_string(),
-            value: b"value".to_vec(),
-            tags: Some(vec![
+        Entry::new(
+            "category",
+            "item1",
+            "value",
+            Some(vec![
                 EntryTag::Encrypted("t1".to_string(), "del".to_string()),
                 EntryTag::Plaintext("t2".to_string(), "del".to_string()),
             ]),
-        },
-        Entry {
-            category: "cat".to_string(),
-            name: "item2".to_string(),
-            value: b"value".to_vec(),
-            tags: Some(vec![
+        ),
+        Entry::new(
+            "category",
+            "item2",
+            "value",
+            Some(vec![
                 EntryTag::Encrypted("t1".to_string(), "del".to_string()),
                 EntryTag::Plaintext("t2".to_string(), "del".to_string()),
             ]),
-        },
-        Entry {
-            category: "cat".to_string(),
-            name: "item3".to_string(),
-            value: b"value".to_vec(),
-            tags: Some(vec![
+        ),
+        Entry::new(
+            "category",
+            "item3",
+            "value",
+            Some(vec![
                 EntryTag::Encrypted("t1".to_string(), "keep".to_string()),
                 EntryTag::Plaintext("t2".to_string(), "keep".to_string()),
             ]),
-        },
+        ),
     ];
 
     let mut conn = db.session(None).await.expect(ERR_SESSION);
@@ -339,7 +314,7 @@ pub async fn db_remove_all<DB: Backend>(db: &Store<DB>) {
     // depends on the backend. just checking that no SQL errors occur for now.
     let removed = conn
         .remove_all(
-            "cat",
+            "category",
             Some(TagFilter::all_of(vec![
                 TagFilter::is_eq("t1", "del"),
                 TagFilter::is_eq("~t2", "del"),
@@ -451,12 +426,7 @@ pub async fn db_keypair_pack_unpack_auth<DB: Backend>(db: &Store<DB>) {
 }
 
 pub async fn db_txn_rollback<DB: Backend>(db: &Store<DB>) {
-    let test_row = Entry {
-        category: "cat".to_string(),
-        name: "name".to_string(),
-        value: b"value".to_vec(),
-        tags: None,
-    };
+    let test_row = Entry::new("category", "name", "value", None);
 
     let mut conn = db.transaction(None).await.expect(ERR_TRANSACTION);
 
@@ -484,12 +454,7 @@ pub async fn db_txn_rollback<DB: Backend>(db: &Store<DB>) {
 }
 
 pub async fn db_txn_drop<DB: Backend>(db: &Store<DB>) {
-    let test_row = Entry {
-        category: "cat".to_string(),
-        name: "name".to_string(),
-        value: b"value".to_vec(),
-        tags: None,
-    };
+    let test_row = Entry::new("category", "name", "value", None);
 
     let mut conn = db
         .transaction(None)
@@ -519,12 +484,7 @@ pub async fn db_txn_drop<DB: Backend>(db: &Store<DB>) {
 
 // test that session does NOT have transaction rollback behaviour
 pub async fn db_session_drop<DB: Backend>(db: &Store<DB>) {
-    let test_row = Entry {
-        category: "cat".to_string(),
-        name: "name".to_string(),
-        value: b"value".to_vec(),
-        tags: None,
-    };
+    let test_row = Entry::new("category", "name", "value", None);
 
     let mut conn = db.session(None).await.expect(ERR_SESSION);
 
@@ -550,12 +510,7 @@ pub async fn db_session_drop<DB: Backend>(db: &Store<DB>) {
 }
 
 pub async fn db_txn_commit<DB: Backend>(db: &Store<DB>) {
-    let test_row = Entry {
-        category: "cat".to_string(),
-        name: "name".to_string(),
-        value: b"value".to_vec(),
-        tags: None,
-    };
+    let test_row = Entry::new("category", "name", "value", None);
 
     let mut conn = db.transaction(None).await.expect(ERR_TRANSACTION);
 
@@ -581,12 +536,7 @@ pub async fn db_txn_commit<DB: Backend>(db: &Store<DB>) {
 }
 
 pub async fn db_txn_fetch_for_update<DB: Backend>(db: &Store<DB>) {
-    let test_row = Entry {
-        category: "cat".to_string(),
-        name: "name".to_string(),
-        value: b"value".to_vec(),
-        tags: None,
-    };
+    let test_row = Entry::new("category", "name", "value", None);
 
     let mut conn = db.transaction(None).await.expect(ERR_TRANSACTION);
 
