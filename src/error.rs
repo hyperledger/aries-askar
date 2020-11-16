@@ -3,6 +3,7 @@ use std::fmt::{self, Display, Formatter};
 
 pub type Result<T> = std::result::Result<T, Error>;
 
+/// The possible kinds of error produced by the crate
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ErrorKind {
     Backend,
@@ -36,6 +37,7 @@ impl Display for ErrorKind {
     }
 }
 
+/// The standard crate error
 #[derive(Debug)]
 pub struct Error {
     pub kind: ErrorKind,

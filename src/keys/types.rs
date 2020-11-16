@@ -13,6 +13,7 @@ use zeroize::Zeroize;
 use crate::error::Error;
 use crate::types::{sorted_tags, EntryTag, SecretBytes};
 
+/// Supported key algorithms
 #[derive(Clone, Debug, PartialEq, Eq, Zeroize)]
 pub enum KeyAlg {
     ED25519,
@@ -53,6 +54,7 @@ impl Display for KeyAlg {
     }
 }
 
+/// Categories of keys supported by the default KMS
 #[derive(Clone, Debug, PartialEq, Eq, Zeroize)]
 pub enum KeyCategory {
     PublicKey,
@@ -103,6 +105,7 @@ impl Display for KeyCategory {
     }
 }
 
+/// Parameters defining a stored key
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 pub struct KeyParams {
     pub alg: KeyAlg,
@@ -151,7 +154,8 @@ impl Zeroize for KeyParams {
     }
 }
 
-#[derive(Clone, Eq)]
+/// A stored key entry
+#[derive(Clone, Debug, Eq)]
 pub struct KeyEntry {
     pub category: KeyCategory,
     pub ident: String,
@@ -206,23 +210,6 @@ impl KeyEntry {
     }
 }
 
-impl Debug for KeyEntry {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.debug_struct("KeyEntry")
-            .field("category", &self.category)
-            .field("ident", &self.ident)
-            .field("params", &self.params)
-            .field("tags", &self.tags)
-            .finish()
-    }
-}
-
-impl Drop for KeyEntry {
-    fn drop(&mut self) {
-        // currently nothing - KeyParams will zeroize itself on drop
-    }
-}
-
 impl PartialEq for KeyEntry {
     fn eq(&self, rhs: &Self) -> bool {
         self.category == rhs.category
@@ -232,6 +219,7 @@ impl PartialEq for KeyEntry {
     }
 }
 
+/// A possibly-empty password or key used to derive a store wrap key
 #[derive(Clone)]
 pub struct PassKey<'a>(Option<Cow<'a, str>>);
 
@@ -260,7 +248,7 @@ impl<'a> Debug for PassKey<'a> {
         if cfg!(test) {
             f.debug_tuple("PassKey").field(&*self).finish()
         } else {
-            f.debug_tuple("PassKey").field(&"<hidden>").finish()
+            f.debug_tuple("PassKey").field(&"<secret>").finish()
         }
     }
 }

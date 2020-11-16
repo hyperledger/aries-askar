@@ -232,7 +232,7 @@ pub fn replace_arg_placeholders<Q: QueryPrepare + ?Sized>(
     buffer
 }
 
-pub fn decode_tags(tags: &[u8]) -> std::result::Result<Vec<EncEntryTag>, ()> {
+pub(crate) fn decode_tags(tags: &[u8]) -> std::result::Result<Vec<EncEntryTag>, ()> {
     let mut idx = 0;
     let mut plaintext;
     let mut name_start;

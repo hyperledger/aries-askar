@@ -27,7 +27,8 @@ pub(crate) fn sorted_tags(tags: &Vec<EntryTag>) -> Option<Vec<&EntryTag>> {
     }
 }
 
-#[derive(Clone, Eq)]
+/// A record in the store
+#[derive(Clone, Debug, Eq)]
 pub struct Entry {
     pub category: String,
     pub name: String,
@@ -56,17 +57,6 @@ impl Entry {
     }
 }
 
-impl Debug for Entry {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Entry")
-            .field("category", &self.category)
-            .field("name", &self.name)
-            .field("value", &self.value)
-            .field("tags", &self.tags)
-            .finish()
-    }
-}
-
 impl PartialEq for Entry {
     fn eq(&self, rhs: &Self) -> bool {
         self.category == rhs.category
@@ -82,6 +72,7 @@ pub enum EntryKind {
     Item = 2,
 }
 
+/// Supported operations for entries in the store
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum EntryOperation {
     Insert,
@@ -89,7 +80,8 @@ pub enum EntryOperation {
     Remove,
 }
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Zeroize)]
+/// A tag on a record in the store
+#[derive(Clone, Hash, PartialEq, Eq, PartialOrd, Ord, Zeroize)]
 pub enum EntryTag {
     Encrypted(String, String),
     Plaintext(String, String),
@@ -297,7 +289,7 @@ impl Serialize for EntryTagSet {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct EncEntryTag {
+pub(crate) struct EncEntryTag {
     pub name: Vec<u8>,
     pub value: Vec<u8>,
     pub plaintext: bool,
@@ -315,6 +307,7 @@ impl Debug for MaybeStr<'_> {
     }
 }
 
+/// A protected byte buffer
 #[derive(Clone, Hash, PartialEq, Eq, PartialOrd, Ord, Zeroize)]
 pub struct SecretBytes(Vec<u8>);
 
@@ -388,6 +381,8 @@ impl PartialEq<Vec<u8>> for SecretBytes {
     }
 }
 
+/// A WQL filter used to restrict record queries
+#[derive(Clone, Debug, PartialEq, Eq)]
 #[repr(transparent)]
 pub struct TagFilter {
     pub(crate) query: wql::Query,

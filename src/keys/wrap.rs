@@ -12,6 +12,7 @@ pub const PREFIX_NONE: &'static str = "none";
 
 pub const RAW_KEY_SIZE: usize = 32;
 
+/// Create a new raw wrap key for a store
 pub fn generate_raw_wrap_key(seed: Option<&[u8]>) -> Result<PassKey<'static>> {
     if let Some(seed) = seed {
         if seed.len() != RAW_KEY_SIZE {
@@ -78,6 +79,7 @@ impl From<WrapKeyData> for WrapKey {
     }
 }
 
+/// Supported methods for generating or referencing a new wrap key
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum WrapKeyMethod {
     CreateManagedKey(String),

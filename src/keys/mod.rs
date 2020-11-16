@@ -24,6 +24,7 @@ use indy_utils::keys::{EncodedVerKey, PrivateKey};
 // #[cfg(target_os = "macos")]
 // mod keychain;
 
+/// Derive the (public) verification key for a keypair
 pub fn derive_verkey(alg: KeyAlg, seed: &[u8]) -> Result<String> {
     match alg {
         KeyAlg::ED25519 => (),
@@ -41,6 +42,7 @@ pub fn derive_verkey(alg: KeyAlg, seed: &[u8]) -> Result<String> {
     Ok(pk)
 }
 
+/// Verify that a message signature is consistent with the signer's key
 pub fn verify_signature(signer_vk: &str, data: &[u8], signature: &[u8]) -> Result<bool> {
     let vk = EncodedVerKey::from_str(&signer_vk).map_err(err_map!("Invalid verkey"))?;
     Ok(vk
@@ -91,7 +93,7 @@ impl KeyCache {
     }
 }
 
-pub trait EntryEncryptor {
+pub(crate) trait EntryEncryptor {
     fn encrypt_entry_category(&self, category: &str) -> Result<Vec<u8>>;
     fn encrypt_entry_name(&self, name: &str) -> Result<Vec<u8>>;
     fn encrypt_entry_value(&self, value: &[u8]) -> Result<Vec<u8>>;
