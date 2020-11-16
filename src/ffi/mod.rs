@@ -1,8 +1,10 @@
 use std::marker::PhantomData;
 use std::os::raw::c_char;
+use std::ptr;
 use std::str::FromStr;
 
 use ffi_support::{rust_string_to_c, ByteBuffer, FfiStr};
+use zeroize::Zeroizing;
 
 pub static LIB_VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -13,8 +15,9 @@ mod error;
 
 mod store;
 
-use self::error::ErrorCode;
+use self::error::{set_last_error, ErrorCode};
 use crate::error::Error;
+use crate::future::{spawn_ok, unblock};
 use crate::keys::{derive_verkey, verify_signature, wrap::generate_raw_wrap_key, KeyAlg};
 
 pub type CallbackId = i64;
@@ -61,26 +64,55 @@ pub extern "C" fn askar_set_default_logger() -> ErrorCode {
 pub extern "C" fn askar_derive_verkey(
     alg: FfiStr,
     seed: ByteBuffer,
-    verkey: *mut *const c_char,
+    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, key: *const c_char)>,
+    cb_id: CallbackId,
 ) -> ErrorCode {
     catch_err! {
         trace!("Derive verkey");
         let alg = alg.as_opt_str().map(|alg| KeyAlg::from_str(alg).unwrap()).ok_or_else(|| err_msg!("Key algorithm not provided"))?;
-        let vk_result = derive_verkey(alg, seed.as_slice())?;
-        unsafe { *verkey = rust_string_to_c(vk_result) };
-
+        let seed = Zeroizing::new(seed.as_slice().to_vec());
+        let cb = cb.ok_or_else(|| err_msg!("No callback provided"))?;
+        let cb = EnsureCallback::new(move |result|
+            match result {
+                Ok(key) => cb(cb_id, ErrorCode::Success, rust_string_to_c(key)),
+                Err(err) => cb(cb_id, set_last_error(Some(err)), ptr::null()),
+            }
+        );
+        spawn_ok(async move {
+            let result = unblock(move || derive_verkey(
+                alg, seed.as_slice()
+            )).await;
+            cb.resolve(result);
+        });
         Ok(ErrorCode::Success)
     }
 }
 
 #[no_mangle]
-pub extern "C" fn askar_generate_raw_key(seed: FfiStr, result_p: *mut *const c_char) -> ErrorCode {
+pub extern "C" fn askar_generate_raw_key(
+    seed: ByteBuffer,
+    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, key: *const c_char)>,
+    cb_id: CallbackId,
+) -> ErrorCode {
     catch_err! {
         trace!("Create raw key");
-        check_useful_c_ptr!(result_p);
-        let seed = seed.as_opt_str().map(str::as_bytes);
-        let key = generate_raw_wrap_key(seed)?;
-        unsafe { *result_p = rust_string_to_c(key.to_string()); }
+        let seed = match seed.as_slice() {
+            s if s.is_empty() => None,
+            s => Some(Zeroizing::new(s.to_vec()))
+        };
+        let cb = cb.ok_or_else(|| err_msg!("No callback provided"))?;
+        let cb = EnsureCallback::new(move |result|
+            match result {
+                Ok(key) => cb(cb_id, ErrorCode::Success, rust_string_to_c(key)),
+                Err(err) => cb(cb_id, set_last_error(Some(err)), ptr::null()),
+            }
+        );
+        spawn_ok(async move {
+            let result = unblock(move || generate_raw_wrap_key(
+                seed.as_ref().map(|s| s.as_slice())
+            ).map(|p| p.to_string())).await;
+            cb.resolve(result);
+        });
         Ok(ErrorCode::Success)
     }
 }
@@ -90,19 +122,29 @@ pub extern "C" fn askar_verify_signature(
     signer_vk: FfiStr,
     message: ByteBuffer,
     signature: ByteBuffer,
-    result_p: *mut i8,
+    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, verify: i8)>,
+    cb_id: CallbackId,
 ) -> ErrorCode {
     catch_err! {
         trace!("Verify signature");
-        let signer_vk = signer_vk.as_opt_str().ok_or_else(|| err_msg!("Signer verkey not provided"))?;
-        let message = message.as_slice();
-        let signature = signature.as_slice();
-        let result = verify_signature(
-            signer_vk,
-            message,
-            signature
-        )?;
-        unsafe { *result_p = result as i8 };
+        let signer_vk = signer_vk.into_opt_string().ok_or_else(|| err_msg!("Signer verkey not provided"))?;
+        let message = message.as_slice().to_vec();
+        let signature = signature.as_slice().to_vec();
+        let cb = cb.ok_or_else(|| err_msg!("No callback provided"))?;
+        let cb = EnsureCallback::new(move |result|
+            match result {
+                Ok(verify) => cb(cb_id, ErrorCode::Success, verify as i8),
+                Err(err) => cb(cb_id, set_last_error(Some(err)), 0),
+            }
+        );
+        spawn_ok(async move {
+            let result = unblock(move || verify_signature(
+                &signer_vk,
+                &message,
+                &signature
+            )).await;
+            cb.resolve(result);
+        });
         Ok(ErrorCode::Success)
     }
 }

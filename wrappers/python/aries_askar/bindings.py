@@ -295,42 +295,47 @@ def get_current_error(expect: bool = False) -> StoreError:
     return StoreError(StoreErrorCode.WRAPPER, "Unknown error")
 
 
-def derive_verkey(key_alg: KeyAlg, seed: Union[str, bytes, memoryview]) -> str:
-    verkey = lib_string()
-    do_call(
-        "askar_derive_verkey",
-        encode_str(key_alg.value),
-        encode_bytes(seed),
-        byref(verkey),
+async def derive_verkey(key_alg: KeyAlg, seed: [str, bytes, memoryview]) -> str:
+    """Derive a verification key from a seed."""
+    return str(
+        await do_call_async(
+            "askar_derive_verkey",
+            encode_str(key_alg.value),
+            encode_bytes(seed),
+            return_type=lib_string,
+        )
     )
-    return str(verkey)
 
 
-def generate_raw_key(seed: str = None) -> str:
+async def generate_raw_key(seed: [str, bytes, memoryview] = None) -> str:
     """Generate a new raw store wrapping key."""
-    result = lib_string()
-    do_call("askar_generate_raw_key", encode_str(seed), byref(result))
-    return str(result)
+    return str(
+        await do_call_async(
+            "askar_generate_raw_key", encode_bytes(seed), return_type=lib_string
+        )
+    )
 
 
-def verify_signature(
+async def verify_signature(
     signer_vk: str,
     message: Union[str, bytes, memoryview],
     signature: Union[str, bytes, memoryview],
 ) -> bool:
-    result = c_int8()
-    do_call(
-        "askar_verify_signature",
-        encode_str(signer_vk),
-        encode_bytes(message),
-        encode_bytes(signature),
-        byref(result),
+    """Verify a message signature."""
+    return (
+        await do_call_async(
+            "askar_verify_signature",
+            encode_str(signer_vk),
+            encode_bytes(message),
+            encode_bytes(signature),
+            return_type=c_int8,
+        )
+        != 0
     )
-    return result.value != 0
 
 
 def version() -> str:
-    """Set the version of the installed aries-askar library."""
+    """Get the version of the installed aries-askar library."""
     lib = get_library()
     lib.askar_version.restype = c_void_p
     return str(lib_string(lib.askar_version()))

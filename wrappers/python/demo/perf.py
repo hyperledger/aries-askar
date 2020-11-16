@@ -20,7 +20,7 @@ def log(*args):
 
 
 async def perf_test():
-    key = generate_raw_key()
+    key = await generate_raw_key()
 
     store = await Store.provision(REPO_URI, "raw", key, recreate=True)
 

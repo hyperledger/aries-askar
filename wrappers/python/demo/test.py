@@ -25,7 +25,7 @@ def log(*args):
 
 async def basic_test():
     if ENCRYPT:
-        key = generate_raw_key(b"00000000000000000000000000000My1")
+        key = await generate_raw_key(b"00000000000000000000000000000My1")
         key_method = "raw"
         log("Generated raw wallet key:", key)
     else:
@@ -33,7 +33,7 @@ async def basic_test():
         key_method = "none"
 
     # Derive a verkey
-    verkey = derive_verkey(KeyAlg.ED25519, b"testseedtestseedtestseedtestseed")
+    verkey = await derive_verkey(KeyAlg.ED25519, b"testseedtestseedtestseedtestseed")
     log("Derive verkey:", verkey)
 
     # Provision the store
@@ -90,7 +90,7 @@ async def basic_test():
         log("Signature:", signature)
 
         # Verify signature
-        verify = verify_signature(key_ident, b"my message", signature)
+        verify = await verify_signature(key_ident, b"my message", signature)
         log("Verify signature:", verify)
 
         # Pack message
@@ -114,7 +114,7 @@ async def basic_test():
     log("Created profile:", profile)
     log("Removed profile:", await store.remove_profile(profile))
 
-    key2 = generate_raw_key(b"00000000000000000000000000000My2")
+    key2 = await generate_raw_key(b"00000000000000000000000000000My2")
     await store.rekey("raw", key2)
     log("Re-keyed store")
 
