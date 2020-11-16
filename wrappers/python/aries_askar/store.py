@@ -213,12 +213,14 @@ class Session:
         limit: int = None,
         *,
         for_update: bool = False,
-    ) -> EntrySet:
+    ) -> Sequence[Entry]:
         if not self.handle:
             raise StoreError(StoreErrorCode.WRAPPER, "Cannot fetch from closed session")
-        return EntrySet(
-            await bindings.session_fetch_all(
-                self.handle, category, tag_filter, limit, for_update
+        return list(
+            EntrySet(
+                await bindings.session_fetch_all(
+                    self.handle, category, tag_filter, limit, for_update
+                )
             )
         )
 
