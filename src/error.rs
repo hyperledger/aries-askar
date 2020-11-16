@@ -7,13 +7,10 @@ pub type Result<T> = std::result::Result<T, Error>;
 pub enum ErrorKind {
     Backend,
     Busy,
-    Disconnected,
     Duplicate,
     Encryption,
     Input,
-    Lock,
     NotFound,
-    Timeout,
     Unexpected,
     Unsupported,
 }
@@ -23,13 +20,10 @@ impl ErrorKind {
         match self {
             Self::Backend => "Backend error",
             Self::Busy => "Busy",
-            Self::Disconnected => "Disconnected",
             Self::Duplicate => "Duplicate",
             Self::Encryption => "Encryption error",
             Self::Input => "Input error",
-            Self::Lock => "Lock error",
             Self::NotFound => "Not found",
-            Self::Timeout => "Timeout error",
             Self::Unexpected => "Unexpected error",
             Self::Unsupported => "Unsupported",
         }
@@ -79,7 +73,7 @@ impl Error {
 impl Display for Error {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         if let Some(msg) = self.message.as_ref() {
-            write!(f, "{}: {}", self.kind.as_str(), msg)?;
+            f.write_str(msg)?;
         } else {
             f.write_str(self.kind.as_str())?;
         }

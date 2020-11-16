@@ -304,7 +304,7 @@ where
                 let (value, tags) = unblock_scoped(|| {
                     let value = key.decrypt_entry_value(row.try_get(1)?)?;
                     let enc_tags = decode_tags(row.try_get(2)?)
-                        .map_err(|_| err_msg!("Error decoding tags"))?;
+                        .map_err(|_| err_msg!(Unexpected, "Error decoding entry tags"))?;
                     let tags = Some(key.decrypt_entry_tags(&enc_tags)?);
                     Result::Ok((value, tags))
                 })
@@ -532,7 +532,7 @@ where
                 let name = key.decrypt_entry_name(row.try_get(1)?)?;
                 let value = key.decrypt_entry_value(row.try_get(2)?)?;
                 let enc_tags = decode_tags(row.try_get(3)?)
-                    .map_err(|_| err_msg!("Error decoding tags"))?;
+                    .map_err(|_| err_msg!(Unexpected, "Error decoding tags"))?;
                 let tags = Some(key.decrypt_entry_tags(&enc_tags)?);
                 Result::Ok((name, value, tags))
             })

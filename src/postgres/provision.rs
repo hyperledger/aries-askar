@@ -50,11 +50,11 @@ impl PostgresStoreOptions {
         let host = opts.host.to_string();
         let path = opts.path.as_ref();
         if path.len() < 2 {
-            return Err(err_msg!("Missing database name"));
+            return Err(err_msg!(Input, "Missing database name"));
         }
         let name = (&path[1..]).to_string();
         if name.find(|c| c == '"' || c == '\0').is_some() {
-            return Err(err_msg!(
+            return Err(err_msg!(Input,
                 "Invalid character in database name: '\"' and '\\0' are disallowed"
             ));
         }
@@ -372,7 +372,7 @@ pub(crate) async fn open_db(
         let wrap_ref = WrapKeyReference::parse_uri(&wrap_key_ref)?;
         if let Some(method) = method {
             if !wrap_ref.compare_method(&method) {
-                return Err(err_msg!("Store key wrap method mismatch"));
+                return Err(err_msg!(Input, "Store key wrap method mismatch"));
             }
         }
         unblock_scoped(|| wrap_ref.resolve(pass_key)).await?

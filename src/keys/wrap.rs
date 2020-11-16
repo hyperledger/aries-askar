@@ -26,10 +26,10 @@ pub fn generate_raw_wrap_key(seed: Option<&[u8]>) -> Result<PassKey<'static>> {
 }
 
 pub fn parse_raw_key(raw_key: &str) -> Result<WrapKey> {
-    let key =
-        base58::decode(raw_key).map_err(|_| err_msg!("Error parsing raw key as base58 value"))?;
+    let key = base58::decode(raw_key)
+        .map_err(|_| err_msg!(Input, "Error parsing raw key as base58 value"))?;
     if key.len() != RAW_KEY_SIZE {
-        Err(err_msg!("Incorrect length for encoded raw key"))
+        Err(err_msg!(Input, "Incorrect length for encoded raw key"))
     } else {
         Ok(WrapKey::from(WrapKeyData::from_slice(key)))
     }
@@ -113,7 +113,7 @@ impl WrapKeyMethod {
                     let key_ref = WrapKeyReference::DeriveKey(*method, detail);
                     Ok((key, key_ref))
                 } else {
-                    Err(err_msg!("Key derivation password not provided"))
+                    Err(err_msg!(Input, "Key derivation password not provided"))
                 }
             }
             Self::RawKey => {
@@ -192,14 +192,14 @@ impl WrapKeyReference {
                 if !pass_key.is_none() {
                     method.derive_key(&*pass_key, detail)
                 } else {
-                    Err(err_msg!("Key derivation password not provided"))
+                    Err(err_msg!(Input, "Key derivation password not provided"))
                 }
             }
             Self::RawKey => {
                 if !pass_key.is_empty() {
                     parse_raw_key(&*pass_key)
                 } else {
-                    Err(err_msg!("Encoded raw key not provided"))
+                    Err(err_msg!(Input, "Encoded raw key not provided"))
                 }
             }
             Self::Unprotected => Ok(WrapKey::empty()),

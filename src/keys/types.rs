@@ -180,14 +180,14 @@ impl KeyEntry {
         Ok(self
             .verkey()?
             .as_base58()
-            .map_err(err_map!("Error encoding verkey"))?)
+            .map_err(err_map!(Unexpected, "Error encoding verkey"))?)
     }
 
     pub fn verkey(&self) -> Result<VerKey, Error> {
         match (&self.params.alg, &self.params.pub_key) {
             (KeyAlg::ED25519, Some(pub_key)) => Ok(VerKey::new(pub_key, Some(IndyKeyAlg::ED25519))),
-            (_, None) => Err(err_msg!("Undefined public key")),
-            _ => Err(err_msg!("Unsupported key algorithm")),
+            (_, None) => Err(err_msg!(Input, "Undefined public key")),
+            _ => Err(err_msg!(Unsupported, "Unsupported key algorithm")),
         }
     }
 
@@ -196,8 +196,8 @@ impl KeyEntry {
             (KeyAlg::ED25519, Some(prv_key)) => {
                 Ok(PrivateKey::new(prv_key, Some(IndyKeyAlg::ED25519)))
             }
-            (_, None) => Err(err_msg!("Undefined private key")),
-            _ => Err(err_msg!("Unsupported key algorithm")),
+            (_, None) => Err(err_msg!(Input, "Undefined private key")),
+            _ => Err(err_msg!(Unsupported, "Unsupported key algorithm")),
         }
     }
 

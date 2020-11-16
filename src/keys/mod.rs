@@ -27,7 +27,7 @@ use indy_utils::keys::{EncodedVerKey, PrivateKey};
 pub fn derive_verkey(alg: KeyAlg, seed: &[u8]) -> Result<String> {
     match alg {
         KeyAlg::ED25519 => (),
-        _ => return Err(err_msg!("Unsupported key algorithm")),
+        _ => return Err(err_msg!(Unsupported, "Unsupported key algorithm")),
     }
 
     let sk =

@@ -328,7 +328,7 @@ where
                         .try_get::<Option<&str>, _>(2)?
                         .map(|t| decode_tags(t.as_bytes()))
                         .transpose()
-                        .map_err(|_| err_msg!("Error decoding tags"))?
+                        .map_err(|_| err_msg!(Unexpected, "Error decoding entry tags"))?
                     {
                         Some(key.decrypt_entry_tags(&enc_tags)?)
                     } else {
@@ -634,7 +634,7 @@ where
                 .try_get::<Option<&str>, _>(3)?
                 .map(|t| decode_tags(t.as_bytes()))
                 .transpose()
-                .map_err(|_| err_msg!("Error decoding tags"))?
+                .map_err(|_| err_msg!(Unexpected, "Error decoding entry tags"))?
             {
                 Some(key.decrypt_entry_tags(&enc_tags)?)
             } else {

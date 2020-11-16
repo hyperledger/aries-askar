@@ -11,22 +11,12 @@ use indy_utils::{
 };
 use zeroize::Zeroize;
 
+use super::error::Result;
 use super::future::BoxFuture;
 use super::keys::{wrap::WrapKeyMethod, KeyAlg, KeyCategory, KeyEntry, KeyParams, PassKey};
 use super::types::{Entry, EntryKind, EntryOperation, EntryTag, TagFilter};
-use super::Result;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct QueryFetchOptions {
-    pub for_update: bool,
-}
-
-impl Default for QueryFetchOptions {
-    fn default() -> Self {
-        Self { for_update: false }
-    }
-}
-
+/// Represents a generic backend implementation
 pub trait Backend: Send + Sync {
     type Session: QueryBackend;
     type Transaction: QueryBackend;
@@ -56,6 +46,7 @@ pub trait Backend: Send + Sync {
     fn close(&self) -> BoxFuture<Result<()>>;
 }
 
+/// Create, open, or remove a generic backend implementation
 pub trait ManageBackend<'a> {
     type Store;
 
@@ -77,6 +68,7 @@ pub trait ManageBackend<'a> {
     fn remove_backend(self) -> BoxFuture<'a, Result<bool>>;
 }
 
+/// Query from a generic backend implementation
 pub trait QueryBackend: Send {
     fn count<'q>(
         &'q mut self,
@@ -124,6 +116,7 @@ pub trait QueryBackend: Send {
 }
 
 #[derive(Debug)]
+/// An instance of an opened store
 pub struct Store<B: Backend>(B);
 
 impl<B: Backend> Store<B> {
@@ -142,22 +135,29 @@ impl<B: Backend> Store<B> {
 }
 
 impl<B: Backend> Store<B> {
+    /// Get the default profile name used when starting a scan or a session
     pub fn get_profile_name(&self) -> &str {
         self.0.get_profile_name()
     }
 
+    /// Replace the wrapping key on a store
     pub async fn rekey(&mut self, method: WrapKeyMethod, pass_key: PassKey<'_>) -> Result<()> {
         Ok(self.0.rekey_backend(method, pass_key).await?)
     }
 
+    /// Create a new profile with the given profile name
     pub async fn create_profile(&self, name: Option<String>) -> Result<String> {
         Ok(self.0.create_profile(name).await?)
     }
 
+    /// Remove an existing profile with the given profile name
     pub async fn remove_profile(&self, name: String) -> Result<bool> {
         Ok(self.0.remove_profile(name).await?)
     }
 
+    /// Create a new scan instance against the store
+    ///
+    /// The result will keep an open connection to the backend until it is consumed
     pub async fn scan(
         &self,
         profile: Option<String>,
@@ -179,10 +179,12 @@ impl<B: Backend> Store<B> {
             .await?)
     }
 
+    /// Create a new session against the store
     pub async fn session(&self, profile: Option<String>) -> Result<Session<B::Session>> {
         Ok(Session::new(self.0.session(profile).await?))
     }
 
+    /// Create a new transaction session against the store
     pub async fn transaction(&self, profile: Option<String>) -> Result<Session<B::Transaction>> {
         Ok(Session::new(self.0.transaction(profile).await?))
     }
@@ -197,6 +199,7 @@ impl<B: Backend> Store<B> {
     }
 }
 
+/// An active connection to the store backend
 pub struct Session<Q: QueryBackend>(Q);
 
 impl<Q: QueryBackend> Session<Q> {
@@ -211,11 +214,10 @@ impl<Q: QueryBackend> Session<Q> {
         Ok(self.0.count(EntryKind::Item, category, tag_filter).await?)
     }
 
-    /// Query the current value for the record at `(key_id, category, name)`
+    /// Retrieve the current record at `(category, name)`.
     ///
-    /// A specific `key_id` may be given, otherwise all relevant keys for the provided
-    /// `profile_id` are searched in reverse order of creation, returning the first
-    /// result found if any.
+    /// Specify `for_update` when in a transaction to create an update lock on the
+    /// associated record, if supported by the store backend
     pub async fn fetch(
         &mut self,
         category: &str,
@@ -228,6 +230,11 @@ impl<Q: QueryBackend> Session<Q> {
             .await?)
     }
 
+    /// Retrieve all records matching the given `category` and `tag_filter`.
+    ///
+    /// Unlike `Store::scan`, this method may be used within a transaction. It should
+    /// not be used for very large result sets due to correspondingly large memory
+    /// requirements
     pub async fn fetch_all(
         &mut self,
         category: &str,
@@ -241,6 +248,7 @@ impl<Q: QueryBackend> Session<Q> {
             .await?)
     }
 
+    /// Insert a new record into the store
     pub async fn insert(
         &mut self,
         category: &str,
@@ -263,6 +271,7 @@ impl<Q: QueryBackend> Session<Q> {
             .await?)
     }
 
+    /// Remove a record from the store
     pub async fn remove(&mut self, category: &str, name: &str) -> Result<()> {
         Ok(self
             .0
@@ -278,6 +287,7 @@ impl<Q: QueryBackend> Session<Q> {
             .await?)
     }
 
+    /// Replace the value and tags of a record in the store
     pub async fn replace(
         &mut self,
         category: &str,
@@ -300,6 +310,7 @@ impl<Q: QueryBackend> Session<Q> {
             .await?)
     }
 
+    /// Remove all records in the store matching a given `category` and `tag_filter`
     pub async fn remove_all(
         &mut self,
         category: &str,
@@ -311,6 +322,10 @@ impl<Q: QueryBackend> Session<Q> {
             .await?)
     }
 
+    /// Perform a record update
+    ///
+    /// This may correspond to an record insert, replace, or remove depending on
+    /// the provided `operation`
     pub async fn update(
         &mut self,
         operation: EntryOperation,
@@ -334,6 +349,7 @@ impl<Q: QueryBackend> Session<Q> {
             .await?)
     }
 
+    /// Create a new keypair in the store
     pub async fn create_keypair(
         &mut self,
         alg: KeyAlg,
@@ -344,7 +360,7 @@ impl<Q: QueryBackend> Session<Q> {
     ) -> Result<KeyEntry> {
         match alg {
             KeyAlg::ED25519 => (),
-            _ => return Err(err_msg!("Unsupported key algorithm")),
+            _ => return Err(err_msg!(Unsupported, "Unsupported key algorithm")),
         }
 
         let sk = match seed {
@@ -397,6 +413,10 @@ impl<Q: QueryBackend> Session<Q> {
     //     Ok(())
     // }
 
+    /// Fetch an existing key from the store
+    ///
+    /// Specify `for_update` when in a transaction to create an update lock on the
+    /// associated record, if supported by the store backend
     pub async fn fetch_key(
         &mut self,
         category: KeyCategory,
@@ -428,6 +448,7 @@ impl<Q: QueryBackend> Session<Q> {
         )
     }
 
+    /// Remove an existing key from the store
     pub async fn remove_key(&mut self, category: KeyCategory, ident: &str) -> Result<()> {
         // normalize ident
         let ident = EncodedVerKey::from_str(&ident)
@@ -460,6 +481,7 @@ impl<Q: QueryBackend> Session<Q> {
     //     unimplemented!();
     // }
 
+    /// Replace the metadata and tags on an existing key in the store
     pub async fn update_key(
         &mut self,
         category: KeyCategory,
@@ -499,6 +521,7 @@ impl<Q: QueryBackend> Session<Q> {
         Ok(())
     }
 
+    /// Sign a message using an existing keypair in the store identified by `key_ident`
     pub async fn sign_message(&mut self, key_ident: &str, data: &[u8]) -> Result<Vec<u8>> {
         if let Some(key) = self
             .fetch_key(KeyCategory::KeyPair, key_ident, false)
@@ -506,12 +529,15 @@ impl<Q: QueryBackend> Session<Q> {
         {
             let sk = key.private_key()?;
             sk.sign(&data)
-                .map_err(|e| err_msg!("Signature error: {}", e))
+                .map_err(|e| err_msg!(Unexpected, "Signature error: {}", e))
         } else {
-            return Err(err_msg!("Unknown key")); // FIXME add new error class
+            return Err(err_msg!(NotFound, "Unknown key"));
         }
     }
 
+    /// Pack a message using an existing keypair in the store identified by `key_ident`
+    ///
+    /// This uses the `pack` algorithm defined for DIDComm v1
     pub async fn pack_message(
         &mut self,
         recipient_vks: impl IntoIterator<Item = &str>,
@@ -522,7 +548,7 @@ impl<Q: QueryBackend> Session<Q> {
             let sk = self
                 .fetch_key(KeyCategory::KeyPair, ident, false)
                 .await?
-                .ok_or_else(|| err_msg!("Unknown sender key"))?;
+                .ok_or_else(|| err_msg!(NotFound, "Unknown sender key"))?;
             Some(sk.private_key()?)
         } else {
             None
@@ -539,20 +565,23 @@ impl<Q: QueryBackend> Session<Q> {
         Ok(pack_message(data, vks, sign_key).map_err(err_map!("Error packing message"))?)
     }
 
+    /// Unpack a DIDComm v1 message, automatically looking up any associated keypairs
     pub async fn unpack_message(
         &mut self,
         data: &[u8],
     ) -> Result<(Vec<u8>, EncodedVerKey, Option<EncodedVerKey>)> {
         match unpack_message(data, self).await {
             Ok((message, recip, sender)) => Ok((message, recip, sender)),
-            Err(err) => Err(err_msg!("Error unpacking message").with_cause(err)),
+            Err(err) => Err(err_msg!(Unexpected, "Error unpacking message").with_cause(err)),
         }
     }
 
+    /// Commit the pending transaction
     pub async fn commit(self) -> Result<()> {
         Ok(self.0.close(true).await?)
     }
 
+    /// Roll back the pending transaction
     pub async fn rollback(self) -> Result<()> {
         Ok(self.0.close(false).await?)
     }
@@ -579,6 +608,7 @@ impl<'a, Q: QueryBackend> KeyLookup<'a> for &'a mut Session<Q> {
     }
 }
 
+/// An active record scan of a store backend
 pub struct Scan<'s, T> {
     stream: Option<Pin<Box<dyn Stream<Item = Result<Vec<T>>> + Send + 's>>>,
     page_size: usize,

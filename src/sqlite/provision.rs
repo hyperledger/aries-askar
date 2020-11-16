@@ -281,7 +281,7 @@ async fn open_db(
         let wrap_ref = WrapKeyReference::parse_uri(&wrap_key_ref)?;
         if let Some(method) = method {
             if !wrap_ref.compare_method(&method) {
-                return Err(err_msg!("Store key wrap method mismatch"));
+                return Err(err_msg!(Input, "Store key wrap method mismatch"));
             }
         }
         unblock_scoped(|| wrap_ref.resolve(pass_key)).await?

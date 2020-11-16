@@ -1,6 +1,8 @@
+#![cfg_attr(docsrs, feature(doc_cfg))]
+
 #[macro_use]
 mod error;
-pub use self::error::{Error, ErrorKind, Result};
+pub use self::error::{Error, ErrorKind};
 
 #[macro_use]
 mod macros;
@@ -15,12 +17,14 @@ extern crate log;
 extern crate serde;
 
 #[cfg(any(feature = "postgres", feature = "sqlite"))]
-pub(crate) mod db_utils;
+mod db_utils;
 
 #[doc(hidden)]
 pub mod future;
 
 #[cfg(feature = "indy_compat")]
+#[doc(cfg(feature = "indy_compat"))]
+/// Indy wallet compatibility support
 pub mod indy_compat;
 
 mod options;
@@ -30,21 +34,25 @@ mod options;
 extern crate serde_json;
 
 #[cfg(feature = "ffi")]
-pub mod ffi;
+mod ffi;
 
 #[cfg(feature = "postgres")]
+#[cfg_attr(docsrs, doc(cfg(feature = "postgres")))]
+/// Postgres database support
 pub mod postgres;
 
 #[macro_use]
 pub(crate) mod serde_util;
 
 #[cfg(feature = "sqlite")]
+#[cfg_attr(docsrs, doc(cfg(feature = "sqlite")))]
+/// Sqlite database support
 pub mod sqlite;
 
 #[cfg(feature = "any")]
-mod any;
-#[cfg(feature = "any")]
-pub use any::AnyStore;
+#[cfg_attr(docsrs, doc(cfg(feature = "any")))]
+/// Generic backend (from URI) support
+pub mod any;
 
 mod keys;
 pub use self::keys::{
@@ -54,9 +62,9 @@ pub use self::keys::{
 };
 
 mod store;
-pub use self::store::{Backend, ManageBackend, QueryBackend, Session, Store};
+pub use self::store::{Backend, ManageBackend, QueryBackend, Scan, Session, Store};
 
 mod types;
-pub use self::types::{Entry, EntryTag, TagFilter};
+pub use self::types::{Entry, EntryOperation, EntryTag, TagFilter};
 
 mod wql;
