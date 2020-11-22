@@ -27,28 +27,27 @@ jobs:
           toolchain: stable
           override: true
 
-      - name: Cargo cache build
+      - name: Cargo cache dependencies
+        id: cargo-deps
         uses: actions/cache@v2
         with:
           path: |
-            ~/.cargo/git
-            ~/.cargo/registry
-            target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock') }}
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+          key: ${{ runner.os }}-cargo-deps-${{ hashFiles('Cargo.lock') }}
+
+      - name: Fetch dependencies
+        if: ${{ steps.cargo-deps.outputs.cache-hit != 'true' }}
+        run: cargo fetch --locked
 
       - name: Cargo check
-        uses: actions-rs/cargo@v1
-        with:
-          command: check
+        run: cargo check --locked
 
       - name: Cargo fmt
-        uses: actions-rs/cargo@v1
-        with:
-          command: fmt
-          args: --all -- --check
+        run: cargo fmt --all -- --check
+
+      - name: Debug build
+        run: cargo build --all-targets --locked
 
       - name: Run tests
-        uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: --verbose
+        run: cargo test --verbose

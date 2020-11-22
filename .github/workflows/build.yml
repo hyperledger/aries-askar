@@ -27,22 +27,18 @@ jobs:
           toolchain: stable
           override: true
 
-      - name: Cargo cache build
+      - name: Cargo cache dependencies
+        id: cargo-deps
         uses: actions/cache@v2
         with:
           path: |
-            ~/.cargo/git
-            ~/.cargo/registry
-            target
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
           key: ${{ runner.os }}-cargo-build-${{ hashFiles('Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-deps-${{ hashFiles('Cargo.lock') }}
 
       - name: Build library
-        uses: actions-rs/cargo@v1
-        with:
-          command: build
-          args: --release
+        run: cargo build --release --locked
 
       - name: Upload library artifacts
         uses: actions/upload-artifact@v2
