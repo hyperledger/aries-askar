@@ -7,8 +7,35 @@ on:
     branches: [main]
 
 jobs:
+  cache-deps:
+    name: Cache Dependencies
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: Check Cargo.lock
+        run: cargo generate-lockfile --locked
+
+      - name: Cargo cache dependencies
+        id: cargo-deps
+        uses: actions/cache@v2
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+          key: cargo-deps-${{ hashFiles('Cargo.lock') }}
+
+      - name: Fetch dependencies
+        if: ${{ steps.cargo-deps.outputs.cache-hit != 'true' }}
+        run: cargo fetch --locked
+
   test:
     name: Test
+
+    needs: cache-deps
 
     strategy:
       matrix:
@@ -27,18 +54,12 @@ jobs:
           toolchain: stable
           override: true
 
-      - name: Cargo cache dependencies
-        id: cargo-deps
+      - name: Restore dependency crates
         uses: actions/cache@v2
         with:
-          path: |
-            ~/.cargo/registry/index
-            ~/.cargo/registry/cache
-          key: ${{ runner.os }}-cargo-deps-${{ hashFiles('Cargo.lock') }}
-
-      - name: Fetch dependencies
-        if: ${{ steps.cargo-deps.outputs.cache-hit != 'true' }}
-        run: cargo fetch --locked
+          path: ~/.cargo/registry/index
+          path: ~/.cargo/registry/cache
+          key: cargo-deps-${{ hashFiles('Cargo.lock') }}
 
       - name: Cargo check
         run: cargo check --locked
@@ -47,7 +68,13 @@ jobs:
         run: cargo fmt --all -- --check
 
       - name: Debug build
-        run: cargo build --all-targets --locked
+        uses: actions-rs/cargo@v1
+        with:
+          command: build
+          args: --all-targets --locked
 
-      - name: Run tests
-        run: cargo test --verbose
+      - name: Test
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: --locked
