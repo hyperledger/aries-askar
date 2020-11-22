@@ -35,8 +35,8 @@ jobs:
             ~/.cargo/registry
             target
           key: ${{ runner.os }}-cargo-build-${{ hashFiles('Cargo.lock') }}
-          restore-keys:
-            - ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock') }}
 
       - name: Build library
         uses: actions-rs/cargo@v1
