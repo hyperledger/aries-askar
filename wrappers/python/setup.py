@@ -11,6 +11,7 @@ VERSION = version_meta["__version__"]
 with open(os.path.abspath("./README.md"), "r") as fh:
     long_description = fh.read()
 
+
 if __name__ == "__main__":
     setup(
         name=PACKAGE_NAME,

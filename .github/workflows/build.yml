@@ -53,8 +53,13 @@ jobs:
 
     strategy:
       matrix:
-        os: [macos-latest, windows-latest]
-        python-version: [3.6, 3.7, 3.8]
+        include:
+          - os: macos-latest
+            plat-name: macosx_10_9_x86_64
+            python-version: 3.6
+          - os: windows-latest
+            plat-name: win32
+            python-version: 3.6
 
     runs-on: ${{ matrix.os }}
 
