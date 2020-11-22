@@ -40,7 +40,7 @@ jobs:
           args: --all -- --check
 
   build-lib:
-    name: Build Aries Askar binaries
+    name: Build Library
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
@@ -49,8 +49,7 @@ jobs:
           profile: minimal
           toolchain: stable
           override: true
-      - name: Build library
-        run: |
+      - run: |
           set -x
           cargo build --release
           cp target/release/libaries_askar.so /tmp/libaries_askar.so
