@@ -1,8 +1,10 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
+use std::io::{stdout, Write};
 
 use futures_lite::stream::StreamExt;
 use indy_utils::base58;
 use itertools::Itertools;
+use serde::Serialize;
 use sqlx::{sqlite::SqliteRow as DbRow, Row, SqlitePool as DbPool};
 
 use super::{
@@ -13,6 +15,39 @@ use super::{
 };
 
 const CHUNK_SIZE: usize = 20;
+
+#[derive(Debug, Serialize)]
+struct PrintEntry {
+    category: String,
+    name: String,
+    value: String,
+    tags: HashMap<String, String>,
+}
+
+impl PrintEntry {
+    pub fn new(entry: Entry) -> Self {
+        let value = String::from_utf8(entry.value.to_vec()).expect("Error parsing value as utf-8");
+        let mut tags = HashMap::new();
+        if let Some(entry_tags) = entry.tags {
+            for tag in entry_tags {
+                match tag {
+                    EntryTag::Encrypted(name, value) => {
+                        tags.insert(name, value);
+                    }
+                    EntryTag::Plaintext(name, value) => {
+                        tags.insert(format!("~{}", name), value);
+                    }
+                }
+            }
+        }
+        Self {
+            category: entry.category,
+            name: entry.name,
+            value,
+            tags,
+        }
+    }
+}
 
 // test method for dumping the contents of the wallet
 pub async fn print_records<'a>(path: &str, password: &str) -> Result<()> {
@@ -40,6 +75,8 @@ pub async fn print_records<'a>(path: &str, password: &str) -> Result<()> {
     let mut done = false;
     let mut chunk = Vec::with_capacity(CHUNK_SIZE);
     let mut ids = Vec::with_capacity(CHUNK_SIZE);
+    let mut writer = stdout();
+
     while !done {
         chunk.clear();
         ids.clear();
@@ -63,7 +100,10 @@ pub async fn print_records<'a>(path: &str, password: &str) -> Result<()> {
         for (idx, id) in ids.iter().enumerate() {
             chunk[idx].tags = tags.remove(id);
         }
-        println!("{:#?}", chunk);
+        for entry in chunk.drain(..) {
+            serde_json::to_writer_pretty(&writer, &PrintEntry::new(entry)).unwrap();
+            writer.write(b"\n").unwrap();
+        }
     }
     drop(rows);
 
@@ -82,12 +122,12 @@ fn decode_row(key: &StoreKey, row: DbRow) -> Result<(i64, Entry)> {
     let value_key = EncKey::from_slice(decrypt(&key.value_key, value_key_enc)?);
     let value = decrypt(&value_key, get_slice(&row, 3)?)?;
 
-    let entry = Entry {
-        category: decode_utf8(key.decrypt_category(get_slice(&row, 1)?)?)?,
-        name: decode_utf8(key.decrypt_name(get_slice(&row, 2)?)?)?,
+    let entry = Entry::new(
+        decode_utf8(key.decrypt_category(get_slice(&row, 1)?)?)?,
+        decode_utf8(key.decrypt_name(get_slice(&row, 2)?)?)?,
         value,
-        tags: None,
-    };
+        None,
+    );
     Ok((row.try_get(0)?, entry))
 }
 
