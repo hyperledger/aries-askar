@@ -27,15 +27,15 @@ jobs:
           toolchain: stable
           override: true
 
-      - name: Cargo cache dependencies
-        id: cargo-deps
+      - name: Check Cargo.lock
+        run: cargo generate-lockfile --locked
+
+      - name: Restore dependency crates
         uses: actions/cache@v2
         with:
-          path: |
-            ~/.cargo/registry/index
-            ~/.cargo/registry/cache
-          key: ${{ runner.os }}-cargo-build-${{ hashFiles('Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-deps-${{ hashFiles('Cargo.lock') }}
+          path: ~/.cargo/registry/index
+          path: ~/.cargo/registry/cache
+          key: cargo-deps-${{ hashFiles('Cargo.lock') }}
 
       - name: Build library
         run: cargo build --release --locked
