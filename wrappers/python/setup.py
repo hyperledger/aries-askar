@@ -11,11 +11,13 @@ if __name__ == "__main__":
     setup(
         name=PACKAGE_NAME,
         version=VERSION,
+        author="Hyperledger Aries Contributors",
+        author_email="aries@lists.hyperledger.org",
         url="https://github.com/andrewwhitehead/aries-askar",
         packages=find_packages(),
         include_package_data=True,
         package_data={
-            "indy_vdr": [
+            "lib": [
                 "aries_askar.dll",
                 "libaries_askar.dylib",
                 "libaries_askar.so",
@@ -25,6 +27,7 @@ if __name__ == "__main__":
         classifiers=[
             "Programming Language :: Python :: 3",
             "License :: OSI Approved :: Apache Software License",
+            "License :: OSI Approved :: MIT License",
             "Operating System :: OS Independent",
         ],
     )

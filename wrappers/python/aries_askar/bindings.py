@@ -181,12 +181,14 @@ def _load_library(lib_name: str) -> CDLL:
 
     lib_path = find_library(lib_name)
     if not lib_path:
-        raise StoreError(StoreErrorCode.WRAPPER, f"Error loading library: {lib_name}")
+        raise StoreError(
+            StoreErrorCode.WRAPPER, f"Library not found in path: {lib_path}"
+        )
     try:
         return CDLL(lib_path)
     except OSError as e:
         raise StoreError(
-            StoreErrorCode.WRAPPER, f"Error loading library: {lib_name}"
+            StoreErrorCode.WRAPPER, f"Error loading library: {lib_path}"
         ) from e
 
 
@@ -254,11 +256,13 @@ def decode_str(value: c_char_p) -> str:
 
 
 def encode_str(arg: Optional[Union[str, bytes, memoryview]]) -> c_char_p:
-    """Encode an optional input argument as a string.
+    """
+    Encode an optional input argument as a string.
+
     Returns: None if the argument is None, otherwise the value encoded utf-8.
     """
     if arg is None:
-        return None
+        return c_char_p()
     if isinstance(arg, str):
         return c_char_p(arg.encode("utf-8"))
     return c_char_p(arg)
@@ -274,8 +278,10 @@ def encode_bytes(arg: Optional[Union[str, bytes, memoryview]]) -> FfiByteBuffer:
     return buf
 
 
-def get_current_error(expect: bool = False) -> StoreError:
-    """Get the error result from the previous failed API method.
+def get_current_error(expect: bool = False) -> Optional[StoreError]:
+    """
+    Get the error result from the previous failed API method.
+
     Args:
         expect: Return a default error message if none is found
     """

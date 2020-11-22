@@ -37,7 +37,7 @@ impl Display for ErrorKind {
     }
 }
 
-/// The standard crate error
+/// The standard crate error type
 #[derive(Debug)]
 pub struct Error {
     pub kind: ErrorKind,

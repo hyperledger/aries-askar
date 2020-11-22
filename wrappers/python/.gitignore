@@ -4,3 +4,5 @@ __pycache__
 *.dll
 *.db
 *.egg-info
+build
+dist
