@@ -29,9 +29,6 @@ jobs:
           toolchain: stable
           override: true
 
-      - name: Add rustfmt
-        run: rustup component add rustfmt
-
       - name: Cargo cache
         uses: actions/cache@v2
         with:
