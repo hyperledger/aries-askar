@@ -241,15 +241,35 @@ mod tests {
         assert!(!key.is_empty());
         let wrapped = key.wrap_data(input).expect("Error wrapping input");
         assert_ne!(wrapped, input);
-
-        // round trip the key reference
-        let key_uri = key_ref.into_uri();
-        let key_ref = WrapKeyReference::parse_uri(&key_uri).expect("Error parsing key ref");
-        let key = key_ref.resolve(pass).expect("Error deriving existing key");
-
         let unwrapped = key.unwrap_data(&wrapped).expect("Error unwrapping data");
         assert_eq!(unwrapped, input);
+        let key_uri = key_ref.into_uri();
+        assert_eq!(key_uri.starts_with("kdf:argon2i:13:mod?salt="), true);
+    }
 
+    #[test]
+    fn derived_key_unwrap_expected() {
+        let input = b"test data";
+        let wrapped: &[u8] = &[
+            194, 156, 102, 253, 229, 11, 48, 184, 160, 119, 218, 30, 169, 188, 244, 223, 235, 95,
+            171, 234, 18, 5, 9, 115, 174, 208, 232, 37, 31, 32, 250, 216, 32, 92, 253, 45, 236,
+        ];
+        let pass = PassKey::from("pass");
+        let key_ref = WrapKeyReference::parse_uri("kdf:argon2i:13:mod?salt=MR6B1jrReV2JioaizEaRo6")
+            .expect("Error parsing derived key ref");
+        let key = key_ref.resolve(pass).expect("Error deriving existing key");
+        let unwrapped = key.unwrap_data(&wrapped).expect("Error unwrapping data");
+        assert_eq!(unwrapped, input);
+    }
+
+    #[test]
+    fn derived_key_check_bad_password() {
+        let wrapped: &[u8] = &[
+            194, 156, 102, 253, 229, 11, 48, 184, 160, 119, 218, 30, 169, 188, 244, 223, 235, 95,
+            171, 234, 18, 5, 9, 115, 174, 208, 232, 37, 31, 32, 250, 216, 32, 92, 253, 45, 236,
+        ];
+        let key_ref = WrapKeyReference::parse_uri("kdf:argon2i:13:mod?salt=MR6B1jrReV2JioaizEaRo6")
+            .expect("Error parsing derived key ref");
         let check_bad_pass = key_ref
             .resolve("not my pass".into())
             .expect("Error deriving comparison key");
