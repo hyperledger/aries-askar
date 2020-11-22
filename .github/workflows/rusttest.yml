@@ -1,4 +1,4 @@
-name: "Run Tests and Build"
+name: "Run Tests"
 
 on:
   push:
@@ -9,8 +9,14 @@ on:
       - master
 
 jobs:
-  Build:
-    runs-on: ubuntu-latest
+  test:
+    name: Test
+
+    strategy:
+      matrix:
+        os: [macos-latest, windows-latest, ubuntu-latest]
+
+    runs-on: ${{ matrix.os }}
 
     steps:
       - name: Checkout
@@ -51,8 +57,14 @@ jobs:
         with:
           command: test
 
-      - name: Build library
-        run: |
-          set -x
-          cargo build --release
-          cp target/release/libaries_askar.so /tmp/libaries_askar.so
+  # build:
+  #   name: Build
+
+  #   needs: test
+
+  #   steps:
+  #     - name: Build library
+  #       run: |
+  #         set -x
+  #         cargo build --release
+  #         cp target/release/libaries_askar.so /tmp/libaries_askar.so
