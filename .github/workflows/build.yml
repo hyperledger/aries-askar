@@ -33,8 +33,9 @@ jobs:
       - name: Restore dependency crates
         uses: actions/cache@v2
         with:
-          path: ~/.cargo/registry/index
-          path: ~/.cargo/registry/cache
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
           key: cargo-deps-${{ hashFiles('Cargo.lock') }}
 
       - name: Build library
