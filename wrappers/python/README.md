@@ -1,6 +1,8 @@
-# aries-askar
+# Aries-Askar
 
-Aries-Askar, secure storage designed for Hyperledger Aries agents.
+[![pypi releases](https://img.shields.io/pypi/v/aries_askar)](https://pypi.org/project/aries-askar/)
+
+A Python wrapper around the `aries-askar` Rust library, this module provides secure storage support for Hyperledger Aries agents.
 
 ## Credit
 

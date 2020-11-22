@@ -3,9 +3,12 @@ name = "aries-askar"
 version = "0.1.0"
 authors = ["Hyperledger Aries Contributors <aries@lists.hyperledger.org>"]
 edition = "2018"
-
 description = "Hyperledger Aries Askar secure storage"
 license = "MIT/Apache-2.0"
+readme = "README.md"
+repository = "https://github.com/bcgov/aries-askar/"
+categories = ["cryptography", "database"]
+keywords = ["hyperledger", "aries", "ssi", "verifiable", "credentials"]
 
 [lib]
 name = "aries_askar"
