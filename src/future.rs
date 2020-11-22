@@ -192,27 +192,48 @@ pub fn spawn_ok(fut: impl Future<Output = ()> + Send + 'static) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use futures_lite::future::poll_once;
+    use futures_lite::{
+        future::{block_on, poll_once},
+        pin,
+    };
     use std::sync::{
         atomic::{AtomicBool, Ordering::SeqCst},
-        Arc,
+        Arc, Barrier,
     };
     use std::thread;
     use std::time::Duration;
 
     #[test]
     fn unblock_scoped_drop() {
+        // simply check that a never-polled unblock_scoped fut does not block on drop
+        let fut = unblock_scoped(|| {});
+        drop(fut);
+    }
+
+    #[test]
+    fn unblock_scoped_poll_drop() {
+        let barrier = Arc::new(Barrier::new(2));
         let called = Arc::new(AtomicBool::new(false));
         let fut = unblock_scoped({
+            let barrier = Arc::clone(&barrier);
             let called = called.clone();
             move || {
+                barrier.wait();
                 thread::sleep(Duration::from_millis(50));
                 called.store(true, SeqCst);
             }
         });
         // poll once to queue the fn, then drop the future.
         // this should block until the closure completes
-        assert_eq!(block_on(poll_once(fut)), None);
+        {
+            pin!(fut);
+            assert_eq!(block_on(poll_once(&mut fut)), None);
+            // ensure the function is actually executed. otherwise it
+            // could be dropped without being run by the worker thread
+            // (which is acceptable but not what is being tested)
+            barrier.wait();
+            // fut will now be dropped
+        }
         assert_eq!(called.load(SeqCst), true);
     }
 }
