@@ -2,11 +2,9 @@ name: "Run Tests"
 
 on:
   push:
-    branches:
-      - main
+    branches: [$default-branch]
   pull_request:
-    branches:
-      - main
+    branches: [$default-branch]
 
 jobs:
   test:
@@ -29,12 +27,12 @@ jobs:
           toolchain: stable
           override: true
 
-      - name: Cargo cache
+      - name: Cargo cache build
         uses: actions/cache@v2
         with:
           path: |
-            ~/.cargo/registry
             ~/.cargo/git
+            ~/.cargo/registry
             target
           key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock') }}
 
@@ -53,15 +51,4 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: test
-
-  # build:
-  #   name: Build
-
-  #   needs: test
-
-  #   steps:
-  #     - name: Build library
-  #       run: |
-  #         set -x
-  #         cargo build --release
-  #         cp target/release/libaries_askar.so /tmp/libaries_askar.so
+          args: --verbose
