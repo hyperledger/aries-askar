@@ -50,8 +50,6 @@ jobs:
           name: library-${{ runner.os }}
           path: target/release/${{ matrix.lib }}
 
-
-jobs:
   build-py:
     name: Build Python
     needs: build-lib
