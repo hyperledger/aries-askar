@@ -85,7 +85,7 @@ jobs:
 
       - name: Build python packages
         run: |
-          python setup.py bdist_wheel
+          python setup.py bdist_wheel --plat-name=${{ matrix.plat-name }}
         working-directory: wrappers/python
 
       - name: Upload python artifacts
