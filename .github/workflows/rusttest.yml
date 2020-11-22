@@ -9,31 +9,6 @@ on:
       - master
 
 jobs:
-  workflow-setup:
-    name: Setup CI variables
-    runs-on: ubuntu-latest
-    outputs:
-      CACHE_KEY_LIB_BINARY: ${{ steps.mainstep.outputs.CACHE_KEY_LIB_BINARY }}
-    steps:
-      - name: Git checkout
-        uses: actions/checkout@v1
-      - uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable
-          override: true
-      - name: Set custom env variables
-        run: |
-          set -x
-          LIBARIES_ASKAR_HASH=${{ hashFiles('Cargo.toml', 'Cargo.lock', 'src', 'tests') }}
-          echo ::set-env name=CACHE_KEY_LIB_BINARY::${LIBARIES_ASKAR_HASH:0:15}
-
-      - name: Set and print outputs
-        id: mainstep
-        run: |
-          set -x
-          echo "::set-output name=CACHE_KEY_LIB_BINARY::$CACHE_KEY_LIB_BINARY"
-
   check:
     name: Check
     runs-on: ubuntu-latest
@@ -64,28 +39,17 @@ jobs:
           command: fmt
           args: --all -- --check
 
-  build-lib-binary:
-    needs: workflow-setup
+  build-lib:
     name: Build Aries Askar binaries
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
-      - name: Load up custom variables
-        run: |
-          echo ::set-env name=CACHE_KEY_LIB_BINARY::$(echo ${{needs.workflow-setup.outputs.CACHE_KEY_LIB_BINARY}})
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
           toolchain: stable
           override: true
-      - name: Try load libaries_askar binary from cache.
-        id: cache-lib
-        uses: actions/cache@v2
-        with:
-          key: ${{ env.CACHE_KEY_LIB_BINARY }}
-          path: /tmp/libaries_askar.so
-      - name: If NOT found in cache, build and cache image.
-        if: steps.cache-lib.outputs.cache-hit != 'true'
+      - name: Build library
         run: |
           set -x
           cargo build --release
