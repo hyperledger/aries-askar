@@ -54,7 +54,8 @@ impl PostgresStoreOptions {
         }
         let name = (&path[1..]).to_string();
         if name.find(|c| c == '"' || c == '\0').is_some() {
-            return Err(err_msg!(Input,
+            return Err(err_msg!(
+                Input,
                 "Invalid character in database name: '\"' and '\\0' are disallowed"
             ));
         }

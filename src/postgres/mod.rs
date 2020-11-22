@@ -338,12 +338,7 @@ where
                 })
                 .await?;
 
-                Ok(Some(Entry::new(
-                    category,
-                    name,
-                    value,
-                    tags,
-                )))
+                Ok(Some(Entry::new(category, name, value, tags)))
             } else {
                 Ok(None)
             }
