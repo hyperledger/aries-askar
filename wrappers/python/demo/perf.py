@@ -53,6 +53,8 @@ async def perf_test():
     dur = time.perf_counter() - scan_start
     print(f"scan duration ({rc} rows, {tags} tags): {dur:0.2f}s")
 
+    await store.close()
+
 
 if __name__ == "__main__":
     log("aries-askar version:", version())
