@@ -5,7 +5,7 @@ use std::str::FromStr;
 
 use sqlx::{
     sqlite::{SqliteConnectOptions, SqlitePool, SqlitePoolOptions},
-    Row,
+    Error as SqlxError, Row,
 };
 
 use super::SqliteStore;
@@ -96,7 +96,21 @@ impl<'a> SqliteStoreOptions<'a> {
         profile: Option<&'a str>,
     ) -> Result<Store<SqliteStore>> {
         let conn_opts = SqliteConnectOptions::from_str(self.path.as_ref())?;
-        let conn_pool = self.options.connect_with(conn_opts).await?;
+        let conn_pool = match self.options.connect_with(conn_opts).await {
+            Ok(pool) => Ok(pool),
+            Err(SqlxError::Database(db_err)) => {
+                if db_err.code().expect("Expected SQLite error code") == "14" {
+                    // SQLITE_CANTOPEN error
+                    Err(err_msg!(
+                        NotFound,
+                        "The requested database path was not found"
+                    ))
+                } else {
+                    Err(SqlxError::Database(db_err).into())
+                }
+            }
+            Err(err) => Err(err.into()),
+        }?;
         Ok(open_db(conn_pool, method, pass_key, profile, self.path.to_string()).await?)
     }
 
