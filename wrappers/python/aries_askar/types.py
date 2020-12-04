@@ -26,6 +26,15 @@ class Entry:
         self.entry_set = None
 
     @property
+    def raw_value(self) -> memoryview:
+        val = self._value
+        if val is None:
+            return None
+        if isinstance(val, memoryview):
+            return val
+        return memoryview(val)
+
+    @property
     def value(self) -> bytes:
         val = self._value
         if val is None:

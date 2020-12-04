@@ -218,8 +218,8 @@ class Session:
         return self._is_txn
 
     @property
-    def handle(self) -> Store:
-        """Accessor for the StoreHandle instance."""
+    def handle(self) -> bindings.SessionHandle:
+        """Accessor for the SessionHandle instance."""
         return self._handle
 
     @property
