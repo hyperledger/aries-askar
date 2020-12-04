@@ -28,7 +28,7 @@ jobs:
           override: true
 
       - name: Check Cargo.lock
-        run: cargo generate-lockfile --locked
+        run: cargo generate-lockfile --offline --locked
 
       - name: Restore dependency crates
         uses: actions/cache@v2
