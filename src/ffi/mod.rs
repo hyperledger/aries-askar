@@ -4,7 +4,7 @@ use std::ptr;
 use std::str::FromStr;
 
 use ffi_support::{rust_string_to_c, ByteBuffer, FfiStr};
-use zeroize::Zeroizing;
+use zeroize::{Zeroize, Zeroizing};
 
 pub static LIB_VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -24,8 +24,14 @@ use crate::keys::{derive_verkey, verify_signature, wrap::generate_raw_wrap_key, 
 
 pub type CallbackId = i64;
 
-ffi_support::define_bytebuffer_destructor!(askar_buffer_free);
 ffi_support::define_string_destructor!(askar_string_free);
+
+#[no_mangle]
+pub extern "C" fn askar_buffer_free(buffer: ByteBuffer) {
+    ffi_support::abort_on_panic::with_abort_on_panic(|| {
+        drop(buffer.destroy_into_vec().zeroize());
+    })
+}
 
 pub struct EnsureCallback<T, F: Fn(Result<T, Error>)> {
     f: F,
