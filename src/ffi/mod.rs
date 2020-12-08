@@ -13,6 +13,8 @@ mod macros;
 
 mod error;
 
+mod log;
+
 mod store;
 
 use self::error::{set_last_error, ErrorCode};
@@ -48,15 +50,6 @@ impl<T, F: Fn(Result<T, Error>)> Drop for EnsureCallback<T, F> {
     fn drop(&mut self) {
         // if std::thread::panicking()  - capture trace?
         (self.f)(Err(err_msg!(Unexpected)));
-    }
-}
-
-#[no_mangle]
-pub extern "C" fn askar_set_default_logger() -> ErrorCode {
-    catch_err! {
-        env_logger::init();
-        debug!("Initialized default logger");
-        Ok(ErrorCode::Success)
     }
 }
 

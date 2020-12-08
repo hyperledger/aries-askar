@@ -34,9 +34,6 @@ class EntrySet:
         else:
             raise StopIteration
 
-    def __del__(self):
-        bindings.entry_set_free(self._handle)
-
 
 class Scan:
     """A scan of the Store."""
@@ -84,10 +81,8 @@ class Scan:
             scan_handle = await bindings.scan_next(self._handle)
             self._buffer = EntrySet(scan_handle) if scan_handle else None
 
-    def __del__(self):
-        """Close the pool instance when there are no more references to this object."""
-        if self._handle:
-            bindings.scan_free(self._handle)
+    def __repr__(self) -> str:
+        return f"<Scan(handle={self._handle})>"
 
 
 class Store:
@@ -187,17 +182,12 @@ class Store:
         """Close and free the pool instance."""
         self._opener = None
         if self._handle:
-            await bindings.store_close(self._handle)
+            await self._handle.close()
             self._handle = None
         if remove:
             return await Store.remove(self._uri)
         else:
             return False
-
-    def __del__(self):
-        """Close the pool instance when there are no more references to this object."""
-        if self._handle:
-            bindings.store_close_immed(self._handle)
 
     def __repr__(self) -> str:
         return f"<Store(handle={self._handle})>"
@@ -264,7 +254,7 @@ class Session:
         self,
         category: str,
         name: str,
-        value: Union[str, bytes, memoryview] = None,
+        value: Union[str, bytes] = None,
         tags: dict = None,
         expiry_ms: int = None,
         value_json=None,
@@ -281,7 +271,7 @@ class Session:
         self,
         category: str,
         name: str,
-        value: Union[str, bytes, memoryview] = None,
+        value: Union[str, bytes] = None,
         tags: dict = None,
         expiry_ms: int = None,
         value_json=None,
@@ -322,7 +312,7 @@ class Session:
         *,
         metadata: str = None,
         tags: dict = None,
-        seed: Union[str, bytes, memoryview] = None,
+        seed: Union[str, bytes] = None,
     ) -> str:
         if not self._handle:
             raise StoreError(
@@ -360,9 +350,7 @@ class Session:
             )
         await bindings.session_update_keypair(self._handle, ident, metadata, tags)
 
-    async def sign_message(
-        self, key_ident: str, message: Union[str, bytes, memoryview]
-    ) -> bytes:
+    async def sign_message(self, key_ident: str, message: Union[str, bytes]) -> bytes:
         if not self._handle:
             raise StoreError(
                 StoreErrorCode.WRAPPER, "Cannot sign message with closed session"
@@ -374,7 +362,7 @@ class Session:
         self,
         recipient_vks: Sequence[str],
         from_key_ident: Optional[str],
-        message: Union[str, bytes, memoryview],
+        message: Union[str, bytes],
     ) -> bytes:
         if not self._handle:
             raise StoreError(
@@ -388,7 +376,7 @@ class Session:
 
     async def unpack_message(
         self,
-        message: Union[str, bytes, memoryview],
+        message: Union[str, bytes],
     ) -> (bytes, str, Optional[str]):
         if not self._handle:
             raise StoreError(
@@ -404,7 +392,7 @@ class Session:
             raise StoreError(StoreErrorCode.WRAPPER, "Session is not a transaction")
         if not self._handle:
             raise StoreError(StoreErrorCode.WRAPPER, "Cannot commit closed transaction")
-        await bindings.session_close(self._handle, True)
+        await self._handle.close(commit=True)
         self._handle = None
 
     async def rollback(self):
@@ -414,17 +402,12 @@ class Session:
             raise StoreError(
                 StoreErrorCode.WRAPPER, "Cannot rollback closed transaction"
             )
-        await bindings.session_close(self._handle, False)
+        await self._handle.close(commit=False)
         self._handle = None
 
     async def close(self):
         if self._handle:
-            await bindings.session_close(self._handle, False)
-            self._handle = None
-
-    def __del__(self):
-        if self._handle:
-            bindings.session_close_immed(self._handle)
+            await self.handle.close(commit=False)
             self._handle = None
 
     def __repr__(self) -> str:

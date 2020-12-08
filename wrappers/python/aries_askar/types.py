@@ -1,10 +1,10 @@
 import json as _json
 
 from enum import Enum
-from typing import Mapping, Union
+from typing import Mapping
 
 
-def _make_binary(value: [str, bytes, memoryview]) -> Union[bytes, memoryview]:
+def _make_binary(value: [str, bytes]) -> bytes:
     if isinstance(value, str):
         return value.encode("utf-8")
     else:
@@ -16,7 +16,7 @@ class Entry:
         self,
         category: str,
         name: str,
-        value: [str, bytes, memoryview],
+        value: [str, bytes],
         tags: Mapping[str, str] = None,
     ) -> "Entry":
         self.category = category
@@ -51,7 +51,8 @@ class Entry:
     def __repr__(self) -> str:
         return (
             f"{self.__class__.__name__}(category={repr(self.category)}, "
-            f"name={repr(self.name)}, value={repr(self.value)}, tags={self.tags})"
+            f"name={repr(self.name)}, value={repr(self.value)}, "
+            f"tags={self.tags})"
         )
 
 

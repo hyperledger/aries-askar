@@ -131,6 +131,35 @@ impl ScanHandle {
     }
 }
 
+#[repr(transparent)]
+pub struct EntrySetHandle(u64);
+
+impl EntrySetHandle {
+    pub fn invalid() -> Self {
+        Self(0)
+    }
+
+    pub fn create(value: FfiEntrySet) -> Self {
+        let results = Box::into_raw(Box::new(value));
+        Self(results as u64)
+    }
+
+    pub fn enter<T>(&self, f: impl FnOnce(&mut FfiEntrySet) -> T) -> T {
+        let mut slf = mem::ManuallyDrop::new(unsafe {
+            Box::from_raw(self.0 as *const FfiEntrySet as *mut FfiEntrySet)
+        });
+        f(&mut *slf)
+    }
+
+    pub fn remove(&self) {
+        if self.0 != 0 {
+            unsafe {
+                Box::from_raw(self.0 as *const FfiEntrySet as *mut FfiEntrySet);
+            }
+        }
+    }
+}
+
 pub struct FfiEntrySet {
     pos: AtomicUsize,
     rows: Vec<FfiEntry>,
@@ -264,7 +293,10 @@ pub extern "C" fn askar_store_provision(
         let profile = profile.into_opt_string();
         let cb = EnsureCallback::new(move |result|
             match result {
-                Ok(sid) => cb(cb_id, ErrorCode::Success, sid),
+                Ok(sid) => {
+                    info!("Provisioned store {}", sid);
+                    cb(cb_id, ErrorCode::Success, sid)
+                }
                 Err(err) => cb(cb_id, set_last_error(Some(err)), StoreHandle::invalid()),
             }
         );
@@ -305,7 +337,10 @@ pub extern "C" fn askar_store_open(
         let profile = profile.into_opt_string();
         let cb = EnsureCallback::new(move |result|
             match result {
-                Ok(sid) => cb(cb_id, ErrorCode::Success, sid),
+                Ok(sid) => {
+                    info!("Opened store {}", sid);
+                    cb(cb_id, ErrorCode::Success, sid)
+                }
                 Err(err) => cb(cb_id, set_last_error(Some(err)), StoreHandle::invalid()),
             }
         );
@@ -496,10 +531,15 @@ pub extern "C" fn askar_store_close(
         spawn_ok(async move {
             let result = async {
                 let store = handle.remove().await?;
-                store.arc_close().await
+                store.arc_close().await?;
+                info!("Closed store {}", handle);
+                Ok(())
             }.await;
             if let Some(cb) = cb {
                 cb.resolve(result);
+            }
+            else if let Err(err) = result {
+                error!("{}", err);
             }
         });
         Ok(ErrorCode::Success)
@@ -525,7 +565,10 @@ pub extern "C" fn askar_scan_start(
         let tag_filter = tag_filter.as_opt_str().map(TagFilter::from_str).transpose()?;
         let cb = EnsureCallback::new(move |result: KvResult<ScanHandle>|
             match result {
-                Ok(handle) => cb(cb_id, ErrorCode::Success, handle),
+                Ok(scan_handle) => {
+                    info!("Started scan {} on store {}", scan_handle, handle);
+                    cb(cb_id, ErrorCode::Success, scan_handle)
+                }
                 Err(err) => cb(cb_id, set_last_error(Some(err)), ScanHandle::invalid()),
             }
         );
@@ -544,7 +587,7 @@ pub extern "C" fn askar_scan_start(
 #[no_mangle]
 pub extern "C" fn askar_scan_next(
     handle: ScanHandle,
-    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, results: *const FfiEntrySet)>,
+    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, results: EntrySetHandle)>,
     cb_id: CallbackId,
 ) -> ErrorCode {
     catch_err! {
@@ -553,11 +596,11 @@ pub extern "C" fn askar_scan_next(
         let cb = EnsureCallback::new(move |result: KvResult<Option<Vec<Entry>>>|
             match result {
                 Ok(Some(entries)) => {
-                    let results = Box::into_raw(Box::new(FfiEntrySet::from(entries)));
+                    let results = EntrySetHandle::create(FfiEntrySet::from(entries));
                     cb(cb_id, ErrorCode::Success, results)
                 },
-                Ok(None) => cb(cb_id, ErrorCode::Success, ptr::null()),
-                Err(err) => cb(cb_id, set_last_error(Some(err)), ptr::null()),
+                Ok(None) => cb(cb_id, ErrorCode::Success, EntrySetHandle::invalid()),
+                Err(err) => cb(cb_id, set_last_error(Some(err)), EntrySetHandle::invalid()),
             }
         );
         spawn_ok(async move {
@@ -579,6 +622,7 @@ pub extern "C" fn askar_scan_free(handle: ScanHandle) -> ErrorCode {
         trace!("Close scan");
         spawn_ok(async move {
             handle.remove().await.ok();
+            info!("Closed scan {}", handle);
         });
         Ok(ErrorCode::Success)
     }
@@ -586,27 +630,28 @@ pub extern "C" fn askar_scan_free(handle: ScanHandle) -> ErrorCode {
 
 #[no_mangle]
 pub extern "C" fn askar_entry_set_next(
-    result: *mut FfiEntrySet,
+    handle: EntrySetHandle,
     entry: *mut FfiEntry,
     found: *mut i8,
 ) -> ErrorCode {
     catch_err! {
         check_useful_c_ptr!(entry);
         check_useful_c_ptr!(found);
-        let results = mem::ManuallyDrop::new(unsafe { Box::from_raw(result) });
-        if let Some(next) = results.next() {
-            unsafe { *entry = next };
-            unsafe { *found = 1 };
-        } else {
-            unsafe { *found = 0 };
-        }
+        handle.enter(|results| {
+            if let Some(next) = results.next() {
+                unsafe { *entry = next };
+                unsafe { *found = 1 };
+            } else {
+                unsafe { *found = 0 };
+            }
+        });
         Ok(ErrorCode::Success)
     }
 }
 
 #[no_mangle]
-pub extern "C" fn askar_entry_set_free(result: *mut FfiEntrySet) {
-    unsafe { Box::from_raw(result) };
+pub extern "C" fn askar_entry_set_free(handle: EntrySetHandle) {
+    handle.remove();
 }
 
 #[no_mangle]
@@ -623,7 +668,10 @@ pub extern "C" fn askar_session_start(
         let cb = cb.ok_or_else(|| err_msg!("No callback provided"))?;
         let cb = EnsureCallback::new(move |result: KvResult<SessionHandle>|
             match result {
-                Ok(handle) => cb(cb_id, ErrorCode::Success, handle),
+                Ok(sess_handle) => {
+                    info!("Started session {} on store {} (txn: {})", sess_handle, handle, as_transaction != 0);
+                    cb(cb_id, ErrorCode::Success, sess_handle)
+                }
                 Err(err) => cb(cb_id, set_last_error(Some(err)), SessionHandle::invalid()),
             }
         );
@@ -1125,7 +1173,9 @@ pub extern "C" fn askar_session_close(
             EnsureCallback::new(move |result|
                 match result {
                     Ok(_) => cb(cb_id, ErrorCode::Success),
-                    Err(err) => cb(cb_id, set_last_error(Some(err))),
+                    Err(err) => {
+                        cb(cb_id, set_last_error(Some(err)))
+                    }
                 }
             )
         });
@@ -1140,6 +1190,7 @@ pub extern "C" fn askar_session_close(
                     } else {
                         session.into_inner().commit().await?;
                     }
+                    info!("Closed session {}", handle);
                     Ok(())
                 } else {
                     Err(err_msg!("Error closing session: has outstanding references"))
@@ -1147,6 +1198,9 @@ pub extern "C" fn askar_session_close(
             }.await;
             if let Some(cb) = cb {
                 cb.resolve(result);
+            }
+            else if let Err(err) = result {
+                error!("{}", err);
             }
         });
         Ok(ErrorCode::Success)

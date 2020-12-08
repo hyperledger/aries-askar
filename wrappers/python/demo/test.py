@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import sys
 
 from aries_askar.bindings import (
@@ -8,6 +9,9 @@ from aries_askar.bindings import (
     version,
 )
 from aries_askar import KeyAlg, Store
+
+logging.basicConfig(level=logging.INFO)
+# logging.getLogger("aries_askar").setLevel(5)
 
 if len(sys.argv) > 1:
     REPO_URI = sys.argv[1]
