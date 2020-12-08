@@ -7,35 +7,8 @@ on:
     branches: [main]
 
 jobs:
-  cache-deps:
-    name: Cache Dependencies
-
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v2
-
-      - name: Check Cargo.lock
-        run: cargo generate-lockfile --offline --locked
-
-      - name: Cargo cache dependencies
-        id: cargo-deps
-        uses: actions/cache@v2
-        with:
-          path: |
-            ~/.cargo/registry/index
-            ~/.cargo/registry/cache
-          key: cargo-deps-${{ hashFiles('Cargo.lock') }}
-
-      - name: Fetch dependencies
-        if: ${{ steps.cargo-deps.outputs.cache-hit != 'true' }}
-        run: cargo fetch --locked
-
   test:
     name: Test
-
-    needs: cache-deps
 
     strategy:
       matrix:
@@ -54,13 +27,8 @@ jobs:
           toolchain: stable
           override: true
 
-      - name: Restore dependency crates
-        uses: actions/cache@v2
-        with:
-          path: |
-            ~/.cargo/registry/index
-            ~/.cargo/registry/cache
-          key: cargo-deps-${{ hashFiles('Cargo.lock') }}
+      - name: Cache cargo resources
+        uses: Swatinem/rust-cache@v1
 
       - name: Cargo check
         run: cargo check --locked

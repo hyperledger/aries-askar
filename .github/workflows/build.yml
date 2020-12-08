@@ -27,16 +27,8 @@ jobs:
           toolchain: stable
           override: true
 
-      - name: Check Cargo.lock
-        run: cargo generate-lockfile --offline --locked
-
-      - name: Restore dependency crates
-        uses: actions/cache@v2
-        with:
-          path: |
-            ~/.cargo/registry/index
-            ~/.cargo/registry/cache
-          key: cargo-deps-${{ hashFiles('Cargo.lock') }}
+      - name: Cache cargo resources
+        uses: Swatinem/rust-cache@v1
 
       - name: Build library
         run: cargo build --release --locked
