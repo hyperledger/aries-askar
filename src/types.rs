@@ -466,6 +466,13 @@ impl TagFilter {
         }
     }
 
+    #[inline]
+    pub fn exist(names: Vec<String>) -> Self {
+        Self {
+            query: wql::Query::Exist(names),
+        }
+    }
+
     pub fn to_string(&self) -> Result<String, Error> {
         serde_json::to_string(&self.query).map_err(err_map!("Error encoding tag filter"))
     }

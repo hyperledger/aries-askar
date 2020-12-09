@@ -217,6 +217,145 @@ pub async fn db_count<DB: Backend>(db: &Store<DB>) {
     assert_eq!(count, 0);
 }
 
+pub async fn db_count_exist<DB: Backend>(db: &Store<DB>) {
+    let test_row = Entry::new(
+        "category",
+        "name",
+        "value",
+        Some(vec![
+            EntryTag::Encrypted("enc".to_string(), "v1".to_string()),
+            EntryTag::Plaintext("plain".to_string(), "v2".to_string()),
+        ]),
+    );
+
+    let mut conn = db.session(None).await.expect(ERR_SESSION);
+
+    conn.insert(
+        &test_row.category,
+        &test_row.name,
+        &test_row.value,
+        test_row.tags.as_ref().map(|t| t.as_slice()),
+        None,
+    )
+    .await
+    .expect(ERR_INSERT);
+
+    assert_eq!(
+        conn.count(
+            &test_row.category,
+            Some(TagFilter::exist(vec!["enc".to_string()]))
+        )
+        .await
+        .expect(ERR_COUNT),
+        1
+    );
+
+    assert_eq!(
+        conn.count(
+            &test_row.category,
+            Some(TagFilter::exist(vec!["~plain".to_string()]))
+        )
+        .await
+        .expect(ERR_COUNT),
+        1
+    );
+
+    assert_eq!(
+        conn.count(
+            &test_row.category,
+            Some(TagFilter::exist(vec!["~enc".to_string()]))
+        )
+        .await
+        .expect(ERR_COUNT),
+        0
+    );
+
+    assert_eq!(
+        conn.count(
+            &test_row.category,
+            Some(TagFilter::exist(vec!["plain".to_string()]))
+        )
+        .await
+        .expect(ERR_COUNT),
+        0
+    );
+
+    assert_eq!(
+        conn.count(
+            &test_row.category,
+            Some(TagFilter::exist(vec!["other".to_string()]))
+        )
+        .await
+        .expect(ERR_COUNT),
+        0
+    );
+
+    assert_eq!(
+        conn.count(
+            &test_row.category,
+            Some(TagFilter::exist(vec![
+                "enc".to_string(),
+                "other".to_string()
+            ]))
+        )
+        .await
+        .expect(ERR_COUNT),
+        0
+    );
+
+    assert_eq!(
+        conn.count(
+            &test_row.category,
+            Some(TagFilter::all_of(vec![
+                TagFilter::exist(vec!["enc".to_string()]),
+                TagFilter::exist(vec!["~plain".to_string()])
+            ]))
+        )
+        .await
+        .expect(ERR_COUNT),
+        1
+    );
+
+    assert_eq!(
+        conn.count(
+            &test_row.category,
+            Some(TagFilter::any_of(vec![
+                TagFilter::exist(vec!["~enc".to_string()]),
+                TagFilter::exist(vec!["~plain".to_string()])
+            ]))
+        )
+        .await
+        .expect(ERR_COUNT),
+        1
+    );
+
+    assert_eq!(
+        conn.count(
+            &test_row.category,
+            Some(TagFilter::all_of(vec![
+                TagFilter::exist(vec!["~enc".to_string()]),
+                TagFilter::exist(vec!["~plain".to_string()])
+            ]))
+        )
+        .await
+        .expect(ERR_COUNT),
+        0
+    );
+
+    assert_eq!(
+        conn.count(
+            &test_row.category,
+            Some(TagFilter::not(TagFilter::exist(vec![
+                "enc".to_string(),
+                "other".to_string()
+            ]),))
+        )
+        .await
+        .expect(ERR_COUNT),
+        0
+    );
+}
+
 pub async fn db_scan<DB: Backend>(db: &Store<DB>) {
     let category = "category".to_string();
     let test_rows = vec![Entry::new(

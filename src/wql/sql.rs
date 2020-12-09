@@ -99,6 +99,22 @@ where
         Ok(Some(query))
     }
 
+    fn encode_exist_clause(
+        &mut self,
+        enc_name: Self::Arg,
+        is_plaintext: bool,
+        negate: bool,
+    ) -> Result<Option<Self::Clause>> {
+        let op = if negate { "NOT EXISTS" } else { "EXISTS" };
+        let query = format!(
+            "{} (SELECT 1 FROM items_tags WHERE item_id=i.id AND name = $$ AND plaintext = {})",
+            op,
+            if is_plaintext { 1 } else { 0 }
+        );
+        self.arguments.push(enc_name);
+        Ok(Some(query))
+    }
+
     fn encode_conj_clause(
         &mut self,
         op: ConjunctionOp,

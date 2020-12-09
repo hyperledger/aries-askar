@@ -61,7 +61,7 @@ uuid = { version = "0.8", features = ["v4"] }
 zeroize = { version = "1.1.0", features = ["zeroize_derive"] }
 
 [dependencies.indy-utils]
-version = "=0.3.6"
+version = "=0.3.8"
 default-features = false
 features = ["ed25519", "pack", "serde_support", "wql"]
 

@@ -82,6 +82,14 @@ macro_rules! backend_tests {
         }
 
         #[test]
+        fn count_exist() {
+            block_on(async {
+                let db = $init.await;
+                super::utils::db_count_exist(&db).await;
+            })
+        }
+
+        #[test]
         fn scan() {
             block_on(async {
                 let db = $init.await;
