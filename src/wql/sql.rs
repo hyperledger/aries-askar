@@ -105,10 +105,9 @@ where
         is_plaintext: bool,
         negate: bool,
     ) -> Result<Option<Self::Clause>> {
-        let op = if negate { "NOT EXISTS" } else { "EXISTS" };
         let query = format!(
-            "{} (SELECT 1 FROM items_tags WHERE item_id=i.id AND name = $$ AND plaintext = {})",
-            op,
+            "i.id {} (SELECT item_id FROM items_tags WHERE name = $$ AND plaintext = {})",
+            if negate { "NOT IN" } else { "IN" },
             if is_plaintext { 1 } else { 0 }
         );
         self.arguments.push(enc_name);
