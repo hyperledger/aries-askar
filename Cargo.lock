@@ -54,6 +54,7 @@ dependencies = [
  "indy-utils",
  "itertools",
  "log",
+ "num_cpus",
  "once_cell",
  "percent-encoding",
  "rand",

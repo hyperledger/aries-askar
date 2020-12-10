@@ -5,7 +5,7 @@ use percent_encoding::{percent_decode_str, utf8_percent_encode, NON_ALPHANUMERIC
 
 use super::error::Result;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Options<'a> {
     pub schema: Cow<'a, str>,
     pub user: Cow<'a, str>,
@@ -50,11 +50,11 @@ impl<'a> Options<'a> {
         };
         let (host, path) = if let Some(path_pos) = host.find('/') {
             (
-                Cow::Borrowed(&host[..path_pos]),
-                Cow::Borrowed(&host[path_pos..]),
+                percent_decode(&host[..path_pos]),
+                percent_decode(&host[path_pos..]),
             )
         } else {
-            (Cow::Borrowed(host), Cow::Borrowed(""))
+            (percent_decode(host), Cow::Borrowed(""))
         };
 
         let query = if let Some(query) = host_and_query.next() {

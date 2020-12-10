@@ -16,14 +16,14 @@ use crate::keys::{
     wrap::{WrapKeyMethod, WrapKeyReference},
     KeyCache, PassKey,
 };
-use crate::options::IntoOptions;
+use crate::options::{IntoOptions, Options};
 use crate::store::{ManageBackend, Store};
 
 #[derive(Debug)]
 pub struct SqliteStoreOptions<'a> {
     pub(crate) in_memory: bool,
     pub(crate) path: Cow<'a, str>,
-    pub(crate) options: SqlitePoolOptions,
+    pub(crate) max_connections: u32,
 }
 
 impl<'a> SqliteStoreOptions<'a> {
@@ -31,15 +31,33 @@ impl<'a> SqliteStoreOptions<'a> {
     where
         O: IntoOptions<'a>,
     {
-        let opts = options.into_options()?;
+        let mut opts = options.into_options()?;
+        let max_connections = if let Some(max_conn) = opts.query.remove("max_connections") {
+            max_conn
+                .parse()
+                .map_err(err_map!(Input, "Error parsing 'max_connections' parameter"))?
+        } else {
+            num_cpus::get() as u32
+        };
         Ok(Self {
             in_memory: opts.host == ":memory:",
             path: opts.host,
-            options: SqlitePoolOptions::default()
-                // must maintain at least 1 connection to avoid dropping in-memory database
-                .min_connections(1)
-                .max_connections(10), // FIXME - default to num_cpus?
+            max_connections,
         })
+    }
+
+    async fn pool(&self, auto_create: bool) -> std::result::Result<SqlitePool, SqlxError> {
+        let conn_opts =
+            SqliteConnectOptions::from_str(self.path.as_ref())?.create_if_missing(auto_create);
+        SqlitePoolOptions::default()
+            // maintains at least 1 connection.
+            // for an in-memory database this is required to avoid dropping the database,
+            // for a file database this signals other instances that the database is in use
+            .min_connections(1)
+            .max_connections(self.max_connections)
+            .test_before_acquire(false)
+            .connect_with(conn_opts)
+            .await
     }
 
     pub async fn provision(
@@ -52,9 +70,7 @@ impl<'a> SqliteStoreOptions<'a> {
         if recreate && !self.in_memory {
             try_remove_file(self.path.as_ref()).await?;
         }
-
-        let conn_opts = SqliteConnectOptions::from_str(self.path.as_ref())?.create_if_missing(true);
-        let conn_pool = self.options.connect_with(conn_opts).await?;
+        let conn_pool = self.pool(true).await?;
 
         if !recreate {
             if sqlx::query_scalar::<_, i64>(
@@ -95,8 +111,7 @@ impl<'a> SqliteStoreOptions<'a> {
         pass_key: PassKey<'_>,
         profile: Option<&'a str>,
     ) -> Result<Store<SqliteStore>> {
-        let conn_opts = SqliteConnectOptions::from_str(self.path.as_ref())?;
-        let conn_pool = match self.options.connect_with(conn_opts).await {
+        let conn_pool = match self.pool(false).await {
             Ok(pool) => Ok(pool),
             Err(SqlxError::Database(db_err)) => {
                 if db_err.code().expect("Expected SQLite error code") == "14" {
@@ -123,11 +138,9 @@ impl<'a> SqliteStoreOptions<'a> {
     }
 
     pub fn in_memory() -> Self {
-        Self {
-            in_memory: true,
-            path: Cow::Borrowed(":memory:"),
-            options: SqlitePoolOptions::default(),
-        }
+        let mut opts = Options::default();
+        opts.host = Cow::Borrowed(":memory:");
+        Self::new(opts).unwrap()
     }
 }
 

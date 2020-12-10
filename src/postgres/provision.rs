@@ -20,10 +20,16 @@ use crate::types::ProfileId;
 use super::PostgresStore;
 
 const DEFAULT_CONNECT_TIMEOUT: u64 = 30;
+const DEFAULT_IDLE_TIMEOUT: u64 = 300;
+const DEFAULT_MIN_CONNECTIONS: u32 = 0;
+const DEFAULT_MAX_CONNECTIONS: u32 = 10;
 
 #[derive(Debug)]
 pub struct PostgresStoreOptions {
     pub(crate) connect_timeout: Duration,
+    pub(crate) idle_timeout: Duration,
+    pub(crate) max_connections: u32,
+    pub(crate) min_connections: u32,
     pub(crate) uri: String,
     pub(crate) admin_uri: String,
     pub(crate) host: String,
@@ -36,6 +42,34 @@ impl PostgresStoreOptions {
         O: IntoOptions<'a>,
     {
         let mut opts = options.into_options()?;
+        let connect_timeout = if let Some(timeout) = opts.query.remove("connect_timeout") {
+            timeout
+                .parse()
+                .map_err(err_map!(Input, "Error parsing 'connect_timeout' parameter"))?
+        } else {
+            DEFAULT_CONNECT_TIMEOUT
+        };
+        let idle_timeout = if let Some(timeout) = opts.query.remove("idle_timeout") {
+            timeout
+                .parse()
+                .map_err(err_map!(Input, "Error parsing 'idle_timeout' parameter"))?
+        } else {
+            DEFAULT_IDLE_TIMEOUT
+        };
+        let max_connections = if let Some(max_conn) = opts.query.remove("max_connections") {
+            max_conn
+                .parse()
+                .map_err(err_map!(Input, "Error parsing 'max_connections' parameter"))?
+        } else {
+            DEFAULT_MAX_CONNECTIONS
+        };
+        let min_connections = if let Some(min_conn) = opts.query.remove("min_connections") {
+            min_conn
+                .parse()
+                .map_err(err_map!(Input, "Error parsing 'min_connections' parameter"))?
+        } else {
+            DEFAULT_MIN_CONNECTIONS
+        };
         let admin_acct = opts.query.remove("admin_account");
         let admin_pass = opts.query.remove("admin_password");
         let uri = opts.clone().into_uri();
@@ -59,10 +93,13 @@ impl PostgresStoreOptions {
                 "Invalid character in database name: '\"' and '\\0' are disallowed"
             ));
         }
-        // admin user selects no default database
-        opts.path = Cow::Borrowed("");
+        // admin user selects the default database
+        opts.path = Cow::Borrowed("/postgres");
         Ok(Self {
-            connect_timeout: Duration::from_secs(DEFAULT_CONNECT_TIMEOUT),
+            connect_timeout: Duration::from_secs(connect_timeout),
+            idle_timeout: Duration::from_secs(idle_timeout),
+            max_connections,
+            min_connections,
             uri,
             admin_uri: opts.into_uri(),
             host,
@@ -73,8 +110,9 @@ impl PostgresStoreOptions {
     async fn pool(&self) -> std::result::Result<PgPool, SqlxError> {
         PgPoolOptions::default()
             .connect_timeout(self.connect_timeout)
-            .min_connections(0)
-            .max_connections(10)
+            .idle_timeout(self.idle_timeout)
+            .max_connections(self.max_connections)
+            .min_connections(self.min_connections)
             .test_before_acquire(false)
             .connect(self.uri.as_str())
             .await
@@ -176,15 +214,16 @@ impl PostgresStoreOptions {
         pass_key: PassKey<'_>,
         profile: Option<&str>,
     ) -> Result<Store<PostgresStore>> {
-        open_db(
-            self.pool().await?,
-            method,
-            pass_key,
-            profile,
-            self.host,
-            self.name,
-        )
-        .await
+        let pool = match self.pool().await {
+            Ok(p) => Ok(p),
+            Err(SqlxError::Database(db_err)) if db_err.code() == Some(Cow::Borrowed("3D000")) => {
+                // error 3D000 is INVALID CATALOG NAME in postgres,
+                // this indicates that the database does not exist
+                Err(err_msg!(NotFound, "The requested database was not found"))
+            }
+            Err(e) => Err(e.into()),
+        }?;
+        open_db(pool, method, pass_key, profile, self.host, self.name).await
     }
 
     pub async fn remove(self) -> Result<bool> {
@@ -401,10 +440,20 @@ mod tests {
 
     #[test]
     fn postgres_parse_uri() {
-        let uri =
-            "postgres://user:pass@host/db_name?admin_account=user2&admin_password=pass2&test=1";
+        let uri = "postgres://user:pass@host/db_name\
+            ?admin_account=user2&admin_password=pass2\
+            &connect_timeout=9&max_connections=23&min_connections=32\
+            &idle_timeout=99\
+            &test=1";
         let opts = PostgresStoreOptions::new(uri).unwrap();
+        assert_eq!(opts.max_connections, 23);
+        assert_eq!(opts.min_connections, 32);
+        assert_eq!(opts.connect_timeout, Duration::from_secs(9));
+        assert_eq!(opts.idle_timeout, Duration::from_secs(99));
         assert_eq!(opts.uri, "postgres://user:pass@host/db_name?test=1");
-        assert_eq!(opts.admin_uri, "postgres://user2:pass2@host?test=1");
+        assert_eq!(
+            opts.admin_uri,
+            "postgres://user2:pass2@host/postgres?test=1"
+        );
     }
 }
