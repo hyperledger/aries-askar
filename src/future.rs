@@ -14,9 +14,14 @@ where
     blocking::unblock(f).await
 }
 
-pub use self::scoped_impl::unblock_scoped;
+pub use self::unblock_scoped_impl::unblock_scoped;
 
-mod scoped_impl {
+#[inline]
+pub fn spawn_ok(fut: impl Future<Output = ()> + Send + 'static) {
+    async_global_executor::spawn(fut).detach();
+}
+
+mod unblock_scoped_impl {
     use std::cell::UnsafeCell;
     use std::marker::PhantomData;
     use std::mem::{transmute, MaybeUninit};
@@ -182,11 +187,6 @@ mod scoped_impl {
         std::mem::forget(checker);
         result
     }
-}
-
-#[inline]
-pub fn spawn_ok(fut: impl Future<Output = ()> + Send + 'static) {
-    async_global_executor::spawn(fut).detach();
 }
 
 #[cfg(test)]

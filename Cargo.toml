@@ -71,9 +71,8 @@ version = "0.4.1"
 default-features = false
 features = ["chrono", "runtime-async-std-rustls"]
 optional = true
-git = "https://github.com/launchbadge/sqlx"
-rev = "04647ae09ae7f2d211c06e594561690ec9117acd"
-
+git = "https://github.com/andrewwhitehead/sqlx"
+branch = "pool-release-dec-size"
 
 # [target.'cfg(target_os = "macos")'.dependencies]
 # keychain-services = { path = "../keychain-services.rs" }

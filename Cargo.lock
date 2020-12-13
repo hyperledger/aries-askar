@@ -11,15 +11,15 @@ dependencies = [
 
 [[package]]
 name = "ahash"
-version = "0.4.6"
+version = "0.4.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f6789e291be47ace86a60303502173d84af8327e3627ecf334356ee0f87a164c"
+checksum = "739f4a8db6605981345c5654f3a85b056ce52f37a39d34da03f25bf2151ea16e"
 
 [[package]]
 name = "ahash"
-version = "0.5.9"
+version = "0.5.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "062782ee945b38cab67201cd84c77ab3881c07125a1f1f7a5d2fd213f797a2d6"
+checksum = "19fac972e53443ba111b1ff866e9d3b6484df5c05030e13bc7c6a1ebc802e983"
 dependencies = [
  "getrandom 0.2.0",
  "lazy_static",
@@ -877,7 +877,7 @@ version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d7afe4a420e3fe79967a00898cc1f4db7c8a49a9333a29f8a4bd76a253d5cd04"
 dependencies = [
- "ahash 0.4.6",
+ "ahash 0.4.7",
 ]
 
 [[package]]
@@ -1637,7 +1637,7 @@ dependencies = [
 [[package]]
 name = "sqlx"
 version = "0.4.1"
-source = "git+https://github.com/launchbadge/sqlx?rev=04647ae09ae7f2d211c06e594561690ec9117acd#04647ae09ae7f2d211c06e594561690ec9117acd"
+source = "git+https://github.com/andrewwhitehead/sqlx?branch=pool-release-dec-size#28b49928e9cd44a32dc635a889accd5cc37a9635"
 dependencies = [
  "sqlx-core",
  "sqlx-macros",
@@ -1646,9 +1646,9 @@ dependencies = [
 [[package]]
 name = "sqlx-core"
 version = "0.4.0"
-source = "git+https://github.com/launchbadge/sqlx?rev=04647ae09ae7f2d211c06e594561690ec9117acd#04647ae09ae7f2d211c06e594561690ec9117acd"
+source = "git+https://github.com/andrewwhitehead/sqlx?branch=pool-release-dec-size#28b49928e9cd44a32dc635a889accd5cc37a9635"
 dependencies = [
- "ahash 0.5.9",
+ "ahash 0.5.10",
  "atoi",
  "base64 0.13.0",
  "bitflags",
@@ -1692,7 +1692,7 @@ dependencies = [
 [[package]]
 name = "sqlx-macros"
 version = "0.4.0"
-source = "git+https://github.com/launchbadge/sqlx?rev=04647ae09ae7f2d211c06e594561690ec9117acd#04647ae09ae7f2d211c06e594561690ec9117acd"
+source = "git+https://github.com/andrewwhitehead/sqlx?branch=pool-release-dec-size#28b49928e9cd44a32dc635a889accd5cc37a9635"
 dependencies = [
  "dotenv",
  "either",
@@ -1709,7 +1709,7 @@ dependencies = [
 [[package]]
 name = "sqlx-rt"
 version = "0.2.0"
-source = "git+https://github.com/launchbadge/sqlx?rev=04647ae09ae7f2d211c06e594561690ec9117acd#04647ae09ae7f2d211c06e594561690ec9117acd"
+source = "git+https://github.com/andrewwhitehead/sqlx?branch=pool-release-dec-size#28b49928e9cd44a32dc635a889accd5cc37a9635"
 dependencies = [
  "async-rustls",
  "async-std",

@@ -1,19 +1,20 @@
+use std::future::Future;
 use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 
 use sqlx::{
-    database::HasArguments, pool::PoolConnection, Acquire, Arguments, Database, Encode, Executor,
-    IntoArguments, Transaction, Type,
+    database::HasArguments, pool::PoolConnection, Arguments, Database, Encode, IntoArguments, Pool,
+    TransactionManager, Type,
 };
 use zeroize::Zeroize;
 
 use super::error::Result;
-use super::future::{unblock, BoxFuture};
+use super::future::unblock;
 use super::keys::{
     store::StoreKey,
     wrap::{WrapKey, WrapKeyMethod},
-    PassKey,
+    KeyCache, PassKey,
 };
 use super::types::{EncEntryTag, Expiry, ProfileId, TagFilter};
 use super::wql::{
@@ -23,83 +24,195 @@ use super::wql::{
 
 pub const PAGE_SIZE: usize = 32;
 
-pub struct DbSession<'s, E, DB> {
-    pub(crate) exec: E,
-    #[allow(unused)]
-    pub(crate) is_txn: bool,
-    pub(crate) profile_id: ProfileId,
-    pub(crate) key: Arc<StoreKey>,
+pub struct DbSession<'s, DB: Database> {
+    profile_key: DbSessionKey,
+    state: DbSessionState<DB>,
+    transaction: bool,
     _pd: PhantomData<&'s DB>,
 }
 
-impl<'s, E, DB> DbSession<'s, E, DB> {
-    pub fn new(exec: E, is_txn: bool, profile_id: ProfileId, key: Arc<StoreKey>) -> Self
+impl<'s, DB: Database> DbSession<'s, DB> {
+    pub(crate) fn new(
+        pool: Pool<DB>,
+        cache: Arc<KeyCache>,
+        profile: String,
+        transaction: bool,
+    ) -> Self
     where
         DB: Database,
-        for<'e> &'e mut E: Executor<'e, Database = DB>,
     {
         Self {
-            exec,
-            is_txn,
-            profile_id,
-            key,
+            profile_key: DbSessionKey::Pending { cache, profile },
+            state: DbSessionState::Pending { pool },
+            transaction,
             _pd: PhantomData,
         }
     }
 
-    pub fn borrow_mut(&mut self) -> DbSessionRef<'_, 's, E, DB> {
+    #[inline]
+    fn connection_mut(&mut self) -> Option<&mut PoolConnection<DB>> {
+        if let DbSessionState::Active { conn } = &mut self.state {
+            Some(conn)
+        } else {
+            None
+        }
+    }
+
+    #[inline]
+    pub fn is_transaction(&self) -> bool {
+        self.transaction
+    }
+
+    #[inline]
+    fn pool(&self) -> Option<&Pool<DB>> {
+        if let DbSessionState::Pending { pool, .. } = &self.state {
+            Some(pool)
+        } else {
+            None
+        }
+    }
+
+    pub(crate) fn profile_and_key(&mut self) -> Option<(ProfileId, Arc<StoreKey>)> {
+        if let DbSessionKey::Active {
+            profile_id,
+            ref key,
+        } = self.profile_key
+        {
+            Some((profile_id, key.clone()))
+        } else {
+            None
+        }
+    }
+
+    pub(crate) async fn make_active<I>(
+        &mut self,
+        init_key: I,
+    ) -> Result<DbSessionActive<'_, 's, DB>>
+    where
+        I: for<'a> GetProfileKey<'a, DB>,
+    {
+        if matches!(self.state, DbSessionState::Pending { .. }) {
+            info!("Acquire pool connection");
+            let mut conn = self.pool().unwrap().acquire().await?;
+            if self.transaction {
+                info!("Start transaction");
+                DB::TransactionManager::begin(&mut conn).await?;
+            }
+            self.state = DbSessionState::Active { conn };
+        }
+        let profile_id = match &mut self.profile_key {
+            DbSessionKey::Pending { cache, profile } => {
+                let cache = cache.clone();
+                let mut get_profile = String::new();
+                std::mem::swap(profile, &mut get_profile);
+                let (profile_id, key) = init_key
+                    .call_once(self.connection_mut().unwrap(), cache, get_profile)
+                    .await?;
+                self.profile_key = DbSessionKey::Active { profile_id, key };
+                profile_id
+            }
+            DbSessionKey::Active { profile_id, .. } => *profile_id,
+        };
+        let txn_depth = if self.transaction { 1 } else { 0 };
+        Ok(DbSessionActive {
+            inner: self,
+            profile_id,
+            txn_depth,
+        })
+    }
+
+    #[inline]
+    pub(crate) fn borrow_mut(&mut self) -> DbSessionRef<'_, 's, DB> {
         DbSessionRef::Borrowed(self)
     }
 
-    pub fn owned_ref(self) -> DbSessionRef<'s, 's, E, DB> {
+    #[inline]
+    pub(crate) fn owned_ref(self) -> DbSessionRef<'s, 's, DB> {
         DbSessionRef::Owned(self)
     }
 
-    pub async fn transaction<'t>(&'t mut self) -> Result<DbSession<'t, Transaction<'t, DB>, DB>>
-    where
-        DB: Database,
-        &'t mut E: Acquire<'t, Database = DB>,
-        for<'a> &'a mut Transaction<'t, DB>: Executor<'a, Database = DB>,
-    {
-        Ok(DbSession::new(
-            self.exec.begin().await?,
-            true,
-            self.profile_id,
-            self.key.clone(),
-        ))
-    }
-}
-
-pub trait CloseDbSession<'t> {
-    fn close(self, commit: bool) -> BoxFuture<'t, Result<()>>;
-}
-
-impl<'t, DB: Database> CloseDbSession<'t> for PoolConnection<DB> {
-    fn close(self, _commit: bool) -> BoxFuture<'t, Result<()>> {
-        Box::pin(async move { Ok(()) })
-    }
-}
-
-impl<'t, DB: Database> CloseDbSession<'t> for Transaction<'t, DB> {
-    fn close(self, commit: bool) -> BoxFuture<'t, Result<()>> {
-        Box::pin(async move {
-            if commit {
-                self.commit().await
-            } else {
-                self.rollback().await
+    pub(crate) async fn close(mut self, commit: bool) -> Result<()> {
+        if self.transaction {
+            if let Some(conn) = self.connection_mut() {
+                if commit {
+                    info!("Commit transaction on close");
+                    DB::TransactionManager::commit(conn).await
+                } else {
+                    info!("Roll-back transaction on close");
+                    DB::TransactionManager::rollback(conn).await
+                }
+                .map_err(err_map!(Backend, "Error closing transaction"))?;
             }
-            .map_err(err_map!("Error committing transaction"))
-        })
+            self.transaction = false;
+        }
+        Ok(())
     }
 }
 
-pub enum DbSessionRef<'q, 's: 'q, E, DB> {
-    Owned(DbSession<'s, E, DB>),
-    Borrowed(&'q mut DbSession<'s, E, DB>),
+impl<'q, DB: Database> Drop for DbSession<'q, DB> {
+    fn drop(&mut self) {
+        if self.transaction {
+            if let Some(conn) = self.connection_mut() {
+                info!("Dropped transaction: roll-back");
+                DB::TransactionManager::start_rollback(conn);
+            }
+        } else {
+            info!("Dropped pool connection")
+        }
+    }
 }
 
-impl<'q, 's: 'q, E, DB> Deref for DbSessionRef<'q, 's, E, DB> {
-    type Target = DbSession<'s, E, DB>;
+pub(crate) trait GetProfileKey<'a, DB: Database> {
+    type Fut: Future<Output = Result<(ProfileId, Arc<StoreKey>)>>;
+    fn call_once(
+        self,
+        pool: &'a mut PoolConnection<DB>,
+        cache: Arc<KeyCache>,
+        profile: String,
+    ) -> Self::Fut;
+}
+
+impl<'a, DB: Database, F, Fut> GetProfileKey<'a, DB> for F
+where
+    F: FnOnce(&'a mut PoolConnection<DB>, Arc<KeyCache>, String) -> Fut,
+    Fut: Future<Output = Result<(ProfileId, Arc<StoreKey>)>> + 'a,
+{
+    type Fut = Fut;
+    fn call_once(
+        self,
+        pool: &'a mut PoolConnection<DB>,
+        cache: Arc<KeyCache>,
+        profile: String,
+    ) -> Self::Fut {
+        self(pool, cache, profile)
+    }
+}
+
+pub(crate) enum DbSessionState<DB: Database> {
+    Active { conn: PoolConnection<DB> },
+    Pending { pool: Pool<DB> },
+}
+
+unsafe impl<DB: Database> Sync for DbSessionState<DB> where DB::Connection: Send {}
+
+pub(crate) enum DbSessionKey {
+    Active {
+        profile_id: ProfileId,
+        key: Arc<StoreKey>,
+    },
+    Pending {
+        cache: Arc<KeyCache>,
+        profile: String,
+    },
+}
+
+pub enum DbSessionRef<'q, 's: 'q, DB: Database> {
+    Owned(DbSession<'s, DB>),
+    Borrowed(&'q mut DbSession<'s, DB>),
+}
+
+impl<'q, 's: 'q, DB: Database> Deref for DbSessionRef<'q, 's, DB> {
+    type Target = DbSession<'s, DB>;
 
     fn deref(&self) -> &Self::Target {
         match self {
@@ -109,11 +222,61 @@ impl<'q, 's: 'q, E, DB> Deref for DbSessionRef<'q, 's, E, DB> {
     }
 }
 
-impl<'q, 's: 'q, E, DB> DerefMut for DbSessionRef<'q, 's, E, DB> {
+impl<'q, 's: 'q, DB: Database> DerefMut for DbSessionRef<'q, 's, DB> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         match self {
             Self::Owned(e) => e,
             Self::Borrowed(e) => e,
+        }
+    }
+}
+
+pub(crate) struct DbSessionActive<'a, 's: 'a, DB: Database> {
+    inner: &'a mut DbSession<'s, DB>,
+    pub(crate) profile_id: ProfileId,
+    txn_depth: usize,
+}
+
+impl<'q, 's: 'q, DB: Database> DbSessionActive<'q, 's, DB> {
+    #[inline]
+    pub fn connection_mut(&mut self) -> &mut PoolConnection<DB> {
+        self.inner.connection_mut().unwrap()
+    }
+
+    pub async fn commit(mut self) -> Result<()> {
+        if self.txn_depth > 0 {
+            let conn = self.connection_mut();
+            info!("Commit transaction");
+            DB::TransactionManager::commit(conn).await?;
+            self.txn_depth = 0;
+        }
+        Ok(())
+    }
+
+    #[inline]
+    pub fn is_transaction(&self) -> bool {
+        self.txn_depth > 0
+    }
+
+    pub async fn transaction<'t>(&'t mut self) -> Result<DbSessionActive<'t, 's, DB>>
+    where
+        's: 't,
+    {
+        info!("Start nested transaction");
+        DB::TransactionManager::begin(self.connection_mut()).await?;
+        Ok(DbSessionActive {
+            inner: &mut *self.inner,
+            profile_id: self.profile_id,
+            txn_depth: self.txn_depth + 1,
+        })
+    }
+}
+
+impl<'q, 's: 'q, DB: Database> Drop for DbSessionActive<'q, 's, DB> {
+    fn drop(&mut self) {
+        if self.txn_depth > 1 {
+            info!("Roll-back dropped nested transaction");
+            DB::TransactionManager::start_rollback(self.connection_mut());
         }
     }
 }

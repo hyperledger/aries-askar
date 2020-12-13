@@ -43,7 +43,6 @@ macro_rules! with_backend {
 
 impl Backend for AnyBackend {
     type Session = AnyQueryBackend;
-    type Transaction = AnyQueryBackend;
 
     fn create_profile(&self, name: Option<String>) -> BoxFuture<Result<String>> {
         with_backend!(self, store, store.create_profile(name))
@@ -73,47 +72,23 @@ impl Backend for AnyBackend {
         )
     }
 
-    fn session(&self, profile: Option<String>) -> BoxFuture<Result<Self::Session>> {
-        Box::pin(async move {
-            match self {
-                #[cfg(feature = "postgres")]
-                Self::Postgres(store) => {
-                    let session = store.session(profile).await?;
-                    Ok(AnyQueryBackend::PostgresSession(session))
-                }
-
-                #[cfg(feature = "sqlite")]
-                Self::Sqlite(store) => {
-                    // FIXME - avoid double boxed futures by exposing public method
-                    let session = store.session(profile).await?;
-                    Ok(AnyQueryBackend::SqliteSession(session))
-                }
-
-                _ => unreachable!(),
+    fn session(&self, profile: Option<String>, transaction: bool) -> Result<Self::Session> {
+        match self {
+            #[cfg(feature = "postgres")]
+            Self::Postgres(store) => {
+                let session = store.session(profile, transaction)?;
+                Ok(AnyQueryBackend::PostgresSession(session))
             }
-        })
-    }
 
-    fn transaction(&self, profile: Option<String>) -> BoxFuture<Result<Self::Transaction>> {
-        Box::pin(async move {
-            match self {
-                #[cfg(feature = "postgres")]
-                Self::Postgres(store) => {
-                    // FIXME - avoid double boxed futures by exposing public method
-                    let session = store.transaction(profile).await?;
-                    Ok(AnyQueryBackend::PostgresTxn(session))
-                }
-
-                #[cfg(feature = "sqlite")]
-                Self::Sqlite(store) => {
-                    // FIXME - avoid double boxed futures by exposing public method
-                    let session = store.transaction(profile).await?;
-                    Ok(AnyQueryBackend::SqliteTxn(session))
-                }
-
-                _ => unreachable!(),
+            #[cfg(feature = "sqlite")]
+            Self::Sqlite(store) => {
+                // FIXME - avoid double boxed futures by exposing public method
+                let session = store.session(profile, transaction)?;
+                Ok(AnyQueryBackend::SqliteSession(session))
             }
-        })
+
+            _ => unreachable!(),
+        }
     }
 
     fn rekey_backend(
@@ -132,13 +107,9 @@ impl Backend for AnyBackend {
 pub enum AnyQueryBackend {
     #[cfg(feature = "postgres")]
     PostgresSession(<PostgresStore as Backend>::Session),
-    #[cfg(feature = "postgres")]
-    PostgresTxn(<PostgresStore as Backend>::Transaction),
 
     #[cfg(feature = "sqlite")]
     SqliteSession(<SqliteStore as Backend>::Session),
-    #[cfg(feature = "sqlite")]
-    SqliteTxn(<SqliteStore as Backend>::Transaction),
 
     #[allow(unused)]
     Other,
@@ -154,13 +125,9 @@ impl QueryBackend for AnyQueryBackend {
         match self {
             #[cfg(feature = "postgres")]
             Self::PostgresSession(session) => session.count(kind, category, tag_filter),
-            #[cfg(feature = "postgres")]
-            Self::PostgresTxn(txn) => txn.count(kind, category, tag_filter),
 
             #[cfg(feature = "sqlite")]
             Self::SqliteSession(session) => session.count(kind, category, tag_filter),
-            #[cfg(feature = "sqlite")]
-            Self::SqliteTxn(txn) => txn.count(kind, category, tag_filter),
 
             _ => unreachable!(),
         }
@@ -176,13 +143,9 @@ impl QueryBackend for AnyQueryBackend {
         match self {
             #[cfg(feature = "postgres")]
             Self::PostgresSession(session) => session.fetch(kind, category, name, for_update),
-            #[cfg(feature = "postgres")]
-            Self::PostgresTxn(txn) => txn.fetch(kind, category, name, for_update),
 
             #[cfg(feature = "sqlite")]
             Self::SqliteSession(session) => session.fetch(kind, category, name, for_update),
-            #[cfg(feature = "sqlite")]
-            Self::SqliteTxn(txn) => txn.fetch(kind, category, name, for_update),
 
             _ => unreachable!(),
         }
@@ -201,15 +164,11 @@ impl QueryBackend for AnyQueryBackend {
             Self::PostgresSession(session) => {
                 session.fetch_all(kind, category, tag_filter, limit, for_update)
             }
-            #[cfg(feature = "postgres")]
-            Self::PostgresTxn(txn) => txn.fetch_all(kind, category, tag_filter, limit, for_update),
 
             #[cfg(feature = "sqlite")]
             Self::SqliteSession(session) => {
                 session.fetch_all(kind, category, tag_filter, limit, for_update)
             }
-            #[cfg(feature = "sqlite")]
-            Self::SqliteTxn(txn) => txn.fetch_all(kind, category, tag_filter, limit, for_update),
 
             _ => unreachable!(),
         }
@@ -224,13 +183,9 @@ impl QueryBackend for AnyQueryBackend {
         match self {
             #[cfg(feature = "postgres")]
             Self::PostgresSession(session) => session.remove_all(kind, category, tag_filter),
-            #[cfg(feature = "postgres")]
-            Self::PostgresTxn(txn) => txn.remove_all(kind, category, tag_filter),
 
             #[cfg(feature = "sqlite")]
             Self::SqliteSession(session) => session.remove_all(kind, category, tag_filter),
-            #[cfg(feature = "sqlite")]
-            Self::SqliteTxn(txn) => txn.remove_all(kind, category, tag_filter),
 
             _ => unreachable!(),
         }
@@ -251,18 +206,10 @@ impl QueryBackend for AnyQueryBackend {
             Self::PostgresSession(session) => {
                 session.update(kind, operation, category, name, value, tags, expiry_ms)
             }
-            #[cfg(feature = "postgres")]
-            Self::PostgresTxn(txn) => {
-                txn.update(kind, operation, category, name, value, tags, expiry_ms)
-            }
 
             #[cfg(feature = "sqlite")]
             Self::SqliteSession(session) => {
                 session.update(kind, operation, category, name, value, tags, expiry_ms)
-            }
-            #[cfg(feature = "sqlite")]
-            Self::SqliteTxn(txn) => {
-                txn.update(kind, operation, category, name, value, tags, expiry_ms)
             }
 
             _ => unreachable!(),
@@ -271,15 +218,11 @@ impl QueryBackend for AnyQueryBackend {
 
     fn close(self, commit: bool) -> BoxFuture<'static, Result<()>> {
         match self {
-            #[cfg(feature = "sqlite")]
-            Self::SqliteSession(session) => session.close(commit),
-            #[cfg(feature = "sqlite")]
-            Self::SqliteTxn(txn) => txn.close(commit),
+            #[cfg(feature = "postgres")]
+            Self::PostgresSession(session) => Box::pin(session.close(commit)),
 
-            #[cfg(feature = "postgres")]
-            Self::PostgresSession(session) => session.close(commit),
-            #[cfg(feature = "postgres")]
-            Self::PostgresTxn(txn) => txn.close(commit),
+            #[cfg(feature = "sqlite")]
+            Self::SqliteSession(session) => Box::pin(session.close(commit)),
 
             _ => unreachable!(),
         }

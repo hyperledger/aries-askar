@@ -19,7 +19,6 @@ use super::types::{Entry, EntryKind, EntryOperation, EntryTag, TagFilter};
 /// Represents a generic backend implementation
 pub trait Backend: Send + Sync {
     type Session: QueryBackend;
-    type Transaction: QueryBackend;
 
     fn create_profile(&self, name: Option<String>) -> BoxFuture<Result<String>>;
 
@@ -37,9 +36,7 @@ pub trait Backend: Send + Sync {
         limit: Option<i64>,
     ) -> BoxFuture<Result<Scan<'static, Entry>>>;
 
-    fn session(&self, profile: Option<String>) -> BoxFuture<Result<Self::Session>>;
-
-    fn transaction(&self, profile: Option<String>) -> BoxFuture<Result<Self::Transaction>>;
+    fn session(&self, profile: Option<String>, transaction: bool) -> Result<Self::Session>;
 
     fn rekey_backend(&mut self, method: WrapKeyMethod, key: PassKey<'_>) -> BoxFuture<Result<()>>;
 
@@ -181,12 +178,13 @@ impl<B: Backend> Store<B> {
 
     /// Create a new session against the store
     pub async fn session(&self, profile: Option<String>) -> Result<Session<B::Session>> {
-        Ok(Session::new(self.0.session(profile).await?))
+        // FIXME - add 'immediate' flag
+        Ok(Session::new(self.0.session(profile, false)?))
     }
 
     /// Create a new transaction session against the store
-    pub async fn transaction(&self, profile: Option<String>) -> Result<Session<B::Transaction>> {
-        Ok(Session::new(self.0.transaction(profile).await?))
+    pub async fn transaction(&self, profile: Option<String>) -> Result<Session<B::Session>> {
+        Ok(Session::new(self.0.session(profile, true)?))
     }
 
     /// Close the store instance, waiting for any shutdown procedures to complete.
