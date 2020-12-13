@@ -20,17 +20,14 @@ use crate::options::{IntoOptions, Options};
 use crate::store::{ManageBackend, Store};
 
 #[derive(Debug)]
-pub struct SqliteStoreOptions<'a> {
+pub struct SqliteStoreOptions {
     pub(crate) in_memory: bool,
-    pub(crate) path: Cow<'a, str>,
+    pub(crate) path: String,
     pub(crate) max_connections: u32,
 }
 
-impl<'a> SqliteStoreOptions<'a> {
-    pub fn new<O>(options: O) -> Result<Self>
-    where
-        O: IntoOptions<'a>,
-    {
+impl SqliteStoreOptions {
+    pub fn new<'a>(options: impl IntoOptions<'a>) -> Result<Self> {
         let mut opts = options.into_options()?;
         let max_connections = if let Some(max_conn) = opts.query.remove("max_connections") {
             max_conn
@@ -39,9 +36,11 @@ impl<'a> SqliteStoreOptions<'a> {
         } else {
             num_cpus::get() as u32
         };
+        let mut path = opts.host.to_string();
+        path.push_str(&*opts.path);
         Ok(Self {
-            in_memory: opts.host == ":memory:",
-            path: opts.host,
+            in_memory: path == ":memory:",
+            path,
             max_connections,
         })
     }
@@ -63,8 +62,8 @@ impl<'a> SqliteStoreOptions<'a> {
     pub async fn provision(
         self,
         method: WrapKeyMethod,
-        pass_key: PassKey<'a>,
-        profile: Option<&'a str>,
+        pass_key: PassKey<'_>,
+        profile: Option<&'_ str>,
         recreate: bool,
     ) -> Result<Store<SqliteStore>> {
         if recreate && !self.in_memory {
@@ -109,7 +108,7 @@ impl<'a> SqliteStoreOptions<'a> {
         self,
         method: Option<WrapKeyMethod>,
         pass_key: PassKey<'_>,
-        profile: Option<&'a str>,
+        profile: Option<&'_ str>,
     ) -> Result<Store<SqliteStore>> {
         let conn_pool = match self.pool(false).await {
             Ok(pool) => Ok(pool),
@@ -144,7 +143,7 @@ impl<'a> SqliteStoreOptions<'a> {
     }
 }
 
-impl<'a> ManageBackend<'a> for SqliteStoreOptions<'a> {
+impl<'a> ManageBackend<'a> for SqliteStoreOptions {
     type Store = Store<SqliteStore>;
 
     fn open_backend(
