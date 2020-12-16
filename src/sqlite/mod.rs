@@ -8,13 +8,13 @@ use futures_lite::stream::StreamExt;
 use sqlx::{
     pool::PoolConnection,
     sqlite::{Sqlite, SqlitePool},
-    Done, Row,
+    Database, Done, Error as SqlxError, Row, TransactionManager,
 };
 
 use super::db_utils::{
     decode_tags, encode_store_key, encode_tag_filter, expiry_timestamp, extend_query,
-    random_profile_name, DbSession, DbSessionActive, DbSessionRef, QueryParams, QueryPrepare,
-    PAGE_SIZE,
+    random_profile_name, DbSession, DbSessionActive, DbSessionRef, ExtDatabase, QueryParams,
+    QueryPrepare, PAGE_SIZE,
 };
 use super::error::Result;
 use super::future::{unblock, unblock_scoped, BoxFuture};
@@ -86,7 +86,7 @@ impl QueryPrepare for SqliteStore {
 }
 
 impl Backend for SqliteStore {
-    type Session = DbSession<'static, Sqlite>;
+    type Session = DbSession<Sqlite>;
 
     fn create_profile(&self, name: Option<String>) -> BoxFuture<Result<String>> {
         let name = name.unwrap_or_else(random_profile_name);
@@ -213,7 +213,7 @@ impl Backend for SqliteStore {
     }
 }
 
-impl QueryBackend for DbSession<'static, Sqlite> {
+impl QueryBackend for DbSession<Sqlite> {
     fn count<'q>(
         &'q mut self,
         kind: EntryKind,
@@ -357,7 +357,7 @@ impl QueryBackend for DbSession<'static, Sqlite> {
                     })
                     .await?;
                     let mut active = acquire_session(&mut *self).await?;
-                    let mut txn = active.transaction().await?;
+                    let mut txn = active.as_transaction().await?;
                     if op == EntryOperation::Replace {
                         perform_remove(&mut txn, kind, &enc_category, &enc_name, false).await?;
                     }
@@ -395,9 +395,26 @@ impl QueryBackend for DbSession<'static, Sqlite> {
     }
 }
 
-async fn acquire_key<'q>(
-    session: &mut DbSession<'q, Sqlite>,
-) -> Result<(ProfileId, Arc<StoreKey>)> {
+impl ExtDatabase for Sqlite {
+    fn start_transaction(
+        conn: &mut PoolConnection<Self>,
+        nested: bool,
+    ) -> BoxFuture<std::result::Result<(), SqlxError>> {
+        // FIXME - this is a horrible workaround because there is currently
+        // no good way to start an immediate transaction with sqlx. Without this
+        // adjustment, updates will run into 'database is locked' errors.
+        Box::pin(async move {
+            <Sqlite as Database>::TransactionManager::begin(&mut *conn).await?;
+            if !nested {
+                sqlx::query("ROLLBACK").execute(&mut *conn).await?;
+                sqlx::query("BEGIN IMMEDIATE").execute(conn).await?;
+            }
+            Ok(())
+        })
+    }
+}
+
+async fn acquire_key(session: &mut DbSession<Sqlite>) -> Result<(ProfileId, Arc<StoreKey>)> {
     if let Some(ret) = session.profile_and_key() {
         Ok(ret)
     } else {
@@ -406,9 +423,9 @@ async fn acquire_key<'q>(
     }
 }
 
-async fn acquire_session<'q, 's>(
-    session: &'q mut DbSession<'s, Sqlite>,
-) -> Result<DbSessionActive<'q, 's, Sqlite>> {
+async fn acquire_session<'q>(
+    session: &'q mut DbSession<Sqlite>,
+) -> Result<DbSessionActive<'q, Sqlite>> {
     session.make_active(&resolve_profile_key).await
 }
 
@@ -435,8 +452,8 @@ async fn resolve_profile_key(
     }
 }
 
-async fn perform_insert<'q, 's>(
-    active: &mut DbSessionActive<'q, 's, Sqlite>,
+async fn perform_insert<'q>(
+    active: &mut DbSessionActive<'q, Sqlite>,
     kind: EntryKind,
     enc_category: &[u8],
     enc_name: &[u8],
@@ -472,8 +489,8 @@ async fn perform_insert<'q, 's>(
     Ok(())
 }
 
-async fn perform_remove<'q, 's>(
-    active: &mut DbSessionActive<'q, 's, Sqlite>,
+async fn perform_remove<'q>(
+    active: &mut DbSessionActive<'q, Sqlite>,
     kind: EntryKind,
     enc_category: &[u8],
     enc_name: &[u8],
@@ -494,8 +511,8 @@ async fn perform_remove<'q, 's>(
     }
 }
 
-async fn perform_scan<'q, 's>(
-    mut active: DbSessionRef<'q, 's, Sqlite>,
+async fn perform_scan<'q>(
+    mut active: DbSessionRef<'q, Sqlite>,
     kind: EntryKind,
     category: String,
     tag_filter: Option<TagFilter>,

@@ -15,7 +15,7 @@ use sqlx::{
 use super::db_utils::{
     decode_tags, encode_store_key, encode_tag_filter, expiry_timestamp, extend_query,
     random_profile_name, replace_arg_placeholders, DbSession, DbSessionActive, DbSessionRef,
-    QueryParams, QueryPrepare, PAGE_SIZE,
+    ExtDatabase, QueryParams, QueryPrepare, PAGE_SIZE,
 };
 use super::error::Result;
 use super::future::{unblock, unblock_scoped, BoxFuture};
@@ -90,7 +90,7 @@ impl PostgresStore {
 }
 
 impl Backend for PostgresStore {
-    type Session = DbSession<'static, Postgres>;
+    type Session = DbSession<Postgres>;
 
     fn create_profile(&self, name: Option<String>) -> BoxFuture<Result<String>> {
         let name = name.unwrap_or_else(random_profile_name);
@@ -231,7 +231,7 @@ impl Debug for PostgresStore {
     }
 }
 
-impl QueryBackend for DbSession<'static, Postgres> {
+impl QueryBackend for DbSession<Postgres> {
     fn count<'q>(
         &'q mut self,
         kind: EntryKind,
@@ -395,7 +395,7 @@ impl QueryBackend for DbSession<'static, Postgres> {
                     })
                     .await?;
                     let mut active = acquire_session(&mut *self).await?;
-                    let mut txn = active.transaction().await?;
+                    let mut txn = active.as_transaction().await?;
                     perform_insert(
                         &mut txn,
                         kind,
@@ -421,7 +421,7 @@ impl QueryBackend for DbSession<'static, Postgres> {
                     })
                     .await?;
                     let mut active = acquire_session(&mut *self).await?;
-                    let mut txn = active.transaction().await?;
+                    let mut txn = active.as_transaction().await?;
                     perform_remove(&mut txn, kind, &enc_category, &enc_name, false).await?;
                     perform_insert(
                         &mut txn,
@@ -457,6 +457,8 @@ impl QueryBackend for DbSession<'static, Postgres> {
     }
 }
 
+impl ExtDatabase for Postgres {}
+
 impl QueryPrepare for PostgresStore {
     type DB = Postgres;
 
@@ -484,9 +486,7 @@ impl QueryPrepare for PostgresStore {
     }
 }
 
-async fn acquire_key<'q>(
-    session: &mut DbSession<'q, Postgres>,
-) -> Result<(ProfileId, Arc<StoreKey>)> {
+async fn acquire_key(session: &mut DbSession<Postgres>) -> Result<(ProfileId, Arc<StoreKey>)> {
     if let Some(ret) = session.profile_and_key() {
         Ok(ret)
     } else {
@@ -495,9 +495,9 @@ async fn acquire_key<'q>(
     }
 }
 
-async fn acquire_session<'q, 's>(
-    session: &'q mut DbSession<'s, Postgres>,
-) -> Result<DbSessionActive<'q, 's, Postgres>> {
+async fn acquire_session<'q>(
+    session: &'q mut DbSession<Postgres>,
+) -> Result<DbSessionActive<'q, Postgres>> {
     session.make_active(&resolve_profile_key).await
 }
 
@@ -524,8 +524,8 @@ async fn resolve_profile_key(
     }
 }
 
-async fn perform_insert<'q, 's>(
-    active: &mut DbSessionActive<'q, 's, Postgres>,
+async fn perform_insert<'q>(
+    active: &mut DbSessionActive<'q, Postgres>,
     kind: EntryKind,
     enc_category: &[u8],
     enc_name: &[u8],
@@ -558,8 +558,8 @@ async fn perform_insert<'q, 's>(
     Ok(())
 }
 
-async fn perform_remove<'q, 's>(
-    active: &mut DbSessionActive<'q, 's, Postgres>,
+async fn perform_remove<'q>(
+    active: &mut DbSessionActive<'q, Postgres>,
     kind: EntryKind,
     enc_category: &[u8],
     enc_name: &[u8],
@@ -580,8 +580,8 @@ async fn perform_remove<'q, 's>(
     }
 }
 
-async fn perform_scan<'q, 's>(
-    mut active: DbSessionRef<'q, 's, Postgres>,
+async fn perform_scan<'q>(
+    mut active: DbSessionRef<'q, Postgres>,
     kind: EntryKind,
     category: String,
     tag_filter: Option<TagFilter>,
