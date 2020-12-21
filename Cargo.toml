@@ -67,12 +67,10 @@ default-features = false
 features = ["ed25519", "pack", "serde_support", "wql"]
 
 [dependencies.sqlx]
-version = "0.4.1"
+version = "0.4.2"
 default-features = false
 features = ["chrono", "runtime-async-std-rustls"]
 optional = true
-git = "https://github.com/andrewwhitehead/sqlx"
-branch = "pool-release-dec-size"
 
 # [target.'cfg(target_os = "macos")'.dependencies]
 # keychain-services = { path = "../keychain-services.rs" }
