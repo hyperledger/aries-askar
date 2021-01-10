@@ -6,16 +6,17 @@ use sqlx::{
     database::HasArguments, pool::PoolConnection, Arguments, Database, Encode, Error as SqlxError,
     IntoArguments, Pool, TransactionManager, Type,
 };
-use zeroize::Zeroize;
+
+use crate::EntryTag;
 
 use super::error::Result;
-use super::future::{unblock, BoxFuture};
+use super::future::BoxFuture;
 use super::keys::{
     store::StoreKey,
     wrap::{WrapKey, WrapKeyMethod},
-    KeyCache, PassKey,
+    EntryEncryptor, KeyCache, PassKey,
 };
-use super::types::{EncEntryTag, Expiry, ProfileId, TagFilter};
+use super::types::{EncEntryTag, Entry, Expiry, ProfileId, TagFilter};
 use super::wql::{
     sql::TagSqlEncoder,
     tags::{tag_query, TagQueryEncoder},
@@ -258,6 +259,7 @@ impl<'q, DB: ExtDatabase> DbSessionActive<'q, DB> {
         Ok(())
     }
 
+    #[allow(unused)]
     #[inline]
     pub fn is_transaction(&self) -> bool {
         self.txn_depth > 0
@@ -325,6 +327,12 @@ where
     fn call_once(self, conn: &'a mut DbSessionActive<'q, DB>) -> Self::Fut {
         self(conn)
     }
+}
+
+pub struct EncScanEntry {
+    pub name: Vec<u8>,
+    pub value: Vec<u8>,
+    pub tags: Option<Vec<u8>>,
 }
 
 pub struct QueryParams<'q, DB: Database> {
@@ -441,7 +449,7 @@ pub fn replace_arg_placeholders<Q: QueryPrepare + ?Sized>(
     buffer
 }
 
-pub(crate) fn decode_tags(tags: &[u8]) -> std::result::Result<Vec<EncEntryTag>, ()> {
+pub(crate) fn decode_tags(tags: Vec<u8>) -> std::result::Result<Vec<EncEntryTag>, ()> {
     let mut idx = 0;
     let mut plaintext;
     let mut name_start;
@@ -484,35 +492,88 @@ pub(crate) fn decode_tags(tags: &[u8]) -> std::result::Result<Vec<EncEntryTag>, 
     Ok(enc_tags)
 }
 
+pub fn decrypt_scan_batch(
+    category: String,
+    enc_rows: Vec<EncScanEntry>,
+    key: &StoreKey,
+) -> Result<Vec<Entry>> {
+    let mut batch = Vec::with_capacity(enc_rows.len());
+    for enc_entry in enc_rows {
+        batch.push(decrypt_scan_entry(category.clone(), enc_entry, key)?);
+    }
+    Ok(batch)
+}
+
+pub fn decrypt_scan_entry(
+    category: String,
+    enc_entry: EncScanEntry,
+    key: &StoreKey,
+) -> Result<Entry> {
+    let name = key.decrypt_entry_name(enc_entry.name)?;
+    let value = key.decrypt_entry_value(enc_entry.value)?;
+    let tags = if let Some(enc_tags) = enc_entry.tags {
+        Some(key.decrypt_entry_tags(
+            decode_tags(enc_tags).map_err(|_| err_msg!(Unexpected, "Error decoding tags"))?,
+        )?)
+    } else {
+        None
+    };
+    Ok(Entry::new(category.to_string(), name, value, tags))
+}
+
 pub fn expiry_timestamp(expire_ms: i64) -> Result<Expiry> {
     chrono::Utc::now()
         .checked_add_signed(chrono::Duration::milliseconds(expire_ms))
         .ok_or_else(|| err_msg!(Unexpected, "Invalid expiry timestamp"))
 }
 
-pub async fn encode_tag_filter<Q: QueryPrepare>(
+pub fn encode_tag_filter<Q: QueryPrepare>(
     tag_filter: Option<TagFilter>,
-    key: Arc<StoreKey>,
+    key: &StoreKey,
     offset: usize,
 ) -> Result<Option<(String, Vec<Vec<u8>>)>> {
     if let Some(tag_filter) = tag_filter {
-        unblock(move || {
-            let tag_query = tag_query(tag_filter.query)?;
-            let mut enc = TagSqlEncoder::new(
-                |name| Ok(key.encrypt_tag_name(name)?),
-                |value| Ok(key.encrypt_tag_value(value)?),
-            );
-            if let Some(filter) = enc.encode_query(&tag_query)? {
-                let filter = replace_arg_placeholders::<Q>(&filter, (offset as i64) + 1);
-                Ok(Some((filter, enc.arguments)))
-            } else {
-                Ok(None)
-            }
-        })
-        .await
+        let tag_query = tag_query(tag_filter.query)?;
+        let mut enc = TagSqlEncoder::new(
+            |name| Ok(key.encrypt_tag_name(StoreKey::prepare_input(name.as_bytes()))?),
+            |value| Ok(key.encrypt_tag_value(StoreKey::prepare_input(value.as_bytes()))?),
+        );
+        if let Some(filter) = enc.encode_query(&tag_query)? {
+            let filter = replace_arg_placeholders::<Q>(&filter, (offset as i64) + 1);
+            Ok(Some((filter, enc.arguments)))
+        } else {
+            Ok(None)
+        }
     } else {
         Ok(None)
     }
+}
+
+// convert a slice of tags into a Vec, when ensuring there is
+// adequate space in the allocations to reuse them during encryption
+pub fn prepare_tags(tags: &[EntryTag]) -> Vec<EntryTag> {
+    let mut result = Vec::with_capacity(tags.len());
+    for tag in tags {
+        result.push(match tag {
+            EntryTag::Plaintext(name, value) => EntryTag::Plaintext(
+                unsafe {
+                    String::from_utf8_unchecked(StoreKey::prepare_input(name.as_bytes()).into_vec())
+                },
+                value.clone(),
+            ),
+            EntryTag::Encrypted(name, value) => EntryTag::Encrypted(
+                unsafe {
+                    String::from_utf8_unchecked(StoreKey::prepare_input(name.as_bytes()).into_vec())
+                },
+                unsafe {
+                    String::from_utf8_unchecked(
+                        StoreKey::prepare_input(value.as_bytes()).into_vec(),
+                    )
+                },
+            ),
+        });
+    }
+    result
 }
 
 pub fn extend_query<'q, Q: QueryPrepare>(
@@ -549,9 +610,8 @@ pub fn init_keys<'a>(
 }
 
 pub fn encode_store_key(store_key: &StoreKey, wrap_key: &WrapKey) -> Result<Vec<u8>> {
-    let mut enc_store_key = store_key.to_string()?;
-    let result = wrap_key.wrap_data(enc_store_key.as_bytes())?;
-    enc_store_key.zeroize();
+    let enc_store_key = store_key.to_string()?;
+    let result = wrap_key.wrap_data(enc_store_key.into())?;
     Ok(result)
 }
 

@@ -1,8 +1,9 @@
 use std::fmt::{self, Debug, Formatter};
+use std::mem;
 use std::ops::Deref;
-use std::ptr;
 use std::str::FromStr;
 
+use aead::Buffer;
 use serde::{
     de::{Error as SerdeError, MapAccess, SeqAccess, Visitor},
     ser::SerializeMap,
@@ -312,9 +313,14 @@ impl Debug for MaybeStr<'_> {
 pub struct SecretBytes(Vec<u8>);
 
 impl SecretBytes {
-    pub(crate) unsafe fn unwrap(mut self) -> Vec<u8> {
+    pub(crate) fn as_buffer(&mut self) -> SecretBytesMut<'_> {
+        SecretBytesMut(&mut self.0)
+    }
+
+    pub(crate) fn into_vec(mut self) -> Vec<u8> {
         let mut v = vec![]; // note: no heap allocation for empty vec
-        ptr::swap(&mut v, &mut self.0);
+        mem::swap(&mut v, &mut self.0);
+        mem::forget(self);
         v
     }
 }
@@ -363,6 +369,12 @@ impl From<&str> for SecretBytes {
     }
 }
 
+impl From<String> for SecretBytes {
+    fn from(inner: String) -> Self {
+        Self(inner.into_bytes())
+    }
+}
+
 impl From<Vec<u8>> for SecretBytes {
     fn from(inner: Vec<u8>) -> Self {
         Self(inner)
@@ -378,6 +390,47 @@ impl PartialEq<&[u8]> for SecretBytes {
 impl PartialEq<Vec<u8>> for SecretBytes {
     fn eq(&self, other: &Vec<u8>) -> bool {
         self.0.eq(other)
+    }
+}
+
+pub(crate) struct SecretBytesMut<'m>(&'m mut Vec<u8>);
+
+impl SecretBytesMut<'_> {
+    /// Obtain a large-enough SecretBytes without creating unsafe copies of
+    /// the contained data
+    pub fn reserve_extra(&mut self, extra: usize) {
+        let len = self.0.len();
+        if extra + len > self.0.capacity() {
+            // allocate a new buffer and copy the secure data over
+            let mut buf = Vec::with_capacity(extra + len);
+            buf.extend_from_slice(&self.0[..]);
+            mem::swap(&mut buf, &mut self.0);
+            buf.zeroize()
+        }
+    }
+}
+
+impl Buffer for SecretBytesMut<'_> {
+    fn extend_from_slice(&mut self, other: &[u8]) -> Result<(), aead::Error> {
+        self.reserve_extra(other.len());
+        self.0.extend_from_slice(other);
+        Ok(())
+    }
+
+    fn truncate(&mut self, len: usize) {
+        self.0.truncate(len);
+    }
+}
+
+impl AsRef<[u8]> for SecretBytesMut<'_> {
+    fn as_ref(&self) -> &[u8] {
+        self.0.as_slice()
+    }
+}
+
+impl AsMut<[u8]> for SecretBytesMut<'_> {
+    fn as_mut(&mut self) -> &mut [u8] {
+        self.0.as_mut_slice()
     }
 }
 

@@ -122,6 +122,7 @@ impl<B: Backend> Store<B> {
     }
 
     #[cfg(test)]
+    #[allow(unused)]
     pub(crate) fn inner(&self) -> &B {
         &self.0
     }
@@ -625,14 +626,13 @@ impl<'s, T> Scan<'s, T> {
 
     pub async fn fetch_next(&mut self) -> Result<Option<Vec<T>>> {
         if let Some(mut s) = self.stream.take() {
-            match s.next().await {
-                Some(Ok(val)) => {
+            match s.try_next().await? {
+                Some(val) => {
                     if val.len() == self.page_size {
                         self.stream.replace(s);
                     }
                     Ok(Some(val))
                 }
-                Some(Err(err)) => Err(err),
                 None => Ok(None),
             }
         } else {

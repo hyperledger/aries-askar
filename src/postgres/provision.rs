@@ -8,7 +8,7 @@ use sqlx::{
 
 use crate::db_utils::{init_keys, random_profile_name};
 use crate::error::Result;
-use crate::future::{unblock_scoped, BoxFuture};
+use crate::future::{unblock, BoxFuture};
 use crate::keys::{
     wrap::{WrapKeyMethod, WrapKeyReference},
     KeyCache, PassKey,
@@ -192,8 +192,11 @@ impl PostgresStoreOptions {
             // no 'config' table, assume empty database
         }
 
-        let (store_key, enc_store_key, wrap_key, wrap_key_ref) =
-            unblock_scoped(|| init_keys(method, pass_key)).await?;
+        let (store_key, enc_store_key, wrap_key, wrap_key_ref) = unblock({
+            let pass_key = pass_key.into_owned();
+            move || init_keys(method, pass_key)
+        })
+        .await?;
         let default_profile = profile
             .map(str::to_string)
             .unwrap_or_else(random_profile_name);
@@ -417,7 +420,11 @@ pub(crate) async fn open_db(
                 return Err(err_msg!(Input, "Store key wrap method mismatch"));
             }
         }
-        unblock_scoped(|| wrap_ref.resolve(pass_key)).await?
+        unblock({
+            let pass_key = pass_key.into_owned();
+            move || wrap_ref.resolve(pass_key)
+        })
+        .await?
     } else {
         return Err(err_msg!(Unsupported, "Store wrap key not found"));
     };

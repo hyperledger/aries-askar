@@ -3,7 +3,10 @@ use std::fmt::{self, Debug, Formatter};
 use std::sync::Arc;
 
 use async_stream::try_stream;
-use futures_lite::stream::StreamExt;
+use futures_lite::{
+    pin,
+    stream::{Stream, StreamExt},
+};
 
 use sqlx::{
     pool::PoolConnection,
@@ -12,12 +15,12 @@ use sqlx::{
 };
 
 use super::db_utils::{
-    decode_tags, encode_store_key, encode_tag_filter, expiry_timestamp, extend_query,
-    random_profile_name, DbSession, DbSessionActive, DbSessionRef, ExtDatabase, QueryParams,
-    QueryPrepare, PAGE_SIZE,
+    decode_tags, decrypt_scan_batch, encode_store_key, encode_tag_filter, expiry_timestamp,
+    extend_query, prepare_tags, random_profile_name, DbSession, DbSessionActive, DbSessionRef,
+    EncScanEntry, ExtDatabase, QueryParams, QueryPrepare, PAGE_SIZE,
 };
 use super::error::Result;
-use super::future::{unblock, unblock_scoped, BoxFuture};
+use super::future::{unblock, BoxFuture};
 use super::keys::{store::StoreKey, wrap::WrapKeyMethod, EntryEncryptor, KeyCache, PassKey};
 use super::store::{Backend, QueryBackend, Scan};
 use super::types::{EncEntryTag, Entry, EntryKind, EntryOperation, EntryTag, ProfileId, TagFilter};
@@ -134,6 +137,7 @@ impl Backend for SqliteStore {
         let pass_key = pass_key.into_owned();
         Box::pin(async move {
             let (wrap_key, wrap_key_ref) = unblock(move || method.resolve(pass_key)).await?;
+            let wrap_key = Arc::new(wrap_key);
             let mut txn = self.conn_pool.begin().await?;
             let mut rows = sqlx::query("SELECT id, store_key FROM profiles").fetch(&mut txn);
             let mut upd_keys = BTreeMap::<ProfileId, Vec<u8>>::new();
@@ -142,7 +146,11 @@ impl Backend for SqliteStore {
                 let pid = row.try_get(0)?;
                 let enc_key = row.try_get(1)?;
                 let store_key = self.key_cache.load_key(enc_key).await?;
-                let upd_key = unblock_scoped(|| encode_store_key(&store_key, &wrap_key)).await?;
+                let upd_key = unblock({
+                    let wrap_key = wrap_key.clone();
+                    move || encode_store_key(&store_key, &wrap_key)
+                })
+                .await?;
                 upd_keys.insert(pid, upd_key);
             }
             drop(rows);
@@ -184,15 +192,24 @@ impl Backend for SqliteStore {
     ) -> BoxFuture<Result<Scan<'static, Entry>>> {
         Box::pin(async move {
             let session = self.session(profile, false)?;
-            perform_scan(
-                session.owned_ref(),
+            let mut active = session.owned_ref();
+            let (profile_id, key) = acquire_key(&mut *active).await?;
+            let scan = perform_scan(
+                active,
+                profile_id,
+                key.clone(),
                 kind,
-                category,
+                category.clone(),
                 tag_filter,
                 offset,
                 limit,
-            )
-            .await
+            );
+            let stream = scan.then(move |enc_rows| {
+                let category = category.clone();
+                let key = key.clone();
+                unblock(move || decrypt_scan_batch(category, enc_rows?, &key))
+            });
+            Ok(Scan::new(stream, PAGE_SIZE))
         })
     }
 
@@ -220,15 +237,24 @@ impl QueryBackend for DbSession<Sqlite> {
         category: &'q str,
         tag_filter: Option<TagFilter>,
     ) -> BoxFuture<'q, Result<i64>> {
+        let category = StoreKey::prepare_input(category.as_bytes());
+
         Box::pin(async move {
             let (profile_id, key) = acquire_key(&mut *self).await?;
-            let enc_category = unblock_scoped(|| key.encrypt_entry_category(category)).await?;
             let mut params = QueryParams::new();
             params.push(profile_id);
             params.push(kind as i16);
+            let (enc_category, tag_filter) = unblock({
+                let params_len = params.len() + 1; // plus category
+                move || {
+                    Result::Ok((
+                        key.encrypt_entry_category(category)?,
+                        encode_tag_filter::<SqliteStore>(tag_filter, &key, params_len)?,
+                    ))
+                }
+            })
+            .await?;
             params.push(enc_category);
-            let tag_filter =
-                encode_tag_filter::<SqliteStore>(tag_filter, key, params.len()).await?;
             let query =
                 extend_query::<SqliteStore>(COUNT_QUERY, &mut params, tag_filter, None, None)?;
             let mut active = acquire_session(&mut *self).await?;
@@ -251,27 +277,34 @@ impl QueryBackend for DbSession<Sqlite> {
 
         Box::pin(async move {
             let (profile_id, key) = acquire_key(&mut *self).await?;
-            let (enc_category, enc_name) = unblock_scoped(|| {
-                Result::Ok((
-                    key.encrypt_entry_category(&category)?,
-                    key.encrypt_entry_name(&name)?,
-                ))
+            let (enc_category, enc_name) = unblock({
+                let key = key.clone();
+                let category = StoreKey::prepare_input(category.as_bytes());
+                let name = StoreKey::prepare_input(name.as_bytes());
+                    move || {
+                    Result::Ok((
+                        key.encrypt_entry_category(category)?,
+                        key.encrypt_entry_name(name)?,
+                    ))
+                }
             })
             .await?;
             let mut active = acquire_session(&mut *self).await?;
             if let Some(row) = sqlx::query(FETCH_QUERY)
                 .bind(profile_id)
                 .bind(kind as i16)
-                .bind(&enc_category)
-                .bind(&enc_name)
+                .bind(enc_category)
+                .bind(enc_name)
                 .fetch_optional(active.connection_mut())
                 .await?
             {
-                let (value, tags) = unblock_scoped(|| {
-                    let value = key.decrypt_entry_value(row.try_get(1)?)?;
-                    let enc_tags = decode_tags(row.try_get(2)?)
+                let value = row.try_get(1)?;
+                let tags = row.try_get(2)?;
+                let (value, tags) = unblock(move || {
+                    let value = key.decrypt_entry_value(value)?;
+                    let enc_tags = decode_tags(tags)
                         .map_err(|_| err_msg!(Unexpected, "Error decoding entry tags"))?;
-                    let tags = Some(key.decrypt_entry_tags(&enc_tags)?);
+                    let tags = Some(key.decrypt_entry_tags(enc_tags)?);
                     Result::Ok((value, tags))
                 })
                 .await?;
@@ -292,17 +325,28 @@ impl QueryBackend for DbSession<Sqlite> {
     ) -> BoxFuture<'q, Result<Vec<Entry>>> {
         let category = category.to_string();
         Box::pin(async move {
-            let active = self.borrow_mut();
-            let mut scan = perform_scan(active, kind, category, tag_filter, None, limit).await?;
-            let mut results = vec![];
+            let mut active = self.borrow_mut();
+            let (profile_id, key) = acquire_key(&mut *active).await?;
+            let scan = perform_scan(
+                active,
+                profile_id,
+                key.clone(),
+                kind,
+                category.clone(),
+                tag_filter,
+                None,
+                limit,
+            );
+            pin!(scan);
+            let mut enc_rows = vec![];
             loop {
-                if let Some(rows) = scan.fetch_next().await? {
-                    results.extend(rows);
+                if let Some(rows) = scan.try_next().await? {
+                    enc_rows.extend(rows)
                 } else {
                     break;
                 }
             }
-            Ok(results)
+            unblock(move || decrypt_scan_batch(category, enc_rows, &key)).await
         })
     }
 
@@ -312,17 +356,27 @@ impl QueryBackend for DbSession<Sqlite> {
         category: &'q str,
         tag_filter: Option<TagFilter>,
     ) -> BoxFuture<'q, Result<i64>> {
+        let category = StoreKey::prepare_input(category.as_bytes());
+
         Box::pin(async move {
             let (profile_id, key) = acquire_key(&mut *self).await?;
-            let enc_category = unblock_scoped(|| key.encrypt_entry_category(&category)).await?;
             let mut params = QueryParams::new();
             params.push(profile_id);
             params.push(kind as i16);
+            let (enc_category, tag_filter) = unblock({
+                let params_len = params.len() + 1; // plus category
+                move || {
+                    Result::Ok((
+                        key.encrypt_entry_category(category)?,
+                        encode_tag_filter::<SqliteStore>(tag_filter, &key, params_len)?,
+                    ))
+                }
+            })
+            .await?;
             params.push(enc_category);
-            let tag_filter =
-                encode_tag_filter::<SqliteStore>(tag_filter, key, params.len()).await?;
             let query =
                 extend_query::<SqliteStore>(DELETE_ALL_QUERY, &mut params, tag_filter, None, None)?;
+
             let mut active = acquire_session(&mut *self).await?;
             let removed = sqlx::query_with(query.as_str(), params)
                 .execute(active.connection_mut())
@@ -342,16 +396,20 @@ impl QueryBackend for DbSession<Sqlite> {
         tags: Option<&'q [EntryTag]>,
         expiry_ms: Option<i64>,
     ) -> BoxFuture<'q, Result<()>> {
-        Box::pin(async move {
-            let (_, key) = acquire_key(&mut *self).await?;
+        let category = StoreKey::prepare_input(category.as_bytes());
+        let name = StoreKey::prepare_input(name.as_bytes());
 
-            match operation {
-                op @ EntryOperation::Insert | op @ EntryOperation::Replace => {
-                    let (enc_category, enc_name, enc_value, enc_tags) = unblock_scoped(|| {
+        match operation {
+            op @ EntryOperation::Insert | op @ EntryOperation::Replace => {
+                let value = StoreKey::prepare_input(value.unwrap());
+                let tags = tags.map(prepare_tags);
+                Box::pin(async move {
+                    let (_, key) = acquire_key(&mut *self).await?;
+                    let (enc_category, enc_name, enc_value, enc_tags) = unblock(move || {
                         Result::Ok((
-                            key.encrypt_entry_category(&category)?,
-                            key.encrypt_entry_name(&name)?,
-                            key.encrypt_entry_value(value.unwrap())?,
+                            key.encrypt_entry_category(category)?,
+                            key.encrypt_entry_name(name)?,
+                            key.encrypt_entry_value(value)?,
                             tags.map(|t| key.encrypt_entry_tags(t)).transpose()?,
                         ))
                     })
@@ -373,21 +431,22 @@ impl QueryBackend for DbSession<Sqlite> {
                     .await?;
                     txn.commit().await?;
                     Ok(())
-                }
-
-                EntryOperation::Remove => {
-                    let (enc_category, enc_name) = unblock_scoped(|| {
-                        Result::Ok((
-                            key.encrypt_entry_category(&category)?,
-                            key.encrypt_entry_name(&name)?,
-                        ))
-                    })
-                    .await?;
-                    let mut active = acquire_session(&mut *self).await?;
-                    Ok(perform_remove(&mut active, kind, &enc_category, &enc_name, false).await?)
-                }
+                })
             }
-        })
+
+            EntryOperation::Remove => Box::pin(async move {
+                let (_, key) = acquire_key(&mut *self).await?;
+                let (enc_category, enc_name) = unblock(move || {
+                    Result::Ok((
+                        key.encrypt_entry_category(category)?,
+                        key.encrypt_entry_name(name)?,
+                    ))
+                })
+                .await?;
+                let mut active = acquire_session(&mut *self).await?;
+                Ok(perform_remove(&mut active, kind, &enc_category, &enc_name, false).await?)
+            }),
+        }
     }
 
     fn close(self, commit: bool) -> BoxFuture<'static, Result<()>> {
@@ -511,46 +570,42 @@ async fn perform_remove<'q>(
     }
 }
 
-async fn perform_scan<'q>(
+fn perform_scan<'q>(
     mut active: DbSessionRef<'q, Sqlite>,
+    profile_id: ProfileId,
+    key: Arc<StoreKey>,
     kind: EntryKind,
     category: String,
     tag_filter: Option<TagFilter>,
     offset: Option<i64>,
     limit: Option<i64>,
-) -> Result<Scan<'q, Entry>> {
-    let (profile_id, key) = acquire_key(&mut *active).await?;
-    let enc_category = unblock_scoped(|| key.encrypt_entry_category(&category)).await?;
-
-    let scan = try_stream! {
+) -> impl Stream<Item = Result<Vec<EncScanEntry>>> + 'q {
+    try_stream! {
         let mut params = QueryParams::new();
         params.push(profile_id);
         params.push(kind as i16);
+        let (enc_category, tag_filter) = unblock({
+            let key = key.clone();
+            let category = StoreKey::prepare_input(category.as_bytes());
+            let params_len = params.len() + 1; // plus category
+            move || {
+                Result::Ok((
+                    key.encrypt_entry_category(category)?,
+                    encode_tag_filter::<SqliteStore>(tag_filter, &key, params_len)?
+                ))
+            }
+        }).await?;
         params.push(enc_category);
-        let tag_filter = encode_tag_filter::<SqliteStore>(tag_filter, key.clone(), params.len()).await?;
         let query = extend_query::<SqliteStore>(SCAN_QUERY, &mut params, tag_filter, offset, limit)?;
-        let mut batch = Vec::<Entry>::with_capacity(PAGE_SIZE);
+
+        let mut batch = Vec::with_capacity(PAGE_SIZE);
 
         let mut acquired = acquire_session(&mut *active).await?;
         let mut rows = sqlx::query_with(query.as_str(), params).fetch(acquired.connection_mut());
-        while let Some(row) = rows.next().await {
-            let row = row?;
-            let (name, value, tags) = unblock_scoped(|| {
-                let name = key.decrypt_entry_name(row.try_get(1)?)?;
-                let value = key.decrypt_entry_value(row.try_get(2)?)?;
-                let enc_tags = decode_tags(row.try_get(3)?)
-                    .map_err(|_| err_msg!(Unexpected, "Error decoding tags"))?;
-                let tags = Some(key.decrypt_entry_tags(&enc_tags)?);
-                Result::Ok((name, value, tags))
-            })
-            .await?;
-            batch.push(Entry::new(
-                category.clone(),
-                name,
-                value,
-                tags
-            ));
-
+        while let Some(row) = rows.try_next().await? {
+            batch.push(EncScanEntry {
+                name: row.try_get(1)?, value: row.try_get(2)?, tags: row.try_get(3)?
+            });
             if batch.len() == PAGE_SIZE {
                 yield batch.split_off(0);
             }
@@ -562,8 +617,7 @@ async fn perform_scan<'q>(
         if !batch.is_empty() {
             yield batch;
         }
-    };
-    Ok(Scan::new(scan, PAGE_SIZE))
+    }
 }
 
 #[cfg(test)]

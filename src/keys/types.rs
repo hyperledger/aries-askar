@@ -223,7 +223,7 @@ impl PartialEq for KeyEntry {
 #[derive(Clone)]
 pub struct PassKey<'a>(Option<Cow<'a, str>>);
 
-impl<'a> PassKey<'a> {
+impl PassKey<'_> {
     pub fn as_ref(&self) -> PassKey<'_> {
         PassKey(Some(Cow::Borrowed(&**self)))
     }
@@ -243,7 +243,7 @@ impl<'a> PassKey<'a> {
     }
 }
 
-impl<'a> Debug for PassKey<'a> {
+impl Debug for PassKey<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         if cfg!(test) {
             f.debug_tuple("PassKey").field(&*self).finish()
@@ -253,13 +253,13 @@ impl<'a> Debug for PassKey<'a> {
     }
 }
 
-impl<'a> Default for PassKey<'a> {
+impl Default for PassKey<'_> {
     fn default() -> Self {
         Self(None)
     }
 }
 
-impl<'a> Deref for PassKey<'a> {
+impl Deref for PassKey<'_> {
     type Target = str;
 
     fn deref(&self) -> &str {
@@ -270,7 +270,7 @@ impl<'a> Deref for PassKey<'a> {
     }
 }
 
-impl<'a> Drop for PassKey<'a> {
+impl Drop for PassKey<'_> {
     fn drop(&mut self) {
         self.zeroize();
     }
@@ -282,7 +282,7 @@ impl<'a> From<&'a str> for PassKey<'a> {
     }
 }
 
-impl<'a> From<String> for PassKey<'a> {
+impl From<String> for PassKey<'_> {
     fn from(inner: String) -> Self {
         Self(Some(Cow::Owned(inner)))
     }
@@ -300,9 +300,9 @@ impl<'a, 'b> PartialEq<PassKey<'b>> for PassKey<'a> {
     }
 }
 
-impl<'a> Eq for PassKey<'a> {}
+impl Eq for PassKey<'_> {}
 
-impl<'a> Zeroize for PassKey<'a> {
+impl Zeroize for PassKey<'_> {
     fn zeroize(&mut self) {
         match self.0.take() {
             Some(Cow::Owned(mut s)) => {

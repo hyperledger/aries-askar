@@ -236,7 +236,7 @@ impl FfiEntry {
         } = entry;
         let category = CString::new(category).unwrap().into_raw();
         let name = CString::new(name).unwrap().into_raw();
-        let value = ByteBuffer::from_vec(unsafe { value.unwrap() });
+        let value = ByteBuffer::from_vec(value.into_vec());
         let tags = match tags {
             Some(tags) => {
                 let tags = serde_json::to_vec(&EntryTagSet::new(tags)).unwrap();
