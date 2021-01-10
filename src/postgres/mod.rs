@@ -95,7 +95,7 @@ impl PostgresStore {
 impl Backend for PostgresStore {
     type Session = DbSession<Postgres>;
 
-    fn create_profile(&self, name: Option<String>) -> BoxFuture<Result<String>> {
+    fn create_profile(&self, name: Option<String>) -> BoxFuture<'_, Result<String>> {
         let name = name.unwrap_or_else(random_profile_name);
         Box::pin(async move {
             let key = StoreKey::new()?;
@@ -124,7 +124,7 @@ impl Backend for PostgresStore {
         self.default_profile.as_str()
     }
 
-    fn remove_profile(&self, name: String) -> BoxFuture<Result<bool>> {
+    fn remove_profile(&self, name: String) -> BoxFuture<'_, Result<bool>> {
         Box::pin(async move {
             let mut conn = self.conn_pool.acquire().await?;
             Ok(sqlx::query("DELETE FROM profiles WHERE name=$1")
@@ -140,7 +140,7 @@ impl Backend for PostgresStore {
         &mut self,
         method: WrapKeyMethod,
         pass_key: PassKey<'_>,
-    ) -> BoxFuture<Result<()>> {
+    ) -> BoxFuture<'_, Result<()>> {
         let pass_key = pass_key.into_owned();
         Box::pin(async move {
             let (wrap_key, wrap_key_ref) = unblock(move || method.resolve(pass_key)).await?;
@@ -196,7 +196,7 @@ impl Backend for PostgresStore {
         tag_filter: Option<TagFilter>,
         offset: Option<i64>,
         limit: Option<i64>,
-    ) -> BoxFuture<Result<Scan<'static, Entry>>> {
+    ) -> BoxFuture<'_, Result<Scan<'static, Entry>>> {
         Box::pin(async move {
             let session = self.session(profile, false)?;
             let mut active = session.owned_ref();
@@ -230,7 +230,7 @@ impl Backend for PostgresStore {
         ))
     }
 
-    fn close(&self) -> BoxFuture<Result<()>> {
+    fn close(&self) -> BoxFuture<'_, Result<()>> {
         Box::pin(async move {
             self.conn_pool.close().await;
             Ok(())
@@ -289,7 +289,7 @@ impl QueryBackend for DbSession<Postgres> {
         category: &str,
         name: &str,
         for_update: bool,
-    ) -> BoxFuture<Result<Option<Entry>>> {
+    ) -> BoxFuture<'_, Result<Option<Entry>>> {
         let category = category.to_string();
         let name = name.to_string();
 

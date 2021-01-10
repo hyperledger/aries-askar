@@ -60,7 +60,7 @@ pub mod as_str {
     {
         type Value = T;
 
-        fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
             formatter.write_str("a valid string value")
         }
 
@@ -175,7 +175,7 @@ pub mod as_base58 {
             impl<'de> Visitor<'de> for FromBase58Visitor {
                 type Value = Vec<u8>;
 
-                fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
                     formatter.write_str("a valid base58 string")
                 }
 
@@ -219,7 +219,7 @@ pub mod as_base58 {
             {
                 type Value = Option<T>;
 
-                fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
                     formatter.write_str("an optional base58 string")
                 }
 

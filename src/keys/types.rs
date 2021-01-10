@@ -16,13 +16,16 @@ use crate::types::{sorted_tags, EntryTag, SecretBytes};
 /// Supported key algorithms
 #[derive(Clone, Debug, PartialEq, Eq, Zeroize)]
 pub enum KeyAlg {
+    /// curve25519-based signature scheme
     ED25519,
+    /// Unrecognized algorithm
     Other(String),
 }
 
 serde_as_str_impl!(KeyAlg);
 
 impl KeyAlg {
+    /// Get a reference to a string representing the `KeyAlg`
     pub fn as_str(&self) -> &str {
         match self {
             Self::ED25519 => "ed25519",
@@ -57,12 +60,16 @@ impl Display for KeyAlg {
 /// Categories of keys supported by the default KMS
 #[derive(Clone, Debug, PartialEq, Eq, Zeroize)]
 pub enum KeyCategory {
+    /// A public key
     PublicKey,
+    /// A combination of a public and private key
     KeyPair,
+    /// An unrecognized key category
     Other(String),
 }
 
 impl KeyCategory {
+    /// Get a reference to a string representing the `KeyCategory`
     pub fn as_str(&self) -> &str {
         match self {
             Self::PublicKey => "public",
@@ -71,6 +78,7 @@ impl KeyCategory {
         }
     }
 
+    /// Convert the `KeyCategory` into an owned string
     pub fn into_string(self) -> String {
         match self {
             Self::Other(other) => other,
@@ -130,12 +138,12 @@ pub struct KeyParams {
 }
 
 impl KeyParams {
-    pub fn to_vec(&self) -> Result<Vec<u8>, Error> {
+    pub(crate) fn to_vec(&self) -> Result<Vec<u8>, Error> {
         serde_json::to_vec(self)
             .map_err(|e| err_msg!(Unexpected, "Error serializing key params: {}", e))
     }
 
-    pub fn from_slice(params: &[u8]) -> Result<KeyParams, Error> {
+    pub(crate) fn from_slice(params: &[u8]) -> Result<KeyParams, Error> {
         let result = serde_json::from_slice(params)
             .map_err(|e| err_msg!(Unexpected, "Error deserializing key params: {}", e));
         result
@@ -205,7 +213,7 @@ impl KeyEntry {
         }
     }
 
-    pub fn sorted_tags(&self) -> Option<Vec<&EntryTag>> {
+    pub(crate) fn sorted_tags(&self) -> Option<Vec<&EntryTag>> {
         self.tags.as_ref().and_then(sorted_tags)
     }
 }

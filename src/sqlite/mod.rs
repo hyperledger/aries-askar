@@ -91,7 +91,7 @@ impl QueryPrepare for SqliteStore {
 impl Backend for SqliteStore {
     type Session = DbSession<Sqlite>;
 
-    fn create_profile(&self, name: Option<String>) -> BoxFuture<Result<String>> {
+    fn create_profile(&self, name: Option<String>) -> BoxFuture<'_, Result<String>> {
         let name = name.unwrap_or_else(random_profile_name);
         Box::pin(async move {
             let key = StoreKey::new()?;
@@ -117,7 +117,7 @@ impl Backend for SqliteStore {
         self.default_profile.as_str()
     }
 
-    fn remove_profile(&self, name: String) -> BoxFuture<Result<bool>> {
+    fn remove_profile(&self, name: String) -> BoxFuture<'_, Result<bool>> {
         Box::pin(async move {
             let mut conn = self.conn_pool.acquire().await?;
             Ok(sqlx::query("DELETE FROM profiles WHERE name=?")
@@ -133,7 +133,7 @@ impl Backend for SqliteStore {
         &mut self,
         method: WrapKeyMethod,
         pass_key: PassKey<'_>,
-    ) -> BoxFuture<Result<()>> {
+    ) -> BoxFuture<'_, Result<()>> {
         let pass_key = pass_key.into_owned();
         Box::pin(async move {
             let (wrap_key, wrap_key_ref) = unblock(move || method.resolve(pass_key)).await?;
@@ -189,7 +189,7 @@ impl Backend for SqliteStore {
         tag_filter: Option<TagFilter>,
         offset: Option<i64>,
         limit: Option<i64>,
-    ) -> BoxFuture<Result<Scan<'static, Entry>>> {
+    ) -> BoxFuture<'_, Result<Scan<'static, Entry>>> {
         Box::pin(async move {
             let session = self.session(profile, false)?;
             let mut active = session.owned_ref();
@@ -222,7 +222,7 @@ impl Backend for SqliteStore {
         ))
     }
 
-    fn close(&self) -> BoxFuture<Result<()>> {
+    fn close(&self) -> BoxFuture<'_, Result<()>> {
         Box::pin(async move {
             self.conn_pool.close().await;
             Ok(())
@@ -271,7 +271,7 @@ impl QueryBackend for DbSession<Sqlite> {
         category: &str,
         name: &str,
         _for_update: bool,
-    ) -> BoxFuture<Result<Option<Entry>>> {
+    ) -> BoxFuture<'_, Result<Option<Entry>>> {
         let category = category.to_string();
         let name = name.to_string();
 
@@ -458,7 +458,7 @@ impl ExtDatabase for Sqlite {
     fn start_transaction(
         conn: &mut PoolConnection<Self>,
         nested: bool,
-    ) -> BoxFuture<std::result::Result<(), SqlxError>> {
+    ) -> BoxFuture<'_, std::result::Result<(), SqlxError>> {
         // FIXME - this is a horrible workaround because there is currently
         // no good way to start an immediate transaction with sqlx. Without this
         // adjustment, updates will run into 'database is locked' errors.

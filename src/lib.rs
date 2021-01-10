@@ -1,4 +1,7 @@
+//! Aries-Askar
+
 #![cfg_attr(docsrs, feature(doc_cfg))]
+#![warn(missing_docs, missing_debug_implementations, rust_2018_idioms)]
 
 #[macro_use]
 mod error;
@@ -7,8 +10,6 @@ pub use self::error::{Error, ErrorKind};
 #[macro_use]
 mod macros;
 
-#[cfg(any(test, feature = "logger"))]
-extern crate env_logger;
 #[cfg(any(test, feature = "log"))]
 #[macro_use]
 extern crate log;

@@ -24,6 +24,7 @@ use super::wql::{
 
 pub const PAGE_SIZE: usize = 32;
 
+#[derive(Debug)]
 pub(crate) enum DbSessionState<DB: ExtDatabase> {
     Active { conn: PoolConnection<DB> },
     Pending { pool: Pool<DB> },
@@ -31,6 +32,7 @@ pub(crate) enum DbSessionState<DB: ExtDatabase> {
 
 unsafe impl<DB: ExtDatabase> Sync for DbSessionState<DB> where DB::Connection: Send {}
 
+#[derive(Debug)]
 pub struct DbSession<DB: ExtDatabase> {
     profile_key: DbSessionKey,
     state: DbSessionState<DB>,
@@ -191,6 +193,7 @@ where
     }
 }
 
+#[derive(Debug)]
 pub(crate) enum DbSessionKey {
     Active {
         profile_id: ProfileId,
@@ -206,7 +209,7 @@ pub trait ExtDatabase: Database {
     fn start_transaction(
         conn: &mut PoolConnection<Self>,
         _nested: bool,
-    ) -> BoxFuture<std::result::Result<(), SqlxError>> {
+    ) -> BoxFuture<'_, std::result::Result<(), SqlxError>> {
         <Self as Database>::TransactionManager::begin(conn)
     }
 }

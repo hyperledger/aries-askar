@@ -65,7 +65,7 @@ impl<T, F: Fn(Result<T, Error>)> Drop for EnsureCallback<T, F> {
 
 #[no_mangle]
 pub extern "C" fn askar_derive_verkey(
-    alg: FfiStr,
+    alg: FfiStr<'_>,
     seed: ByteBuffer,
     cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, key: *const c_char)>,
     cb_id: CallbackId,
@@ -122,7 +122,7 @@ pub extern "C" fn askar_generate_raw_key(
 
 #[no_mangle]
 pub extern "C" fn askar_verify_signature(
-    signer_vk: FfiStr,
+    signer_vk: FfiStr<'_>,
     message: ByteBuffer,
     signature: ByteBuffer,
     cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, verify: i8)>,

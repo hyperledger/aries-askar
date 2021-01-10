@@ -32,7 +32,7 @@ static FFI_STORES: Lazy<Mutex<BTreeMap<StoreHandle, Arc<AnyStore>>>> =
     Lazy::new(|| Mutex::new(BTreeMap::new()));
 static FFI_SESSIONS: Lazy<Mutex<BTreeMap<SessionHandle, Arc<Mutex<AnySession>>>>> =
     Lazy::new(|| Mutex::new(BTreeMap::new()));
-static FFI_SCANS: Lazy<Mutex<BTreeMap<ScanHandle, Option<Scan<Entry>>>>> =
+static FFI_SCANS: Lazy<Mutex<BTreeMap<ScanHandle, Option<Scan<'static, Entry>>>>> =
     Lazy::new(|| Mutex::new(BTreeMap::new()));
 
 impl StoreHandle {
@@ -273,10 +273,10 @@ pub struct FfiUnpackResult {
 
 #[no_mangle]
 pub extern "C" fn askar_store_provision(
-    spec_uri: FfiStr,
-    wrap_key_method: FfiStr,
-    pass_key: FfiStr,
-    profile: FfiStr,
+    spec_uri: FfiStr<'_>,
+    wrap_key_method: FfiStr<'_>,
+    pass_key: FfiStr<'_>,
+    profile: FfiStr<'_>,
     recreate: i8,
     cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, handle: StoreHandle)>,
     cb_id: CallbackId,
@@ -318,10 +318,10 @@ pub extern "C" fn askar_store_provision(
 
 #[no_mangle]
 pub extern "C" fn askar_store_open(
-    spec_uri: FfiStr,
-    wrap_key_method: FfiStr,
-    pass_key: FfiStr,
-    profile: FfiStr,
+    spec_uri: FfiStr<'_>,
+    wrap_key_method: FfiStr<'_>,
+    pass_key: FfiStr<'_>,
+    profile: FfiStr<'_>,
     cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, handle: StoreHandle)>,
     cb_id: CallbackId,
 ) -> ErrorCode {
@@ -361,7 +361,7 @@ pub extern "C" fn askar_store_open(
 
 #[no_mangle]
 pub extern "C" fn askar_store_remove(
-    spec_uri: FfiStr,
+    spec_uri: FfiStr<'_>,
     cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, i8)>,
     cb_id: CallbackId,
 ) -> ErrorCode {
@@ -389,7 +389,7 @@ pub extern "C" fn askar_store_remove(
 #[no_mangle]
 pub extern "C" fn askar_store_create_profile(
     handle: StoreHandle,
-    profile: FfiStr,
+    profile: FfiStr<'_>,
     cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, result_p: *const c_char)>,
     cb_id: CallbackId,
 ) -> ErrorCode {
@@ -444,7 +444,7 @@ pub extern "C" fn askar_store_get_profile_name(
 #[no_mangle]
 pub extern "C" fn askar_store_remove_profile(
     handle: StoreHandle,
-    profile: FfiStr,
+    profile: FfiStr<'_>,
     cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, removed: i8)>,
     cb_id: CallbackId,
 ) -> ErrorCode {
@@ -472,8 +472,8 @@ pub extern "C" fn askar_store_remove_profile(
 #[no_mangle]
 pub extern "C" fn askar_store_rekey(
     handle: StoreHandle,
-    wrap_key_method: FfiStr,
-    pass_key: FfiStr,
+    wrap_key_method: FfiStr<'_>,
+    pass_key: FfiStr<'_>,
     cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode)>,
     cb_id: CallbackId,
 ) -> ErrorCode {
@@ -549,9 +549,9 @@ pub extern "C" fn askar_store_close(
 #[no_mangle]
 pub extern "C" fn askar_scan_start(
     handle: StoreHandle,
-    profile: FfiStr,
-    category: FfiStr,
-    tag_filter: FfiStr,
+    profile: FfiStr<'_>,
+    category: FfiStr<'_>,
+    tag_filter: FfiStr<'_>,
     offset: i64,
     limit: i64,
     cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, handle: ScanHandle)>,
@@ -657,7 +657,7 @@ pub extern "C" fn askar_entry_set_free(handle: EntrySetHandle) {
 #[no_mangle]
 pub extern "C" fn askar_session_start(
     handle: StoreHandle,
-    profile: FfiStr,
+    profile: FfiStr<'_>,
     as_transaction: i8,
     cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, handle: SessionHandle)>,
     cb_id: CallbackId,
@@ -694,8 +694,8 @@ pub extern "C" fn askar_session_start(
 #[no_mangle]
 pub extern "C" fn askar_session_count(
     handle: SessionHandle,
-    category: FfiStr,
-    tag_filter: FfiStr,
+    category: FfiStr<'_>,
+    tag_filter: FfiStr<'_>,
     cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, count: i64)>,
     cb_id: CallbackId,
 ) -> ErrorCode {
@@ -724,8 +724,8 @@ pub extern "C" fn askar_session_count(
 #[no_mangle]
 pub extern "C" fn askar_session_fetch(
     handle: SessionHandle,
-    category: FfiStr,
-    name: FfiStr,
+    category: FfiStr<'_>,
+    name: FfiStr<'_>,
     for_update: i8,
     cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, results: *const FfiEntrySet)>,
     cb_id: CallbackId,
@@ -759,8 +759,8 @@ pub extern "C" fn askar_session_fetch(
 #[no_mangle]
 pub extern "C" fn askar_session_fetch_all(
     handle: SessionHandle,
-    category: FfiStr,
-    tag_filter: FfiStr,
+    category: FfiStr<'_>,
+    tag_filter: FfiStr<'_>,
     limit: i64,
     for_update: i8,
     cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, results: *const FfiEntrySet)>,
@@ -795,8 +795,8 @@ pub extern "C" fn askar_session_fetch_all(
 #[no_mangle]
 pub extern "C" fn askar_session_remove_all(
     handle: SessionHandle,
-    category: FfiStr,
-    tag_filter: FfiStr,
+    category: FfiStr<'_>,
+    tag_filter: FfiStr<'_>,
     cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, removed: i64)>,
     cb_id: CallbackId,
 ) -> ErrorCode {
@@ -828,10 +828,10 @@ pub extern "C" fn askar_session_remove_all(
 pub extern "C" fn askar_session_update(
     handle: SessionHandle,
     operation: i8,
-    category: FfiStr,
-    name: FfiStr,
+    category: FfiStr<'_>,
+    name: FfiStr<'_>,
     value: ByteBuffer,
-    tags: FfiStr,
+    tags: FfiStr<'_>,
     expiry_ms: i64,
     cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode)>,
     cb_id: CallbackId,
@@ -883,9 +883,9 @@ pub extern "C" fn askar_session_update(
 #[no_mangle]
 pub extern "C" fn askar_session_create_keypair(
     handle: SessionHandle,
-    alg: FfiStr,
-    metadata: FfiStr,
-    tags: FfiStr,
+    alg: FfiStr<'_>,
+    metadata: FfiStr<'_>,
+    tags: FfiStr<'_>,
     seed: ByteBuffer,
     cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, results: *const c_char)>,
     cb_id: CallbackId,
@@ -939,7 +939,7 @@ pub extern "C" fn askar_session_create_keypair(
 #[no_mangle]
 pub extern "C" fn askar_session_fetch_keypair(
     handle: SessionHandle,
-    ident: FfiStr,
+    ident: FfiStr<'_>,
     for_update: i8,
     cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, results: *const FfiEntrySet)>,
     cb_id: CallbackId,
@@ -981,9 +981,9 @@ pub extern "C" fn askar_session_fetch_keypair(
 #[no_mangle]
 pub extern "C" fn askar_session_update_keypair(
     handle: SessionHandle,
-    ident: FfiStr,
-    metadata: FfiStr,
-    tags: FfiStr,
+    ident: FfiStr<'_>,
+    metadata: FfiStr<'_>,
+    tags: FfiStr<'_>,
     cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode)>,
     cb_id: CallbackId,
 ) -> ErrorCode {
@@ -1031,7 +1031,7 @@ pub extern "C" fn askar_session_update_keypair(
 #[no_mangle]
 pub extern "C" fn askar_session_sign_message(
     handle: SessionHandle,
-    key_ident: FfiStr,
+    key_ident: FfiStr<'_>,
     message: ByteBuffer,
     cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, results: ByteBuffer)>,
     cb_id: CallbackId,
@@ -1070,8 +1070,8 @@ pub extern "C" fn askar_session_sign_message(
 #[no_mangle]
 pub extern "C" fn askar_session_pack_message(
     handle: SessionHandle,
-    recipient_vks: FfiStr,
-    from_key_ident: FfiStr,
+    recipient_vks: FfiStr<'_>,
+    from_key_ident: FfiStr<'_>,
     message: ByteBuffer,
     cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, packed: ByteBuffer)>,
     cb_id: CallbackId,

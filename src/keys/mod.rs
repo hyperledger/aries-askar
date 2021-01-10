@@ -54,6 +54,7 @@ pub fn verify_signature(signer_vk: &str, data: &[u8], signature: &[u8]) -> Resul
         .unwrap_or(false))
 }
 
+#[derive(Debug)]
 pub struct KeyCache {
     profile_info: Mutex<HashMap<String, (ProfileId, Arc<StoreKey>)>>,
     pub(crate) wrap_key: Arc<WrapKey>,

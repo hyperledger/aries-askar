@@ -17,7 +17,7 @@ pub struct Options<'a> {
 }
 
 impl<'a> Options<'a> {
-    pub fn parse_uri(uri: &str) -> Result<Options> {
+    pub fn parse_uri(uri: &str) -> Result<Options<'_>> {
         let mut fragment_and_remain = uri.splitn(2, '#');
         let uri = fragment_and_remain.next().unwrap_or_default();
         let fragment = percent_decode(fragment_and_remain.next().unwrap_or_default());

@@ -45,7 +45,7 @@ impl CustomLogger {
 }
 
 impl log::Log for CustomLogger {
-    fn enabled(&self, metadata: &Metadata) -> bool {
+    fn enabled(&self, metadata: &Metadata<'_>) -> bool {
         if let Some(enabled_cb) = self.enabled {
             let level = metadata.level() as u32;
             let target = CString::new(metadata.target()).unwrap();
@@ -56,7 +56,7 @@ impl log::Log for CustomLogger {
         }
     }
 
-    fn log(&self, record: &Record) {
+    fn log(&self, record: &Record<'_>) {
         let log_cb = self.log;
 
         let level = record.level() as u32;

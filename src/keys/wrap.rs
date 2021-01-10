@@ -98,7 +98,7 @@ pub enum WrapKeyMethod {
 }
 
 impl WrapKeyMethod {
-    pub fn parse_uri(uri: &str) -> Result<Self> {
+    pub(crate) fn parse_uri(uri: &str) -> Result<Self> {
         let mut prefix_and_detail = uri.splitn(2, ':');
         let prefix = prefix_and_detail.next().unwrap_or_default();
         // let detail = prefix_and_detail.next().unwrap_or_default();
@@ -113,7 +113,7 @@ impl WrapKeyMethod {
         }
     }
 
-    pub fn resolve(&self, pass_key: PassKey<'_>) -> Result<(WrapKey, WrapKeyReference)> {
+    pub(crate) fn resolve(&self, pass_key: PassKey<'_>) -> Result<(WrapKey, WrapKeyReference)> {
         match self {
             Self::CreateManagedKey(_mgr_ref) => unimplemented!(),
             // Self::ExistingManagedKey(String),

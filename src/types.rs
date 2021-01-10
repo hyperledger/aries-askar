@@ -38,6 +38,7 @@ pub struct Entry {
 }
 
 impl Entry {
+    /// Create a new `Entry`
     #[inline]
     pub fn new<C: Into<String>, N: Into<String>, V: Into<SecretBytes>>(
         category: C,
@@ -53,7 +54,7 @@ impl Entry {
         }
     }
 
-    pub fn sorted_tags(&self) -> Option<Vec<&EntryTag>> {
+    pub(crate) fn sorted_tags(&self) -> Option<Vec<&EntryTag>> {
         self.tags.as_ref().and_then(sorted_tags)
     }
 }
@@ -76,25 +77,32 @@ pub enum EntryKind {
 /// Supported operations for entries in the store
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum EntryOperation {
+    /// Insert a new `Entry`
     Insert,
+    /// Replace an existing `Entry`
     Replace,
+    /// Remove an existing `Entry`
     Remove,
 }
 
 /// A tag on a record in the store
 #[derive(Clone, Hash, PartialEq, Eq, PartialOrd, Ord, Zeroize)]
 pub enum EntryTag {
+    /// An entry tag to be stored encrypted
     Encrypted(String, String),
+    /// An entry tag to be stored in plaintext (for ordered comparison)
     Plaintext(String, String),
 }
 
 impl EntryTag {
+    /// Accessor for the tag name
     pub fn name(&self) -> &str {
         match self {
             Self::Encrypted(name, _) | Self::Plaintext(name, _) => name,
         }
     }
 
+    /// Accessor for the tag value
     pub fn value(&self) -> &str {
         match self {
             Self::Encrypted(_, val) | Self::Plaintext(_, val) => val,
@@ -144,7 +152,7 @@ impl<'de> Deserialize<'de> for EntryTagSet {
         impl<'d> Visitor<'d> for TagSetVisitor {
             type Value = EntryTagSet;
 
-            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+            fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
                 formatter.write_str("an object containing zero or more entry tags")
             }
 
@@ -203,7 +211,7 @@ impl<'de> Deserialize<'de> for EntryTagValues {
         impl<'d> Visitor<'d> for TagValuesVisitor {
             type Value = EntryTagValues;
 
-            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+            fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
                 formatter.write_str("a string or list of strings")
             }
 
@@ -315,6 +323,11 @@ pub struct SecretBytes(Vec<u8>);
 impl SecretBytes {
     pub(crate) fn as_buffer(&mut self) -> SecretBytesMut<'_> {
         SecretBytesMut(&mut self.0)
+    }
+
+    /// Try to convert the buffer value to a string reference
+    pub fn as_opt_str(&self) -> Option<&str> {
+        std::str::from_utf8(self.0.as_slice()).ok()
     }
 
     pub(crate) fn into_vec(mut self) -> Vec<u8> {

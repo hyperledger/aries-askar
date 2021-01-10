@@ -1,3 +1,4 @@
+use std::fmt::{self, Debug, Formatter};
 use std::future::Future;
 use std::pin::Pin;
 use std::str::FromStr;
@@ -20,11 +21,11 @@ use super::types::{Entry, EntryKind, EntryOperation, EntryTag, TagFilter};
 pub trait Backend: Send + Sync {
     type Session: QueryBackend;
 
-    fn create_profile(&self, name: Option<String>) -> BoxFuture<Result<String>>;
+    fn create_profile(&self, name: Option<String>) -> BoxFuture<'_, Result<String>>;
 
     fn get_profile_name(&self) -> &str;
 
-    fn remove_profile(&self, name: String) -> BoxFuture<Result<bool>>;
+    fn remove_profile(&self, name: String) -> BoxFuture<'_, Result<bool>>;
 
     fn scan(
         &self,
@@ -34,13 +35,17 @@ pub trait Backend: Send + Sync {
         tag_filter: Option<TagFilter>,
         offset: Option<i64>,
         limit: Option<i64>,
-    ) -> BoxFuture<Result<Scan<'static, Entry>>>;
+    ) -> BoxFuture<'_, Result<Scan<'static, Entry>>>;
 
     fn session(&self, profile: Option<String>, transaction: bool) -> Result<Self::Session>;
 
-    fn rekey_backend(&mut self, method: WrapKeyMethod, key: PassKey<'_>) -> BoxFuture<Result<()>>;
+    fn rekey_backend(
+        &mut self,
+        method: WrapKeyMethod,
+        key: PassKey<'_>,
+    ) -> BoxFuture<'_, Result<()>>;
 
-    fn close(&self) -> BoxFuture<Result<()>>;
+    fn close(&self) -> BoxFuture<'_, Result<()>>;
 }
 
 /// Create, open, or remove a generic backend implementation
@@ -199,6 +204,7 @@ impl<B: Backend> Store<B> {
 }
 
 /// An active connection to the store backend
+#[derive(Debug)]
 pub struct Session<Q: QueryBackend>(Q);
 
 impl<Q: QueryBackend> Session<Q> {
@@ -638,5 +644,13 @@ impl<'s, T> Scan<'s, T> {
         } else {
             Ok(None)
         }
+    }
+}
+
+impl<S> Debug for Scan<'_, S> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Scan")
+            .field("page_size", &self.page_size)
+            .finish()
     }
 }
