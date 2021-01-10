@@ -6,6 +6,10 @@ use std::str::FromStr;
 use ffi_support::{rust_string_to_c, ByteBuffer, FfiStr};
 use zeroize::{Zeroize, Zeroizing};
 
+#[cfg(feature = "jemalloc")]
+#[global_allocator]
+static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
+
 pub static LIB_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 #[macro_use]
