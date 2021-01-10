@@ -281,7 +281,7 @@ impl QueryBackend for DbSession<Sqlite> {
                 let key = key.clone();
                 let category = StoreKey::prepare_input(category.as_bytes());
                 let name = StoreKey::prepare_input(name.as_bytes());
-                    move || {
+                move || {
                     Result::Ok((
                         key.encrypt_entry_category(category)?,
                         key.encrypt_entry_name(name)?,
