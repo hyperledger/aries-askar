@@ -1,10 +1,7 @@
-use aead::generic_array::typenum::Unsigned;
+use indy_utils::base58;
 
-use indy_utils::{base58, keys::ArrayKey, random::random_deterministic};
-
-use super::encrypt::{chacha::ChaChaEncrypt, SymEncrypt};
+use super::encrypt::{aead::ChaChaEncrypt, SymEncrypt, SymEncryptKey};
 use super::kdf::KdfMethod;
-use super::store::EncKey;
 use super::types::PassKey;
 use crate::{error::Result, SecretBytes};
 
@@ -12,18 +9,16 @@ pub const PREFIX_KDF: &'static str = "kdf";
 pub const PREFIX_RAW: &'static str = "raw";
 pub const PREFIX_NONE: &'static str = "none";
 
+pub type WrapKeyAlg = ChaChaEncrypt;
+pub type WrapKeyData = <WrapKeyAlg as SymEncrypt>::Key;
+pub const WRAP_KEY_SIZE: usize = <WrapKeyAlg as SymEncrypt>::Key::SIZE;
+
 /// Create a new raw wrap key for a store
 pub fn generate_raw_wrap_key(seed: Option<&[u8]>) -> Result<PassKey<'static>> {
     let key = if let Some(seed) = seed {
-        if seed.len() != WRAP_KEY_SIZE {
-            return Err(err_msg!(Encryption, "Invalid length for wrap key seed"));
-        }
-        let enc_key = EncKey::<WrapKeyAlg>::from_slice(seed);
-        let raw_key =
-            EncKey::<WrapKeyAlg>::from_slice(&random_deterministic(&enc_key, WRAP_KEY_SIZE));
-        WrapKey::from(raw_key)
+        WrapKey::from(WrapKeyData::from_seed(seed)?)
     } else {
-        WrapKey::random()?
+        WrapKey::from(WrapKeyData::random_key())
     };
     Ok(key.to_opt_string().unwrap().into())
 }
@@ -37,10 +32,6 @@ pub fn parse_raw_key(raw_key: &str) -> Result<WrapKey> {
         Ok(WrapKey::from(WrapKeyData::from_slice(key)))
     }
 }
-
-pub type WrapKeyAlg = ChaChaEncrypt;
-pub type WrapKeyData = ArrayKey<<WrapKeyAlg as SymEncrypt>::KeySize>;
-pub const WRAP_KEY_SIZE: usize = <WrapKeyAlg as SymEncrypt>::KeySize::USIZE;
 
 #[derive(Clone, Debug)]
 pub struct WrapKey(pub Option<WrapKeyData>);
@@ -90,10 +81,13 @@ impl From<WrapKeyData> for WrapKey {
 /// Supported methods for generating or referencing a new wrap key
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum WrapKeyMethod {
-    CreateManagedKey(String),
+    // CreateManagedKey(String),
     // ExistingManagedKey(String),
+    /// Derive a new wrapping key using a key derivation function
     DeriveKey(KdfMethod),
+    /// Wrap using an externally-managed raw key
     RawKey,
+    /// No wrapping key in effect
     Unprotected,
 }
 
@@ -115,8 +109,8 @@ impl WrapKeyMethod {
 
     pub(crate) fn resolve(&self, pass_key: PassKey<'_>) -> Result<(WrapKey, WrapKeyReference)> {
         match self {
-            Self::CreateManagedKey(_mgr_ref) => unimplemented!(),
-            // Self::ExistingManagedKey(String),
+            // Self::CreateManagedKey(_mgr_ref) => unimplemented!(),
+            // Self::ExistingManagedKey(String) => unimplemented!(),
             Self::DeriveKey(method) => {
                 if !pass_key.is_none() {
                     let (key, detail) = method.derive_new_key(&*pass_key)?;
@@ -147,7 +141,7 @@ impl Default for WrapKeyMethod {
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum WrapKeyReference {
-    ManagedKey(String),
+    // ManagedKey(String),
     DeriveKey(KdfMethod, String),
     RawKey,
     Unprotected,
@@ -176,7 +170,7 @@ impl WrapKeyReference {
 
     pub fn compare_method(&self, method: &WrapKeyMethod) -> bool {
         match self {
-            Self::ManagedKey(_keyref) => matches!(method, WrapKeyMethod::CreateManagedKey(..)),
+            // Self::ManagedKey(_keyref) => matches!(method, WrapKeyMethod::CreateManagedKey(..)),
             Self::DeriveKey(kdf_method, _detail) => match method {
                 WrapKeyMethod::DeriveKey(m) if m == kdf_method => true,
                 _ => false,
@@ -188,7 +182,7 @@ impl WrapKeyReference {
 
     pub fn into_uri(self) -> String {
         match self {
-            Self::ManagedKey(keyref) => keyref,
+            // Self::ManagedKey(keyref) => keyref,
             Self::DeriveKey(method, detail) => method.to_string(Some(detail.as_str())),
             Self::RawKey => PREFIX_RAW.to_string(),
             Self::Unprotected => PREFIX_NONE.to_string(),
@@ -197,7 +191,7 @@ impl WrapKeyReference {
 
     pub fn resolve(&self, pass_key: PassKey<'_>) -> Result<WrapKey> {
         match self {
-            Self::ManagedKey(_key_ref) => unimplemented!(),
+            // Self::ManagedKey(_key_ref) => unimplemented!(),
             Self::DeriveKey(method, detail) => {
                 if !pass_key.is_none() {
                     method.derive_key(&*pass_key, detail)

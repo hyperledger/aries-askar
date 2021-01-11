@@ -1,67 +1,43 @@
 use std::fmt::Debug;
 
-use chacha20poly1305::{
-    aead::{
-        generic_array::typenum::{Unsigned, U32},
-        Aead, NewAead,
-    },
-    ChaCha20Poly1305,
-};
-use hmac::{Hmac, Mac, NewMac};
-use indy_utils::keys::ArrayKey;
-use sha2::Sha256;
-
 use serde::{Deserialize, Serialize};
 
-use super::encrypt::{chacha::ChaChaEncrypt, SymEncrypt};
+use super::encrypt::{aead::ChaChaEncrypt, SymEncrypt, SymEncryptHashKey, SymEncryptKey};
 use crate::error::Result;
 use crate::keys::EntryEncryptor;
 use crate::types::{EncEntryTag, EntryTag, SecretBytes};
 
-const ENC_KEY_BYTES: usize = <ChaCha20Poly1305 as NewAead>::KeySize::USIZE;
-const ENC_KEY_SIZE: usize = <ChaCha20Poly1305 as Aead>::NonceSize::USIZE
-    + ENC_KEY_BYTES
-    + <ChaCha20Poly1305 as Aead>::TagSize::USIZE;
-
-pub type EncKey<E> = ArrayKey<<E as SymEncrypt>::KeySize>;
-pub type HmacKey = ArrayKey<U32>;
+pub type EncKey<E> = <E as SymEncrypt>::Key;
+pub type HashKey<E> = <E as SymEncrypt>::HashKey;
 pub type StoreKey = StoreKeyImpl<ChaChaEncrypt>;
 
 /// A store key combining the keys required to encrypt
 /// and decrypt storage records
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(bound(
-    deserialize = "EncKey<E>: for<'a> Deserialize<'a>",
-    serialize = "EncKey<E>: Serialize"
+    deserialize = "EncKey<E>: for<'a> Deserialize<'a>, HashKey<E>: for<'a> Deserialize<'a>",
+    serialize = "EncKey<E>: Serialize, HashKey<E>: Serialize"
 ))]
-pub struct StoreKeyImpl<E>
-where
-    E: SymEncrypt + Debug,
-    E::KeySize: Debug,
-{
+pub struct StoreKeyImpl<E: SymEncrypt> {
     pub category_key: EncKey<E>,
     pub name_key: EncKey<E>,
     pub value_key: EncKey<E>,
-    pub item_hmac_key: HmacKey,
+    pub item_hmac_key: HashKey<E>,
     pub tag_name_key: EncKey<E>,
     pub tag_value_key: EncKey<E>,
-    pub tags_hmac_key: HmacKey,
+    pub tags_hmac_key: HashKey<E>,
 }
 
-impl<E> StoreKeyImpl<E>
-where
-    E: SymEncrypt + Debug,
-    E::KeySize: Debug,
-{
+impl<E: SymEncrypt> StoreKeyImpl<E> {
     pub fn new() -> Result<Self> {
         Ok(Self {
-            category_key: ArrayKey::random(),
-            name_key: ArrayKey::random(),
-            value_key: ArrayKey::random(),
-            item_hmac_key: ArrayKey::random(),
-            tag_name_key: ArrayKey::random(),
-            tag_value_key: ArrayKey::random(),
-            tags_hmac_key: ArrayKey::random(),
+            category_key: E::Key::random_key(),
+            name_key: E::Key::random_key(),
+            value_key: E::Key::random_key(),
+            item_hmac_key: E::HashKey::random_hash_key(),
+            tag_name_key: E::Key::random_key(),
+            tag_value_key: E::Key::random_key(),
+            tags_hmac_key: E::HashKey::random_hash_key(),
         })
     }
 
@@ -90,24 +66,32 @@ where
     }
 }
 
+impl<E: SymEncrypt> PartialEq for StoreKeyImpl<E> {
+    fn eq(&self, other: &Self) -> bool {
+        self.category_key == other.category_key
+            && self.name_key == other.name_key
+            && self.value_key == other.value_key
+            && self.item_hmac_key == other.item_hmac_key
+            && self.tag_name_key == other.tag_name_key
+            && self.tag_value_key == other.tag_value_key
+            && self.tags_hmac_key == other.tags_hmac_key
+    }
+}
+impl<E: SymEncrypt> Eq for StoreKeyImpl<E> {}
+
 /// Encrypt a value with a predictable nonce, making it searchable
 fn encrypt_searchable<E: SymEncrypt>(
     input: SecretBytes,
-    enc_key: &ArrayKey<E::KeySize>,
-    hmac_key: &HmacKey,
+    enc_key: &E::Key,
+    hmac_key: &E::HashKey,
 ) -> Result<Vec<u8>> {
-    let mut nonce_hmac =
-        Hmac::<Sha256>::new_varkey(&**hmac_key).map_err(|e| err_msg!(Encryption, "{}", e))?;
-    nonce_hmac.update(&*input);
-    let nonce_long = nonce_hmac.finalize().into_bytes();
-    let nonce = ArrayKey::<E::NonceSize>::from_slice(&nonce_long[0..E::NonceSize::USIZE]);
+    let nonce = E::hashed_nonce(&input, hmac_key)?;
     E::encrypt(input, enc_key, Some(nonce))
 }
 
 impl<E> EntryEncryptor for StoreKeyImpl<E>
 where
-    E: SymEncrypt + Debug,
-    E::KeySize: Debug,
+    E: SymEncrypt,
 {
     fn prepare_input(input: &[u8]) -> SecretBytes {
         E::prepare_input(input)
@@ -122,9 +106,10 @@ where
     }
 
     fn encrypt_entry_value(&self, value: SecretBytes) -> Result<Vec<u8>> {
-        let value_key = ArrayKey::random();
+        let value_key = E::Key::random_key();
         let mut value = E::encrypt(value, &value_key, None)?;
-        let mut result = E::encrypt(value_key.as_slice().into(), &self.value_key, None)?;
+        let key_input = E::prepare_input(value_key.as_bytes());
+        let mut result = E::encrypt(key_input, &self.value_key, None)?;
         result.append(&mut value);
         Ok(result)
     }
@@ -138,15 +123,20 @@ where
     }
 
     fn decrypt_entry_value(&self, mut enc_value: Vec<u8>) -> Result<SecretBytes> {
-        if enc_value.len() < ENC_KEY_SIZE + E::TagSize::USIZE {
+        let enc_key_size = E::encrypted_size(E::Key::SIZE);
+        if enc_value.len() < enc_key_size + E::encrypted_size(0) {
             return Err(err_msg!(
                 Encryption,
                 "Buffer is too short to represent an encrypted value",
             ));
         }
-        let value = enc_value[ENC_KEY_SIZE..].to_vec();
-        enc_value.truncate(ENC_KEY_SIZE);
-        let value_key = ArrayKey::from_slice(E::decrypt(enc_value, &self.value_key)?);
+        let value = enc_value[enc_key_size..].to_vec();
+        enc_value.truncate(enc_key_size);
+        let value_key = E::Key::from_slice(
+            E::decrypt(enc_value, &self.value_key)?
+                .into_vec()
+                .as_slice(),
+        );
         E::decrypt(value, &value_key)
     }
 
@@ -238,13 +228,13 @@ mod tests {
 
     #[test]
     fn store_key_searchable() {
-        let nonce_size = <ChaChaEncrypt as SymEncrypt>::NonceSize::USIZE;
+        const NONCE_SIZE: usize = 12;
         let input = SecretBytes::from(&b"hello"[..]);
-        let key = ArrayKey::random();
-        let hmac_key = ArrayKey::random();
+        let key = EncKey::<ChaChaEncrypt>::random_key();
+        let hmac_key = EncKey::<ChaChaEncrypt>::random();
         let enc1 = encrypt_searchable::<ChaChaEncrypt>(input.clone(), &key, &hmac_key).unwrap();
         let enc2 = encrypt_searchable::<ChaChaEncrypt>(input.clone(), &key, &hmac_key).unwrap();
-        assert_eq!(&enc1[0..nonce_size], &enc2[0..nonce_size]);
+        assert_eq!(&enc1[0..NONCE_SIZE], &enc2[0..NONCE_SIZE]);
         let dec = ChaChaEncrypt::decrypt(enc1, &key).unwrap();
         assert_eq!(dec, input);
     }
