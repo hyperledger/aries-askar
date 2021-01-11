@@ -31,9 +31,16 @@ pub(crate) fn sorted_tags(tags: &Vec<EntryTag>) -> Option<Vec<&EntryTag>> {
 /// A record in the store
 #[derive(Clone, Debug, Eq)]
 pub struct Entry {
+    /// The category of the entry record
     pub category: String,
+
+    /// The name of the entry record, unique within its category
     pub name: String,
+
+    /// The value of the entry record
     pub value: SecretBytes,
+
+    /// Tags associated with the entry record
     pub tags: Option<Vec<EntryTag>>,
 }
 
@@ -85,7 +92,7 @@ pub enum EntryOperation {
     Remove,
 }
 
-/// A tag on a record in the store
+/// A tag on an entry record in the store
 #[derive(Clone, Hash, PartialEq, Eq, PartialOrd, Ord, Zeroize)]
 pub enum EntryTag {
     /// An entry tag to be stored encrypted
@@ -455,6 +462,7 @@ pub struct TagFilter {
 }
 
 impl TagFilter {
+    /// Combine multiple tag filters using the `AND` operator
     #[inline]
     pub fn all_of(each: Vec<TagFilter>) -> Self {
         Self {
@@ -462,6 +470,7 @@ impl TagFilter {
         }
     }
 
+    /// Combine multiple tag filters using the `OR` operator
     #[inline]
     pub fn any_of(each: Vec<TagFilter>) -> Self {
         Self {
@@ -469,6 +478,7 @@ impl TagFilter {
         }
     }
 
+    /// Get the inverse of a tag filter
     #[inline]
     pub fn not(filter: TagFilter) -> Self {
         Self {
@@ -476,6 +486,7 @@ impl TagFilter {
         }
     }
 
+    /// Create an equality comparison tag filter
     #[inline]
     pub fn is_eq(name: impl Into<String>, value: impl Into<String>) -> Self {
         Self {
@@ -483,6 +494,7 @@ impl TagFilter {
         }
     }
 
+    /// Create an inequality comparison tag filter
     #[inline]
     pub fn is_not_eq(name: impl Into<String>, value: impl Into<String>) -> Self {
         Self {
@@ -490,6 +502,7 @@ impl TagFilter {
         }
     }
 
+    /// Create an greater-than comparison tag filter
     #[inline]
     pub fn is_gt(name: impl Into<String>, value: impl Into<String>) -> Self {
         Self {
@@ -497,6 +510,7 @@ impl TagFilter {
         }
     }
 
+    /// Create an greater-than-or-equal comparison tag filter
     #[inline]
     pub fn is_gte(name: impl Into<String>, value: impl Into<String>) -> Self {
         Self {
@@ -504,6 +518,7 @@ impl TagFilter {
         }
     }
 
+    /// Create an less-than comparison tag filter
     #[inline]
     pub fn is_lt(name: impl Into<String>, value: impl Into<String>) -> Self {
         Self {
@@ -511,6 +526,7 @@ impl TagFilter {
         }
     }
 
+    /// Create an less-than-or-equal comparison tag filter
     #[inline]
     pub fn is_lte(name: impl Into<String>, value: impl Into<String>) -> Self {
         Self {
@@ -518,6 +534,7 @@ impl TagFilter {
         }
     }
 
+    /// Create a LIKE comparison tag filter
     #[inline]
     pub fn is_like(name: impl Into<String>, value: impl Into<String>) -> Self {
         Self {
@@ -525,13 +542,15 @@ impl TagFilter {
         }
     }
 
+    /// Create an IN comparison tag filter for a set of tag values
     #[inline]
-    pub fn is_in(name: impl Into<String>, value: Vec<String>) -> Self {
+    pub fn is_in(name: impl Into<String>, values: Vec<String>) -> Self {
         Self {
-            query: wql::Query::In(name.into(), value),
+            query: wql::Query::In(name.into(), values),
         }
     }
 
+    /// Create an EXISTS tag filter for a set of tag names
     #[inline]
     pub fn exist(names: Vec<String>) -> Self {
         Self {
@@ -539,6 +558,7 @@ impl TagFilter {
         }
     }
 
+    /// Convert the tag filter to JSON format
     pub fn to_string(&self) -> Result<String, Error> {
         serde_json::to_string(&self.query).map_err(err_map!("Error encoding tag filter"))
     }

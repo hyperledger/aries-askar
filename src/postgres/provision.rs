@@ -24,6 +24,7 @@ const DEFAULT_IDLE_TIMEOUT: u64 = 300;
 const DEFAULT_MIN_CONNECTIONS: u32 = 0;
 const DEFAULT_MAX_CONNECTIONS: u32 = 10;
 
+/// Configuration options for PostgreSQL stores
 #[derive(Debug)]
 pub struct PostgresStoreOptions {
     pub(crate) connect_timeout: Duration,
@@ -37,6 +38,7 @@ pub struct PostgresStoreOptions {
 }
 
 impl PostgresStoreOptions {
+    /// Initialize `PostgresStoreOptions` from a generic set of options
     pub fn new<'a, O>(options: O) -> Result<Self>
     where
         O: IntoOptions<'a>,
@@ -156,6 +158,7 @@ impl PostgresStoreOptions {
         }
     }
 
+    /// Provision a Postgres store from this set of configuration options
     pub async fn provision(
         self,
         method: WrapKeyMethod,
@@ -213,6 +216,7 @@ impl PostgresStoreOptions {
         )))
     }
 
+    /// Open an existing Postgres store from this set of configuration options
     pub async fn open(
         self,
         method: Option<WrapKeyMethod>,
@@ -231,6 +235,7 @@ impl PostgresStoreOptions {
         open_db(pool, method, pass_key, profile, self.host, self.name).await
     }
 
+    /// Remove an existing Postgres store defined by these configuration options
     pub async fn remove(self) -> Result<bool> {
         let mut admin_conn = PgConnection::connect(self.admin_uri.as_ref()).await?;
         // any character except NUL is allowed in an identifier.

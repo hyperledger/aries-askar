@@ -19,6 +19,7 @@ use crate::keys::{
 use crate::options::{IntoOptions, Options};
 use crate::store::{ManageBackend, Store};
 
+/// Configuration options for Sqlite stores
 #[derive(Debug)]
 pub struct SqliteStoreOptions {
     pub(crate) in_memory: bool,
@@ -27,6 +28,7 @@ pub struct SqliteStoreOptions {
 }
 
 impl SqliteStoreOptions {
+    /// Initialize `SqliteStoreOptions` from a generic set of options
     pub fn new<'a>(options: impl IntoOptions<'a>) -> Result<Self> {
         let mut opts = options.into_options()?;
         let max_connections = if let Some(max_conn) = opts.query.remove("max_connections") {
@@ -59,6 +61,7 @@ impl SqliteStoreOptions {
             .await
     }
 
+    /// Provision a new Sqlite store from these configuration options
     pub async fn provision(
         self,
         method: WrapKeyMethod,
@@ -104,6 +107,7 @@ impl SqliteStoreOptions {
         )))
     }
 
+    /// Open an existing Sqlite store from this set of configuration options
     pub async fn open(
         self,
         method: Option<WrapKeyMethod>,
@@ -128,6 +132,7 @@ impl SqliteStoreOptions {
         Ok(open_db(conn_pool, method, pass_key, profile, self.path.to_string()).await?)
     }
 
+    /// Remove the Sqlite store defined by these configuration options
     pub async fn remove(self) -> Result<bool> {
         if self.in_memory {
             Ok(true)
@@ -136,12 +141,14 @@ impl SqliteStoreOptions {
         }
     }
 
+    /// Default options for an in-memory Sqlite store
     pub fn in_memory() -> Self {
         let mut opts = Options::default();
         opts.host = Cow::Borrowed(":memory:");
         Self::new(opts).unwrap()
     }
 
+    /// Default options for a given Sqlite database path
     pub fn from_path(path: &str) -> Self {
         let mut opts = Options::default();
         opts.host = Cow::Borrowed(path);

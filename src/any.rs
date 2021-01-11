@@ -11,19 +11,25 @@ use super::postgres::PostgresStore;
 #[cfg(feature = "sqlite")]
 use super::sqlite::SqliteStore;
 
+/// A generic `Store` implementation for any supported backend
 pub type AnyStore = Store<AnyBackend>;
 
+/// A generic `Session` implementation for any supported backend
 pub type AnySession = Session<AnyQueryBackend>;
 
+/// An enumeration of supported store backends
 #[derive(Debug)]
 pub enum AnyBackend {
+    /// A PostgreSQL store
     #[cfg(feature = "postgres")]
     Postgres(PostgresStore),
 
+    /// A Sqlite store
     #[cfg(feature = "sqlite")]
     Sqlite(SqliteStore),
 
     #[allow(unused)]
+    #[doc(hidden)]
     Other,
 }
 
@@ -104,15 +110,19 @@ impl Backend for AnyBackend {
     }
 }
 
+/// An enumeration of supported backend session types
 #[derive(Debug)]
 pub enum AnyQueryBackend {
+    /// A PostgreSQL store session
     #[cfg(feature = "postgres")]
     PostgresSession(<PostgresStore as Backend>::Session),
 
+    /// A Sqlite store session
     #[cfg(feature = "sqlite")]
     SqliteSession(<SqliteStore as Backend>::Session),
 
     #[allow(unused)]
+    #[doc(hidden)]
     Other,
 }
 

@@ -52,6 +52,7 @@ const DELETE_ALL_QUERY: &'static str = "DELETE FROM items AS i
 const TAG_INSERT_QUERY: &'static str = "INSERT INTO items_tags
     (item_id, name, value, plaintext) VALUES (?1, ?2, ?3, ?4)";
 
+/// A Sqlite database store
 pub struct SqliteStore {
     conn_pool: SqlitePool,
     default_profile: String,

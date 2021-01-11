@@ -1,4 +1,4 @@
-//! Aries-Askar
+//! Secure storage designed for Hyperledger Aries agents
 
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![warn(missing_docs, missing_debug_implementations, rust_2018_idioms)]

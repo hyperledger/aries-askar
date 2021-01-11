@@ -19,14 +19,19 @@ use super::types::{Entry, EntryKind, EntryOperation, EntryTag, TagFilter};
 
 /// Represents a generic backend implementation
 pub trait Backend: Send + Sync {
+    /// The type of session managed by this backend
     type Session: QueryBackend;
 
+    /// Create a new profile
     fn create_profile(&self, name: Option<String>) -> BoxFuture<'_, Result<String>>;
 
+    /// Get the name of the active profile
     fn get_profile_name(&self) -> &str;
 
+    /// Remove an existing profile
     fn remove_profile(&self, name: String) -> BoxFuture<'_, Result<bool>>;
 
+    /// Create a [`Scan`] against the store
     fn scan(
         &self,
         profile: Option<String>,
@@ -37,21 +42,26 @@ pub trait Backend: Send + Sync {
         limit: Option<i64>,
     ) -> BoxFuture<'_, Result<Scan<'static, Entry>>>;
 
+    /// Create a new session against the store
     fn session(&self, profile: Option<String>, transaction: bool) -> Result<Self::Session>;
 
+    /// Replace the wrapping key of the store
     fn rekey_backend(
         &mut self,
         method: WrapKeyMethod,
         key: PassKey<'_>,
     ) -> BoxFuture<'_, Result<()>>;
 
+    /// Close the store instance
     fn close(&self) -> BoxFuture<'_, Result<()>>;
 }
 
 /// Create, open, or remove a generic backend implementation
 pub trait ManageBackend<'a> {
+    /// The type of store being managed
     type Store;
 
+    /// Open an existing store
     fn open_backend(
         self,
         method: Option<WrapKeyMethod>,
@@ -59,6 +69,7 @@ pub trait ManageBackend<'a> {
         profile: Option<&'a str>,
     ) -> BoxFuture<'a, Result<Self::Store>>;
 
+    /// Provision a new store
     fn provision_backend(
         self,
         method: WrapKeyMethod,
@@ -67,11 +78,13 @@ pub trait ManageBackend<'a> {
         recreate: bool,
     ) -> BoxFuture<'a, Result<Self::Store>>;
 
+    /// Remove an existing store
     fn remove_backend(self) -> BoxFuture<'a, Result<bool>>;
 }
 
 /// Query from a generic backend implementation
 pub trait QueryBackend: Send {
+    /// Count the number of matching records in the store
     fn count<'q>(
         &'q mut self,
         kind: EntryKind,
@@ -79,6 +92,7 @@ pub trait QueryBackend: Send {
         tag_filter: Option<TagFilter>,
     ) -> BoxFuture<'q, Result<i64>>;
 
+    /// Fetch a single record from the store by category and name
     fn fetch<'q>(
         &'q mut self,
         kind: EntryKind,
@@ -87,6 +101,7 @@ pub trait QueryBackend: Send {
         for_update: bool,
     ) -> BoxFuture<'q, Result<Option<Entry>>>;
 
+    /// Fetch all matching records from the store
     fn fetch_all<'q>(
         &'q mut self,
         kind: EntryKind,
@@ -96,6 +111,7 @@ pub trait QueryBackend: Send {
         for_update: bool,
     ) -> BoxFuture<'q, Result<Vec<Entry>>>;
 
+    /// Remove all matching records from the store
     fn remove_all<'q>(
         &'q mut self,
         kind: EntryKind,
@@ -103,6 +119,7 @@ pub trait QueryBackend: Send {
         tag_filter: Option<TagFilter>,
     ) -> BoxFuture<'q, Result<i64>>;
 
+    /// Insert or replace a record in the store
     fn update<'q>(
         &'q mut self,
         kind: EntryKind,
@@ -114,6 +131,7 @@ pub trait QueryBackend: Send {
         expiry_ms: Option<i64>,
     ) -> BoxFuture<'q, Result<()>>;
 
+    /// Close the current store session
     fn close(self, commit: bool) -> BoxFuture<'static, Result<()>>;
 }
 
@@ -620,7 +638,7 @@ pub struct Scan<'s, T> {
 }
 
 impl<'s, T> Scan<'s, T> {
-    pub fn new<S>(stream: S, page_size: usize) -> Self
+    pub(crate) fn new<S>(stream: S, page_size: usize) -> Self
     where
         S: Stream<Item = Result<Vec<T>>> + Send + 's,
     {
@@ -630,6 +648,7 @@ impl<'s, T> Scan<'s, T> {
         }
     }
 
+    /// Fetch the next set of result rows
     pub async fn fetch_next(&mut self) -> Result<Option<Vec<T>>> {
         if let Some(mut s) = self.stream.take() {
             match s.try_next().await? {

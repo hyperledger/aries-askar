@@ -66,6 +66,7 @@ pub use provision::PostgresStoreOptions;
 #[cfg(feature = "pg_test")]
 pub mod test_db;
 
+/// A PostgreSQL database store
 pub struct PostgresStore {
     conn_pool: PgPool,
     default_profile: String,
