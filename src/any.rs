@@ -11,19 +11,25 @@ use super::postgres::PostgresStore;
 #[cfg(feature = "sqlite")]
 use super::sqlite::SqliteStore;
 
+/// A generic `Store` implementation for any supported backend
 pub type AnyStore = Store<AnyBackend>;
 
+/// A generic `Session` implementation for any supported backend
 pub type AnySession = Session<AnyQueryBackend>;
 
+/// An enumeration of supported store backends
 #[derive(Debug)]
 pub enum AnyBackend {
+    /// A PostgreSQL store
     #[cfg(feature = "postgres")]
     Postgres(PostgresStore),
 
+    /// A Sqlite store
     #[cfg(feature = "sqlite")]
     Sqlite(SqliteStore),
 
     #[allow(unused)]
+    #[doc(hidden)]
     Other,
 }
 
@@ -44,7 +50,7 @@ macro_rules! with_backend {
 impl Backend for AnyBackend {
     type Session = AnyQueryBackend;
 
-    fn create_profile(&self, name: Option<String>) -> BoxFuture<Result<String>> {
+    fn create_profile(&self, name: Option<String>) -> BoxFuture<'_, Result<String>> {
         with_backend!(self, store, store.create_profile(name))
     }
 
@@ -52,7 +58,7 @@ impl Backend for AnyBackend {
         with_backend!(self, store, store.get_profile_name())
     }
 
-    fn remove_profile(&self, name: String) -> BoxFuture<Result<bool>> {
+    fn remove_profile(&self, name: String) -> BoxFuture<'_, Result<bool>> {
         with_backend!(self, store, store.remove_profile(name))
     }
 
@@ -64,7 +70,7 @@ impl Backend for AnyBackend {
         tag_filter: Option<TagFilter>,
         offset: Option<i64>,
         limit: Option<i64>,
-    ) -> BoxFuture<Result<Scan<'static, Entry>>> {
+    ) -> BoxFuture<'_, Result<Scan<'static, Entry>>> {
         with_backend!(
             self,
             store,
@@ -95,23 +101,28 @@ impl Backend for AnyBackend {
         &mut self,
         method: WrapKeyMethod,
         pass_key: PassKey<'_>,
-    ) -> BoxFuture<Result<()>> {
+    ) -> BoxFuture<'_, Result<()>> {
         with_backend!(self, store, store.rekey_backend(method, pass_key))
     }
 
-    fn close(&self) -> BoxFuture<Result<()>> {
+    fn close(&self) -> BoxFuture<'_, Result<()>> {
         with_backend!(self, store, store.close())
     }
 }
 
+/// An enumeration of supported backend session types
+#[derive(Debug)]
 pub enum AnyQueryBackend {
+    /// A PostgreSQL store session
     #[cfg(feature = "postgres")]
     PostgresSession(<PostgresStore as Backend>::Session),
 
+    /// A Sqlite store session
     #[cfg(feature = "sqlite")]
     SqliteSession(<SqliteStore as Backend>::Session),
 
     #[allow(unused)]
+    #[doc(hidden)]
     Other,
 }
 

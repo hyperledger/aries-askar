@@ -16,13 +16,16 @@ use crate::types::{sorted_tags, EntryTag, SecretBytes};
 /// Supported key algorithms
 #[derive(Clone, Debug, PartialEq, Eq, Zeroize)]
 pub enum KeyAlg {
+    /// curve25519-based signature scheme
     ED25519,
+    /// Unrecognized algorithm
     Other(String),
 }
 
 serde_as_str_impl!(KeyAlg);
 
 impl KeyAlg {
+    /// Get a reference to a string representing the `KeyAlg`
     pub fn as_str(&self) -> &str {
         match self {
             Self::ED25519 => "ed25519",
@@ -57,12 +60,16 @@ impl Display for KeyAlg {
 /// Categories of keys supported by the default KMS
 #[derive(Clone, Debug, PartialEq, Eq, Zeroize)]
 pub enum KeyCategory {
+    /// A public key
     PublicKey,
+    /// A combination of a public and private key
     KeyPair,
+    /// An unrecognized key category
     Other(String),
 }
 
 impl KeyCategory {
+    /// Get a reference to a string representing the `KeyCategory`
     pub fn as_str(&self) -> &str {
         match self {
             Self::PublicKey => "public",
@@ -71,6 +78,7 @@ impl KeyCategory {
         }
     }
 
+    /// Convert the `KeyCategory` into an owned string
     pub fn into_string(self) -> String {
         match self {
             Self::Other(other) => other,
@@ -108,9 +116,14 @@ impl Display for KeyCategory {
 /// Parameters defining a stored key
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 pub struct KeyParams {
+    /// The key algorithm
     pub alg: KeyAlg,
+
+    /// Associated key metadata
     #[serde(default, rename = "meta", skip_serializing_if = "Option::is_none")]
     pub metadata: Option<String>,
+
+    /// An optional external reference for the key
     #[serde(default, rename = "ref", skip_serializing_if = "Option::is_none")]
     pub reference: Option<String>,
     #[serde(
@@ -119,7 +132,11 @@ pub struct KeyParams {
         skip_serializing_if = "Option::is_none",
         with = "crate::serde_utils::as_base58"
     )]
+
+    /// The associated public key in binary format
     pub pub_key: Option<Vec<u8>>,
+
+    /// The associated private key in binary format
     #[serde(
         default,
         rename = "prv",
@@ -130,12 +147,12 @@ pub struct KeyParams {
 }
 
 impl KeyParams {
-    pub fn to_vec(&self) -> Result<Vec<u8>, Error> {
+    pub(crate) fn to_vec(&self) -> Result<Vec<u8>, Error> {
         serde_json::to_vec(self)
             .map_err(|e| err_msg!(Unexpected, "Error serializing key params: {}", e))
     }
 
-    pub fn from_slice(params: &[u8]) -> Result<KeyParams, Error> {
+    pub(crate) fn from_slice(params: &[u8]) -> Result<KeyParams, Error> {
         let result = serde_json::from_slice(params)
             .map_err(|e| err_msg!(Unexpected, "Error deserializing key params: {}", e));
         result
@@ -157,9 +174,13 @@ impl Zeroize for KeyParams {
 /// A stored key entry
 #[derive(Clone, Debug, Eq)]
 pub struct KeyEntry {
+    /// The category of the key entry (public or public/private pair)
     pub category: KeyCategory,
+    /// The key entry identifier
     pub ident: String,
+    /// The parameters defining the key
     pub params: KeyParams,
+    /// Tags associated with the key entry record
     pub tags: Option<Vec<EntryTag>>,
 }
 
@@ -176,10 +197,12 @@ impl KeyEntry {
         }
     }
 
+    /// Determine if a key entry refers to a local or external key
     pub fn is_local(&self) -> bool {
         self.params.reference.is_none()
     }
 
+    /// Access the associated public key as an [`EncodedVerKey`]
     pub fn encoded_verkey(&self) -> Result<EncodedVerKey, Error> {
         Ok(self
             .verkey()?
@@ -187,6 +210,7 @@ impl KeyEntry {
             .map_err(err_map!(Unexpected, "Error encoding verkey"))?)
     }
 
+    /// Access the associated public key as a [`VerKey`]
     pub fn verkey(&self) -> Result<VerKey, Error> {
         match (&self.params.alg, &self.params.pub_key) {
             (KeyAlg::ED25519, Some(pub_key)) => Ok(VerKey::new(pub_key, Some(IndyKeyAlg::ED25519))),
@@ -195,6 +219,7 @@ impl KeyEntry {
         }
     }
 
+    /// Access the associated private key as a [`PrivateKey`]
     pub fn private_key(&self) -> Result<PrivateKey, Error> {
         match (&self.params.alg, &self.params.prv_key) {
             (KeyAlg::ED25519, Some(prv_key)) => {
@@ -205,7 +230,7 @@ impl KeyEntry {
         }
     }
 
-    pub fn sorted_tags(&self) -> Option<Vec<&EntryTag>> {
+    pub(crate) fn sorted_tags(&self) -> Option<Vec<&EntryTag>> {
         self.tags.as_ref().and_then(sorted_tags)
     }
 }
@@ -223,16 +248,17 @@ impl PartialEq for KeyEntry {
 #[derive(Clone)]
 pub struct PassKey<'a>(Option<Cow<'a, str>>);
 
-impl<'a> PassKey<'a> {
+impl PassKey<'_> {
+    /// Create a scoped reference to the passkey
     pub fn as_ref(&self) -> PassKey<'_> {
         PassKey(Some(Cow::Borrowed(&**self)))
     }
 
-    pub fn is_none(&self) -> bool {
+    pub(crate) fn is_none(&self) -> bool {
         self.0.is_none()
     }
 
-    pub fn into_owned(self) -> PassKey<'static> {
+    pub(crate) fn into_owned(self) -> PassKey<'static> {
         let mut slf = ManuallyDrop::new(self);
         let val = slf.0.take();
         PassKey(match val {
@@ -243,7 +269,7 @@ impl<'a> PassKey<'a> {
     }
 }
 
-impl<'a> Debug for PassKey<'a> {
+impl Debug for PassKey<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         if cfg!(test) {
             f.debug_tuple("PassKey").field(&*self).finish()
@@ -253,13 +279,13 @@ impl<'a> Debug for PassKey<'a> {
     }
 }
 
-impl<'a> Default for PassKey<'a> {
+impl Default for PassKey<'_> {
     fn default() -> Self {
         Self(None)
     }
 }
 
-impl<'a> Deref for PassKey<'a> {
+impl Deref for PassKey<'_> {
     type Target = str;
 
     fn deref(&self) -> &str {
@@ -270,7 +296,7 @@ impl<'a> Deref for PassKey<'a> {
     }
 }
 
-impl<'a> Drop for PassKey<'a> {
+impl Drop for PassKey<'_> {
     fn drop(&mut self) {
         self.zeroize();
     }
@@ -282,7 +308,7 @@ impl<'a> From<&'a str> for PassKey<'a> {
     }
 }
 
-impl<'a> From<String> for PassKey<'a> {
+impl From<String> for PassKey<'_> {
     fn from(inner: String) -> Self {
         Self(Some(Cow::Owned(inner)))
     }
@@ -299,10 +325,9 @@ impl<'a, 'b> PartialEq<PassKey<'b>> for PassKey<'a> {
         &**self == &**other
     }
 }
+impl Eq for PassKey<'_> {}
 
-impl<'a> Eq for PassKey<'a> {}
-
-impl<'a> Zeroize for PassKey<'a> {
+impl Zeroize for PassKey<'_> {
     fn zeroize(&mut self) {
         match self.0.take() {
             Some(Cow::Owned(mut s)) => {

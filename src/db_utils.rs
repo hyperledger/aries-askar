@@ -1,22 +1,22 @@
 use std::future::Future;
-use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 
 use sqlx::{
-    database::HasArguments, pool::PoolConnection, Arguments, Database, Encode, IntoArguments, Pool,
-    TransactionManager, Type,
+    database::HasArguments, pool::PoolConnection, Arguments, Database, Encode, Error as SqlxError,
+    IntoArguments, Pool, TransactionManager, Type,
 };
-use zeroize::Zeroize;
+
+use crate::EntryTag;
 
 use super::error::Result;
-use super::future::unblock;
+use super::future::BoxFuture;
 use super::keys::{
     store::StoreKey,
     wrap::{WrapKey, WrapKeyMethod},
-    KeyCache, PassKey,
+    EntryEncryptor, KeyCache, PassKey,
 };
-use super::types::{EncEntryTag, Expiry, ProfileId, TagFilter};
+use super::types::{EncEntryTag, Entry, Expiry, ProfileId, TagFilter};
 use super::wql::{
     sql::TagSqlEncoder,
     tags::{tag_query, TagQueryEncoder},
@@ -24,14 +24,22 @@ use super::wql::{
 
 pub const PAGE_SIZE: usize = 32;
 
-pub struct DbSession<'s, DB: Database> {
+#[derive(Debug)]
+pub(crate) enum DbSessionState<DB: ExtDatabase> {
+    Active { conn: PoolConnection<DB> },
+    Pending { pool: Pool<DB> },
+}
+
+unsafe impl<DB: ExtDatabase> Sync for DbSessionState<DB> where DB::Connection: Send {}
+
+#[derive(Debug)]
+pub struct DbSession<DB: ExtDatabase> {
     profile_key: DbSessionKey,
     state: DbSessionState<DB>,
     transaction: bool,
-    _pd: PhantomData<&'s DB>,
 }
 
-impl<'s, DB: Database> DbSession<'s, DB> {
+impl<DB: ExtDatabase> DbSession<DB> {
     pub(crate) fn new(
         pool: Pool<DB>,
         cache: Arc<KeyCache>,
@@ -45,7 +53,6 @@ impl<'s, DB: Database> DbSession<'s, DB> {
             profile_key: DbSessionKey::Pending { cache, profile },
             state: DbSessionState::Pending { pool },
             transaction,
-            _pd: PhantomData,
         }
     }
 
@@ -84,10 +91,7 @@ impl<'s, DB: Database> DbSession<'s, DB> {
         }
     }
 
-    pub(crate) async fn make_active<I>(
-        &mut self,
-        init_key: I,
-    ) -> Result<DbSessionActive<'_, 's, DB>>
+    pub(crate) async fn make_active<I>(&mut self, init_key: I) -> Result<DbSessionActive<'_, DB>>
     where
         I: for<'a> GetProfileKey<'a, DB>,
     {
@@ -96,7 +100,7 @@ impl<'s, DB: Database> DbSession<'s, DB> {
             let mut conn = self.pool().unwrap().acquire().await?;
             if self.transaction {
                 info!("Start transaction");
-                DB::TransactionManager::begin(&mut conn).await?;
+                DB::start_transaction(&mut conn, false).await?;
             }
             self.state = DbSessionState::Active { conn };
         }
@@ -118,16 +122,17 @@ impl<'s, DB: Database> DbSession<'s, DB> {
             inner: self,
             profile_id,
             txn_depth,
+            false_txn: false,
         })
     }
 
     #[inline]
-    pub(crate) fn borrow_mut(&mut self) -> DbSessionRef<'_, 's, DB> {
+    pub(crate) fn borrow_mut(&mut self) -> DbSessionRef<'_, DB> {
         DbSessionRef::Borrowed(self)
     }
 
     #[inline]
-    pub(crate) fn owned_ref(self) -> DbSessionRef<'s, 's, DB> {
+    pub(crate) fn owned_ref(self) -> DbSessionRef<'static, DB> {
         DbSessionRef::Owned(self)
     }
 
@@ -149,7 +154,7 @@ impl<'s, DB: Database> DbSession<'s, DB> {
     }
 }
 
-impl<'q, DB: Database> Drop for DbSession<'q, DB> {
+impl<'q, DB: ExtDatabase> Drop for DbSession<DB> {
     fn drop(&mut self) {
         if self.transaction {
             if let Some(conn) = self.connection_mut() {
@@ -166,7 +171,7 @@ pub(crate) trait GetProfileKey<'a, DB: Database> {
     type Fut: Future<Output = Result<(ProfileId, Arc<StoreKey>)>>;
     fn call_once(
         self,
-        pool: &'a mut PoolConnection<DB>,
+        conn: &'a mut PoolConnection<DB>,
         cache: Arc<KeyCache>,
         profile: String,
     ) -> Self::Fut;
@@ -180,21 +185,15 @@ where
     type Fut = Fut;
     fn call_once(
         self,
-        pool: &'a mut PoolConnection<DB>,
+        conn: &'a mut PoolConnection<DB>,
         cache: Arc<KeyCache>,
         profile: String,
     ) -> Self::Fut {
-        self(pool, cache, profile)
+        self(conn, cache, profile)
     }
 }
 
-pub(crate) enum DbSessionState<DB: Database> {
-    Active { conn: PoolConnection<DB> },
-    Pending { pool: Pool<DB> },
-}
-
-unsafe impl<DB: Database> Sync for DbSessionState<DB> where DB::Connection: Send {}
-
+#[derive(Debug)]
 pub(crate) enum DbSessionKey {
     Active {
         profile_id: ProfileId,
@@ -206,13 +205,22 @@ pub(crate) enum DbSessionKey {
     },
 }
 
-pub enum DbSessionRef<'q, 's: 'q, DB: Database> {
-    Owned(DbSession<'s, DB>),
-    Borrowed(&'q mut DbSession<'s, DB>),
+pub trait ExtDatabase: Database {
+    fn start_transaction(
+        conn: &mut PoolConnection<Self>,
+        _nested: bool,
+    ) -> BoxFuture<'_, std::result::Result<(), SqlxError>> {
+        <Self as Database>::TransactionManager::begin(conn)
+    }
 }
 
-impl<'q, 's: 'q, DB: Database> Deref for DbSessionRef<'q, 's, DB> {
-    type Target = DbSession<'s, DB>;
+pub enum DbSessionRef<'q, DB: ExtDatabase> {
+    Owned(DbSession<DB>),
+    Borrowed(&'q mut DbSession<DB>),
+}
+
+impl<'q, DB: ExtDatabase> Deref for DbSessionRef<'q, DB> {
+    type Target = DbSession<DB>;
 
     fn deref(&self) -> &Self::Target {
         match self {
@@ -222,7 +230,7 @@ impl<'q, 's: 'q, DB: Database> Deref for DbSessionRef<'q, 's, DB> {
     }
 }
 
-impl<'q, 's: 'q, DB: Database> DerefMut for DbSessionRef<'q, 's, DB> {
+impl<'q, DB: ExtDatabase> DerefMut for DbSessionRef<'q, DB> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         match self {
             Self::Owned(e) => e,
@@ -231,20 +239,21 @@ impl<'q, 's: 'q, DB: Database> DerefMut for DbSessionRef<'q, 's, DB> {
     }
 }
 
-pub(crate) struct DbSessionActive<'a, 's: 'a, DB: Database> {
-    inner: &'a mut DbSession<'s, DB>,
+pub(crate) struct DbSessionActive<'a, DB: ExtDatabase> {
+    inner: &'a mut DbSession<DB>,
     pub(crate) profile_id: ProfileId,
     txn_depth: usize,
+    false_txn: bool,
 }
 
-impl<'q, 's: 'q, DB: Database> DbSessionActive<'q, 's, DB> {
+impl<'q, DB: ExtDatabase> DbSessionActive<'q, DB> {
     #[inline]
     pub fn connection_mut(&mut self) -> &mut PoolConnection<DB> {
         self.inner.connection_mut().unwrap()
     }
 
     pub async fn commit(mut self) -> Result<()> {
-        if self.txn_depth > 0 {
+        if self.txn_depth > 0 && !self.false_txn {
             let conn = self.connection_mut();
             info!("Commit transaction");
             DB::TransactionManager::commit(conn).await?;
@@ -253,32 +262,80 @@ impl<'q, 's: 'q, DB: Database> DbSessionActive<'q, 's, DB> {
         Ok(())
     }
 
+    #[allow(unused)]
     #[inline]
     pub fn is_transaction(&self) -> bool {
         self.txn_depth > 0
     }
 
-    pub async fn transaction<'t>(&'t mut self) -> Result<DbSessionActive<'t, 's, DB>>
+    #[allow(unused)]
+    pub async fn transaction<'t>(&'t mut self) -> Result<DbSessionActive<'t, DB>>
     where
-        's: 't,
+        'q: 't,
     {
         info!("Start nested transaction");
-        DB::TransactionManager::begin(self.connection_mut()).await?;
+        DB::start_transaction(self.connection_mut(), true).await?;
         Ok(DbSessionActive {
             inner: &mut *self.inner,
             profile_id: self.profile_id,
             txn_depth: self.txn_depth + 1,
+            false_txn: false,
         })
+    }
+
+    pub async fn as_transaction<'t>(&'t mut self) -> Result<DbSessionActive<'t, DB>>
+    where
+        'q: 't,
+    {
+        if self.txn_depth == 0 {
+            info!("Start transaction");
+            DB::start_transaction(self.connection_mut(), false).await?;
+            Ok(DbSessionActive {
+                inner: &mut *self.inner,
+                profile_id: self.profile_id,
+                txn_depth: self.txn_depth + 1,
+                false_txn: false,
+            })
+        } else {
+            Ok(DbSessionActive {
+                inner: &mut *self.inner,
+                profile_id: self.profile_id,
+                txn_depth: self.txn_depth + 1,
+                false_txn: true,
+            })
+        }
     }
 }
 
-impl<'q, 's: 'q, DB: Database> Drop for DbSessionActive<'q, 's, DB> {
+impl<'a, DB: ExtDatabase> Drop for DbSessionActive<'a, DB> {
     fn drop(&mut self) {
-        if self.txn_depth > 1 {
+        if self.txn_depth > 1 && !self.false_txn {
             info!("Roll-back dropped nested transaction");
             DB::TransactionManager::start_rollback(self.connection_mut());
         }
     }
+}
+
+pub(crate) trait RunInTransaction<'a, 'q: 'a, DB: ExtDatabase> {
+    type Fut: Future<Output = Result<()>>;
+    fn call_once(self, conn: &'a mut DbSessionActive<'q, DB>) -> Self::Fut;
+}
+
+impl<'a, 'q: 'a, DB: ExtDatabase, F, Fut> RunInTransaction<'a, 'q, DB> for F
+where
+    F: FnOnce(&'a mut DbSessionActive<'q, DB>) -> Fut,
+    Fut: Future<Output = Result<()>> + 'a,
+{
+    type Fut = Fut;
+    fn call_once(self, conn: &'a mut DbSessionActive<'q, DB>) -> Self::Fut {
+        self(conn)
+    }
+}
+
+pub struct EncScanEntry {
+    pub name: Vec<u8>,
+    pub value: Vec<u8>,
+    pub tags: Option<Vec<u8>>,
 }
 
 pub struct QueryParams<'q, DB: Database> {
@@ -395,7 +452,7 @@ pub fn replace_arg_placeholders<Q: QueryPrepare + ?Sized>(
     buffer
 }
 
-pub(crate) fn decode_tags(tags: &[u8]) -> std::result::Result<Vec<EncEntryTag>, ()> {
+pub(crate) fn decode_tags(tags: Vec<u8>) -> std::result::Result<Vec<EncEntryTag>, ()> {
     let mut idx = 0;
     let mut plaintext;
     let mut name_start;
@@ -438,35 +495,88 @@ pub(crate) fn decode_tags(tags: &[u8]) -> std::result::Result<Vec<EncEntryTag>, 
     Ok(enc_tags)
 }
 
+pub fn decrypt_scan_batch(
+    category: String,
+    enc_rows: Vec<EncScanEntry>,
+    key: &StoreKey,
+) -> Result<Vec<Entry>> {
+    let mut batch = Vec::with_capacity(enc_rows.len());
+    for enc_entry in enc_rows {
+        batch.push(decrypt_scan_entry(category.clone(), enc_entry, key)?);
+    }
+    Ok(batch)
+}
+
+pub fn decrypt_scan_entry(
+    category: String,
+    enc_entry: EncScanEntry,
+    key: &StoreKey,
+) -> Result<Entry> {
+    let name = key.decrypt_entry_name(enc_entry.name)?;
+    let value = key.decrypt_entry_value(enc_entry.value)?;
+    let tags = if let Some(enc_tags) = enc_entry.tags {
+        Some(key.decrypt_entry_tags(
+            decode_tags(enc_tags).map_err(|_| err_msg!(Unexpected, "Error decoding tags"))?,
+        )?)
+    } else {
+        None
+    };
+    Ok(Entry::new(category.to_string(), name, value, tags))
+}
+
 pub fn expiry_timestamp(expire_ms: i64) -> Result<Expiry> {
     chrono::Utc::now()
         .checked_add_signed(chrono::Duration::milliseconds(expire_ms))
         .ok_or_else(|| err_msg!(Unexpected, "Invalid expiry timestamp"))
 }
 
-pub async fn encode_tag_filter<Q: QueryPrepare>(
+pub fn encode_tag_filter<Q: QueryPrepare>(
     tag_filter: Option<TagFilter>,
-    key: Arc<StoreKey>,
+    key: &StoreKey,
     offset: usize,
 ) -> Result<Option<(String, Vec<Vec<u8>>)>> {
     if let Some(tag_filter) = tag_filter {
-        unblock(move || {
-            let tag_query = tag_query(tag_filter.query)?;
-            let mut enc = TagSqlEncoder::new(
-                |name| Ok(key.encrypt_tag_name(name)?),
-                |value| Ok(key.encrypt_tag_value(value)?),
-            );
-            if let Some(filter) = enc.encode_query(&tag_query)? {
-                let filter = replace_arg_placeholders::<Q>(&filter, (offset as i64) + 1);
-                Ok(Some((filter, enc.arguments)))
-            } else {
-                Ok(None)
-            }
-        })
-        .await
+        let tag_query = tag_query(tag_filter.query)?;
+        let mut enc = TagSqlEncoder::new(
+            |name| Ok(key.encrypt_tag_name(StoreKey::prepare_input(name.as_bytes()))?),
+            |value| Ok(key.encrypt_tag_value(StoreKey::prepare_input(value.as_bytes()))?),
+        );
+        if let Some(filter) = enc.encode_query(&tag_query)? {
+            let filter = replace_arg_placeholders::<Q>(&filter, (offset as i64) + 1);
+            Ok(Some((filter, enc.arguments)))
+        } else {
+            Ok(None)
+        }
     } else {
         Ok(None)
     }
+}
+
+// convert a slice of tags into a Vec, when ensuring there is
+// adequate space in the allocations to reuse them during encryption
+pub fn prepare_tags(tags: &[EntryTag]) -> Vec<EntryTag> {
+    let mut result = Vec::with_capacity(tags.len());
+    for tag in tags {
+        result.push(match tag {
+            EntryTag::Plaintext(name, value) => EntryTag::Plaintext(
+                unsafe {
+                    String::from_utf8_unchecked(StoreKey::prepare_input(name.as_bytes()).into_vec())
+                },
+                value.clone(),
+            ),
+            EntryTag::Encrypted(name, value) => EntryTag::Encrypted(
+                unsafe {
+                    String::from_utf8_unchecked(StoreKey::prepare_input(name.as_bytes()).into_vec())
+                },
+                unsafe {
+                    String::from_utf8_unchecked(
+                        StoreKey::prepare_input(value.as_bytes()).into_vec(),
+                    )
+                },
+            ),
+        });
+    }
+    result
 }
 
 pub fn extend_query<'q, Q: QueryPrepare>(
@@ -503,9 +613,8 @@ pub fn init_keys<'a>(
 }
 
 pub fn encode_store_key(store_key: &StoreKey, wrap_key: &WrapKey) -> Result<Vec<u8>> {
-    let mut enc_store_key = store_key.to_string()?;
-    let result = wrap_key.wrap_data(enc_store_key.as_bytes())?;
-    enc_store_key.zeroize();
+    let enc_store_key = store_key.to_string()?;
+    let result = wrap_key.wrap_data(enc_store_key.into())?;
     Ok(result)
 }
 

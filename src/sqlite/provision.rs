@@ -11,7 +11,7 @@ use sqlx::{
 use super::SqliteStore;
 use crate::db_utils::{init_keys, random_profile_name};
 use crate::error::Result;
-use crate::future::{unblock_scoped, BoxFuture};
+use crate::future::{unblock, BoxFuture};
 use crate::keys::{
     wrap::{WrapKeyMethod, WrapKeyReference},
     KeyCache, PassKey,
@@ -19,6 +19,7 @@ use crate::keys::{
 use crate::options::{IntoOptions, Options};
 use crate::store::{ManageBackend, Store};
 
+/// Configuration options for Sqlite stores
 #[derive(Debug)]
 pub struct SqliteStoreOptions {
     pub(crate) in_memory: bool,
@@ -27,6 +28,7 @@ pub struct SqliteStoreOptions {
 }
 
 impl SqliteStoreOptions {
+    /// Initialize `SqliteStoreOptions` from a generic set of options
     pub fn new<'a>(options: impl IntoOptions<'a>) -> Result<Self> {
         let mut opts = options.into_options()?;
         let max_connections = if let Some(max_conn) = opts.query.remove("max_connections") {
@@ -59,6 +61,7 @@ impl SqliteStoreOptions {
             .await
     }
 
+    /// Provision a new Sqlite store from these configuration options
     pub async fn provision(
         self,
         method: WrapKeyMethod,
@@ -67,7 +70,7 @@ impl SqliteStoreOptions {
         recreate: bool,
     ) -> Result<Store<SqliteStore>> {
         if recreate && !self.in_memory {
-            try_remove_file(self.path.as_ref()).await?;
+            try_remove_file(self.path.to_string()).await?;
         }
         let conn_pool = self.pool(true).await?;
 
@@ -104,6 +107,7 @@ impl SqliteStoreOptions {
         )))
     }
 
+    /// Open an existing Sqlite store from this set of configuration options
     pub async fn open(
         self,
         method: Option<WrapKeyMethod>,
@@ -128,17 +132,26 @@ impl SqliteStoreOptions {
         Ok(open_db(conn_pool, method, pass_key, profile, self.path.to_string()).await?)
     }
 
+    /// Remove the Sqlite store defined by these configuration options
     pub async fn remove(self) -> Result<bool> {
         if self.in_memory {
             Ok(true)
         } else {
-            try_remove_file(self.path.as_ref()).await
+            try_remove_file(self.path.to_string()).await
         }
     }
 
+    /// Default options for an in-memory Sqlite store
     pub fn in_memory() -> Self {
         let mut opts = Options::default();
         opts.host = Cow::Borrowed(":memory:");
+        Self::new(opts).unwrap()
+    }
+
+    /// Default options for a given Sqlite database path
+    pub fn from_path(path: &str) -> Self {
+        let mut opts = Options::default();
+        opts.host = Cow::Borrowed(path);
         Self::new(opts).unwrap()
     }
 }
@@ -176,8 +189,11 @@ async fn init_db(
     method: WrapKeyMethod,
     pass_key: PassKey<'_>,
 ) -> Result<KeyCache> {
-    let (store_key, enc_store_key, wrap_key, wrap_key_ref) =
-        unblock_scoped(|| init_keys(method, pass_key)).await?;
+    let (store_key, enc_store_key, wrap_key, wrap_key_ref) = unblock({
+        let pass_key = pass_key.into_owned();
+        move || init_keys(method, pass_key)
+    })
+    .await?;
 
     let mut conn = conn_pool.acquire().await?;
 
@@ -229,7 +245,8 @@ async fn init_db(
                 ON DELETE CASCADE ON UPDATE CASCADE
         );
         CREATE INDEX ix_items_tags_item_id ON items_tags (item_id);
-        CREATE INDEX ix_items_tags_value ON items_tags (plaintext, name, SUBSTR(value, 0, 12));
+        CREATE INDEX ix_items_tags_name_enc ON items_tags (name, SUBSTR(value, 1, 12)) WHERE plaintext=0;
+        CREATE INDEX ix_items_tags_name_plain ON items_tags (name, value) WHERE plaintext=1;
 
         CREATE TABLE items_locks (
             id INTEGER NOT NULL,
@@ -310,7 +327,11 @@ async fn open_db(
                 return Err(err_msg!(Input, "Store key wrap method mismatch"));
             }
         }
-        unblock_scoped(|| wrap_ref.resolve(pass_key)).await?
+        unblock({
+            let pass_key = pass_key.into_owned();
+            move || wrap_ref.resolve(pass_key)
+        })
+        .await?
     } else {
         return Err(err_msg!(Unsupported, "Store wrap key not found"));
     };
@@ -329,8 +350,8 @@ async fn open_db(
     )))
 }
 
-async fn try_remove_file(path: &str) -> Result<bool> {
-    unblock_scoped(|| match remove_file(path) {
+async fn try_remove_file(path: String) -> Result<bool> {
+    unblock(|| match remove_file(path) {
         Ok(()) => Ok(true),
         Err(err) if err.kind() == IoErrorKind::NotFound => Ok(false),
         Err(err) => Err(err_msg!(Backend, "Error removing file").with_cause(err)),

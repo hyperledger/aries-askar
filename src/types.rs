@@ -1,8 +1,9 @@
 use std::fmt::{self, Debug, Formatter};
+use std::mem;
 use std::ops::Deref;
-use std::ptr;
 use std::str::FromStr;
 
+use aead::Buffer;
 use serde::{
     de::{Error as SerdeError, MapAccess, SeqAccess, Visitor},
     ser::SerializeMap,
@@ -30,13 +31,21 @@ pub(crate) fn sorted_tags(tags: &Vec<EntryTag>) -> Option<Vec<&EntryTag>> {
 /// A record in the store
 #[derive(Clone, Debug, Eq)]
 pub struct Entry {
+    /// The category of the entry record
     pub category: String,
+
+    /// The name of the entry record, unique within its category
     pub name: String,
+
+    /// The value of the entry record
     pub value: SecretBytes,
+
+    /// Tags associated with the entry record
     pub tags: Option<Vec<EntryTag>>,
 }
 
 impl Entry {
+    /// Create a new `Entry`
     #[inline]
     pub fn new<C: Into<String>, N: Into<String>, V: Into<SecretBytes>>(
         category: C,
@@ -52,7 +61,7 @@ impl Entry {
         }
     }
 
-    pub fn sorted_tags(&self) -> Option<Vec<&EntryTag>> {
+    pub(crate) fn sorted_tags(&self) -> Option<Vec<&EntryTag>> {
         self.tags.as_ref().and_then(sorted_tags)
     }
 }
@@ -75,25 +84,32 @@ pub enum EntryKind {
 /// Supported operations for entries in the store
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum EntryOperation {
+    /// Insert a new `Entry`
     Insert,
+    /// Replace an existing `Entry`
     Replace,
+    /// Remove an existing `Entry`
     Remove,
 }
 
-/// A tag on a record in the store
+/// A tag on an entry record in the store
 #[derive(Clone, Hash, PartialEq, Eq, PartialOrd, Ord, Zeroize)]
 pub enum EntryTag {
+    /// An entry tag to be stored encrypted
     Encrypted(String, String),
+    /// An entry tag to be stored in plaintext (for ordered comparison)
     Plaintext(String, String),
 }
 
 impl EntryTag {
+    /// Accessor for the tag name
     pub fn name(&self) -> &str {
         match self {
             Self::Encrypted(name, _) | Self::Plaintext(name, _) => name,
         }
     }
 
+    /// Accessor for the tag value
     pub fn value(&self) -> &str {
         match self {
             Self::Encrypted(_, val) | Self::Plaintext(_, val) => val,
@@ -143,7 +159,7 @@ impl<'de> Deserialize<'de> for EntryTagSet {
         impl<'d> Visitor<'d> for TagSetVisitor {
             type Value = EntryTagSet;
 
-            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+            fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
                 formatter.write_str("an object containing zero or more entry tags")
             }
 
@@ -202,7 +218,7 @@ impl<'de> Deserialize<'de> for EntryTagValues {
         impl<'d> Visitor<'d> for TagValuesVisitor {
             type Value = EntryTagValues;
 
-            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+            fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
                 formatter.write_str("a string or list of strings")
             }
 
@@ -312,9 +328,19 @@ impl Debug for MaybeStr<'_> {
 pub struct SecretBytes(Vec<u8>);
 
 impl SecretBytes {
-    pub(crate) unsafe fn unwrap(mut self) -> Vec<u8> {
+    pub(crate) fn as_buffer(&mut self) -> SecretBytesMut<'_> {
+        SecretBytesMut(&mut self.0)
+    }
+
+    /// Try to convert the buffer value to a string reference
+    pub fn as_opt_str(&self) -> Option<&str> {
+        std::str::from_utf8(self.0.as_slice()).ok()
+    }
+
+    pub(crate) fn into_vec(mut self) -> Vec<u8> {
         let mut v = vec![]; // note: no heap allocation for empty vec
-        ptr::swap(&mut v, &mut self.0);
+        mem::swap(&mut v, &mut self.0);
+        mem::forget(self);
         v
     }
 }
@@ -363,6 +389,12 @@ impl From<&str> for SecretBytes {
     }
 }
 
+impl From<String> for SecretBytes {
+    fn from(inner: String) -> Self {
+        Self(inner.into_bytes())
+    }
+}
+
 impl From<Vec<u8>> for SecretBytes {
     fn from(inner: Vec<u8>) -> Self {
         Self(inner)
@@ -381,6 +413,47 @@ impl PartialEq<Vec<u8>> for SecretBytes {
     }
 }
 
+pub(crate) struct SecretBytesMut<'m>(&'m mut Vec<u8>);
+
+impl SecretBytesMut<'_> {
+    /// Obtain a large-enough SecretBytes without creating unsafe copies of
+    /// the contained data
+    pub fn reserve_extra(&mut self, extra: usize) {
+        let len = self.0.len();
+        if extra + len > self.0.capacity() {
+            // allocate a new buffer and copy the secure data over
+            let mut buf = Vec::with_capacity(extra + len);
+            buf.extend_from_slice(&self.0[..]);
+            mem::swap(&mut buf, &mut self.0);
+            buf.zeroize()
+        }
+    }
+}
+
+impl Buffer for SecretBytesMut<'_> {
+    fn extend_from_slice(&mut self, other: &[u8]) -> Result<(), aead::Error> {
+        self.reserve_extra(other.len());
+        self.0.extend_from_slice(other);
+        Ok(())
+    }
+
+    fn truncate(&mut self, len: usize) {
+        self.0.truncate(len);
+    }
+}
+
+impl AsRef<[u8]> for SecretBytesMut<'_> {
+    fn as_ref(&self) -> &[u8] {
+        self.0.as_slice()
+    }
+}
+
+impl AsMut<[u8]> for SecretBytesMut<'_> {
+    fn as_mut(&mut self) -> &mut [u8] {
+        self.0.as_mut_slice()
+    }
+}
+
 /// A WQL filter used to restrict record queries
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[repr(transparent)]
@@ -389,6 +462,7 @@ pub struct TagFilter {
 }
 
 impl TagFilter {
+    /// Combine multiple tag filters using the `AND` operator
     #[inline]
     pub fn all_of(each: Vec<TagFilter>) -> Self {
         Self {
@@ -396,6 +470,7 @@ impl TagFilter {
         }
     }
 
+    /// Combine multiple tag filters using the `OR` operator
     #[inline]
     pub fn any_of(each: Vec<TagFilter>) -> Self {
         Self {
@@ -403,6 +478,7 @@ impl TagFilter {
         }
     }
 
+    /// Get the inverse of a tag filter
     #[inline]
     pub fn not(filter: TagFilter) -> Self {
         Self {
@@ -410,6 +486,7 @@ impl TagFilter {
         }
     }
 
+    /// Create an equality comparison tag filter
     #[inline]
     pub fn is_eq(name: impl Into<String>, value: impl Into<String>) -> Self {
         Self {
@@ -417,6 +494,7 @@ impl TagFilter {
         }
     }
 
+    /// Create an inequality comparison tag filter
     #[inline]
     pub fn is_not_eq(name: impl Into<String>, value: impl Into<String>) -> Self {
         Self {
@@ -424,6 +502,7 @@ impl TagFilter {
         }
     }
 
+    /// Create an greater-than comparison tag filter
     #[inline]
     pub fn is_gt(name: impl Into<String>, value: impl Into<String>) -> Self {
         Self {
@@ -431,6 +510,7 @@ impl TagFilter {
         }
     }
 
+    /// Create an greater-than-or-equal comparison tag filter
     #[inline]
     pub fn is_gte(name: impl Into<String>, value: impl Into<String>) -> Self {
         Self {
@@ -438,6 +518,7 @@ impl TagFilter {
         }
     }
 
+    /// Create an less-than comparison tag filter
     #[inline]
     pub fn is_lt(name: impl Into<String>, value: impl Into<String>) -> Self {
         Self {
@@ -445,6 +526,7 @@ impl TagFilter {
         }
     }
 
+    /// Create an less-than-or-equal comparison tag filter
     #[inline]
     pub fn is_lte(name: impl Into<String>, value: impl Into<String>) -> Self {
         Self {
@@ -452,6 +534,7 @@ impl TagFilter {
         }
     }
 
+    /// Create a LIKE comparison tag filter
     #[inline]
     pub fn is_like(name: impl Into<String>, value: impl Into<String>) -> Self {
         Self {
@@ -459,13 +542,15 @@ impl TagFilter {
         }
     }
 
+    /// Create an IN comparison tag filter for a set of tag values
     #[inline]
-    pub fn is_in(name: impl Into<String>, value: Vec<String>) -> Self {
+    pub fn is_in(name: impl Into<String>, values: Vec<String>) -> Self {
         Self {
-            query: wql::Query::In(name.into(), value),
+            query: wql::Query::In(name.into(), values),
         }
     }
 
+    /// Create an EXISTS tag filter for a set of tag names
     #[inline]
     pub fn exist(names: Vec<String>) -> Self {
         Self {
@@ -473,6 +558,7 @@ impl TagFilter {
         }
     }
 
+    /// Convert the tag filter to JSON format
     pub fn to_string(&self) -> Result<String, Error> {
         serde_json::to_string(&self.query).map_err(err_map!("Error encoding tag filter"))
     }

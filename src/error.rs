@@ -6,17 +6,33 @@ pub type Result<T> = std::result::Result<T, Error>;
 /// The possible kinds of error produced by the crate
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ErrorKind {
+    /// An unexpected error from the store backend
     Backend,
+
+    /// The store backend was too busy to handle the request
     Busy,
+
+    /// An insert operation failed due to a unique key conflict
     Duplicate,
+
+    /// An encryption or decryption operation failed
     Encryption,
+
+    /// The input parameters to the method were incorrect
     Input,
+
+    /// The requested record was not found
     NotFound,
+
+    /// An unexpected error occurred
     Unexpected,
+
+    /// An unsupported operation was requested
     Unsupported,
 }
 
 impl ErrorKind {
+    /// Convert the error kind to a string reference
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::Backend => "Backend error",
@@ -40,13 +56,13 @@ impl Display for ErrorKind {
 /// The standard crate error type
 #[derive(Debug)]
 pub struct Error {
-    pub kind: ErrorKind,
-    pub cause: Option<Box<dyn StdError + Send + Sync + 'static>>,
-    pub message: Option<String>,
+    pub(crate) kind: ErrorKind,
+    pub(crate) cause: Option<Box<dyn StdError + Send + Sync + 'static>>,
+    pub(crate) message: Option<String>,
 }
 
 impl Error {
-    pub fn from_msg<T: Into<String>>(kind: ErrorKind, msg: T) -> Self {
+    pub(crate) fn from_msg<T: Into<String>>(kind: ErrorKind, msg: T) -> Self {
         Self {
             kind,
             cause: None,
@@ -54,7 +70,7 @@ impl Error {
         }
     }
 
-    pub fn from_opt_msg<T: Into<String>>(kind: ErrorKind, msg: Option<T>) -> Self {
+    pub(crate) fn from_opt_msg<T: Into<String>>(kind: ErrorKind, msg: Option<T>) -> Self {
         Self {
             kind,
             cause: None,
@@ -62,11 +78,12 @@ impl Error {
         }
     }
 
+    /// Accessor for the error kind
     pub fn kind(&self) -> ErrorKind {
         self.kind
     }
 
-    pub fn with_cause<T: Into<Box<dyn StdError + Send + Sync>>>(mut self, err: T) -> Self {
+    pub(crate) fn with_cause<T: Into<Box<dyn StdError + Send + Sync>>>(mut self, err: T) -> Self {
         self.cause = Some(err.into());
         self
     }

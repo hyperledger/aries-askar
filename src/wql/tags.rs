@@ -114,7 +114,7 @@ impl CompareOp {
         }
     }
 
-    pub fn as_sql_str_for_prefix(&self) -> Option<&'static str> {
+    pub const fn as_sql_str_for_prefix(&self) -> Option<&'static str> {
         match self {
             Self::Eq => Some("="),
             Self::Neq => Some("!="),

@@ -2,24 +2,26 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use async_mutex::Mutex;
+use indy_utils::keys::{EncodedVerKey, PrivateKey};
 use zeroize::Zeroize;
 
 use super::error::Result;
-use super::future::unblock_scoped;
+use super::future::unblock;
 use super::types::{EncEntryTag, EntryTag, ProfileId, SecretBytes};
+
+use self::store::StoreKey;
+use self::wrap::WrapKey;
+
+pub mod encrypt;
 
 pub mod kdf;
 
 pub mod store;
-use self::store::StoreKey;
 
 mod types;
 pub use self::types::{KeyAlg, KeyCategory, KeyEntry, KeyParams, PassKey};
 
 pub mod wrap;
-use self::wrap::WrapKey;
-
-use indy_utils::keys::{EncodedVerKey, PrivateKey};
 
 // #[cfg(target_os = "macos")]
 // mod keychain;
@@ -52,23 +54,24 @@ pub fn verify_signature(signer_vk: &str, data: &[u8], signature: &[u8]) -> Resul
         .unwrap_or(false))
 }
 
+#[derive(Debug)]
 pub struct KeyCache {
     profile_info: Mutex<HashMap<String, (ProfileId, Arc<StoreKey>)>>,
-    pub(crate) wrap_key: WrapKey,
+    pub(crate) wrap_key: Arc<WrapKey>,
 }
 
 impl KeyCache {
-    pub fn new(wrap_key: WrapKey) -> Self {
+    pub fn new(wrap_key: impl Into<Arc<WrapKey>>) -> Self {
         Self {
             profile_info: Mutex::new(HashMap::new()),
-            wrap_key,
+            wrap_key: wrap_key.into(),
         }
     }
 
-    pub async fn load_key(&self, ciphertext: &[u8]) -> Result<StoreKey> {
-        unblock_scoped(|| {
-            let mut data = self
-                .wrap_key
+    pub async fn load_key(&self, ciphertext: Vec<u8>) -> Result<StoreKey> {
+        let wrap_key = self.wrap_key.clone();
+        unblock(move || {
+            let mut data = wrap_key
                 .unwrap_data(ciphertext)
                 .map_err(err_map!(Encryption, "Error decrypting store key"))?;
             let key = StoreKey::from_slice(&data)?;
@@ -94,60 +97,64 @@ impl KeyCache {
 }
 
 pub(crate) trait EntryEncryptor {
-    fn encrypt_entry_category(&self, category: &str) -> Result<Vec<u8>>;
-    fn encrypt_entry_name(&self, name: &str) -> Result<Vec<u8>>;
-    fn encrypt_entry_value(&self, value: &[u8]) -> Result<Vec<u8>>;
-    fn encrypt_entry_tags(&self, tags: &[EntryTag]) -> Result<Vec<EncEntryTag>>;
+    fn prepare_input(input: &[u8]) -> SecretBytes {
+        SecretBytes::from(input)
+    }
 
-    fn decrypt_entry_category(&self, enc_category: &[u8]) -> Result<String>;
-    fn decrypt_entry_name(&self, enc_name: &[u8]) -> Result<String>;
-    fn decrypt_entry_value(&self, enc_value: &[u8]) -> Result<SecretBytes>;
-    fn decrypt_entry_tags(&self, enc_tags: &[EncEntryTag]) -> Result<Vec<EntryTag>>;
+    fn encrypt_entry_category(&self, category: SecretBytes) -> Result<Vec<u8>>;
+    fn encrypt_entry_name(&self, name: SecretBytes) -> Result<Vec<u8>>;
+    fn encrypt_entry_value(&self, value: SecretBytes) -> Result<Vec<u8>>;
+    fn encrypt_entry_tags(&self, tags: Vec<EntryTag>) -> Result<Vec<EncEntryTag>>;
+
+    fn decrypt_entry_category(&self, enc_category: Vec<u8>) -> Result<String>;
+    fn decrypt_entry_name(&self, enc_name: Vec<u8>) -> Result<String>;
+    fn decrypt_entry_value(&self, enc_value: Vec<u8>) -> Result<SecretBytes>;
+    fn decrypt_entry_tags(&self, enc_tags: Vec<EncEntryTag>) -> Result<Vec<EntryTag>>;
 }
 
 pub struct NullEncryptor;
 
 impl EntryEncryptor for NullEncryptor {
-    fn encrypt_entry_category(&self, category: &str) -> Result<Vec<u8>> {
-        Ok(category.as_bytes().to_vec())
+    fn encrypt_entry_category(&self, category: SecretBytes) -> Result<Vec<u8>> {
+        Ok(category.into_vec())
     }
-    fn encrypt_entry_name(&self, name: &str) -> Result<Vec<u8>> {
-        Ok(name.as_bytes().to_vec())
+    fn encrypt_entry_name(&self, name: SecretBytes) -> Result<Vec<u8>> {
+        Ok(name.into_vec())
     }
-    fn encrypt_entry_value(&self, value: &[u8]) -> Result<Vec<u8>> {
-        Ok(value.to_vec())
+    fn encrypt_entry_value(&self, value: SecretBytes) -> Result<Vec<u8>> {
+        Ok(value.into_vec())
     }
-    fn encrypt_entry_tags(&self, tags: &[EntryTag]) -> Result<Vec<EncEntryTag>> {
+    fn encrypt_entry_tags(&self, tags: Vec<EntryTag>) -> Result<Vec<EncEntryTag>> {
         Ok(tags
             .into_iter()
             .map(|tag| match tag {
                 EntryTag::Encrypted(name, value) => EncEntryTag {
-                    name: name.as_bytes().to_vec(),
-                    value: value.as_bytes().to_vec(),
+                    name: name.into_bytes(),
+                    value: value.into_bytes(),
                     plaintext: false,
                 },
                 EntryTag::Plaintext(name, value) => EncEntryTag {
-                    name: name.as_bytes().to_vec(),
-                    value: value.as_bytes().to_vec(),
+                    name: name.into_bytes(),
+                    value: value.into_bytes(),
                     plaintext: true,
                 },
             })
             .collect())
     }
 
-    fn decrypt_entry_category(&self, enc_category: &[u8]) -> Result<String> {
-        Ok(String::from_utf8(enc_category.to_vec()).map_err(err_map!(Encryption))?)
+    fn decrypt_entry_category(&self, enc_category: Vec<u8>) -> Result<String> {
+        Ok(String::from_utf8(enc_category).map_err(err_map!(Encryption))?)
     }
-    fn decrypt_entry_name(&self, enc_name: &[u8]) -> Result<String> {
-        Ok(String::from_utf8(enc_name.to_vec()).map_err(err_map!(Encryption))?)
+    fn decrypt_entry_name(&self, enc_name: Vec<u8>) -> Result<String> {
+        Ok(String::from_utf8(enc_name).map_err(err_map!(Encryption))?)
     }
-    fn decrypt_entry_value(&self, enc_value: &[u8]) -> Result<SecretBytes> {
-        Ok(enc_value.to_vec().into())
+    fn decrypt_entry_value(&self, enc_value: Vec<u8>) -> Result<SecretBytes> {
+        Ok(enc_value.into())
     }
-    fn decrypt_entry_tags(&self, enc_tags: &[EncEntryTag]) -> Result<Vec<EntryTag>> {
+    fn decrypt_entry_tags(&self, enc_tags: Vec<EncEntryTag>) -> Result<Vec<EntryTag>> {
         Ok(enc_tags.into_iter().try_fold(vec![], |mut acc, tag| {
-            let name = String::from_utf8(tag.name.to_vec()).map_err(err_map!(Encryption))?;
-            let value = String::from_utf8(tag.value.to_vec()).map_err(err_map!(Encryption))?;
+            let name = String::from_utf8(tag.name).map_err(err_map!(Encryption))?;
+            let value = String::from_utf8(tag.value).map_err(err_map!(Encryption))?;
             acc.push(if tag.plaintext {
                 EntryTag::Plaintext(name, value)
             } else {

@@ -1,42 +1,37 @@
-use chacha20poly1305::aead::generic_array::typenum::U32;
-use indy_utils::{base58, keys::ArrayKey, random::random_deterministic};
+use indy_utils::base58;
 
+use super::encrypt::{aead::ChaChaEncrypt, SymEncrypt, SymEncryptKey};
 use super::kdf::KdfMethod;
-use super::store::{decrypt, encrypt_non_searchable, EncKey};
 use super::types::PassKey;
-use crate::error::Result;
+use crate::{error::Result, SecretBytes};
 
 pub const PREFIX_KDF: &'static str = "kdf";
 pub const PREFIX_RAW: &'static str = "raw";
 pub const PREFIX_NONE: &'static str = "none";
 
-pub const RAW_KEY_SIZE: usize = 32;
+pub type WrapKeyAlg = ChaChaEncrypt;
+pub type WrapKeyData = <WrapKeyAlg as SymEncrypt>::Key;
+pub const WRAP_KEY_SIZE: usize = <WrapKeyAlg as SymEncrypt>::Key::SIZE;
 
 /// Create a new raw wrap key for a store
 pub fn generate_raw_wrap_key(seed: Option<&[u8]>) -> Result<PassKey<'static>> {
-    if let Some(seed) = seed {
-        if seed.len() != RAW_KEY_SIZE {
-            return Err(err_msg!(Encryption, "Invalid length for wrap key seed"));
-        }
-        let enc_key = EncKey::from_slice(seed);
-        let raw_key = EncKey::from_slice(&random_deterministic(&enc_key, RAW_KEY_SIZE));
-        Ok(WrapKey::from(raw_key).to_opt_string().unwrap().into())
+    let key = if let Some(seed) = seed {
+        WrapKey::from(WrapKeyData::from_seed(seed)?)
     } else {
-        Ok(WrapKey::random()?.to_opt_string().unwrap().into())
-    }
+        WrapKey::from(WrapKeyData::random_key())
+    };
+    Ok(key.to_opt_string().unwrap().into())
 }
 
 pub fn parse_raw_key(raw_key: &str) -> Result<WrapKey> {
     let key = base58::decode(raw_key)
         .map_err(|_| err_msg!(Input, "Error parsing raw key as base58 value"))?;
-    if key.len() != RAW_KEY_SIZE {
+    if key.len() != WRAP_KEY_SIZE {
         Err(err_msg!(Input, "Incorrect length for encoded raw key"))
     } else {
         Ok(WrapKey::from(WrapKeyData::from_slice(key)))
     }
 }
-
-pub type WrapKeyData = ArrayKey<U32>;
 
 #[derive(Clone, Debug)]
 pub struct WrapKey(pub Option<WrapKeyData>);
@@ -54,17 +49,21 @@ impl WrapKey {
         self.0.is_none()
     }
 
-    pub fn wrap_data<'a>(&self, data: &[u8]) -> Result<Vec<u8>> {
+    pub fn prepare_input(&self, input: &[u8]) -> SecretBytes {
+        WrapKeyAlg::prepare_input(input)
+    }
+
+    pub fn wrap_data(&self, data: SecretBytes) -> Result<Vec<u8>> {
         match &self.0 {
-            Some(key) => Ok(encrypt_non_searchable(key, data)?),
-            None => Ok(data.to_vec()),
+            Some(key) => Ok(WrapKeyAlg::encrypt(data, key, None)?),
+            None => Ok(data.into_vec()),
         }
     }
 
-    pub fn unwrap_data<'a>(&self, ciphertext: &[u8]) -> Result<Vec<u8>> {
+    pub fn unwrap_data(&self, ciphertext: Vec<u8>) -> Result<SecretBytes> {
         match &self.0 {
-            Some(key) => Ok(decrypt(key, ciphertext)?),
-            None => Ok(ciphertext.to_vec()),
+            Some(key) => Ok(WrapKeyAlg::decrypt(ciphertext, key)?),
+            None => Ok(ciphertext.into()),
         }
     }
 
@@ -82,15 +81,18 @@ impl From<WrapKeyData> for WrapKey {
 /// Supported methods for generating or referencing a new wrap key
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum WrapKeyMethod {
-    CreateManagedKey(String),
+    // CreateManagedKey(String),
     // ExistingManagedKey(String),
+    /// Derive a new wrapping key using a key derivation function
     DeriveKey(KdfMethod),
+    /// Wrap using an externally-managed raw key
     RawKey,
+    /// No wrapping key in effect
     Unprotected,
 }
 
 impl WrapKeyMethod {
-    pub fn parse_uri(uri: &str) -> Result<Self> {
+    pub(crate) fn parse_uri(uri: &str) -> Result<Self> {
         let mut prefix_and_detail = uri.splitn(2, ':');
         let prefix = prefix_and_detail.next().unwrap_or_default();
         // let detail = prefix_and_detail.next().unwrap_or_default();
@@ -105,10 +107,10 @@ impl WrapKeyMethod {
         }
     }
 
-    pub fn resolve(&self, pass_key: PassKey<'_>) -> Result<(WrapKey, WrapKeyReference)> {
+    pub(crate) fn resolve(&self, pass_key: PassKey<'_>) -> Result<(WrapKey, WrapKeyReference)> {
         match self {
-            Self::CreateManagedKey(_mgr_ref) => unimplemented!(),
-            // Self::ExistingManagedKey(String),
+            // Self::CreateManagedKey(_mgr_ref) => unimplemented!(),
+            // Self::ExistingManagedKey(String) => unimplemented!(),
             Self::DeriveKey(method) => {
                 if !pass_key.is_none() {
                     let (key, detail) = method.derive_new_key(&*pass_key)?;
@@ -139,7 +141,7 @@ impl Default for WrapKeyMethod {
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum WrapKeyReference {
-    ManagedKey(String),
+    // ManagedKey(String),
     DeriveKey(KdfMethod, String),
     RawKey,
     Unprotected,
@@ -168,7 +170,7 @@ impl WrapKeyReference {
 
     pub fn compare_method(&self, method: &WrapKeyMethod) -> bool {
         match self {
-            Self::ManagedKey(_keyref) => matches!(method, WrapKeyMethod::CreateManagedKey(..)),
+            // Self::ManagedKey(_keyref) => matches!(method, WrapKeyMethod::CreateManagedKey(..)),
             Self::DeriveKey(kdf_method, _detail) => match method {
                 WrapKeyMethod::DeriveKey(m) if m == kdf_method => true,
                 _ => false,
@@ -180,7 +182,7 @@ impl WrapKeyReference {
 
     pub fn into_uri(self) -> String {
         match self {
-            Self::ManagedKey(keyref) => keyref,
+            // Self::ManagedKey(keyref) => keyref,
             Self::DeriveKey(method, detail) => method.to_string(Some(detail.as_str())),
             Self::RawKey => PREFIX_RAW.to_string(),
             Self::Unprotected => PREFIX_NONE.to_string(),
@@ -189,7 +191,7 @@ impl WrapKeyReference {
 
     pub fn resolve(&self, pass_key: PassKey<'_>) -> Result<WrapKey> {
         match self {
-            Self::ManagedKey(_key_ref) => unimplemented!(),
+            // Self::ManagedKey(_key_ref) => unimplemented!(),
             Self::DeriveKey(method, detail) => {
                 if !pass_key.is_none() {
                     method.derive_key(&*pass_key, detail)
@@ -239,10 +241,12 @@ mod tests {
             .resolve(pass.as_ref())
             .expect("Error deriving new key");
         assert!(!key.is_empty());
-        let wrapped = key.wrap_data(input).expect("Error wrapping input");
+        let wrapped = key
+            .wrap_data(key.prepare_input(input))
+            .expect("Error wrapping input");
         assert_ne!(wrapped, input);
-        let unwrapped = key.unwrap_data(&wrapped).expect("Error unwrapping data");
-        assert_eq!(unwrapped, input);
+        let unwrapped = key.unwrap_data(wrapped).expect("Error unwrapping data");
+        assert_eq!(unwrapped, &input[..]);
         let key_uri = key_ref.into_uri();
         assert_eq!(key_uri.starts_with("kdf:argon2i:13:mod?salt="), true);
     }
@@ -258,8 +262,10 @@ mod tests {
         let key_ref = WrapKeyReference::parse_uri("kdf:argon2i:13:mod?salt=MR6B1jrReV2JioaizEaRo6")
             .expect("Error parsing derived key ref");
         let key = key_ref.resolve(pass).expect("Error deriving existing key");
-        let unwrapped = key.unwrap_data(&wrapped).expect("Error unwrapping data");
-        assert_eq!(unwrapped, input);
+        let unwrapped = key
+            .unwrap_data(wrapped.to_vec())
+            .expect("Error unwrapping data");
+        assert_eq!(unwrapped, &input[..]);
     }
 
     #[test]
@@ -273,7 +279,7 @@ mod tests {
         let check_bad_pass = key_ref
             .resolve("not my pass".into())
             .expect("Error deriving comparison key");
-        let unwrapped_err = check_bad_pass.unwrap_data(&wrapped);
+        let unwrapped_err = check_bad_pass.unwrap_data(wrapped.to_vec());
         assert_eq!(unwrapped_err.is_err(), true);
     }
 
@@ -286,7 +292,9 @@ mod tests {
             .resolve(raw_key.as_ref())
             .expect("Error resolving raw key");
         assert_eq!(key.is_empty(), false);
-        let wrapped = key.wrap_data(input).expect("Error wrapping input");
+        let wrapped = key
+            .wrap_data(key.prepare_input(input))
+            .expect("Error wrapping input");
         assert_ne!(wrapped, input);
 
         // round trip the key reference
@@ -294,8 +302,8 @@ mod tests {
         let key_ref = WrapKeyReference::parse_uri(&key_uri).expect("Error parsing raw key URI");
         let key = key_ref.resolve(raw_key).expect("Error resolving raw key");
 
-        let unwrapped = key.unwrap_data(&wrapped).expect("Error unwrapping data");
-        assert_eq!(unwrapped, input);
+        let unwrapped = key.unwrap_data(wrapped).expect("Error unwrapping data");
+        assert_eq!(unwrapped, &input[..]);
 
         let check_no_key = key_ref.resolve(None.into());
         assert_eq!(check_no_key.is_err(), true);
@@ -311,7 +319,9 @@ mod tests {
             .resolve(None.into())
             .expect("Error resolving unprotected");
         assert_eq!(key.is_empty(), true);
-        let wrapped = key.wrap_data(input).expect("Error wrapping unprotected");
+        let wrapped = key
+            .wrap_data(key.prepare_input(input))
+            .expect("Error wrapping unprotected");
         assert_eq!(wrapped, input);
 
         // round trip the key reference
@@ -323,8 +333,8 @@ mod tests {
             .expect("Error resolving unprotected key ref");
 
         let unwrapped = key
-            .unwrap_data(&wrapped)
+            .unwrap_data(wrapped)
             .expect("Error unwrapping unprotected");
-        assert_eq!(unwrapped, input);
+        assert_eq!(unwrapped, &input[..]);
     }
 }

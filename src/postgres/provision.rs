@@ -8,7 +8,7 @@ use sqlx::{
 
 use crate::db_utils::{init_keys, random_profile_name};
 use crate::error::Result;
-use crate::future::{unblock_scoped, BoxFuture};
+use crate::future::{unblock, BoxFuture};
 use crate::keys::{
     wrap::{WrapKeyMethod, WrapKeyReference},
     KeyCache, PassKey,
@@ -24,6 +24,7 @@ const DEFAULT_IDLE_TIMEOUT: u64 = 300;
 const DEFAULT_MIN_CONNECTIONS: u32 = 0;
 const DEFAULT_MAX_CONNECTIONS: u32 = 10;
 
+/// Configuration options for PostgreSQL stores
 #[derive(Debug)]
 pub struct PostgresStoreOptions {
     pub(crate) connect_timeout: Duration,
@@ -37,6 +38,7 @@ pub struct PostgresStoreOptions {
 }
 
 impl PostgresStoreOptions {
+    /// Initialize `PostgresStoreOptions` from a generic set of options
     pub fn new<'a, O>(options: O) -> Result<Self>
     where
         O: IntoOptions<'a>,
@@ -156,6 +158,7 @@ impl PostgresStoreOptions {
         }
     }
 
+    /// Provision a Postgres store from this set of configuration options
     pub async fn provision(
         self,
         method: WrapKeyMethod,
@@ -192,8 +195,11 @@ impl PostgresStoreOptions {
             // no 'config' table, assume empty database
         }
 
-        let (store_key, enc_store_key, wrap_key, wrap_key_ref) =
-            unblock_scoped(|| init_keys(method, pass_key)).await?;
+        let (store_key, enc_store_key, wrap_key, wrap_key_ref) = unblock({
+            let pass_key = pass_key.into_owned();
+            move || init_keys(method, pass_key)
+        })
+        .await?;
         let default_profile = profile
             .map(str::to_string)
             .unwrap_or_else(random_profile_name);
@@ -210,6 +216,7 @@ impl PostgresStoreOptions {
         )))
     }
 
+    /// Open an existing Postgres store from this set of configuration options
     pub async fn open(
         self,
         method: Option<WrapKeyMethod>,
@@ -228,6 +235,7 @@ impl PostgresStoreOptions {
         open_db(pool, method, pass_key, profile, self.host, self.name).await
     }
 
+    /// Remove an existing Postgres store defined by these configuration options
     pub async fn remove(self) -> Result<bool> {
         let mut admin_conn = PgConnection::connect(self.admin_uri.as_ref()).await?;
         // any character except NUL is allowed in an identifier.
@@ -325,7 +333,8 @@ pub(crate) async fn init_db<'t>(
                 ON DELETE CASCADE ON UPDATE CASCADE
         );
         CREATE INDEX ix_items_tags_item_id ON items_tags(item_id);
-        CREATE INDEX ix_items_tags_name_value ON items_tags(plaintext, name, SUBSTR(value, 0, 12));
+        CREATE INDEX ix_items_tags_name_enc ON items_tags(name, SUBSTR(value, 1, 12)) WHERE plaintext=0;
+        CREATE INDEX ix_items_tags_name_plain ON items_tags(name, value) WHERE plaintext=1;
     ",
     )
     .await?;
@@ -417,7 +426,11 @@ pub(crate) async fn open_db(
                 return Err(err_msg!(Input, "Store key wrap method mismatch"));
             }
         }
-        unblock_scoped(|| wrap_ref.resolve(pass_key)).await?
+        unblock({
+            let pass_key = pass_key.into_owned();
+            move || wrap_ref.resolve(pass_key)
+        })
+        .await?
     } else {
         return Err(err_msg!(Unsupported, "Store wrap key not found"));
     };

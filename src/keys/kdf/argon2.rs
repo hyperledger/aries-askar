@@ -2,7 +2,7 @@ use indy_utils::random::random_vec;
 use zeroize::Zeroize;
 
 use crate::error::Result;
-use crate::keys::store::EncKey;
+use crate::keys::{encrypt::aead::ChaChaEncrypt, store::EncKey};
 
 pub const LEVEL_INTERACTIVE: &'static str = "13:int";
 pub const LEVEL_MODERATE: &'static str = "13:mod";
@@ -39,7 +39,7 @@ impl Level {
         }
     }
 
-    pub fn derive_key(&self, salt: &[u8], password: &str) -> Result<EncKey> {
+    pub fn derive_key(&self, salt: &[u8], password: &str) -> Result<EncKey<ChaChaEncrypt>> {
         let (mem_cost, time_cost) = match self {
             Self::Interactive => (32768, 4),
             Self::Moderate => (131072, 6),
@@ -48,7 +48,12 @@ impl Level {
     }
 }
 
-fn derive_key(password: &str, salt: &[u8], mem_cost: u32, time_cost: u32) -> Result<EncKey> {
+fn derive_key(
+    password: &str,
+    salt: &[u8],
+    mem_cost: u32,
+    time_cost: u32,
+) -> Result<EncKey<ChaChaEncrypt>> {
     if salt.len() < SALT_SIZE {
         return Err(err_msg!(Encryption, "Invalid salt for argon2i hash"));
     }
@@ -65,7 +70,7 @@ fn derive_key(password: &str, salt: &[u8], mem_cost: u32, time_cost: u32) -> Res
     };
     let mut hashed = argon2::hash_raw(password.as_bytes(), &salt[..SALT_SIZE], &config)
         .map_err(|e| err_msg!(Encryption, "Error deriving key: {}", e))?;
-    let key = EncKey::from_slice(&hashed);
+    let key = EncKey::<ChaChaEncrypt>::from_slice(&hashed);
     hashed.zeroize();
     Ok(key)
 }
