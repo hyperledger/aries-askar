@@ -141,6 +141,12 @@ impl SqliteStoreOptions {
         opts.host = Cow::Borrowed(":memory:");
         Self::new(opts).unwrap()
     }
+
+    pub fn from_path(path: &str) -> Self {
+        let mut opts = Options::default();
+        opts.host = Cow::Borrowed(path);
+        Self::new(opts).unwrap()
+    }
 }
 
 impl<'a> ManageBackend<'a> for SqliteStoreOptions {
@@ -232,7 +238,8 @@ async fn init_db(
                 ON DELETE CASCADE ON UPDATE CASCADE
         );
         CREATE INDEX ix_items_tags_item_id ON items_tags (item_id);
-        CREATE INDEX ix_items_tags_value ON items_tags (plaintext, name, SUBSTR(value, 0, 12));
+        CREATE INDEX ix_items_tags_name_enc ON items_tags (name, SUBSTR(value, 1, 12)) WHERE plaintext=0;
+        CREATE INDEX ix_items_tags_name_plain ON items_tags (name, value) WHERE plaintext=1;
 
         CREATE TABLE items_locks (
             id INTEGER NOT NULL,

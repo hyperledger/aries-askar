@@ -57,23 +57,33 @@ where
         is_plaintext: bool,
     ) -> Result<Option<Self::Clause>> {
         let idx = self.arguments.len();
-        let op_prefix = op.as_sql_str_for_prefix().map(|pfx_op| {
-            format!(
-                "AND SUBSTR(value, 0, 12) {} SUBSTR(${}, 0, 12)",
-                pfx_op,
-                idx + 2
-            )
-        });
+        let (op_prefix, match_prefix) = match (is_plaintext, op.as_sql_str_for_prefix()) {
+            (false, Some(pfx_op)) if enc_value.len() > 12 => {
+                // the first 12 characters of an encrypted tag is the nonce, based
+                // on an HMAC of the rest of the value. it serves as an effective index
+                // on its own
+                let match_prefix = enc_value[..12].to_vec();
+                (
+                    format!(" AND SUBSTR(value, 1, 12) {} ${}", pfx_op, idx + 3),
+                    Some(match_prefix),
+                )
+            }
+            _ => (String::new(), None),
+        };
+        self.arguments.push(enc_name);
+        self.arguments.push(enc_value);
+        if let Some(v) = match_prefix {
+            self.arguments.push(v);
+        }
+
         let query = format!(
-            "i.id IN (SELECT item_id FROM items_tags WHERE name = ${} AND value {} ${} {} AND plaintext = {})",
+            "i.id IN (SELECT item_id FROM items_tags WHERE name = ${} AND value {} ${}{} AND plaintext = {})",
             idx + 1,
             op.as_sql_str(),
             idx + 2,
-            op_prefix.as_ref().map(String::as_str).unwrap_or_default(),
+            op_prefix.as_str(),
             if is_plaintext { 1 } else { 0 }
         );
-        self.arguments.push(enc_name);
-        self.arguments.push(enc_value);
         Ok(Some(query))
     }
 
@@ -154,7 +164,7 @@ mod tests {
         let condition_1 = TagQuery::And(vec![
             TagQuery::Eq(
                 TagName::Encrypted("enctag".to_string()),
-                "encval".to_string(),
+                "noncenonce12encval".to_string(),
             ),
             TagQuery::Eq(
                 TagName::Plaintext("plaintag".to_string()),
@@ -164,7 +174,7 @@ mod tests {
         let condition_2 = TagQuery::And(vec![
             TagQuery::Eq(
                 TagName::Encrypted("enctag".to_string()),
-                "encval".to_string(),
+                "noncenonce12encval".to_string(),
             ),
             TagQuery::Not(Box::new(TagQuery::Eq(
                 TagName::Plaintext("plaintag".to_string()),
@@ -174,20 +184,22 @@ mod tests {
         let query = TagQuery::Or(vec![condition_1, condition_2]);
         let mut enc = TagSqlEncoder::new(
             |name: &str| Ok(format!("--{}--", name).into_bytes()),
-            |value: &str| Ok(format!("~~{}~~", value).into_bytes()),
+            |value: &str| Ok(value.to_uppercase().into_bytes()),
         );
         let query_str = enc.encode_query(&query).unwrap().unwrap();
-        assert_eq!(query_str, "((i.id IN (SELECT item_id FROM items_tags WHERE name = $1 AND value = $2 AND SUBSTR(value, 0, 12) = SUBSTR($2, 0, 12) AND plaintext = 0) AND i.id IN (SELECT item_id FROM items_tags WHERE name = $3 AND value = $4 AND SUBSTR(value, 0, 12) = SUBSTR($4, 0, 12) AND plaintext = 1)) OR (i.id IN (SELECT item_id FROM items_tags WHERE name = $5 AND value = $6 AND SUBSTR(value, 0, 12) = SUBSTR($6, 0, 12) AND plaintext = 0) AND i.id IN (SELECT item_id FROM items_tags WHERE name = $7 AND value != $8 AND SUBSTR(value, 0, 12) != SUBSTR($8, 0, 12) AND plaintext = 1)))");
+        assert_eq!(query_str, "((i.id IN (SELECT item_id FROM items_tags WHERE name = $1 AND value = $2 AND SUBSTR(value, 1, 12) = $3 AND plaintext = 0) AND i.id IN (SELECT item_id FROM items_tags WHERE name = $4 AND value = $5 AND plaintext = 1)) OR (i.id IN (SELECT item_id FROM items_tags WHERE name = $6 AND value = $7 AND SUBSTR(value, 1, 12) = $8 AND plaintext = 0) AND i.id IN (SELECT item_id FROM items_tags WHERE name = $9 AND value != $10 AND plaintext = 1)))");
         let args = enc.arguments;
         assert_eq!(
             args,
             vec![
                 b"--enctag--".to_vec(),
-                b"~~encval~~".to_vec(),
+                b"NONCENONCE12ENCVAL".to_vec(),
+                b"NONCENONCE12".to_vec(),
                 b"--plaintag--".to_vec(),
                 b"plainval".to_vec(),
                 b"--enctag--".to_vec(),
-                b"~~encval~~".to_vec(),
+                b"NONCENONCE12ENCVAL".to_vec(),
+                b"NONCENONCE12".to_vec(),
                 b"--plaintag--".to_vec(),
                 b"eggs".to_vec()
             ]

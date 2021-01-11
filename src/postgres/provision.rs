@@ -328,7 +328,8 @@ pub(crate) async fn init_db<'t>(
                 ON DELETE CASCADE ON UPDATE CASCADE
         );
         CREATE INDEX ix_items_tags_item_id ON items_tags(item_id);
-        CREATE INDEX ix_items_tags_name_value ON items_tags(plaintext, name, SUBSTR(value, 0, 12));
+        CREATE INDEX ix_items_tags_name_enc ON items_tags(name, SUBSTR(value, 1, 12)) WHERE plaintext=0;
+        CREATE INDEX ix_items_tags_name_plain ON items_tags(name, value) WHERE plaintext=1;
     ",
     )
     .await?;
