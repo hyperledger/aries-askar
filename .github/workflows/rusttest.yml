@@ -25,25 +25,28 @@ jobs:
         with:
           profile: minimal
           toolchain: stable
-          override: true
 
       - name: Cache cargo resources
         uses: Swatinem/rust-cache@v1
 
       - name: Cargo check
-        run: cargo check --locked
+        uses: actions-rs/cargo@v1
+        with:
+          command: check
 
       - name: Cargo fmt
-        run: cargo fmt --all -- --check
+        uses: actions-rs/cargo@v1
+        with:
+          command: fmt
+          args: --all -- --check
 
       - name: Debug build
         uses: actions-rs/cargo@v1
         with:
           command: build
-          args: --all-targets --locked
+          args: --all-targets
 
       - name: Test
         uses: actions-rs/cargo@v1
         with:
           command: test
-          args: --locked
