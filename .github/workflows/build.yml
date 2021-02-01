@@ -1,19 +1,23 @@
-name: "Build Artifacts"
+name: "Build Packages"
 
 on: workflow_dispatch
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
-  build-lib:
-    name: Build Library
+  build-manylinux:
+    name: Build Library (Manylinux)
 
     strategy:
       matrix:
         include:
-          - os: macos-latest
-            lib: libaries_askar.dylib
-          - os: windows-latest
-            lib: aries_askar.dll
+          - os: ubuntu-latest
+            lib: libaries_askar.so
+            container: andrewwhitehead/manylinux2014-base
 
+    container: ${{ matrix.container }}
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -30,10 +34,50 @@ jobs:
         uses: Swatinem/rust-cache@v1
 
       - name: Build library
-        uses: actions-rs/cargo@v1
+        env:
+          BUILD_TARGET: ${{ matrix.target }}
+        run: ./build.sh
+
+      - name: Upload library artifacts
+        uses: actions/upload-artifact@v2
         with:
-          command: build
-          args: --release
+          name: library-${{ runner.os }}
+          path: target/release/${{ matrix.lib }}
+
+  build-other:
+    name: Build Library (MacOS/Win)
+
+    strategy:
+      matrix:
+        include:
+          - os: macos-latest # macos-11.0 for universal
+            lib: libaries_askar.dylib
+            # target: apple-darwin
+            toolchain: stable # beta for universal
+          - os: windows-latest
+            lib: aries_askar.dll
+            toolchain: stable
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: Install Rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: ${{ matrix.toolchain }}
+
+      - name: Cache cargo resources
+        uses: Swatinem/rust-cache@v1
+
+      - name: Build library
+        env:
+          BUILD_TARGET: ${{ matrix.target }}
+          BUILD_TOOLCHAIN: ${{ matrix.toolchain }}
+        run: ./build.sh
 
       - name: Upload library artifacts
         uses: actions/upload-artifact@v2
@@ -43,19 +87,21 @@ jobs:
 
   build-py:
     name: Build Python
-    needs: build-lib
+    needs: [build-manylinux, build-other]
 
     strategy:
       matrix:
+        plat: [Linux, macOS, Windows]
+        python-version: [3.6]
         include:
-          - os: macos-latest
-            plat-name: macosx_10_9_x86_64
-            python-version: 3.6
-          - os: windows-latest
+          - plat: Linux
+            plat-name: manylinux2014_x86_64
+          - plat: macOS
+            plat-name: macosx_10_9_x86_64 # macosx_10_9_universal2
+          - plat: Windows
             plat-name: win32
-            python-version: 3.6
 
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
@@ -69,21 +115,24 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install setuptools wheel twine
+          pip install setuptools wheel twine auditwheel
 
       - name: Fetch library artifacts
         uses: actions/download-artifact@v2
         with:
-          name: library-${{ runner.os }}
+          name: library-${{ matrix.plat }}
           path: wrappers/python/aries_askar/
 
       - name: Build python packages
         run: |
-          python setup.py bdist_wheel --plat-name=${{ matrix.plat-name }}
+          python setup.py bdist_wheel --python-tag=py3 --plat-name=${{ matrix.plat-name }}
         working-directory: wrappers/python
+
+      - if: "matrix.plat == 'Linux'"
+        run: auditwheel show wrappers/python/dist/*
 
       - name: Upload python artifacts
         uses: actions/upload-artifact@v2
         with:
-          name: python-${{ runner.os }}
+          name: python-${{ matrix.plat }}
           path: wrappers/python/dist/*
