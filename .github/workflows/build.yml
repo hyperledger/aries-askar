@@ -1,6 +1,6 @@
 name: "Build Packages"
 
-on: workflow_dispatch
+"on": workflow_dispatch
 
 defaults:
   run:
@@ -50,10 +50,10 @@ jobs:
     strategy:
       matrix:
         include:
-          - os: macos-latest # macos-11.0 for universal
+          - os: macos-latest
             lib: libaries_askar.dylib
             # target: apple-darwin
-            toolchain: stable # beta for universal
+            toolchain: stable  #  beta required for aarch64-apple-darwin target
           - os: windows-latest
             lib: aries_askar.dll
             toolchain: stable
@@ -91,17 +91,17 @@ jobs:
 
     strategy:
       matrix:
-        plat: [Linux, macOS, Windows]
+        os: [ubuntu-latest, macos-latest, windows-latest]
         python-version: [3.6]
         include:
-          - plat: Linux
+          - os: ubuntu-latest
             plat-name: manylinux2014_x86_64
-          - plat: macOS
+          - os: macos-latest
             plat-name: macosx_10_9_x86_64 # macosx_10_9_universal2
-          - plat: Windows
-            plat-name: win32
+          - os: windows-latest
+            plat-name: win_amd64
 
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
 
     steps:
       - name: Checkout
@@ -120,19 +120,27 @@ jobs:
       - name: Fetch library artifacts
         uses: actions/download-artifact@v2
         with:
-          name: library-${{ matrix.plat }}
+          name: library-${{ runner.os }}
           path: wrappers/python/aries_askar/
 
-      - name: Build python packages
+      - name: Build python package
         run: |
           python setup.py bdist_wheel --python-tag=py3 --plat-name=${{ matrix.plat-name }}
         working-directory: wrappers/python
 
-      - if: "matrix.plat == 'Linux'"
+      - name: Test python package
+        shell: sh
+        run: |
+          cd wrappers/python
+          pip install --upgrade pip
+          pip install dist/*
+          python -m demo.test
+
+      - if: "runner.os == 'Linux'"
         run: auditwheel show wrappers/python/dist/*
 
-      - name: Upload python artifacts
+      - name: Upload python package
         uses: actions/upload-artifact@v2
         with:
-          name: python-${{ matrix.plat }}
+          name: python-${{ runner.os }}
           path: wrappers/python/dist/*
