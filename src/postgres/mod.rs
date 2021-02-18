@@ -12,7 +12,7 @@ use futures_lite::{
 use sqlx::{
     pool::PoolConnection,
     postgres::{PgPool, Postgres},
-    Done, Row,
+    Row,
 };
 
 use super::db_utils::{

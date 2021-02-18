@@ -69,7 +69,7 @@ default-features = false
 features = ["ed25519", "pack", "serde_support", "wql"]
 
 [dependencies.sqlx]
-version = "0.4.2"
+version = "0.5.1"
 default-features = false
 features = ["chrono", "runtime-async-std-rustls"]
 optional = true

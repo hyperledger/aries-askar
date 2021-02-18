@@ -11,7 +11,7 @@ use futures_lite::{
 use sqlx::{
     pool::PoolConnection,
     sqlite::{Sqlite, SqlitePool},
-    Database, Done, Error as SqlxError, Row, TransactionManager,
+    Database, Error as SqlxError, Row, TransactionManager,
 };
 
 use super::db_utils::{
