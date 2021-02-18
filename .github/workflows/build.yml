@@ -36,7 +36,7 @@ jobs:
       - name: Build library
         env:
           BUILD_TARGET: ${{ matrix.target }}
-        run: ./build.sh
+        run: sh ./build.sh
 
       - name: Upload library artifacts
         uses: actions/upload-artifact@v2
@@ -53,7 +53,7 @@ jobs:
           - os: macos-latest
             lib: libaries_askar.dylib
             # target: apple-darwin
-            toolchain: stable  #  beta required for aarch64-apple-darwin target
+            toolchain: stable #  beta required for aarch64-apple-darwin target
           - os: windows-latest
             lib: aries_askar.dll
             toolchain: stable
@@ -77,7 +77,7 @@ jobs:
         env:
           BUILD_TARGET: ${{ matrix.target }}
           BUILD_TOOLCHAIN: ${{ matrix.toolchain }}
-        run: ./build.sh
+        run: sh ./build.sh
 
       - name: Upload library artifacts
         uses: actions/upload-artifact@v2
@@ -137,6 +137,7 @@ jobs:
           python -m demo.test
 
       - if: "runner.os == 'Linux'"
+        name: Auditwheel
         run: auditwheel show wrappers/python/dist/*
 
       - name: Upload python package
