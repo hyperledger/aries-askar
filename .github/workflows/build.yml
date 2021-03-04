@@ -1,6 +1,10 @@
-name: "Build Packages"
+name: "Aries-Askar"
 
 "on":
+  push:
+    branches: "**"
+  pull_request:
+    branches: [main]
   release:
     types: [created]
   workflow_dispatch:
@@ -10,13 +14,52 @@ name: "Build Packages"
         required: true
         default: "false"
 
-defaults:
-  run:
-    shell: bash
-
 jobs:
+  check:
+    name: Run Checks
+    strategy:
+      matrix:
+        os: [macos-latest, windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: Install Rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+
+      - name: Cache cargo resources
+        uses: Swatinem/rust-cache@v1
+
+      - name: Cargo check
+        uses: actions-rs/cargo@v1
+        with:
+          command: check
+
+      - name: Cargo fmt
+        uses: actions-rs/cargo@v1
+        with:
+          command: fmt
+          args: --all -- --check
+
+      - name: Debug build
+        uses: actions-rs/cargo@v1
+        with:
+          command: build
+          args: --all-targets
+
+      - name: Test
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+
   build-manylinux:
-    name: Build Library (Manylinux)
+    name: Build Library
+    needs: [check]
 
     strategy:
       matrix:
@@ -53,7 +96,8 @@ jobs:
           path: target/release/${{ matrix.lib }}
 
   build-other:
-    name: Build Library (MacOS/Win)
+    name: Build Library
+    needs: [check]
 
     strategy:
       matrix:
@@ -131,18 +175,13 @@ jobs:
           name: library-${{ runner.os }}
           path: wrappers/python/aries_askar/
 
-      - name: Build python package
-        run: |
-          python setup.py bdist_wheel --python-tag=py3 --plat-name=${{ matrix.plat-name }}
-        working-directory: wrappers/python
-
-      - name: Test python package
+      - name: Build and test python package
         shell: sh
         run: |
-          cd wrappers/python
-          pip install --upgrade pip
+          python setup.py bdist_wheel --python-tag=py3 --plat-name=${{ matrix.plat-name }}
           pip install dist/*
           python -m demo.test
+        working-directory: wrappers/python
 
       - if: "runner.os == 'Linux'"
         name: Auditwheel
@@ -163,4 +202,5 @@ jobs:
           TWINE_USERNAME: ${{ secrets.PYPI_USERNAME }}
           TWINE_PASSWORD: ${{ secrets.PYPI_PASSWORD }}
         run: |
-          twine upload --skip-existing wrappers/python/dist/*
+          twine upload --skip-existing dist/*
+        working-directory: wrappers/python
