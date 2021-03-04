@@ -20,7 +20,7 @@ from ctypes import (
     c_ubyte,
 )
 from ctypes.util import find_library
-from typing import Optional, Sequence, Union
+from typing import Optional, Sequence, Tuple, Union
 
 from .error import StoreError, StoreErrorCode
 from .types import Entry, EntryOperation, KeyAlg
@@ -29,6 +29,13 @@ from .types import Entry, EntryOperation, KeyAlg
 CALLBACKS = {}
 LIB: CDLL = None
 LOGGER = logging.getLogger(__name__)
+LOG_LEVELS = {
+    1: logging.ERROR,
+    2: logging.WARNING,
+    3: logging.INFO,
+    4: logging.DEBUG,
+}
+MODULE_NAME = __name__.split(".")[0]
 
 
 class StoreHandle(c_int64):
@@ -200,7 +207,7 @@ def get_library() -> CDLL:
     global LIB
     if LIB is None:
         LIB = _load_library("aries_askar")
-        _set_logger()
+        _init_logger()
     return LIB
 
 
@@ -237,16 +244,14 @@ def _load_library(lib_name: str) -> CDLL:
         ) from e
 
 
-def _set_logger():
-    logger = logging.getLogger("aries_askar")
-    logging.addLevelName(5, "TRACE")
-    level_mapping = {
-        1: logging.ERROR,
-        2: logging.WARNING,
-        3: logging.INFO,
-        4: logging.DEBUG,
-        5: 5,
-    }
+def _init_logger():
+    logger = logging.getLogger(MODULE_NAME)
+    if logging.getLevelName("TRACE") == "Level TRACE":
+        # avoid redefining TRACE if another library has added it
+        logging.addLevelName(5, "TRACE")
+
+    def _enabled(_context, level: int) -> bool:
+        return logger.isEnabledFor(LOG_LEVELS.get(level, level))
 
     def _log(
         _context,
@@ -258,24 +263,53 @@ def _set_logger():
         line: int,
     ):
         logger.getChild("native." + target.decode().replace("::", ".")).log(
-            level_mapping[level],
+            LOG_LEVELS.get(level, level),
             "\t%s:%d | %s",
             file_name.decode() if file_name else None,
             line,
             message.decode(),
         )
 
-    _set_logger.callback = CFUNCTYPE(
+    _init_logger.enabled_cb = CFUNCTYPE(c_int8, c_void_p, c_int32)(_enabled)
+
+    _init_logger.log_cb = CFUNCTYPE(
         None, c_void_p, c_int32, c_char_p, c_char_p, c_char_p, c_char_p, c_int32
     )(_log)
+
+    if os.getenv("RUST_LOG"):
+        # level from environment
+        level = -1
+    else:
+        # inherit current level from logger
+        level = _convert_log_level(logger.level or logger.parent.level)
 
     do_call(
         "askar_set_custom_logger",
         c_void_p(),  # context
-        _set_logger.callback,
-        c_void_p(),  # enabled
+        _init_logger.log_cb,
+        _init_logger.enabled_cb,
         c_void_p(),  # flush
+        c_int32(level),
     )
+
+
+def set_max_log_level(level: Union[str, int, None]):
+    get_library()  # ensure logger is initialized
+    set_level = _convert_log_level(level)
+    do_call("askar_set_max_log_level", c_int32(set_level))
+
+
+def _convert_log_level(level: Union[str, int, None]):
+    if level is None or level == "-1":
+        return -1
+    else:
+        if isinstance(level, str):
+            level = level.upper()
+        name = logging.getLevelName(level)
+        for k, v in LOG_LEVELS.items():
+            if logging.getLevelName(v) == name:
+                return k
+    return 0
 
 
 def _fulfill_future(fut: asyncio.Future, result, err: Exception = None):
@@ -396,7 +430,7 @@ def get_current_error(expect: bool = False) -> Optional[StoreError]:
     return StoreError(StoreErrorCode.WRAPPER, "Unknown error")
 
 
-async def derive_verkey(key_alg: KeyAlg, seed: [str, bytes]) -> str:
+async def derive_verkey(key_alg: KeyAlg, seed: Union[str, bytes]) -> str:
     """Derive a verification key from a seed."""
     return str(
         await do_call_async(
@@ -408,7 +442,7 @@ async def derive_verkey(key_alg: KeyAlg, seed: [str, bytes]) -> str:
     )
 
 
-async def generate_raw_key(seed: [str, bytes] = None) -> str:
+async def generate_raw_key(seed: Union[str, bytes] = None) -> str:
     """Generate a new raw store wrapping key."""
     return str(
         await do_call_async(
@@ -730,7 +764,7 @@ async def session_pack_message(
 async def session_unpack_message(
     handle: SessionHandle,
     message: Union[str, bytes],
-) -> (ByteBuffer, str, Optional[str]):
+) -> Tuple[ByteBuffer, str, Optional[str]]:
     message = encode_bytes(message)
     result = await do_call_async(
         "askar_session_unpack_message", handle, message, return_type=lib_unpack_result

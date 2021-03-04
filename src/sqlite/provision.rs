@@ -5,7 +5,7 @@ use std::str::FromStr;
 
 use sqlx::{
     sqlite::{SqliteConnectOptions, SqlitePool, SqlitePoolOptions},
-    Error as SqlxError, Row,
+    ConnectOptions, Error as SqlxError, Row,
 };
 
 use super::SqliteStore;
@@ -48,8 +48,14 @@ impl SqliteStoreOptions {
     }
 
     async fn pool(&self, auto_create: bool) -> std::result::Result<SqlitePool, SqlxError> {
-        let conn_opts =
+        #[allow(unused_mut)]
+        let mut conn_opts =
             SqliteConnectOptions::from_str(self.path.as_ref())?.create_if_missing(auto_create);
+        #[cfg(feature = "log")]
+        {
+            conn_opts.log_statements(log::LevelFilter::Debug);
+            conn_opts.log_slow_statements(log::LevelFilter::Debug, Default::default());
+        }
         SqlitePoolOptions::default()
             // maintains at least 1 connection.
             // for an in-memory database this is required to avoid dropping the database,

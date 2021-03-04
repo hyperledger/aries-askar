@@ -1,9 +1,16 @@
 import asyncio
+import logging
+import os
 import sys
 import time
 
-from aries_askar.bindings import generate_raw_key, version
+from aries_askar.bindings import (
+    generate_raw_key,
+    version,
+)
 from aries_askar import Store
+
+logging.basicConfig(level=os.getenv("LOG_LEVEL", "").upper() or None)
 
 if len(sys.argv) > 1:
     REPO_URI = sys.argv[1]
