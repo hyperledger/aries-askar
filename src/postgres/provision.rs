@@ -1,9 +1,10 @@
 use std::borrow::Cow;
+use std::str::FromStr;
 use std::time::Duration;
 
 use sqlx::{
-    postgres::{PgConnection, PgPool, PgPoolOptions, Postgres},
-    Connection, Error as SqlxError, Executor, Row, Transaction,
+    postgres::{PgConnectOptions, PgConnection, PgPool, PgPoolOptions, Postgres},
+    ConnectOptions, Connection, Error as SqlxError, Executor, Row, Transaction,
 };
 
 use crate::db_utils::{init_keys, random_profile_name};
@@ -110,13 +111,20 @@ impl PostgresStoreOptions {
     }
 
     async fn pool(&self) -> std::result::Result<PgPool, SqlxError> {
+        #[allow(unused_mut)]
+        let mut conn_opts = PgConnectOptions::from_str(self.uri.as_str())?;
+        #[cfg(feature = "log")]
+        {
+            conn_opts.log_statements(log::LevelFilter::Debug);
+            conn_opts.log_slow_statements(log::LevelFilter::Debug, Default::default());
+        }
         PgPoolOptions::default()
             .connect_timeout(self.connect_timeout)
             .idle_timeout(self.idle_timeout)
             .max_connections(self.max_connections)
             .min_connections(self.min_connections)
             .test_before_acquire(false)
-            .connect(self.uri.as_str())
+            .connect_with(conn_opts)
             .await
     }
 
