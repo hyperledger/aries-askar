@@ -20,6 +20,8 @@ extern crate serde;
 #[cfg(any(feature = "postgres", feature = "sqlite"))]
 mod db_utils;
 
+mod didcomm;
+
 #[doc(hidden)]
 pub mod future;
 
@@ -29,6 +31,8 @@ pub mod future;
 pub mod indy_compat;
 
 mod options;
+
+mod random;
 
 #[cfg(feature = "ffi")]
 #[macro_use]

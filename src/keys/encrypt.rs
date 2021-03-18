@@ -5,7 +5,9 @@ use serde::{Deserialize, Serialize};
 use crate::error::Result;
 use crate::types::SecretBytes;
 
-pub trait SymEncryptKey: Clone + Debug + Eq + Sized + Serialize + for<'a> Deserialize<'a> {
+pub trait SymEncryptKey:
+    Clone + Debug + Eq + Sized + Serialize + for<'de> Deserialize<'de>
+{
     const SIZE: usize;
 
     fn as_bytes(&self) -> &[u8];
@@ -18,7 +20,7 @@ pub trait SymEncryptKey: Clone + Debug + Eq + Sized + Serialize + for<'a> Deseri
 }
 
 pub trait SymEncryptHashKey:
-    Clone + Debug + Eq + Sized + Serialize + for<'a> Deserialize<'a>
+    Clone + Debug + Eq + Sized + Serialize + for<'de> Deserialize<'de>
 {
     const SIZE: usize;
 
@@ -68,10 +70,11 @@ pub(crate) mod aead {
         ChaCha20Poly1305,
     };
     use hmac::{Hmac, Mac, NewMac};
-    use indy_utils::{keys::ArrayKey, random::random_deterministic};
     use sha2::Sha256;
 
     use super::{Result, SecretBytes, SymEncrypt, SymEncryptHashKey, SymEncryptKey};
+    use crate::keys::types::ArrayKey;
+    use crate::random::random_deterministic;
 
     pub type ChaChaEncrypt = AeadEncrypt<ChaCha20Poly1305>;
 
@@ -93,8 +96,8 @@ pub(crate) mod aead {
                 return Err(err_msg!(Encryption, "Invalid length for seed"));
             }
             let input = ArrayKey::from_slice(seed);
-            let raw_key = ArrayKey::from_slice(&random_deterministic(&input, L::USIZE));
-            Ok(ArrayKey::from(raw_key))
+            let raw_key = SecretBytes::from(random_deterministic(&input, L::USIZE));
+            Ok(ArrayKey::from_slice(&raw_key))
         }
 
         fn random_key() -> Self {

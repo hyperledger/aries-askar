@@ -10,7 +10,7 @@ use super::types::SecretBytes;
 
 macro_rules! serde_as_str_impl {
     ($t:ident) => {
-        impl Serialize for $t {
+        impl serde::Serialize for $t {
             fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
             where
                 S: serde::Serializer,
@@ -19,7 +19,7 @@ macro_rules! serde_as_str_impl {
             }
         }
 
-        impl<'de> Deserialize<'de> for $t {
+        impl<'de> serde::Deserialize<'de> for $t {
             fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
             where
                 D: serde::Deserializer<'de>,

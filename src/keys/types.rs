@@ -1,246 +1,119 @@
 use std::borrow::Cow;
-use std::convert::Infallible;
-use std::fmt::{self, Debug, Display, Formatter};
+use std::cmp::Ordering;
+use std::fmt::{self, Debug, Formatter};
 use std::mem::ManuallyDrop;
 use std::ops::Deref;
-use std::ptr;
-use std::str::FromStr;
 
-use indy_utils::keys::{EncodedVerKey, KeyType as IndyKeyAlg, PrivateKey, VerKey};
-use serde::{Deserialize, Serialize};
+use aead::generic_array::{ArrayLength, GenericArray};
+use serde::{de::Visitor, Deserialize, Deserializer, Serialize, Serializer};
 use zeroize::Zeroize;
 
-use crate::error::Error;
-use crate::types::{sorted_tags, EntryTag, SecretBytes};
+use crate::random::random_array;
 
-/// Supported key algorithms
-#[derive(Clone, Debug, PartialEq, Eq, Zeroize)]
-pub enum KeyAlg {
-    /// curve25519-based signature scheme
-    ED25519,
-    /// Unrecognized algorithm
-    Other(String),
-}
+/// A secure key representation for fixed-length keys
+#[derive(Clone, Debug, Hash, Zeroize)]
+pub struct ArrayKey<L: ArrayLength<u8>>(GenericArray<u8, L>);
 
-serde_as_str_impl!(KeyAlg);
+impl<L: ArrayLength<u8>> ArrayKey<L> {
+    pub const SIZE: usize = L::USIZE;
 
-impl KeyAlg {
-    /// Get a reference to a string representing the `KeyAlg`
-    pub fn as_str(&self) -> &str {
-        match self {
-            Self::ED25519 => "ed25519",
-            Self::Other(other) => other.as_str(),
-        }
+    #[inline]
+    pub fn from_slice<D: AsRef<[u8]>>(data: D) -> Self {
+        Self(GenericArray::clone_from_slice(data.as_ref()))
+    }
+
+    #[inline]
+    pub fn extract(self) -> GenericArray<u8, L> {
+        self.0
+    }
+
+    #[inline]
+    pub fn random() -> Self {
+        Self(random_array())
     }
 }
 
-impl AsRef<str> for KeyAlg {
-    fn as_ref(&self) -> &str {
-        self.as_str()
+impl<L: ArrayLength<u8>> Default for ArrayKey<L> {
+    #[inline]
+    fn default() -> Self {
+        Self(GenericArray::default())
     }
 }
 
-impl FromStr for KeyAlg {
-    type Err = Infallible;
+impl<L: ArrayLength<u8>> From<GenericArray<u8, L>> for ArrayKey<L> {
+    fn from(key: GenericArray<u8, L>) -> Self {
+        Self(key)
+    }
+}
 
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(match s {
-            "ed25519" => Self::ED25519,
-            other => Self::Other(other.to_owned()),
+impl<L: ArrayLength<u8>> std::ops::Deref for ArrayKey<L> {
+    type Target = GenericArray<u8, L>;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<L: ArrayLength<u8>> std::ops::DerefMut for ArrayKey<L> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl<L: ArrayLength<u8>> PartialEq for ArrayKey<L> {
+    fn eq(&self, other: &Self) -> bool {
+        **self == **other
+    }
+}
+impl<L: ArrayLength<u8>> Eq for ArrayKey<L> {}
+
+impl<L: ArrayLength<u8>> PartialOrd for ArrayKey<L> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        self.0.partial_cmp(&*other)
+    }
+}
+impl<L: ArrayLength<u8>> Ord for ArrayKey<L> {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.0.cmp(&*other)
+    }
+}
+
+impl<L: ArrayLength<u8>> Serialize for ArrayKey<L> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(hex::encode(&self.0.as_slice()).as_str())
+    }
+}
+
+impl<'a, L: ArrayLength<u8>> Deserialize<'a> for ArrayKey<L> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'a>,
+    {
+        deserializer.deserialize_str(KeyVisitor {
+            _pd: std::marker::PhantomData,
         })
     }
 }
 
-impl Display for KeyAlg {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.write_str(self.as_str())
-    }
+struct KeyVisitor<L: ArrayLength<u8>> {
+    _pd: std::marker::PhantomData<L>,
 }
 
-/// Categories of keys supported by the default KMS
-#[derive(Clone, Debug, PartialEq, Eq, Zeroize)]
-pub enum KeyCategory {
-    /// A public key
-    PublicKey,
-    /// A combination of a public and private key
-    KeyPair,
-    /// An unrecognized key category
-    Other(String),
-}
+impl<'a, L: ArrayLength<u8>> Visitor<'a> for KeyVisitor<L> {
+    type Value = ArrayKey<L>;
 
-impl KeyCategory {
-    /// Get a reference to a string representing the `KeyCategory`
-    pub fn as_str(&self) -> &str {
-        match self {
-            Self::PublicKey => "public",
-            Self::KeyPair => "keypair",
-            Self::Other(other) => other.as_str(),
-        }
+    fn expecting(&self, formatter: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        formatter.write_str(stringify!($name))
     }
 
-    /// Convert the `KeyCategory` into an owned string
-    pub fn into_string(self) -> String {
-        match self {
-            Self::Other(other) => other,
-            _ => self.as_str().to_owned(),
-        }
-    }
-}
-
-serde_as_str_impl!(KeyCategory);
-
-impl AsRef<str> for KeyCategory {
-    fn as_ref(&self) -> &str {
-        self.as_str()
-    }
-}
-
-impl FromStr for KeyCategory {
-    type Err = Infallible;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(match s {
-            "public" => Self::PublicKey,
-            "keypair" => Self::KeyPair,
-            other => Self::Other(other.to_owned()),
-        })
-    }
-}
-
-impl Display for KeyCategory {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.write_str(self.as_str())
-    }
-}
-
-/// Parameters defining a stored key
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
-pub struct KeyParams {
-    /// The key algorithm
-    pub alg: KeyAlg,
-
-    /// Associated key metadata
-    #[serde(default, rename = "meta", skip_serializing_if = "Option::is_none")]
-    pub metadata: Option<String>,
-
-    /// An optional external reference for the key
-    #[serde(default, rename = "ref", skip_serializing_if = "Option::is_none")]
-    pub reference: Option<String>,
-    #[serde(
-        default,
-        rename = "pub",
-        skip_serializing_if = "Option::is_none",
-        with = "crate::serde_utils::as_base58"
-    )]
-
-    /// The associated public key in binary format
-    pub pub_key: Option<Vec<u8>>,
-
-    /// The associated private key in binary format
-    #[serde(
-        default,
-        rename = "prv",
-        skip_serializing_if = "Option::is_none",
-        with = "crate::serde_utils::as_base58"
-    )]
-    pub prv_key: Option<SecretBytes>,
-}
-
-impl KeyParams {
-    pub(crate) fn to_vec(&self) -> Result<Vec<u8>, Error> {
-        serde_json::to_vec(self)
-            .map_err(|e| err_msg!(Unexpected, "Error serializing key params: {}", e))
-    }
-
-    pub(crate) fn from_slice(params: &[u8]) -> Result<KeyParams, Error> {
-        let result = serde_json::from_slice(params)
-            .map_err(|e| err_msg!(Unexpected, "Error deserializing key params: {}", e));
-        result
-    }
-}
-
-impl Drop for KeyParams {
-    fn drop(&mut self) {
-        self.zeroize()
-    }
-}
-
-impl Zeroize for KeyParams {
-    fn zeroize(&mut self) {
-        self.prv_key.zeroize();
-    }
-}
-
-/// A stored key entry
-#[derive(Clone, Debug, Eq)]
-pub struct KeyEntry {
-    /// The category of the key entry (public or public/private pair)
-    pub category: KeyCategory,
-    /// The key entry identifier
-    pub ident: String,
-    /// The parameters defining the key
-    pub params: KeyParams,
-    /// Tags associated with the key entry record
-    pub tags: Option<Vec<EntryTag>>,
-}
-
-impl KeyEntry {
-    pub(crate) fn into_parts(self) -> (KeyCategory, String, KeyParams, Option<Vec<EntryTag>>) {
-        let slf = ManuallyDrop::new(self);
-        unsafe {
-            (
-                ptr::read(&slf.category),
-                ptr::read(&slf.ident),
-                ptr::read(&slf.params),
-                ptr::read(&slf.tags),
-            )
-        }
-    }
-
-    /// Determine if a key entry refers to a local or external key
-    pub fn is_local(&self) -> bool {
-        self.params.reference.is_none()
-    }
-
-    /// Access the associated public key as an [`EncodedVerKey`]
-    pub fn encoded_verkey(&self) -> Result<EncodedVerKey, Error> {
-        Ok(self
-            .verkey()?
-            .as_base58()
-            .map_err(err_map!(Unexpected, "Error encoding verkey"))?)
-    }
-
-    /// Access the associated public key as a [`VerKey`]
-    pub fn verkey(&self) -> Result<VerKey, Error> {
-        match (&self.params.alg, &self.params.pub_key) {
-            (KeyAlg::ED25519, Some(pub_key)) => Ok(VerKey::new(pub_key, Some(IndyKeyAlg::ED25519))),
-            (_, None) => Err(err_msg!(Input, "Undefined public key")),
-            _ => Err(err_msg!(Unsupported, "Unsupported key algorithm")),
-        }
-    }
-
-    /// Access the associated private key as a [`PrivateKey`]
-    pub fn private_key(&self) -> Result<PrivateKey, Error> {
-        match (&self.params.alg, &self.params.prv_key) {
-            (KeyAlg::ED25519, Some(prv_key)) => {
-                Ok(PrivateKey::new(prv_key, Some(IndyKeyAlg::ED25519)))
-            }
-            (_, None) => Err(err_msg!(Input, "Undefined private key")),
-            _ => Err(err_msg!(Unsupported, "Unsupported key algorithm")),
-        }
-    }
-
-    pub(crate) fn sorted_tags(&self) -> Option<Vec<&EntryTag>> {
-        self.tags.as_ref().and_then(sorted_tags)
-    }
-}
-
-impl PartialEq for KeyEntry {
-    fn eq(&self, rhs: &Self) -> bool {
-        self.category == rhs.category
-            && self.ident == rhs.ident
-            && self.params == rhs.params
-            && self.sorted_tags() == rhs.sorted_tags()
+    fn visit_str<E>(self, value: &str) -> Result<ArrayKey<L>, E>
+    where
+        E: serde::de::Error,
+    {
+        let key = hex::decode(value).map_err(E::custom)?;
+        Ok(ArrayKey(GenericArray::clone_from_slice(key.as_slice())))
     }
 }
 
@@ -335,24 +208,5 @@ impl Zeroize for PassKey<'_> {
             }
             _ => (),
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn key_params_roundtrip() {
-        let params = KeyParams {
-            alg: KeyAlg::ED25519,
-            metadata: Some("meta".to_string()),
-            reference: None,
-            pub_key: Some(vec![0, 0, 0, 0]),
-            prv_key: Some(vec![1, 1, 1, 1].into()),
-        };
-        let enc_params = params.to_vec().unwrap();
-        let p2 = KeyParams::from_slice(&enc_params).unwrap();
-        assert_eq!(p2, params);
     }
 }

@@ -1,8 +1,8 @@
-use indy_utils::random::random_vec;
 use zeroize::Zeroize;
 
 use crate::error::Result;
 use crate::keys::{encrypt::aead::ChaChaEncrypt, store::EncKey};
+use crate::random::random_vec;
 
 pub const LEVEL_INTERACTIVE: &'static str = "13:int";
 pub const LEVEL_MODERATE: &'static str = "13:mod";

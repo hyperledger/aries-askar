@@ -1,3 +1,4 @@
+use std::convert::TryInto;
 use std::fmt::{self, Debug, Formatter};
 use std::future::Future;
 use std::pin::Pin;
@@ -5,16 +6,17 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use futures_lite::stream::{Stream, StreamExt};
-use indy_utils::{
-    keys::{EncodedVerKey, KeyType as IndyKeyAlg, PrivateKey},
-    pack::{pack_message, unpack_message, KeyLookup},
-    Validatable,
-};
-use zeroize::Zeroize;
+use zeroize::Zeroizing;
 
+use super::didcomm::pack::{pack_message, unpack_message, KeyLookup};
 use super::error::Result;
 use super::future::BoxFuture;
-use super::keys::{wrap::WrapKeyMethod, KeyAlg, KeyCategory, KeyEntry, KeyParams, PassKey};
+use super::keys::{
+    alg::edwards::{Ed25519KeyPair, Ed25519PublicKey},
+    caps::KeyCapSign,
+    wrap::WrapKeyMethod,
+    AnyPrivateKey, KeyAlg, KeyCategory, KeyEntry, KeyParams, PassKey,
+};
 use super::types::{Entry, EntryKind, EntryOperation, EntryTag, TagFilter};
 
 /// Represents a generic backend implementation
@@ -386,30 +388,23 @@ impl<Q: QueryBackend> Session<Q> {
             _ => return Err(err_msg!(Unsupported, "Unsupported key algorithm")),
         }
 
-        let sk = match seed {
-            None => PrivateKey::generate(Some(IndyKeyAlg::ED25519)),
-            Some(s) => PrivateKey::from_seed(s),
+        let keypair = match seed {
+            None => Ed25519KeyPair::generate(),
+            Some(s) => Ed25519KeyPair::from_seed(s),
         }
         .map_err(err_map!(Unexpected, "Error generating keypair"))?;
+        let pk = keypair.public_key();
 
-        let pk = sk
-            .public_key()
-            .map_err(err_map!(Unexpected, "Error generating public key"))?;
-
-        let category = KeyCategory::KeyPair;
-        let ident = pk
-            .as_base58()
-            .map_err(err_map!(Unexpected, "Error encoding public key"))?
-            .long_form();
+        let category = KeyCategory::PrivateKey;
+        let ident = pk.to_string();
 
         let params = KeyParams {
             alg,
             metadata: metadata.map(str::to_string),
             reference: None,
-            pub_key: Some(pk.key_bytes()),
-            prv_key: Some(sk.key_bytes().into()),
+            data: Some(keypair.to_bytes()),
         };
-        let mut value = params.to_vec()?;
+        let value = Zeroizing::new(params.to_vec()?);
 
         self.0
             .update(
@@ -422,7 +417,6 @@ impl<Q: QueryBackend> Session<Q> {
                 None,
             )
             .await?;
-        value.zeroize();
 
         Ok(KeyEntry {
             category,
@@ -431,10 +425,6 @@ impl<Q: QueryBackend> Session<Q> {
             tags: tags.map(|t| t.to_vec()),
         })
     }
-
-    // pub async fn import_key(&self, key: KeyEntry) -> Result<()> {
-    //     Ok(())
-    // }
 
     /// Fetch an existing key from the store
     ///
@@ -446,12 +436,6 @@ impl<Q: QueryBackend> Session<Q> {
         ident: &str,
         for_update: bool,
     ) -> Result<Option<KeyEntry>> {
-        // normalize ident
-        let ident = EncodedVerKey::from_str(&ident)
-            .and_then(|k| k.as_base58())
-            .map_err(err_map!("Invalid key"))?
-            .long_form();
-
         Ok(
             if let Some(row) = self
                 .0
@@ -473,12 +457,6 @@ impl<Q: QueryBackend> Session<Q> {
 
     /// Remove an existing key from the store
     pub async fn remove_key(&mut self, category: KeyCategory, ident: &str) -> Result<()> {
-        // normalize ident
-        let ident = EncodedVerKey::from_str(&ident)
-            .and_then(|k| k.as_base58())
-            .map_err(err_map!("Invalid key"))?
-            .long_form();
-
         self.0
             .update(
                 EntryKind::Key,
@@ -492,18 +470,6 @@ impl<Q: QueryBackend> Session<Q> {
             .await
     }
 
-    // pub async fn scan_keys(
-    //     &self,
-    //     profile: Option<String>,
-    //     category: String,
-    //     options: EntryFetchOptions,
-    //     tag_filter: Option<TagFilter>,
-    //     offset: Option<i64>,
-    //     max_rows: Option<i64>,
-    // ) -> Result<Scan<KeyEntry>> {
-    //     unimplemented!();
-    // }
-
     /// Replace the metadata and tags on an existing key in the store
     pub async fn update_key(
         &mut self,
@@ -512,12 +478,6 @@ impl<Q: QueryBackend> Session<Q> {
         metadata: Option<&str>,
         tags: Option<&[EntryTag]>,
     ) -> Result<()> {
-        // normalize ident
-        let ident = EncodedVerKey::from_str(&ident)
-            .and_then(|k| k.as_base58())
-            .map_err(err_map!("Invalid key"))?
-            .long_form();
-
         let row = self
             .0
             .fetch(EntryKind::Key, category.as_str(), &ident, true)
@@ -526,7 +486,7 @@ impl<Q: QueryBackend> Session<Q> {
 
         let mut params = KeyParams::from_slice(&row.value)?;
         params.metadata = metadata.map(str::to_string);
-        let mut value = params.to_vec()?;
+        let value = Zeroizing::new(params.to_vec()?);
 
         self.0
             .update(
@@ -539,26 +499,25 @@ impl<Q: QueryBackend> Session<Q> {
                 None,
             )
             .await?;
-        value.zeroize();
 
         Ok(())
     }
 
-    /// Sign a message using an existing keypair in the store identified by `key_ident`
+    /// Sign a message using an existing private key in the store identified by `key_ident`
     pub async fn sign_message(&mut self, key_ident: &str, data: &[u8]) -> Result<Vec<u8>> {
         if let Some(key) = self
-            .fetch_key(KeyCategory::KeyPair, key_ident, false)
+            .fetch_key(KeyCategory::PrivateKey, key_ident, false)
             .await?
         {
-            let sk = key.private_key()?;
-            sk.sign(&data)
+            let sk: AnyPrivateKey = key.try_into()?;
+            sk.key_sign(&data, None, None)
                 .map_err(|e| err_msg!(Unexpected, "Signature error: {}", e))
         } else {
             return Err(err_msg!(NotFound, "Unknown key"));
         }
     }
 
-    /// Pack a message using an existing keypair in the store identified by `key_ident`
+    /// Pack a message using an existing private key in the store identified by `key_ident`
     ///
     /// This uses the `pack` algorithm defined for DIDComm v1
     pub async fn pack_message(
@@ -569,22 +528,24 @@ impl<Q: QueryBackend> Session<Q> {
     ) -> Result<Vec<u8>> {
         let sign_key = if let Some(ident) = from_key_ident {
             let sk = self
-                .fetch_key(KeyCategory::KeyPair, ident, false)
+                .fetch_key(KeyCategory::PrivateKey, ident, false)
                 .await?
                 .ok_or_else(|| err_msg!(NotFound, "Unknown sender key"))?;
-            Some(sk.private_key()?)
+            let data = sk
+                .key_data()
+                .ok_or_else(|| err_msg!(NotFound, "Missing private key data"))?;
+            Some(Ed25519KeyPair::from_bytes(data)?)
         } else {
             None
         };
         let vks = recipient_vks
             .into_iter()
             .map(|vk| {
-                let vk =
-                    EncodedVerKey::from_str(&vk).map_err(err_map!("Invalid recipient verkey"))?;
-                vk.validate()?;
+                let vk = Ed25519PublicKey::from_str(&vk)
+                    .map_err(err_map!("Invalid recipient verkey"))?;
                 Ok(vk)
             })
-            .collect::<Result<Vec<EncodedVerKey>>>()?;
+            .collect::<Result<Vec<_>>>()?;
         Ok(pack_message(data, vks, sign_key).map_err(err_map!("Error packing message"))?)
     }
 
@@ -592,7 +553,7 @@ impl<Q: QueryBackend> Session<Q> {
     pub async fn unpack_message(
         &mut self,
         data: &[u8],
-    ) -> Result<(Vec<u8>, EncodedVerKey, Option<EncodedVerKey>)> {
+    ) -> Result<(Vec<u8>, Ed25519PublicKey, Option<Ed25519PublicKey>)> {
         match unpack_message(data, self).await {
             Ok((message, recip, sender)) => Ok((message, recip, sender)),
             Err(err) => Err(err_msg!(Unexpected, "Error unpacking message").with_cause(err)),
@@ -613,15 +574,17 @@ impl<Q: QueryBackend> Session<Q> {
 impl<'a, Q: QueryBackend> KeyLookup<'a> for &'a mut Session<Q> {
     fn find<'f>(
         self,
-        keys: &'f Vec<EncodedVerKey>,
-    ) -> std::pin::Pin<Box<dyn Future<Output = Option<(usize, PrivateKey)>> + Send + 'f>>
+        keys: &'f Vec<Ed25519PublicKey>,
+    ) -> std::pin::Pin<Box<dyn Future<Output = Option<(usize, Ed25519KeyPair)>> + Send + 'f>>
     where
         'a: 'f,
     {
         Box::pin(async move {
             for (idx, key) in keys.into_iter().enumerate() {
-                if let Ok(Some(key)) = self.fetch_key(KeyCategory::KeyPair, &key.key, false).await {
-                    if let Ok(sk) = key.private_key() {
+                let ident = key.to_string();
+                if let Ok(Some(key)) = self.fetch_key(KeyCategory::PrivateKey, &ident, false).await
+                {
+                    if let Some(Ok(sk)) = key.key_data().map(Ed25519KeyPair::from_bytes) {
                         return Some((idx, sk));
                     }
                 }

@@ -966,7 +966,7 @@ pub extern "C" fn askar_session_fetch_keypair(
             let result = async {
                 let mut session = handle.load().await?;
                 let key_entry = session.fetch_key(
-                    KeyCategory::KeyPair,
+                    KeyCategory::PrivateKey,
                     &ident,
                     for_update != 0
                 ).await?;
@@ -1015,7 +1015,7 @@ pub extern "C" fn askar_session_update_keypair(
             let result = async {
                 let mut session = handle.load().await?;
                 session.update_key(
-                    KeyCategory::KeyPair,
+                    KeyCategory::PrivateKey,
                     &ident,
                     metadata.as_ref().map(String::as_str),
                     tags.as_ref().map(Vec::as_slice)
@@ -1152,7 +1152,7 @@ pub extern "C" fn askar_session_unpack_message(
                 let (unpacked, recipient, sender) = session.unpack_message(
                     &message
                 ).await?;
-                Ok((unpacked, recipient.to_string(), sender.map(|s| s.to_string())))
+                Ok((unpacked, recipient.to_base58(), sender.map(|s| s.to_base58())))
             }.await;
             cb.resolve(result);
         });
@@ -1208,9 +1208,14 @@ pub extern "C" fn askar_session_close(
 }
 
 fn export_key_entry(key_entry: KeyEntry) -> KvResult<Entry> {
-    let (category, name, params, tags) = key_entry.into_parts();
+    let KeyEntry {
+        category,
+        ident,
+        params,
+        tags,
+    } = key_entry;
     let value = serde_json::to_string(&params)
         .map_err(err_map!("Error converting key entry to JSON"))?
         .into_bytes();
-    Ok(Entry::new(category.to_string(), name, value, tags))
+    Ok(Entry::new(category.to_string(), ident, value, tags))
 }

@@ -2,7 +2,6 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use async_mutex::Mutex;
-use indy_utils::keys::{EncodedVerKey, PrivateKey};
 use zeroize::Zeroize;
 
 use super::error::Result;
@@ -12,19 +11,28 @@ use super::types::{EncEntryTag, EntryTag, ProfileId, SecretBytes};
 use self::store::StoreKey;
 use self::wrap::WrapKey;
 
+pub mod any;
+pub use self::any::{AnyPrivateKey, AnyPublicKey};
+
+pub mod alg;
+use self::alg::edwards::{Ed25519KeyPair, Ed25519PublicKey};
+
+pub mod caps;
+pub use self::caps::{
+    KeyAlg, KeyCapGetPublic, KeyCapSign, KeyCapVerify, KeyCategory, SignatureFormat, SignatureType,
+};
+
 pub mod encrypt;
 
 pub mod kdf;
 
 pub mod store;
+pub use self::store::{KeyEntry, KeyParams};
 
 mod types;
-pub use self::types::{KeyAlg, KeyCategory, KeyEntry, KeyParams, PassKey};
+pub use self::types::PassKey;
 
 pub mod wrap;
-
-// #[cfg(target_os = "macos")]
-// mod keychain;
 
 /// Derive the (public) verification key for a keypair
 pub fn derive_verkey(alg: KeyAlg, seed: &[u8]) -> Result<String> {
@@ -32,26 +40,16 @@ pub fn derive_verkey(alg: KeyAlg, seed: &[u8]) -> Result<String> {
         KeyAlg::ED25519 => (),
         _ => return Err(err_msg!(Unsupported, "Unsupported key algorithm")),
     }
-
-    let sk =
-        PrivateKey::from_seed(seed).map_err(err_map!(Unexpected, "Error generating keypair"))?;
-    let pk = sk
-        .public_key()
-        .map_err(err_map!(Unexpected, "Error generating public key"))?
-        .as_base58()
-        .map_err(err_map!(Unexpected, "Error encoding public key"))?
-        .long_form();
+    let sk = Ed25519KeyPair::from_seed(seed)
+        .map_err(err_map!(Unexpected, "Error generating keypair"))?;
+    let pk = sk.public_key().to_string();
     Ok(pk)
 }
 
 /// Verify that a message signature is consistent with the signer's key
 pub fn verify_signature(signer_vk: &str, data: &[u8], signature: &[u8]) -> Result<bool> {
-    let vk = EncodedVerKey::from_str(&signer_vk).map_err(err_map!("Invalid verkey"))?;
-    Ok(vk
-        .decode()
-        .map_err(err_map!("Unsupported verkey"))?
-        .verify_signature(&data, &signature)
-        .unwrap_or(false))
+    let vk = Ed25519PublicKey::from_str(&signer_vk).map_err(err_map!("Invalid verkey"))?;
+    vk.key_verify(data, signature, None, None)
 }
 
 #[derive(Debug)]

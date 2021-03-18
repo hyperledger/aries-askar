@@ -506,8 +506,18 @@ pub async fn db_keypair_sign_verify<DB: Backend>(db: &Store<DB>) {
     );
 
     assert_eq!(
-        verify_signature(&key_info.ident, &message, b"bad sig").expect(ERR_VERIFY),
+        verify_signature(
+            &key_info.ident,
+            // [0u8; 64]
+            b"xt19s1sp2UZCGhy9rNyb1FtxdKiDGZZPNFnc1KiM9jYYEuHxuwNeFf1oQKsn8zv6yvYBGhXa83288eF4MqN1oDq",
+            &sig
+        ).expect(ERR_VERIFY),
         false
+    );
+
+    assert_eq!(
+        verify_signature(&key_info.ident, &message, b"bad sig").is_err(),
+        true
     );
 
     let err = verify_signature("not a key", &message, &sig).expect_err(ERR_REQ_ERR);
@@ -531,7 +541,7 @@ pub async fn db_keypair_pack_unpack_anon<DB: Backend>(db: &Store<DB>) {
 
     let (unpacked, p_recip, p_send) = conn.unpack_message(&packed).await.expect(ERR_UNPACK);
     assert_eq!(unpacked, msg);
-    assert_eq!(p_recip, recip_key.encoded_verkey().unwrap());
+    assert_eq!(p_recip.to_string(), recip_key.ident);
     assert_eq!(p_send, None);
 }
 
@@ -560,8 +570,8 @@ pub async fn db_keypair_pack_unpack_auth<DB: Backend>(db: &Store<DB>) {
 
     let (unpacked, p_recip, p_send) = conn.unpack_message(&packed).await.expect(ERR_UNPACK);
     assert_eq!(unpacked, msg);
-    assert_eq!(p_recip, recip_key.encoded_verkey().unwrap());
-    assert_eq!(p_send, Some(sender_key.encoded_verkey().unwrap()));
+    assert_eq!(p_recip.to_string(), recip_key.ident);
+    assert_eq!(p_send.map(|k| k.to_string()), Some(sender_key.ident));
 }
 
 pub async fn db_txn_rollback<DB: Backend>(db: &Store<DB>) {
