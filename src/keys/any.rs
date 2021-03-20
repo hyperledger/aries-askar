@@ -1,8 +1,10 @@
 use std::convert::TryFrom;
 
-use super::alg::edwards::Ed25519KeyPair;
+use super::alg::edwards::{Ed25519KeyPair, Ed25519PublicKey};
+use super::alg::p256::{P256SigningKey, P256VerifyingKey};
 use super::caps::{
-    KeyAlg, KeyCapGetPublic, KeyCapSign, KeyCategory, SignatureFormat, SignatureType,
+    EcCurves, KeyAlg, KeyCapGetPublic, KeyCapSign, KeyCapVerify, KeyCategory, SignatureFormat,
+    SignatureType,
 };
 use super::store::KeyEntry;
 use crate::error::Error;
@@ -33,6 +35,27 @@ impl TryFrom<KeyEntry> for AnyPublicKey {
     }
 }
 
+impl KeyCapVerify for AnyPublicKey {
+    fn key_verify(
+        &self,
+        data: &[u8],
+        signature: &[u8],
+        sig_type: Option<SignatureType>,
+        sig_format: Option<SignatureFormat>,
+    ) -> Result<bool, Error> {
+        match self.alg {
+            KeyAlg::Ed25519 => Ed25519PublicKey::try_from(self)
+                .and_then(|k| k.key_verify(data, signature, sig_type, sig_format)),
+            KeyAlg::Ecdsa(EcCurves::Secp256r1) => P256VerifyingKey::try_from(self)
+                .and_then(|k| k.key_verify(data, signature, sig_type, sig_format)),
+            _ => Err(err_msg!(
+                Unsupported,
+                "Signature verification not supported for this key type"
+            )),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct AnyPrivateKey {
     pub alg: KeyAlg,
@@ -56,9 +79,33 @@ impl KeyCapSign for AnyPrivateKey {
             KeyAlg::Ed25519 => {
                 Ed25519KeyPair::try_from(self).and_then(|k| k.key_sign(data, sig_type, sig_format))
             }
+            KeyAlg::Ecdsa(EcCurves::Secp256r1) => {
+                P256SigningKey::try_from(self).and_then(|k| k.key_sign(data, sig_type, sig_format))
+            }
             _ => Err(err_msg!(
                 Unsupported,
                 "Signing not supported for this key type"
+            )),
+        }
+    }
+}
+
+impl KeyCapVerify for AnyPrivateKey {
+    fn key_verify(
+        &self,
+        data: &[u8],
+        signature: &[u8],
+        sig_type: Option<SignatureType>,
+        sig_format: Option<SignatureFormat>,
+    ) -> Result<bool, Error> {
+        match self.alg {
+            KeyAlg::Ed25519 => Ed25519KeyPair::try_from(self)
+                .and_then(|k| k.key_verify(data, signature, sig_type, sig_format)),
+            KeyAlg::Ecdsa(EcCurves::Secp256r1) => P256SigningKey::try_from(self)
+                .and_then(|k| k.key_verify(data, signature, sig_type, sig_format)),
+            _ => Err(err_msg!(
+                Unsupported,
+                "Signature verification not supported for this key type"
             )),
         }
     }
