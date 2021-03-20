@@ -340,7 +340,7 @@ mod tests {
     }
 
     #[test]
-    fn create_keypair_expected() {
+    fn jwk_expected() {
         // from JWS RFC https://tools.ietf.org/html/rfc7515
         // {"kty":"EC",
         // "crv":"P-256",
@@ -350,7 +350,7 @@ mod tests {
         // }
         let test_pvt = base64::decode_config(
             "jpsQnnGQmL-YBIffH1136cspYG6-0iY7X1fCE9-E9LI",
-            base64::URL_SAFE_NO_PAD,
+            base64::URL_SAFE,
         )
         .unwrap();
         let sk = P256SigningKey::from_bytes(&test_pvt).expect("Error creating signing key");

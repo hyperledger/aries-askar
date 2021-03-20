@@ -33,7 +33,14 @@ impl Ed25519KeyPair {
     }
 
     pub fn from_bytes(kp: &[u8]) -> Result<Self, Error> {
-        let kp = Keypair::from_bytes(kp).map_err(|_| err_msg!("Invalid keypair bytes"))?;
+        let kp = if kp.len() == 32 {
+            let secret =
+                SecretKey::from_bytes(kp).map_err(|_| err_msg!("Invalid keypair bytes"))?;
+            let public = PublicKey::from(&secret);
+            Keypair { secret, public }
+        } else {
+            Keypair::from_bytes(kp).map_err(|_| err_msg!("Invalid keypair bytes"))?
+        };
         Ok(Self(kp))
     }
 
@@ -397,6 +404,31 @@ mod tests {
             .to_bytes();
         assert_eq!(&x_pair[..32], x_sk);
         assert_eq!(&x_pair[32..], x_pk);
+    }
+
+    #[test]
+    fn jwk_expected() {
+        // from https://www.connect2id.com/blog/nimbus-jose-jwt-6
+        // {
+        //     "kty" : "OKP",
+        //     "crv" : "Ed25519",
+        //     "x"   : "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo",
+        //     "d"   : "nWGxne_9WmC6hEr0kuwsxERJxWl7MmkZcDusAxyuf2A"
+        //     "use" : "sig",
+        //     "kid" : "FdFYFzERwC2uCBB46pZQi4GG85LujR8obt-KWRBICVQ"
+        //   }
+        let test_pvt_b64 = "nWGxne_9WmC6hEr0kuwsxERJxWl7MmkZcDusAxyuf2A";
+        let test_pvt = base64::decode_config(test_pvt_b64, base64::URL_SAFE).unwrap();
+        let sk = Ed25519KeyPair::from_bytes(&test_pvt).expect("Error creating signing key");
+        let vk = sk.public_key();
+        let jwk = vk.to_jwk().expect("Error converting public key to JWK");
+        assert_eq!(jwk["kty"], "OKP");
+        assert_eq!(jwk["crv"], "Ed25519");
+        assert_eq!(jwk["x"], "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo");
+        assert_eq!(
+            base64::encode_config(sk.private_key(), base64::URL_SAFE_NO_PAD),
+            test_pvt_b64
+        );
     }
 
     #[test]
