@@ -11,13 +11,13 @@ use crate::error::Error;
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Zeroize)]
 pub enum KeyAlg {
     /// Curve25519 signing key
-    ED25519,
+    Ed25519,
     /// Curve25519 diffie-hellman key exchange key
     X25519,
-    // /// Elliptic Curve diffie-hellman key exchange key
-    // Ecdh(EcCurves),
-    // /// Elliptic Curve signing key
-    // Ecdsa(EcCurves),
+    /// Elliptic Curve diffie-hellman key exchange key
+    Ecdh(EcCurves),
+    /// Elliptic Curve signing key
+    Ecdsa(EcCurves),
     /// BLS12-1381 signing key in group G1 or G2
     // BLS12_1381(BlsGroup),
     /// Unrecognized algorithm
@@ -30,8 +30,10 @@ impl KeyAlg {
     /// Get a reference to a string representing the `KeyAlg`
     pub fn as_str(&self) -> &str {
         match self {
-            Self::ED25519 => "ed25519",
+            Self::Ed25519 => "ed25519",
             Self::X25519 => "x25519",
+            Self::Ecdh(EcCurves::Secp256r1) => "p256/ecdh",
+            Self::Ecdsa(EcCurves::Secp256r1) => "p256/ecdsa",
             Self::Other(other) => other.as_str(),
         }
     }
@@ -48,7 +50,7 @@ impl FromStr for KeyAlg {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Ok(match s {
-            "ed25519" => Self::ED25519,
+            "ed25519" => Self::Ed25519,
             "x25519" => Self::X25519,
             other => Self::Other(other.to_owned()),
         })
@@ -140,16 +142,21 @@ pub trait KeyCapVerify {
     ) -> Result<bool, Error>;
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum SignatureFormat {
     /// Base58-encoded binary signature
     Base58,
+    /// Raw binary signature (method dependent)
+    Raw,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum SignatureType {
     // Bls12_1381(BlsGroup),
     /// Standard signature output for ed25519
-    Ed25519,
-    // Ecdsa(EcdsaMethod),
+    EdDSA,
+    // Elliptic curve DSA using P-256 and SHA-256
+    ES256,
 }
 
 impl SignatureType {
@@ -157,8 +164,8 @@ impl SignatureType {
         match self {
             // Self::Bls12_1381(BlsGroup::G1) => 48,
             // Self::Bls12_1381(BlsGroup::G2) => 96,
-            Self::Ed25519 => 64,
-            // Self::Ecdsa(_) => ,
+            Self::EdDSA => 64,
+            Self::ES256 => 64,
         }
     }
 }
@@ -170,24 +177,11 @@ impl SignatureType {
 //     G2,
 // }
 
-// pub enum EcdsaMethod {
-//     /// Sign/verify ECC signatures using SHA2-256
-//     Sha256,
-//     /// Sign/verify ECC signatures using SHA2-384
-//     Sha384,
-//     /// Sign/verify ECC signatures using SHA2-512
-//     Sha512,
-// }
-
-// /// Possibly supported curves for ECC operations
-// #[derive(Clone, Copy, Debug)]
-// pub enum EcCurves {
-//     /// NIST P-256 curve
-//     Secp256r1,
-//     /// NIST P-384 curve
-//     Secp384r1,
-//     /// NIST P-512 curve
-//     Secp512r1,
-//     /// Koblitz 256 curve
-//     Secp256k1,
-// }
+/// Supported curves for ECC operations
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Zeroize)]
+pub enum EcCurves {
+    /// NIST P-256 curve
+    Secp256r1,
+    // /// Koblitz 256 curve
+    // Secp256k1,
+}

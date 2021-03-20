@@ -267,7 +267,7 @@ mod tests {
     #[test]
     fn key_params_roundtrip() {
         let params = KeyParams {
-            alg: KeyAlg::ED25519,
+            alg: KeyAlg::Ed25519,
             metadata: Some("meta".to_string()),
             reference: None,
             data: Some(SecretBytes::from(vec![0, 0, 0, 0])),

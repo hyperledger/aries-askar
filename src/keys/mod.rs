@@ -37,7 +37,7 @@ pub mod wrap;
 /// Derive the (public) verification key for a keypair
 pub fn derive_verkey(alg: KeyAlg, seed: &[u8]) -> Result<String> {
     match alg {
-        KeyAlg::ED25519 => (),
+        KeyAlg::Ed25519 => (),
         _ => return Err(err_msg!(Unsupported, "Unsupported key algorithm")),
     }
     let sk = Ed25519KeyPair::from_seed(seed)

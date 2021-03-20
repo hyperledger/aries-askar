@@ -469,7 +469,7 @@ pub async fn db_keypair_create_fetch<DB: Backend>(db: &Store<DB>) {
 
     let metadata = "meta".to_owned();
     let key_info = conn
-        .create_keypair(KeyAlg::ED25519, Some(&metadata), None, None)
+        .create_keypair(KeyAlg::Ed25519, Some(&metadata), None, None)
         .await
         .expect(ERR_CREATE_KEYPAIR);
     assert_eq!(key_info.params.metadata, Some(metadata));
@@ -485,7 +485,7 @@ pub async fn db_keypair_sign_verify<DB: Backend>(db: &Store<DB>) {
     let mut conn = db.session(None).await.expect(ERR_SESSION);
 
     let key_info = conn
-        .create_keypair(KeyAlg::ED25519, None, None, None)
+        .create_keypair(KeyAlg::Ed25519, None, None, None)
         .await
         .expect(ERR_CREATE_KEYPAIR);
 
@@ -528,7 +528,7 @@ pub async fn db_keypair_pack_unpack_anon<DB: Backend>(db: &Store<DB>) {
     let mut conn = db.session(None).await.expect(ERR_SESSION);
 
     let recip_key = conn
-        .create_keypair(KeyAlg::ED25519, None, None, None)
+        .create_keypair(KeyAlg::Ed25519, None, None, None)
         .await
         .expect(ERR_CREATE_KEYPAIR);
 
@@ -549,11 +549,11 @@ pub async fn db_keypair_pack_unpack_auth<DB: Backend>(db: &Store<DB>) {
     let mut conn = db.session(None).await.expect(ERR_SESSION);
 
     let sender_key = conn
-        .create_keypair(KeyAlg::ED25519, None, None, None)
+        .create_keypair(KeyAlg::Ed25519, None, None, None)
         .await
         .expect(ERR_CREATE_KEYPAIR);
     let recip_key = conn
-        .create_keypair(KeyAlg::ED25519, None, None, None)
+        .create_keypair(KeyAlg::Ed25519, None, None, None)
         .await
         .expect(ERR_CREATE_KEYPAIR);
 

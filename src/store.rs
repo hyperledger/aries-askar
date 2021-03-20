@@ -384,7 +384,7 @@ impl<Q: QueryBackend> Session<Q> {
         // backend
     ) -> Result<KeyEntry> {
         match alg {
-            KeyAlg::ED25519 => (),
+            KeyAlg::Ed25519 => (),
             _ => return Err(err_msg!(Unsupported, "Unsupported key algorithm")),
         }
 

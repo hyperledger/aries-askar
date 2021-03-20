@@ -3,6 +3,7 @@ use std::convert::{TryFrom, TryInto};
 use curve25519_dalek::edwards::CompressedEdwardsY;
 use ed25519_dalek::{Keypair, PublicKey, SecretKey, Signer, KEYPAIR_LENGTH};
 use rand::rngs::OsRng;
+use serde_json::json;
 use sha2::{self, Digest};
 use x25519_dalek::{PublicKey as XPublicKey, StaticSecret as XSecretKey};
 
@@ -58,7 +59,7 @@ impl Ed25519KeyPair {
     }
 
     pub fn sign(&self, message: &[u8]) -> [u8; 64] {
-        self.0.sign(&message).to_bytes()
+        self.0.sign(message).to_bytes()
     }
 
     pub fn verify(&self, message: &[u8], signature: [u8; 64]) -> bool {
@@ -83,13 +84,10 @@ impl KeyCapSign for Ed25519KeyPair {
         sig_format: Option<SignatureFormat>,
     ) -> Result<Vec<u8>, Error> {
         match sig_type {
-            None | Some(SignatureType::Ed25519) => match sig_format {
-                None | Some(SignatureFormat::Base58) => {
-                    Ok(bs58::encode(self.sign(data)).into_vec())
-                }
-                #[allow(unreachable_patterns)]
-                _ => Err(err_msg!(Unsupported, "Unsupported signature format")),
-            },
+            None | Some(SignatureType::EdDSA) => {
+                let sig = self.sign(data);
+                encode_signature(&sig, sig_format)
+            }
             #[allow(unreachable_patterns)]
             _ => Err(err_msg!(Unsupported, "Unsupported signature type")),
         }
@@ -105,17 +103,11 @@ impl KeyCapVerify for Ed25519KeyPair {
         sig_format: Option<SignatureFormat>,
     ) -> Result<bool, Error> {
         match sig_type {
-            None | Some(SignatureType::Ed25519) => match sig_format {
-                None | Some(SignatureFormat::Base58) => {
-                    let mut sig = [0u8; 64];
-                    bs58::decode(signature)
-                        .into(&mut sig)
-                        .map_err(|_| err_msg!("Invalid base58 signature"))?;
-                    Ok(self.verify(data, sig))
-                }
-                #[allow(unreachable_patterns)]
-                _ => Err(err_msg!(Unsupported, "Unsupported signature format")),
-            },
+            None | Some(SignatureType::EdDSA) => {
+                let mut sig = [0u8; 64];
+                decode_signature(signature, &mut sig, sig_format)?;
+                Ok(self.verify(data, sig))
+            }
             #[allow(unreachable_patterns)]
             _ => Err(err_msg!(Unsupported, "Unsupported signature type")),
         }
@@ -126,7 +118,7 @@ impl TryFrom<&AnyPrivateKey> for Ed25519KeyPair {
     type Error = Error;
 
     fn try_from(value: &AnyPrivateKey) -> Result<Self, Self::Error> {
-        if value.alg == KeyAlg::ED25519 {
+        if value.alg == KeyAlg::Ed25519 {
             Self::from_bytes(value.data.as_ref())
         } else {
             Err(err_msg!(Unsupported, "Expected ed25519 key type"))
@@ -169,8 +161,14 @@ impl Ed25519PublicKey {
         self.0.to_bytes()
     }
 
-    pub fn to_jwk(&self) -> Result<String, Error> {
-        unimplemented!();
+    pub fn to_jwk(&self) -> Result<serde_json::Value, Error> {
+        let x = base64::encode_config(self.to_bytes(), base64::URL_SAFE_NO_PAD);
+        Ok(json!({
+            "kty": "OKP",
+            "crv": "Ed25519",
+            "x": x,
+            "key_ops": ["verify"]
+        }))
     }
 
     pub fn to_x25519(&self) -> X25519PublicKey {
@@ -198,17 +196,11 @@ impl KeyCapVerify for Ed25519PublicKey {
         sig_format: Option<SignatureFormat>,
     ) -> Result<bool, Error> {
         match sig_type {
-            None | Some(SignatureType::Ed25519) => match sig_format {
-                None | Some(SignatureFormat::Base58) => {
-                    let mut sig = [0u8; 64];
-                    bs58::decode(signature)
-                        .into(&mut sig)
-                        .map_err(|_| err_msg!("Invalid base58 signature"))?;
-                    Ok(self.verify(data, sig))
-                }
-                #[allow(unreachable_patterns)]
-                _ => Err(err_msg!(Unsupported, "Unsupported signature format")),
-            },
+            None | Some(SignatureType::EdDSA) => {
+                let mut sig = [0u8; 64];
+                decode_signature(signature, &mut sig, sig_format)?;
+                Ok(self.verify(data, sig))
+            }
             #[allow(unreachable_patterns)]
             _ => Err(err_msg!(Unsupported, "Unsupported signature type")),
         }
@@ -219,7 +211,7 @@ impl TryFrom<&AnyPublicKey> for Ed25519PublicKey {
     type Error = Error;
 
     fn try_from(value: &AnyPublicKey) -> Result<Self, Self::Error> {
-        if value.alg == KeyAlg::ED25519 {
+        if value.alg == KeyAlg::Ed25519 {
             Self::from_bytes(&value.data)
         } else {
             Err(err_msg!(Unsupported, "Expected ed25519 key type"))
@@ -305,6 +297,16 @@ impl X25519PublicKey {
         bs58::encode(self.to_bytes()).into_string()
     }
 
+    pub fn to_jwk(&self) -> Result<serde_json::Value, Error> {
+        let x = base64::encode_config(self.to_bytes(), base64::URL_SAFE_NO_PAD);
+        Ok(json!({
+            "kty": "OKP",
+            "crv": "X25519",
+            "x": x,
+            "key_ops": ["deriveKey"]
+        }))
+    }
+
     pub fn to_string(&self) -> String {
         let mut sval = String::with_capacity(64);
         bs58::encode(self.to_bytes()).into(&mut sval).unwrap();
@@ -326,6 +328,42 @@ impl TryFrom<&AnyPublicKey> for X25519PublicKey {
         } else {
             Err(err_msg!(Unsupported, "Expected x25519 key type"))
         }
+    }
+}
+
+pub(super) fn encode_signature(
+    signature: &[u8],
+    sig_format: Option<SignatureFormat>,
+) -> Result<Vec<u8>, Error> {
+    match sig_format {
+        None | Some(SignatureFormat::Base58) => Ok(bs58::encode(signature).into_vec()),
+        Some(SignatureFormat::Raw) => Ok(signature.to_vec()),
+        #[allow(unreachable_patterns)]
+        _ => Err(err_msg!(Unsupported, "Unsupported signature format")),
+    }
+}
+
+pub(super) fn decode_signature(
+    sig_input: &[u8],
+    sig_output: &mut impl AsMut<[u8]>,
+    sig_format: Option<SignatureFormat>,
+) -> Result<(), Error> {
+    match sig_format {
+        None | Some(SignatureFormat::Base58) => {
+            bs58::decode(sig_input)
+                .into(sig_output)
+                .map_err(|_| err_msg!("Invalid base58 signature"))?;
+            Ok(())
+        }
+        Some(SignatureFormat::Raw) => {
+            if sig_input.len() != sig_output.as_mut().len() {
+                return Err(err_msg!("Invalid raw signature"));
+            }
+            sig_output.as_mut().copy_from_slice(sig_input);
+            Ok(())
+        }
+        #[allow(unreachable_patterns)]
+        _ => Err(err_msg!(Unsupported, "Unsupported signature format")),
     }
 }
 
@@ -362,7 +400,7 @@ mod tests {
     }
 
     #[test]
-    fn test_sign() {
+    fn sign_verify_expected() {
         let test_msg = b"This is a dummy message for use with tests";
         let test_sig =  hex::decode("451b5b8e8725321541954997781de51f4142e4a56bab68d24f6a6b92615de5eefb74134138315859a32c7cf5fe5a488bc545e2e08e5eedfd1fb10188d532d808").unwrap();
 

@@ -123,7 +123,7 @@ fn b64_decode(input: impl AsRef<[u8]>) -> Result<Vec<u8>, Error> {
 
 #[inline(always)]
 fn b64_encode(input: impl AsRef<[u8]>) -> String {
-    base64::encode_config(input, base64::URL_SAFE)
+    base64::encode_config(input, base64::URL_SAFE_NO_PAD)
 }
 
 fn b64_encode_protected(

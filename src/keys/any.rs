@@ -53,7 +53,7 @@ impl KeyCapSign for AnyPrivateKey {
         sig_format: Option<SignatureFormat>,
     ) -> Result<Vec<u8>, Error> {
         match self.alg {
-            KeyAlg::ED25519 => {
+            KeyAlg::Ed25519 => {
                 Ed25519KeyPair::try_from(self).and_then(|k| k.key_sign(data, sig_type, sig_format))
             }
             _ => Err(err_msg!(
