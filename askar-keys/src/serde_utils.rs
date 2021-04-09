@@ -1,12 +1,12 @@
-use std::fmt::{self, Display};
-use std::marker::PhantomData;
-use std::str::FromStr;
-
-use indy_utils::base58;
+use core::{
+    fmt::{self, Display},
+    marker::PhantomData,
+    str::FromStr,
+};
 
 use serde::{de::Visitor, Deserializer, Serializer};
 
-use super::types::SecretBytes;
+use crate::buffer::SecretBytes;
 
 macro_rules! serde_as_str_impl {
     ($t:ident) => {
@@ -73,10 +73,11 @@ pub mod as_str {
     }
 }
 
-// structure borrowed from serde_bytes crate:
+// code structure borrowed from serde_bytes crate:
 
 pub mod as_base58 {
     use super::*;
+    use alloc::{string::String, vec::Vec};
 
     pub fn deserialize<'de, D, T>(deserializer: D) -> Result<T, D::Error>
     where
@@ -105,7 +106,7 @@ pub mod as_base58 {
         where
             S: Serializer,
         {
-            serializer.serialize_str(&base58::encode(self))
+            serializer.serialize_str(&bs58::encode(self).into_string())
         }
     }
 
@@ -114,7 +115,10 @@ pub mod as_base58 {
         where
             S: Serializer,
         {
-            serializer.serialize_str(&base58::encode(self))
+            let mut s = bs58::encode(self).into_string();
+            let ret = serializer.serialize_str(&s);
+            <String as ::zeroize::Zeroize>::zeroize(&mut s);
+            ret
         }
     }
 
@@ -183,7 +187,7 @@ pub mod as_base58 {
                 where
                     E: serde::de::Error,
                 {
-                    base58::decode(v).map_err(E::custom)
+                    bs58::decode(v).into_vec().map_err(E::custom)
                 }
             }
 

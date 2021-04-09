@@ -1,23 +1,27 @@
-use std::convert::TryFrom;
+use std::convert::TryInto;
 
 use p256::{
     ecdsa::{
         signature::{Signer, Verifier},
         Signature, SigningKey, VerifyingKey,
     },
-    elliptic_curve::{ecdh::diffie_hellman, sec1::FromEncodedPoint},
+    elliptic_curve::{
+        ecdh::diffie_hellman,
+        sec1::{Coordinates, FromEncodedPoint},
+    },
     EncodedPoint, PublicKey, SecretKey,
 };
 use rand::rngs::OsRng;
 use serde_json::json;
 
-use super::edwards::{decode_signature, encode_signature};
 use crate::{
+    buffer::{SecretBytes, WriteBuffer},
+    // any::{AnyPrivateKey, AnyPublicKey},
+    caps::{EcCurves, KeyAlg, KeyCapSign, KeyCapVerify, SignatureType},
     error::Error,
-    keys::any::{AnyPrivateKey, AnyPublicKey},
-    keys::caps::{EcCurves, KeyAlg, KeyCapSign, KeyCapVerify, SignatureFormat, SignatureType},
-    types::SecretBytes,
 };
+
+pub const ES256_SIGNATURE_LENGTH: usize = 64;
 
 #[derive(Clone, Debug)]
 pub struct P256SigningKey(SecretKey);
@@ -40,16 +44,16 @@ impl P256SigningKey {
         P256VerifyingKey(self.0.public_key())
     }
 
-    pub fn sign(&self, message: &[u8]) -> [u8; 64] {
+    pub fn sign(&self, message: &[u8]) -> [u8; ES256_SIGNATURE_LENGTH] {
         let skey = SigningKey::from(self.0.clone());
         let sig = skey.sign(message);
-        let mut sigb = [0u8; 64];
+        let mut sigb = [0u8; ES256_SIGNATURE_LENGTH];
         sigb[0..32].copy_from_slice(&sig.r().to_bytes());
         sigb[32..].copy_from_slice(&sig.s().to_bytes());
         sigb
     }
 
-    pub fn verify(&self, message: &[u8], signature: [u8; 64]) -> bool {
+    pub fn verify(&self, message: &[u8], signature: &[u8; ES256_SIGNATURE_LENGTH]) -> bool {
         let mut r = [0u8; 32];
         let mut s = [0u8; 32];
         r.copy_from_slice(&signature[..32]);
@@ -64,16 +68,17 @@ impl P256SigningKey {
 }
 
 impl KeyCapSign for P256SigningKey {
-    fn key_sign(
+    fn key_sign<B: WriteBuffer>(
         &self,
         data: &[u8],
         sig_type: Option<SignatureType>,
-        sig_format: Option<SignatureFormat>,
-    ) -> Result<Vec<u8>, Error> {
+        out: &mut B,
+    ) -> Result<usize, Error> {
         match sig_type {
             None | Some(SignatureType::ES256) => {
                 let sig = self.sign(data);
-                encode_signature(&sig, sig_format)
+                out.extend_from_slice(&sig[..]);
+                Ok(ES256_SIGNATURE_LENGTH)
             }
             #[allow(unreachable_patterns)]
             _ => Err(err_msg!(Unsupported, "Unsupported signature type")),
@@ -84,16 +89,17 @@ impl KeyCapSign for P256SigningKey {
 impl KeyCapVerify for P256SigningKey {
     fn key_verify(
         &self,
-        data: &[u8],
+        message: &[u8],
         signature: &[u8],
         sig_type: Option<SignatureType>,
-        sig_format: Option<SignatureFormat>,
     ) -> Result<bool, Error> {
         match sig_type {
             None | Some(SignatureType::ES256) => {
-                let mut sig = [0u8; 64];
-                decode_signature(signature, &mut sig, sig_format)?;
-                Ok(self.verify(data, sig))
+                if let Ok(sig) = TryInto::<&[u8; ES256_SIGNATURE_LENGTH]>::try_into(signature) {
+                    Ok(self.verify(message, sig))
+                } else {
+                    Ok(false)
+                }
             }
             #[allow(unreachable_patterns)]
             _ => Err(err_msg!(Unsupported, "Unsupported signature type")),
@@ -101,17 +107,17 @@ impl KeyCapVerify for P256SigningKey {
     }
 }
 
-impl TryFrom<&AnyPrivateKey> for P256SigningKey {
-    type Error = Error;
+// impl TryFrom<&AnyPrivateKey> for P256SigningKey {
+//     type Error = Error;
 
-    fn try_from(value: &AnyPrivateKey) -> Result<Self, Self::Error> {
-        if value.alg == KeyAlg::Ecdsa(EcCurves::Secp256r1) {
-            Self::from_bytes(value.data.as_ref())
-        } else {
-            Err(err_msg!(Unsupported, "Expected p-256 key type"))
-        }
-    }
-}
+//     fn try_from(value: &AnyPrivateKey) -> Result<Self, Self::Error> {
+//         if value.alg == KeyAlg::Ecdsa(EcCurves::Secp256r1) {
+//             Self::from_bytes(value.data.as_ref())
+//         } else {
+//             Err(err_msg!(Unsupported, "Expected p-256 key type"))
+//         }
+//     }
+// }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct P256VerifyingKey(PublicKey);
@@ -157,12 +163,15 @@ impl P256VerifyingKey {
     }
 
     pub fn to_jwk(&self) -> Result<serde_json::Value, Error> {
-        let encp = EncodedPoint::from(&self.0);
-        if encp.is_identity() {
-            return Err(err_msg!("Cannot convert identity point to JWK"));
-        }
-        let x = base64::encode_config(encp.x().unwrap(), base64::URL_SAFE_NO_PAD);
-        let y = base64::encode_config(encp.y().unwrap(), base64::URL_SAFE_NO_PAD);
+        let encp = EncodedPoint::encode(self.0, false);
+        let (x, y) = match encp.coordinates() {
+            Coordinates::Identity => return Err(err_msg!("Cannot convert identity point to JWK")),
+            Coordinates::Uncompressed { x, y } => (
+                base64::encode_config(x, base64::URL_SAFE_NO_PAD),
+                base64::encode_config(y, base64::URL_SAFE_NO_PAD),
+            ),
+            Coordinates::Compressed { .. } => unreachable!(),
+        };
         Ok(json!({
             "kty": "EC",
             "crv": "P-256",
@@ -172,7 +181,7 @@ impl P256VerifyingKey {
         }))
     }
 
-    pub fn verify(&self, message: &[u8], signature: [u8; 64]) -> bool {
+    pub fn verify(&self, message: &[u8], signature: &[u8; 64]) -> bool {
         let mut r = [0u8; 32];
         let mut s = [0u8; 32];
         r.copy_from_slice(&signature[..32]);
@@ -192,13 +201,14 @@ impl KeyCapVerify for P256VerifyingKey {
         data: &[u8],
         signature: &[u8],
         sig_type: Option<SignatureType>,
-        sig_format: Option<SignatureFormat>,
     ) -> Result<bool, Error> {
         match sig_type {
             None | Some(SignatureType::ES256) => {
-                let mut sig = [0u8; 64];
-                decode_signature(signature, &mut sig, sig_format)?;
-                Ok(self.verify(data, sig))
+                if let Ok(sig) = TryInto::<&[u8; ES256_SIGNATURE_LENGTH]>::try_into(signature) {
+                    Ok(self.verify(data, sig))
+                } else {
+                    Ok(false)
+                }
             }
             #[allow(unreachable_patterns)]
             _ => Err(err_msg!(Unsupported, "Unsupported signature type")),
@@ -206,17 +216,17 @@ impl KeyCapVerify for P256VerifyingKey {
     }
 }
 
-impl TryFrom<&AnyPublicKey> for P256VerifyingKey {
-    type Error = Error;
+// impl TryFrom<&AnyPublicKey> for P256VerifyingKey {
+//     type Error = Error;
 
-    fn try_from(value: &AnyPublicKey) -> Result<Self, Self::Error> {
-        if value.alg == KeyAlg::Ecdsa(EcCurves::Secp256r1) {
-            Self::from_bytes(&value.data)
-        } else {
-            Err(err_msg!(Unsupported, "Expected p-256 key type"))
-        }
-    }
-}
+//     fn try_from(value: &AnyPublicKey) -> Result<Self, Self::Error> {
+//         if value.alg == KeyAlg::Ecdsa(EcCurves::Secp256r1) {
+//             Self::from_bytes(&value.data)
+//         } else {
+//             Err(err_msg!(Unsupported, "Expected p-256 key type"))
+//         }
+//     }
+// }
 
 #[derive(Clone, Debug)]
 pub struct P256ExchPrivateKey(SecretKey);
@@ -245,17 +255,17 @@ impl P256ExchPrivateKey {
     }
 }
 
-impl TryFrom<&AnyPrivateKey> for P256ExchPrivateKey {
-    type Error = Error;
+// impl TryFrom<&AnyPrivateKey> for P256ExchPrivateKey {
+//     type Error = Error;
 
-    fn try_from(value: &AnyPrivateKey) -> Result<Self, Self::Error> {
-        if value.alg == KeyAlg::Ecdh(EcCurves::Secp256r1) {
-            Self::from_bytes(value.data.as_ref())
-        } else {
-            Err(err_msg!(Unsupported, "Expected p-256 key type"))
-        }
-    }
-}
+//     fn try_from(value: &AnyPrivateKey) -> Result<Self, Self::Error> {
+//         if value.alg == KeyAlg::Ecdh(EcCurves::Secp256r1) {
+//             Self::from_bytes(value.data.as_ref())
+//         } else {
+//             Err(err_msg!(Unsupported, "Expected p-256 key type"))
+//         }
+//     }
+// }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct P256ExchPublicKey(PublicKey);
@@ -301,12 +311,15 @@ impl P256ExchPublicKey {
     }
 
     pub fn to_jwk(&self) -> Result<serde_json::Value, Error> {
-        let encp = EncodedPoint::from(&self.0);
-        if encp.is_identity() {
-            return Err(err_msg!("Cannot convert identity point to JWK"));
-        }
-        let x = base64::encode_config(encp.x().unwrap(), base64::URL_SAFE_NO_PAD);
-        let y = base64::encode_config(encp.y().unwrap(), base64::URL_SAFE_NO_PAD);
+        let encp = EncodedPoint::encode(self.0, false);
+        let (x, y) = match encp.coordinates() {
+            Coordinates::Identity => return Err(err_msg!("Cannot convert identity point to JWK")),
+            Coordinates::Uncompressed { x, y } => (
+                base64::encode_config(x, base64::URL_SAFE_NO_PAD),
+                base64::encode_config(y, base64::URL_SAFE_NO_PAD),
+            ),
+            Coordinates::Compressed { .. } => unreachable!(),
+        };
         Ok(json!({
             "kty": "EC",
             "crv": "P-256",
@@ -317,17 +330,17 @@ impl P256ExchPublicKey {
     }
 }
 
-impl TryFrom<&AnyPublicKey> for P256ExchPublicKey {
-    type Error = Error;
+// impl TryFrom<&AnyPublicKey> for P256ExchPublicKey {
+//     type Error = Error;
 
-    fn try_from(value: &AnyPublicKey) -> Result<Self, Self::Error> {
-        if value.alg == KeyAlg::Ecdh(EcCurves::Secp256r1) {
-            Self::from_bytes(&value.data)
-        } else {
-            Err(err_msg!(Unsupported, "Expected p-256 key type"))
-        }
-    }
-}
+//     fn try_from(value: &AnyPublicKey) -> Result<Self, Self::Error> {
+//         if value.alg == KeyAlg::Ecdh(EcCurves::Secp256r1) {
+//             Self::from_bytes(&value.data)
+//         } else {
+//             Err(err_msg!(Unsupported, "Expected p-256 key type"))
+//         }
+//     }
+// }
 
 #[cfg(test)]
 mod tests {
@@ -374,9 +387,9 @@ mod tests {
         let kp = P256SigningKey::from_bytes(&&test_pvt).unwrap();
         let sig = kp.sign(&test_msg[..]);
         assert_eq!(sig, test_sig.as_slice());
-        assert_eq!(kp.public_key().verify(&test_msg[..], sig), true);
-        assert_eq!(kp.public_key().verify(b"Not the message", sig), false);
-        assert_eq!(kp.public_key().verify(&test_msg[..], [0u8; 64]), false);
+        assert_eq!(kp.public_key().verify(&test_msg[..], &sig), true);
+        assert_eq!(kp.public_key().verify(b"Not the message", &sig), false);
+        assert_eq!(kp.public_key().verify(&test_msg[..], &[0u8; 64]), false);
     }
 
     #[test]

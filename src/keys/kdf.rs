@@ -1,12 +1,9 @@
-use indy_utils::base58;
-
-use super::wrap::PREFIX_KDF;
+// use super::wrap::PREFIX_KDF;
 use crate::error::Result;
-use crate::keys::wrap::WrapKey;
-use crate::options::Options;
+// use crate::keys::wrap::WrapKey;
+// use crate::options::Options;
 
-pub mod argon2;
-use self::argon2::{generate_salt, Level as Argon2Level, SALT_SIZE};
+use askar_keys::kdf::argon2::{generate_salt, Level as Argon2Level, SALT_SIZE};
 
 pub const METHOD_ARGON2I: &'static str = "argon2i";
 
@@ -62,7 +59,7 @@ impl KdfMethod {
             Self::Argon2i(level) => {
                 let salt = generate_salt();
                 let key = level.derive_key(&salt, password)?;
-                let detail = format!("?salt={}", base58::encode(&salt));
+                let detail = format!("?salt={}", bs58::encode(&salt));
                 Ok((key.into(), detail))
             }
         }

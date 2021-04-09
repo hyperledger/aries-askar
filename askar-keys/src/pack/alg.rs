@@ -3,13 +3,17 @@ use chacha20poly1305::{
     ChaCha20Poly1305, Key as ChaChaKey,
 };
 
+pub use crate::alg::ed25519::Ed25519KeyPair as KeyPair;
+
 use std::string::ToString;
 
 use super::nacl_box::*;
-use super::types::*;
-use crate::error::Error;
-use crate::random::{random_array, random_vec};
-use crate::types::SecretBytes;
+// use super::types::*;
+use crate::{
+    buffer::SecretBytes,
+    error::Error,
+    random::{random_array, random_vec},
+};
 
 pub const PROTECTED_HEADER_ENC: &'static str = "xchacha20poly1305_ietf";
 pub const PROTECTED_HEADER_TYP: &'static str = "JWM/1.0";
@@ -23,7 +27,7 @@ const TAG_SIZE: usize = <ChaCha20Poly1305 as Aead>::TagSize::USIZE;
 
 pub fn pack_message<M: AsRef<[u8]>>(
     message: M,
-    receiver_list: Vec<PublicKey>,
+    receiver_list: Vec<KeyPair>,
     sender_key: Option<KeyPair>,
 ) -> Result<Vec<u8>, Error> {
     // break early and error out if no receivers keys are provided
@@ -60,7 +64,7 @@ pub fn pack_message<M: AsRef<[u8]>>(
     format_pack_message(&base64_protected, &ciphertext, &iv, &tag)
 }
 
-fn prepare_protected_anoncrypt(cek: &[u8], receiver_list: Vec<PublicKey>) -> Result<String, Error> {
+fn prepare_protected_anoncrypt(cek: &[u8], receiver_list: Vec<KeyPair>) -> Result<String, Error> {
     let mut encrypted_recipients_struct: Vec<Recipient> = Vec::with_capacity(receiver_list.len());
 
     for their_vk in receiver_list {

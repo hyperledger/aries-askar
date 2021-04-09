@@ -6,8 +6,8 @@ use crypto_box::{
     aead::{generic_array::typenum::Unsigned, Aead},
 };
 
+use crate::alg::x25519::X25519KeyPair;
 use crate::error::Error;
-use crate::keys::alg::edwards::X25519KeyPair;
 use crate::random::random_vec;
 
 const CBOX_NONCE_SIZE: usize = <cbox::Box as Aead>::NonceSize::USIZE;
@@ -107,7 +107,7 @@ pub fn crypto_box_seal_open(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::keys::alg::edwards::Ed25519KeyPair;
+    use crate::alg::ed25519::Ed25519KeyPair;
 
     #[test]
     fn crypto_box_open_expected() {

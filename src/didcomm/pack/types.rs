@@ -1,6 +1,6 @@
 use std::future::Future;
 
-pub use crate::keys::alg::edwards::{Ed25519KeyPair as KeyPair, Ed25519PublicKey as PublicKey};
+pub use crate::keys::alg::ed25519::{Ed25519KeyPair as KeyPair, Ed25519PublicKey as PublicKey};
 
 #[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq)]
 pub struct JWE {

@@ -1,39 +1,50 @@
 use std::convert::TryFrom;
 
-use super::alg::edwards::{Ed25519KeyPair, Ed25519PublicKey};
+use super::alg::ed25519::{Ed25519KeyPair, Ed25519PublicKey};
+use super::alg::k256::{K256SigningKey, K256VerifyingKey};
 use super::alg::p256::{P256SigningKey, P256VerifyingKey};
 use super::caps::{
     EcCurves, KeyAlg, KeyCapGetPublic, KeyCapSign, KeyCapVerify, KeyCategory, SignatureFormat,
     SignatureType,
 };
-use super::store::KeyEntry;
+// use super::store::KeyEntry;
 use crate::error::Error;
 use crate::types::SecretBytes;
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct AnyPublicKey {
-    pub alg: KeyAlg,
-    pub data: Vec<u8>,
+    pub(crate) alg: KeyAlg,
+    pub(crate) data: Vec<u8>,
 }
 
-impl TryFrom<KeyEntry> for AnyPublicKey {
-    type Error = Error;
+impl AnyPublicKey {
+    pub fn key_alg(&self) -> KeyAlg {
+        self.alg
+    }
 
-    fn try_from(value: KeyEntry) -> Result<Self, Self::Error> {
-        if value.category == KeyCategory::PublicKey {
-            if let Some(data) = value.params.data {
-                Ok(AnyPublicKey {
-                    alg: value.params.alg,
-                    data: data.into_vec(),
-                })
-            } else {
-                Err(err_msg!(Unsupported, "Missing public key raw data"))
-            }
-        } else {
-            Err(err_msg!(Unsupported, "Not a public key entry"))
-        }
+    pub fn key_data(&self) -> &[u8] {
+        self.data.as_ref()
     }
 }
+
+// impl TryFrom<KeyEntry> for AnyPublicKey {
+//     type Error = Error;
+
+//     fn try_from(value: KeyEntry) -> Result<Self, Self::Error> {
+//         if value.category == KeyCategory::PublicKey {
+//             if let Some(data) = value.params.data {
+//                 Ok(AnyPublicKey {
+//                     alg: value.params.alg,
+//                     data: data.into_vec(),
+//                 })
+//             } else {
+//                 Err(err_msg!(Unsupported, "Missing public key raw data"))
+//             }
+//         } else {
+//             Err(err_msg!(Unsupported, "Not a public key entry"))
+//         }
+//     }
+// }
 
 impl KeyCapVerify for AnyPublicKey {
     fn key_verify(
@@ -45,6 +56,8 @@ impl KeyCapVerify for AnyPublicKey {
     ) -> Result<bool, Error> {
         match self.alg {
             KeyAlg::Ed25519 => Ed25519PublicKey::try_from(self)
+                .and_then(|k| k.key_verify(data, signature, sig_type, sig_format)),
+            KeyAlg::Ecdsa(EcCurves::Secp256k1) => K256VerifyingKey::try_from(self)
                 .and_then(|k| k.key_verify(data, signature, sig_type, sig_format)),
             KeyAlg::Ecdsa(EcCurves::Secp256r1) => P256VerifyingKey::try_from(self)
                 .and_then(|k| k.key_verify(data, signature, sig_type, sig_format)),
@@ -69,15 +82,13 @@ impl KeyCapGetPublic for AnyPrivateKey {
 }
 
 impl KeyCapSign for AnyPrivateKey {
-    fn key_sign(
-        &self,
-        data: &[u8],
-        sig_type: Option<SignatureType>,
-        sig_format: Option<SignatureFormat>,
-    ) -> Result<Vec<u8>, Error> {
+    fn key_sign(&self, data: &[u8], sig_type: Option<SignatureType>) -> Result<Vec<u8>, Error> {
         match self.alg {
             KeyAlg::Ed25519 => {
                 Ed25519KeyPair::try_from(self).and_then(|k| k.key_sign(data, sig_type, sig_format))
+            }
+            KeyAlg::Ecdsa(EcCurves::Secp256k1) => {
+                K256SigningKey::try_from(self).and_then(|k| k.key_sign(data, sig_type, sig_format))
             }
             KeyAlg::Ecdsa(EcCurves::Secp256r1) => {
                 P256SigningKey::try_from(self).and_then(|k| k.key_sign(data, sig_type, sig_format))
@@ -101,6 +112,8 @@ impl KeyCapVerify for AnyPrivateKey {
         match self.alg {
             KeyAlg::Ed25519 => Ed25519KeyPair::try_from(self)
                 .and_then(|k| k.key_verify(data, signature, sig_type, sig_format)),
+            KeyAlg::Ecdsa(EcCurves::Secp256k1) => K256SigningKey::try_from(self)
+                .and_then(|k| k.key_verify(data, signature, sig_type, sig_format)),
             KeyAlg::Ecdsa(EcCurves::Secp256r1) => P256SigningKey::try_from(self)
                 .and_then(|k| k.key_verify(data, signature, sig_type, sig_format)),
             _ => Err(err_msg!(
@@ -111,21 +124,21 @@ impl KeyCapVerify for AnyPrivateKey {
     }
 }
 
-impl TryFrom<KeyEntry> for AnyPrivateKey {
-    type Error = Error;
+// impl TryFrom<KeyEntry> for AnyPrivateKey {
+//     type Error = Error;
 
-    fn try_from(value: KeyEntry) -> Result<Self, Self::Error> {
-        if value.category == KeyCategory::PrivateKey {
-            if let Some(data) = value.params.data {
-                Ok(AnyPrivateKey {
-                    alg: value.params.alg,
-                    data,
-                })
-            } else {
-                Err(err_msg!(Unsupported, "Missing private key raw data"))
-            }
-        } else {
-            Err(err_msg!(Unsupported, "Not a private key entry"))
-        }
-    }
-}
+//     fn try_from(value: KeyEntry) -> Result<Self, Self::Error> {
+//         if value.category == KeyCategory::PrivateKey {
+//             if let Some(data) = value.params.data {
+//                 Ok(AnyPrivateKey {
+//                     alg: value.params.alg,
+//                     data,
+//                 })
+//             } else {
+//                 Err(err_msg!(Unsupported, "Missing private key raw data"))
+//             }
+//         } else {
+//             Err(err_msg!(Unsupported, "Not a private key entry"))
+//         }
+//     }
+// }

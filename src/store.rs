@@ -12,7 +12,7 @@ use super::didcomm::pack::{pack_message, unpack_message, KeyLookup};
 use super::error::Result;
 use super::future::BoxFuture;
 use super::keys::{
-    alg::edwards::{Ed25519KeyPair, Ed25519PublicKey},
+    alg::ed25519::{Ed25519KeyPair, Ed25519PublicKey},
     caps::KeyCapSign,
     wrap::WrapKeyMethod,
     AnyPrivateKey, KeyAlg, KeyCategory, KeyEntry, KeyParams, PassKey,

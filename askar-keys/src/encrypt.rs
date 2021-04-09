@@ -1,9 +1,10 @@
-use std::fmt::Debug;
+use alloc::vec::Vec;
+use core::fmt::Debug;
 
 use serde::{Deserialize, Serialize};
 
-use crate::error::Result;
-use crate::types::SecretBytes;
+use crate::buffer::SecretBytes;
+use crate::error::Error;
 
 pub trait SymEncryptKey:
     Clone + Debug + Eq + Sized + Serialize + for<'de> Deserialize<'de>
@@ -14,7 +15,7 @@ pub trait SymEncryptKey:
 
     fn from_slice(bytes: &[u8]) -> Self;
 
-    fn from_seed(seed: &[u8]) -> Result<Self>;
+    fn from_seed(seed: &[u8]) -> Result<Self, Error>;
 
     fn random_key() -> Self;
 }
@@ -37,7 +38,7 @@ pub trait SymEncrypt: Debug {
     fn prepare_input(input: &[u8]) -> SecretBytes;
 
     /// Create a predictable nonce for an input, to allow searching
-    fn hashed_nonce(input: &SecretBytes, key: &Self::HashKey) -> Result<Self::Nonce>;
+    fn hashed_nonce(input: &SecretBytes, key: &Self::HashKey) -> Result<Self::Nonce, Error>;
 
     /// Encrypt a secret value and optional random nonce, producing a Vec containing the
     /// nonce, ciphertext and tag
@@ -45,19 +46,22 @@ pub trait SymEncrypt: Debug {
         input: SecretBytes,
         enc_key: &Self::Key,
         nonce: Option<Self::Nonce>,
-    ) -> Result<Vec<u8>>;
+    ) -> Result<Vec<u8>, Error>;
 
     /// Get the expected size of an input value after encryption
     fn encrypted_size(input_size: usize) -> usize;
 
     /// Decrypt a combined encrypted value
-    fn decrypt(enc: Vec<u8>, enc_key: &Self::Key) -> Result<SecretBytes>;
+    fn decrypt(enc: Vec<u8>, enc_key: &Self::Key) -> Result<SecretBytes, Error>;
 }
 
 pub(crate) mod aead {
-    use std::fmt::{self, Debug, Formatter};
-    use std::marker::PhantomData;
-    use std::ptr;
+    use alloc::vec::Vec;
+    use core::{
+        fmt::{self, Debug, Formatter},
+        marker::PhantomData,
+        ptr,
+    };
 
     use chacha20poly1305::{
         aead::{
@@ -72,9 +76,12 @@ pub(crate) mod aead {
     use hmac::{Hmac, Mac, NewMac};
     use sha2::Sha256;
 
-    use super::{Result, SecretBytes, SymEncrypt, SymEncryptHashKey, SymEncryptKey};
-    use crate::keys::types::ArrayKey;
-    use crate::random::random_deterministic;
+    use super::{SymEncrypt, SymEncryptHashKey, SymEncryptKey};
+    use crate::{
+        buffer::{ArrayKey, SecretBytes},
+        error::Error,
+        random::random_deterministic,
+    };
 
     pub type ChaChaEncrypt = AeadEncrypt<ChaCha20Poly1305>;
 
@@ -91,7 +98,7 @@ pub(crate) mod aead {
             ArrayKey::from_slice(bytes)
         }
 
-        fn from_seed(seed: &[u8]) -> Result<Self> {
+        fn from_seed(seed: &[u8]) -> Result<Self, Error> {
             if seed.len() != SEED_LENGTH {
                 return Err(err_msg!(Encryption, "Invalid length for seed"));
             }
@@ -145,7 +152,7 @@ pub(crate) mod aead {
             SecretBytes::from(buf)
         }
 
-        fn hashed_nonce(input: &SecretBytes, key: &Self::HashKey) -> Result<Self::Nonce> {
+        fn hashed_nonce(input: &SecretBytes, key: &Self::HashKey) -> Result<Self::Nonce, Error> {
             let mut nonce_hmac =
                 Hmac::<Sha256>::new_varkey(&**key).map_err(|e| err_msg!(Encryption, "{}", e))?;
             nonce_hmac.update(&*input);
@@ -159,12 +166,12 @@ pub(crate) mod aead {
             mut input: SecretBytes,
             enc_key: &Self::Key,
             nonce: Option<Self::Nonce>,
-        ) -> Result<Vec<u8>> {
+        ) -> Result<Vec<u8>, Error> {
             let nonce = nonce.unwrap_or_else(|| Self::Nonce::random());
             let chacha = E::new(&enc_key);
             let mut buf = input.as_buffer();
-            // should be a no-op if prepare_input was used
-            buf.reserve_extra(Self::NONCE_SIZE + Self::TAG_SIZE);
+            // should be trivial if prepare_input was used
+            buf.reserve(Self::NONCE_SIZE + Self::TAG_SIZE);
             // replace the input data with the ciphertext and tag
             chacha
                 .encrypt_in_place(&*nonce, &[], &mut buf)
@@ -182,7 +189,7 @@ pub(crate) mod aead {
             Self::NONCE_SIZE + Self::TAG_SIZE + input_size
         }
 
-        fn decrypt(mut enc: Vec<u8>, enc_key: &Self::Key) -> Result<SecretBytes> {
+        fn decrypt(mut enc: Vec<u8>, enc_key: &Self::Key) -> Result<SecretBytes, Error> {
             if enc.len() < Self::NONCE_SIZE + Self::TAG_SIZE {
                 return Err(err_msg!(
                     Encryption,

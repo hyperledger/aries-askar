@@ -1,9 +1,9 @@
-use indy_utils::base58;
-
-use super::encrypt::{aead::ChaChaEncrypt, SymEncrypt, SymEncryptKey};
 use super::kdf::KdfMethod;
-use super::types::PassKey;
-use crate::{error::Result, SecretBytes};
+
+use askar_keys::{
+    encrypt::{aead::ChaChaEncrypt, SymEncrypt, SymEncryptKey},
+    PassKey, SecretBytes,
+};
 
 pub const PREFIX_KDF: &'static str = "kdf";
 pub const PREFIX_RAW: &'static str = "raw";

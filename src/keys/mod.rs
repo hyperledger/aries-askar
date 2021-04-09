@@ -1,36 +1,11 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use async_mutex::Mutex;
 use zeroize::Zeroize;
 
-use super::error::Result;
-use super::future::unblock;
-use super::types::{EncEntryTag, EntryTag, ProfileId, SecretBytes};
-
-use self::store::StoreKey;
-use self::wrap::WrapKey;
-
-pub mod any;
-pub use self::any::{AnyPrivateKey, AnyPublicKey};
-
-pub mod alg;
-use self::alg::edwards::{Ed25519KeyPair, Ed25519PublicKey};
-
-pub mod caps;
-pub use self::caps::{
-    KeyAlg, KeyCapGetPublic, KeyCapSign, KeyCapVerify, KeyCategory, SignatureFormat, SignatureType,
-};
-
-pub mod encrypt;
+pub use askar_keys::PassKey;
 
 pub mod kdf;
-
-pub mod store;
-pub use self::store::{KeyEntry, KeyParams};
-
-mod types;
-pub use self::types::PassKey;
 
 pub mod wrap;
 

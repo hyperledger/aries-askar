@@ -5,6 +5,8 @@ use chacha20::{
 };
 use rand::{rngs::OsRng, RngCore};
 
+use crate::buffer::SecretBytes;
+
 pub type SeedSize = <ChaCha20 as NewStreamCipher>::KeySize;
 
 /// Fill a mutable slice with random data using the
@@ -24,18 +26,14 @@ pub fn random_array<T: ArrayLength<u8>>() -> GenericArray<u8, T> {
 
 /// Written to be compatible with randombytes_deterministic in libsodium,
 /// used to generate a deterministic wallet raw key.
-pub fn random_deterministic(seed: &GenericArray<u8, SeedSize>, len: usize) -> Vec<u8> {
+pub fn random_deterministic(seed: &GenericArray<u8, SeedSize>, len: usize) -> SecretBytes {
     let nonce = GenericArray::from_slice(b"LibsodiumDRG");
     let mut cipher = ChaCha20::new(seed, &nonce);
-    let mut data = vec![0; len];
-    cipher.apply_keystream(data.as_mut_slice());
-    data
+    SecretBytes::new_with(len, |buf| cipher.apply_keystream(buf))
 }
 
 /// Create a new `Vec<u8>` instance with random data.
 #[inline(always)]
-pub fn random_vec(sz: usize) -> Vec<u8> {
-    let mut buf = vec![0; sz];
-    fill_random(buf.as_mut_slice());
-    buf
+pub fn random_vec(len: usize) -> SecretBytes {
+    SecretBytes::new_with(len, fill_random)
 }
