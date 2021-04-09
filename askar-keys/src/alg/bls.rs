@@ -429,30 +429,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn fingerprint() {
-        let mut secret = [0u8; 64];
-        OsRng.fill_bytes(&mut secret);
-
-        let sk = Scalar::from_bytes_wide(&secret);
-        let pk_g1 = G1Affine::from(G1Affine::generator() * sk);
-        let pk_g2 = G2Affine::from(G2Affine::generator() * sk);
-        println!(
-            "sk {}\ng1 {}\ng2: {}",
-            hex::encode(sk.to_bytes()),
-            hex::encode(pk_g1.to_compressed()),
-            hex::encode(pk_g2.to_compressed())
-        );
-
-        let cross_0 = pairing(&G1Affine::generator(), &pk_g2);
-        let cross_1 = pairing(&pk_g1, &G2Affine::generator());
-        println!("gt_0 {:?}", cross_0);
-        println!("gt_1 {:?}", cross_1);
-        println!("eq {:?}", cross_0 == cross_1);
-
-        assert!(false);
-    }
-
-    #[test]
     fn sig_basic_g1() {
         // test vectors from https://github.com/algorand/bls_sigs_ref/pull/7/files
         // First lines of test-vectors/sig_g1_basic/fips_186_3_B283

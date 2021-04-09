@@ -32,8 +32,8 @@ pub fn random_deterministic(seed: &GenericArray<u8, SeedSize>, len: usize) -> Se
     SecretBytes::new_with(len, |buf| cipher.apply_keystream(buf))
 }
 
-/// Create a new `Vec<u8>` instance with random data.
+/// Create a new `SecretBytes` instance with random data.
 #[inline(always)]
-pub fn random_vec(len: usize) -> SecretBytes {
+pub fn random_secret(len: usize) -> SecretBytes {
     SecretBytes::new_with(len, fill_random)
 }

@@ -10,51 +10,39 @@ repository = "https://github.com/hyperledger/aries-askar/"
 categories = ["cryptography", "database"]
 keywords = ["hyperledger", "aries", "ssi", "verifiable", "credentials"]
 
-[lib]
-name = "askar_keys"
-path = "src/lib.rs"
-crate-type = ["rlib"]
-
 [package.metadata.docs.rs]
-features = ["all"]
-no-default-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [features]
-default = ["logger"]
+default = []
 any = []
-logger = ["env_logger", "log"]
 std = []
+
+[dev-dependencies]
+hex-literal = "0.3"
 
 [dependencies]
 aead = "0.3"
-base64 = "0.13"
-blake2 = "0.9"
+argon2 = "0.1"
+base64 = { version = "0.13", default-features = false, features = ["alloc"] }
+blake2 = { version = "0.9", default-features = false }
 bls12_381 = { version = "0.4.0", path = "../../bls12_381" }
-bs58 = "0.4"
+bs58 = { version = "0.4", default-features = false, features = ["alloc"] }
 chacha20 = "0.6"  # should match version from chacha20poly1305
 chacha20poly1305 = { version = "0.7", default-features = false, features = ["alloc", "chacha20"] }
 crypto_box = "0.5"
-curve25519-dalek = "3.0"
-ed25519-dalek = { version = "1.0", features = ["std"] }
-env_logger = { version = "0.7", optional = true }
+curve25519-dalek = { version = "3.0", default-features = false, features = ["alloc", "u64_backend"] }
+ed25519-dalek = { version = "1.0", default-features = false, features = ["alloc", "u64_backend"] }
 digest = "0.9"
 group = "0.9"
-hex = "0.4"
+hex = { version = "0.4", default-features = false }
 hkdf = "0.10"
 hmac = "0.10"
-k256 = { version = "0.7", features = ["ecdsa", "ecdh", "sha256"] }
-log = { version = "0.4", optional = true }
-p256 = { version = "0.7", features = ["ecdsa", "ecdh"] }
-rand = "0.7"
-rust-argon2 = "0.8"
+k256 = { version = "0.7", default-features = false, features = ["arithmetic", "ecdsa", "ecdh", "sha256"] }
+p256 = { version = "0.7", default-features = false, features = ["arithmetic", "ecdsa", "ecdh"] }
+rand = { version = "0.7", default-features = false, features = ["getrandom"] }
 serde = { version = "1.0", default-features = false, features = ["alloc", "derive"] }
-serde_bytes = "0.11"
 serde_json = { version = "1.0", default-features = false, features = ["alloc"] }
-sha2 = "0.9"
-x25519-dalek = "1.1"
+sha2 = { version = "0.9", default-features = false }
+x25519-dalek = { version = "1.1", default-features = false, features = ["u64_backend"] }
 zeroize = { version = "1.1.0", features = ["zeroize_derive"] }
-
-[profile.release]
-lto = true
-codegen-units = 1

@@ -10,9 +10,10 @@ use core::{
     mem::{self, ManuallyDrop},
     ops::{Deref, DerefMut},
 };
+use fmt::Write;
 
 use aead::{
-    generic_array::{ArrayLength, GenericArray},
+    generic_array::{typenum, ArrayLength, GenericArray},
     Buffer,
 };
 use serde::{de::Visitor, Deserialize, Deserializer, Serialize, Serializer};
@@ -92,7 +93,10 @@ impl<L: ArrayLength<u8>> Serialize for ArrayKey<L> {
     where
         S: Serializer,
     {
-        serializer.serialize_str(hex::encode(&self.0.as_slice()).as_str())
+        // create an array twice the size of L on the stack (could be made clearer with const generics)
+        let mut hex_str = GenericArray::<u8, typenum::UInt<L, typenum::B0>>::default();
+        hex::encode_to_slice(&self.0.as_slice(), &mut hex_str).unwrap();
+        serializer.serialize_str(core::str::from_utf8(&hex_str[..]).unwrap())
     }
 }
 
@@ -126,8 +130,9 @@ impl<'a, L: ArrayLength<u8>> Visitor<'a> for KeyVisitor<L> {
     where
         E: serde::de::Error,
     {
-        let key = hex::decode(value).map_err(E::custom)?;
-        Ok(ArrayKey(GenericArray::clone_from_slice(key.as_slice())))
+        let mut arr = GenericArray::default();
+        hex::decode_to_slice(value, &mut arr[..]).map_err(E::custom)?;
+        Ok(ArrayKey(arr))
     }
 }
 
@@ -403,7 +408,12 @@ impl Debug for MaybeStr<'_> {
         if let Ok(sval) = core::str::from_utf8(self.0) {
             write!(f, "{:?}", sval)
         } else {
-            write!(f, "_\"{}\"", hex::encode(self.0))
+            f.write_char('<')?;
+            for c in self.0 {
+                f.write_fmt(format_args!("{:02x}", c))?;
+            }
+            f.write_char('>')?;
+            Ok(())
         }
     }
 }
@@ -447,5 +457,11 @@ mod tests {
         b.truncate_by(3);
         b.extend_from_slice(b"y").unwrap();
         assert_eq!(&v[..], b"hey");
+    }
+
+    #[test]
+    fn test_maybe_str() {
+        assert_eq!(format!("{:?}", MaybeStr(&[])), "\"\"");
+        assert_eq!(format!("{:?}", MaybeStr(&[255, 0])), "<ff00>");
     }
 }
