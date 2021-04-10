@@ -15,6 +15,8 @@ pub const PUBLIC_KEY_LENGTH: usize = 32;
 pub const SECRET_KEY_LENGTH: usize = 32;
 pub const KEYPAIR_LENGTH: usize = SECRET_KEY_LENGTH + PUBLIC_KEY_LENGTH;
 
+pub static JWK_CURVE: &'static str = "X25519";
+
 #[derive(Clone)]
 // FIXME implement zeroize
 pub struct X25519KeyPair(Box<Keypair>);
@@ -131,7 +133,7 @@ impl KeyToJwk for X25519KeyPair {
     const KTY: &'static str = "OKP";
 
     fn to_jwk_buffer<B: WriteBuffer>(&self, buffer: &mut JwkEncoder<B>) -> Result<(), Error> {
-        buffer.add_str("crv", "X25519")?;
+        buffer.add_str("crv", JWK_CURVE)?;
         buffer.add_as_base64("x", &self.to_public_key_bytes()[..])?;
         buffer.add_str("use", "enc")?;
         Ok(())
@@ -145,7 +147,7 @@ impl KeyToJwkSecret for X25519KeyPair {
     ) -> Result<(), Error> {
         if let Some(sk) = self.0.secret.as_ref() {
             let mut sk = sk.to_bytes();
-            buffer.add_str("crv", "X25519")?;
+            buffer.add_str("crv", JWK_CURVE)?;
             buffer.add_as_base64("x", &self.to_public_key_bytes()[..])?;
             buffer.add_as_base64("d", &sk[..])?;
             sk.zeroize();
@@ -194,7 +196,7 @@ mod tests {
         let jwk = kp.to_jwk().expect("Error converting public key to JWK");
         let jwk = jwk.to_parts().expect("Error parsing JWK output");
         assert_eq!(jwk.kty, "OKP");
-        assert_eq!(jwk.crv, "X25519");
+        assert_eq!(jwk.crv, JWK_CURVE);
         assert_eq!(jwk.x, "tGskN_ae61DP4DLY31_fjkbvnKqf-ze7kA6Cj2vyQxU");
         assert_eq!(jwk.d, None);
 
@@ -203,7 +205,7 @@ mod tests {
             .expect("Error converting private key to JWK");
         let jwk = jwk.to_parts().expect("Error parsing JWK output");
         assert_eq!(jwk.kty, "OKP");
-        assert_eq!(jwk.crv, "X25519");
+        assert_eq!(jwk.crv, JWK_CURVE);
         assert_eq!(jwk.x, "tGskN_ae61DP4DLY31_fjkbvnKqf-ze7kA6Cj2vyQxU");
         assert_eq!(jwk.d, test_pvt_b64);
     }

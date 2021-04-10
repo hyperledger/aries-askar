@@ -25,6 +25,8 @@ pub const PUBLIC_KEY_LENGTH: usize = 32;
 pub const SECRET_KEY_LENGTH: usize = 32;
 pub const KEYPAIR_LENGTH: usize = SECRET_KEY_LENGTH + PUBLIC_KEY_LENGTH;
 
+pub static JWK_CURVE: &'static str = "Ed25519";
+
 // FIXME implement debug
 pub struct Ed25519KeyPair(Box<Keypair>);
 
@@ -197,7 +199,7 @@ impl KeyToJwk for Ed25519KeyPair {
     const KTY: &'static str = "OKP";
 
     fn to_jwk_buffer<B: WriteBuffer>(&self, buffer: &mut JwkEncoder<B>) -> Result<(), Error> {
-        buffer.add_str("crv", "Ed25519")?;
+        buffer.add_str("crv", JWK_CURVE)?;
         buffer.add_as_base64("x", &self.to_public_key_bytes()[..])?;
         buffer.add_str("use", "sig")?;
         Ok(())
@@ -210,7 +212,7 @@ impl KeyToJwkSecret for Ed25519KeyPair {
         buffer: &mut JwkEncoder<B>,
     ) -> Result<(), Error> {
         if let Some(sk) = self.0.secret.as_ref() {
-            buffer.add_str("crv", "Ed25519")?;
+            buffer.add_str("crv", JWK_CURVE)?;
             buffer.add_as_base64("x", &self.to_public_key_bytes()[..])?;
             buffer.add_as_base64("d", sk.as_bytes())?;
             Ok(())
@@ -255,22 +257,22 @@ mod tests {
     #[test]
     fn expand_keypair() {
         let seed = b"000000000000000000000000Trustee1";
-        let test_sk = hex!("3030303030303030303030303030303030303030303030305472757374656531e33aaf381fffa6109ad591fdc38717945f8fabf7abf02086ae401c63e9913097");
+        let test_sk = &hex!("3030303030303030303030303030303030303030303030305472757374656531e33aaf381fffa6109ad591fdc38717945f8fabf7abf02086ae401c63e9913097");
 
         let kp = Ed25519KeyPair::from_seed(seed).unwrap();
         assert_eq!(kp.to_keypair_bytes().unwrap(), &test_sk[..]);
 
         // test round trip
-        let cmp = Ed25519KeyPair::from_keypair_bytes(&test_sk).unwrap();
+        let cmp = Ed25519KeyPair::from_keypair_bytes(test_sk).unwrap();
         assert_eq!(cmp.to_keypair_bytes().unwrap(), &test_sk[..]);
     }
 
     #[test]
     fn ed25519_to_x25519() {
-        let test_keypair = hex!("1c1179a560d092b90458fe6ab8291215a427fcd6b3927cb240701778ef55201927c96646f2d4632d4fc241f84cbc427fbc3ecaa95becba55088d6c7b81fc5bbf");
-        let x_sk = hex!("08e7286c232ec71b37918533ea0229bf0c75d3db4731df1c5c03c45bc909475f");
-        let x_pk = hex!("9b4260484c889158c128796103dc8d8b883977f2ef7efb0facb12b6ca9b2ae3d");
-        let x_pair = Ed25519KeyPair::from_keypair_bytes(&test_keypair)
+        let test_keypair = &hex!("1c1179a560d092b90458fe6ab8291215a427fcd6b3927cb240701778ef55201927c96646f2d4632d4fc241f84cbc427fbc3ecaa95becba55088d6c7b81fc5bbf");
+        let x_sk = &hex!("08e7286c232ec71b37918533ea0229bf0c75d3db4731df1c5c03c45bc909475f");
+        let x_pk = &hex!("9b4260484c889158c128796103dc8d8b883977f2ef7efb0facb12b6ca9b2ae3d");
+        let x_pair = Ed25519KeyPair::from_keypair_bytes(test_keypair)
             .unwrap()
             .to_x25519_keypair()
             .to_keypair_bytes()
@@ -291,13 +293,14 @@ mod tests {
         //     "kid" : "FdFYFzERwC2uCBB46pZQi4GG85LujR8obt-KWRBICVQ"
         //   }
         let test_pvt_b64 = "nWGxne_9WmC6hEr0kuwsxERJxWl7MmkZcDusAxyuf2A";
+        let test_pub_b64 = "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo";
         let test_pvt = base64::decode_config(test_pvt_b64, base64::URL_SAFE).unwrap();
         let kp =
             Ed25519KeyPair::from_secret_key_bytes(&test_pvt).expect("Error creating signing key");
         let jwk = kp.to_jwk().expect("Error converting public key to JWK");
         let jwk = jwk.to_parts().expect("Error parsing JWK output");
         assert_eq!(jwk.kty, "OKP");
-        assert_eq!(jwk.crv, "Ed25519");
+        assert_eq!(jwk.crv, JWK_CURVE);
         assert_eq!(jwk.x, "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo");
 
         let jwk = kp
@@ -305,28 +308,28 @@ mod tests {
             .expect("Error converting private key to JWK");
         let jwk = jwk.to_parts().expect("Error parsing JWK output");
         assert_eq!(jwk.kty, "OKP");
-        assert_eq!(jwk.crv, "Ed25519");
-        assert_eq!(jwk.x, "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo");
+        assert_eq!(jwk.crv, JWK_CURVE);
+        assert_eq!(jwk.x, test_pub_b64);
         assert_eq!(jwk.d, test_pvt_b64);
     }
 
     #[test]
     fn sign_verify_expected() {
         let test_msg = b"This is a dummy message for use with tests";
-        let test_sig = hex!(
+        let test_sig = &hex!(
             "451b5b8e8725321541954997781de51f4142e4a56bab68d24f6a6b92615de5ee
             fb74134138315859a32c7cf5fe5a488bc545e2e08e5eedfd1fb10188d532d808"
         );
-        let test_keypair = hex!(
+        let test_keypair = &hex!(
             "1c1179a560d092b90458fe6ab8291215a427fcd6b3927cb240701778ef552019
             27c96646f2d4632d4fc241f84cbc427fbc3ecaa95becba55088d6c7b81fc5bbf"
         );
-        let kp = Ed25519KeyPair::from_keypair_bytes(&test_keypair).unwrap();
-        let sig = kp.sign(&test_msg[..]).unwrap();
+        let kp = Ed25519KeyPair::from_keypair_bytes(test_keypair).unwrap();
+        let sig = &kp.sign(test_msg).unwrap();
         assert_eq!(sig, test_sig);
-        assert_eq!(kp.verify_signature(&test_msg[..], &sig[..]), true);
+        assert_eq!(kp.verify_signature(test_msg, &sig[..]), true);
         assert_eq!(kp.verify_signature(b"Not the message", &sig[..]), false);
-        assert_eq!(kp.verify_signature(&test_msg[..], &[0u8; 64]), false);
+        assert_eq!(kp.verify_signature(test_msg, &[0u8; 64]), false);
     }
 
     #[test]

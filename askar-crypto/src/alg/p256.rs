@@ -1,65 +1,122 @@
-use std::convert::TryInto;
+use alloc::boxed::Box;
+use core::convert::{TryFrom, TryInto};
 
 use p256::{
     ecdsa::{
         signature::{Signer, Verifier},
         Signature, SigningKey, VerifyingKey,
     },
-    elliptic_curve::{
-        ecdh::diffie_hellman,
-        sec1::{Coordinates, FromEncodedPoint},
-    },
+    elliptic_curve::{ecdh::diffie_hellman, sec1::Coordinates},
     EncodedPoint, PublicKey, SecretKey,
 };
 use rand::rngs::OsRng;
-use serde_json::json;
 
 use crate::{
     buffer::{SecretBytes, WriteBuffer},
     // any::{AnyPrivateKey, AnyPublicKey},
-    caps::{EcCurves, KeyAlg, KeyCapSign, KeyCapVerify, SignatureType},
+    caps::{KeyCapSign, KeyCapVerify, SignatureType},
     error::Error,
+    jwk::{JwkEncoder, KeyToJwk, KeyToJwkSecret},
 };
 
 pub const ES256_SIGNATURE_LENGTH: usize = 64;
 
+pub const PUBLIC_KEY_LENGTH: usize = 33; // compressed size
+pub const SECRET_KEY_LENGTH: usize = 32;
+pub const KEYPAIR_LENGTH: usize = SECRET_KEY_LENGTH + PUBLIC_KEY_LENGTH;
+
+pub static JWK_CURVE: &'static str = "P-256";
+
 #[derive(Clone, Debug)]
-pub struct P256SigningKey(SecretKey);
+pub struct P256KeyPair(Box<Keypair>);
 
-impl P256SigningKey {
+impl P256KeyPair {
     pub fn generate() -> Result<Self, Error> {
-        Ok(Self(SecretKey::random(OsRng)))
+        Ok(Self::from_secret_key(SecretKey::random(OsRng)))
     }
 
-    pub fn from_bytes(pt: &[u8]) -> Result<Self, Error> {
-        let kp = SecretKey::from_bytes(pt).map_err(|_| err_msg!("Invalid signing key bytes"))?;
-        Ok(Self(kp))
+    pub fn from_keypair_bytes(kp: &[u8]) -> Result<Self, Error> {
+        if kp.len() != KEYPAIR_LENGTH {
+            return Err(err_msg!("Invalid keypair bytes"));
+        }
+        let sk = SecretKey::from_bytes(&kp[..SECRET_KEY_LENGTH])
+            .map_err(|_| err_msg!("Invalid p-256 secret key bytes"))?;
+        let pk = EncodedPoint::from_bytes(&kp[SECRET_KEY_LENGTH..])
+            .and_then(|pt| pt.decode())
+            .map_err(|_| err_msg!("Invalid p-256 public key bytes"))?;
+        // FIXME: derive pk from sk and check value?
+
+        Ok(Self(Box::new(Keypair {
+            secret: Some(sk),
+            public: pk,
+        })))
     }
 
-    pub fn to_bytes(&self) -> SecretBytes {
-        SecretBytes::from(self.0.to_bytes().to_vec())
+    pub fn from_public_key_bytes(key: &[u8]) -> Result<Self, Error> {
+        let pk = EncodedPoint::from_bytes(key)
+            .and_then(|pt| pt.decode())
+            .map_err(|_| err_msg!("Invalid p-256 public key bytes"))?;
+        Ok(Self(Box::new(Keypair {
+            secret: None,
+            public: pk,
+        })))
     }
 
-    pub fn public_key(&self) -> P256VerifyingKey {
-        P256VerifyingKey(self.0.public_key())
+    pub fn from_secret_key_bytes(key: &[u8]) -> Result<Self, Error> {
+        Ok(Self::from_secret_key(
+            SecretKey::from_bytes(key).map_err(|_| err_msg!("Invalid k-256 secret key bytes"))?,
+        ))
     }
 
-    pub fn sign(&self, message: &[u8]) -> [u8; ES256_SIGNATURE_LENGTH] {
-        let skey = SigningKey::from(self.0.clone());
-        let sig = skey.sign(message);
-        let mut sigb = [0u8; ES256_SIGNATURE_LENGTH];
-        sigb[0..32].copy_from_slice(&sig.r().to_bytes());
-        sigb[32..].copy_from_slice(&sig.s().to_bytes());
-        sigb
+    #[inline]
+    pub(crate) fn from_secret_key(sk: SecretKey) -> Self {
+        let pk = sk.public_key();
+        Self(Box::new(Keypair {
+            secret: Some(sk),
+            public: pk,
+        }))
     }
 
-    pub fn verify(&self, message: &[u8], signature: &[u8; ES256_SIGNATURE_LENGTH]) -> bool {
-        let mut r = [0u8; 32];
-        let mut s = [0u8; 32];
-        r.copy_from_slice(&signature[..32]);
-        s.copy_from_slice(&signature[32..]);
-        if let Ok(sig) = Signature::from_scalars(r, s) {
-            let vk = VerifyingKey::from(self.0.public_key());
+    pub fn key_exchange_with(&self, other: &Self) -> Option<SecretBytes> {
+        match self.0.secret.as_ref() {
+            Some(sk) => {
+                let xk = diffie_hellman(sk.secret_scalar(), other.0.public.as_affine());
+                Some(SecretBytes::from(xk.as_bytes().to_vec()))
+            }
+            None => None,
+        }
+    }
+
+    pub fn to_keypair_bytes(&self) -> Option<SecretBytes> {
+        if let Some(secret) = self.0.secret.as_ref() {
+            let encp = EncodedPoint::encode(self.0.public, true);
+            let output = SecretBytes::new_with(KEYPAIR_LENGTH, |buf| {
+                buf[..SECRET_KEY_LENGTH].copy_from_slice(&secret.to_bytes()[..]);
+                buf[SECRET_KEY_LENGTH..].copy_from_slice(encp.as_ref());
+            });
+            Some(output)
+        } else {
+            None
+        }
+    }
+
+    pub(crate) fn to_signing_key(&self) -> Option<SigningKey> {
+        self.0.secret.clone().map(SigningKey::from)
+    }
+
+    pub fn sign(&self, message: &[u8]) -> Option<[u8; ES256_SIGNATURE_LENGTH]> {
+        if let Some(skey) = self.to_signing_key() {
+            let sig: Signature = skey.sign(message);
+            let sigb: [u8; 64] = sig.as_ref().try_into().unwrap();
+            Some(sigb)
+        } else {
+            None
+        }
+    }
+
+    pub fn verify_signature(&self, message: &[u8], signature: &[u8]) -> bool {
+        if let Ok(sig) = Signature::try_from(signature) {
+            let vk = VerifyingKey::from(&self.0.public);
             vk.verify(message, &sig).is_ok()
         } else {
             false
@@ -67,18 +124,21 @@ impl P256SigningKey {
     }
 }
 
-impl KeyCapSign for P256SigningKey {
+impl KeyCapSign for P256KeyPair {
     fn key_sign<B: WriteBuffer>(
         &self,
-        data: &[u8],
+        message: &[u8],
         sig_type: Option<SignatureType>,
         out: &mut B,
     ) -> Result<usize, Error> {
         match sig_type {
-            None | Some(SignatureType::ES256) => {
-                let sig = self.sign(data);
-                out.extend_from_slice(&sig[..]);
-                Ok(ES256_SIGNATURE_LENGTH)
+            None | Some(SignatureType::ES256K) => {
+                if let Some(sig) = self.sign(message) {
+                    out.extend_from_slice(&sig[..])?;
+                    Ok(ES256_SIGNATURE_LENGTH)
+                } else {
+                    Err(err_msg!(Unsupported, "Undefined secret key"))
+                }
             }
             #[allow(unreachable_patterns)]
             _ => Err(err_msg!(Unsupported, "Unsupported signature type")),
@@ -86,7 +146,7 @@ impl KeyCapSign for P256SigningKey {
     }
 }
 
-impl KeyCapVerify for P256SigningKey {
+impl KeyCapVerify for P256KeyPair {
     fn key_verify(
         &self,
         message: &[u8],
@@ -94,263 +154,57 @@ impl KeyCapVerify for P256SigningKey {
         sig_type: Option<SignatureType>,
     ) -> Result<bool, Error> {
         match sig_type {
-            None | Some(SignatureType::ES256) => {
-                if let Ok(sig) = TryInto::<&[u8; ES256_SIGNATURE_LENGTH]>::try_into(signature) {
-                    Ok(self.verify(message, sig))
-                } else {
-                    Ok(false)
-                }
-            }
+            None | Some(SignatureType::ES256) => Ok(self.verify_signature(message, signature)),
             #[allow(unreachable_patterns)]
             _ => Err(err_msg!(Unsupported, "Unsupported signature type")),
         }
     }
 }
 
-// impl TryFrom<&AnyPrivateKey> for P256SigningKey {
-//     type Error = Error;
+impl KeyToJwk for P256KeyPair {
+    const KTY: &'static str = "EC";
 
-//     fn try_from(value: &AnyPrivateKey) -> Result<Self, Self::Error> {
-//         if value.alg == KeyAlg::Ecdsa(EcCurves::Secp256r1) {
-//             Self::from_bytes(value.data.as_ref())
-//         } else {
-//             Err(err_msg!(Unsupported, "Expected p-256 key type"))
-//         }
-//     }
-// }
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct P256VerifyingKey(PublicKey);
-
-impl P256VerifyingKey {
-    pub fn from_str(key: impl AsRef<str>) -> Result<Self, Error> {
-        let key = key.as_ref();
-        let key = key.strip_suffix(":p256/ecdsa").unwrap_or(key);
-        let mut bval = [0u8; 32];
-        bs58::decode(key)
-            .into(&mut bval)
-            .map_err(|_| err_msg!("Invalid base58 public key"))?;
-        Self::from_bytes(bval)
-    }
-
-    pub fn from_bytes(pk: impl AsRef<[u8]>) -> Result<Self, Error> {
-        let encp = EncodedPoint::from_bytes(pk.as_ref())
-            .map_err(|_| err_msg!("Invalid public key bytes"))?;
-        if encp.is_identity() {
-            return Err(err_msg!("Invalid public key: identity point"));
-        }
-        Ok(Self(
-            PublicKey::from_encoded_point(&encp).ok_or_else(|| err_msg!("Invalid public key"))?,
-        ))
-    }
-
-    pub fn to_base58(&self) -> String {
-        bs58::encode(self.to_bytes()).into_string()
-    }
-
-    pub fn to_bytes(&self) -> [u8; 32] {
-        let mut k = [0u8; 32];
-        let encp = EncodedPoint::from(&self.0);
-        k.copy_from_slice(encp.as_bytes());
-        k
-    }
-
-    pub fn to_string(&self) -> String {
-        let mut sval = String::with_capacity(64);
-        bs58::encode(self.to_bytes()).into(&mut sval).unwrap();
-        sval.push_str(":p256/ecdsa");
-        sval
-    }
-
-    pub fn to_jwk(&self) -> Result<serde_json::Value, Error> {
-        let encp = EncodedPoint::encode(self.0, false);
+    fn to_jwk_buffer<B: WriteBuffer>(&self, buffer: &mut JwkEncoder<B>) -> Result<(), Error> {
+        let encp = EncodedPoint::encode(self.0.public, false);
         let (x, y) = match encp.coordinates() {
             Coordinates::Identity => return Err(err_msg!("Cannot convert identity point to JWK")),
-            Coordinates::Uncompressed { x, y } => (
-                base64::encode_config(x, base64::URL_SAFE_NO_PAD),
-                base64::encode_config(y, base64::URL_SAFE_NO_PAD),
-            ),
+            Coordinates::Uncompressed { x, y } => (x, y),
             Coordinates::Compressed { .. } => unreachable!(),
         };
-        Ok(json!({
-            "kty": "EC",
-            "crv": "P-256",
-            "x": x,
-            "y": y,
-            "key_ops": ["verify"]
-        }))
-    }
 
-    pub fn verify(&self, message: &[u8], signature: &[u8; 64]) -> bool {
-        let mut r = [0u8; 32];
-        let mut s = [0u8; 32];
-        r.copy_from_slice(&signature[..32]);
-        s.copy_from_slice(&signature[32..]);
-        if let Ok(sig) = Signature::from_scalars(r, s) {
-            let vk = VerifyingKey::from(self.0.clone());
-            vk.verify(message, &sig).is_ok()
-        } else {
-            false
-        }
+        buffer.add_str("crv", JWK_CURVE)?;
+        buffer.add_as_base64("x", &x[..])?;
+        buffer.add_as_base64("y", &y[..])?;
+        // buffer.add_str("use", "enc")?;
+        Ok(())
     }
 }
 
-impl KeyCapVerify for P256VerifyingKey {
-    fn key_verify(
+impl KeyToJwkSecret for P256KeyPair {
+    fn to_jwk_buffer_secret<B: WriteBuffer>(
         &self,
-        data: &[u8],
-        signature: &[u8],
-        sig_type: Option<SignatureType>,
-    ) -> Result<bool, Error> {
-        match sig_type {
-            None | Some(SignatureType::ES256) => {
-                if let Ok(sig) = TryInto::<&[u8; ES256_SIGNATURE_LENGTH]>::try_into(signature) {
-                    Ok(self.verify(data, sig))
-                } else {
-                    Ok(false)
-                }
-            }
-            #[allow(unreachable_patterns)]
-            _ => Err(err_msg!(Unsupported, "Unsupported signature type")),
+        buffer: &mut JwkEncoder<B>,
+    ) -> Result<(), Error> {
+        self.to_jwk_buffer(buffer)?;
+        if let Some(sk) = self.0.secret.as_ref() {
+            buffer.add_as_base64("d", &sk.to_bytes()[..])?;
+            Ok(())
+        } else {
+            self.to_jwk_buffer(buffer)
         }
     }
 }
-
-// impl TryFrom<&AnyPublicKey> for P256VerifyingKey {
-//     type Error = Error;
-
-//     fn try_from(value: &AnyPublicKey) -> Result<Self, Self::Error> {
-//         if value.alg == KeyAlg::Ecdsa(EcCurves::Secp256r1) {
-//             Self::from_bytes(&value.data)
-//         } else {
-//             Err(err_msg!(Unsupported, "Expected p-256 key type"))
-//         }
-//     }
-// }
 
 #[derive(Clone, Debug)]
-pub struct P256ExchPrivateKey(SecretKey);
-
-impl P256ExchPrivateKey {
-    pub fn generate() -> Result<Self, Error> {
-        Ok(Self(SecretKey::random(OsRng)))
-    }
-
-    pub fn from_bytes(pt: &[u8]) -> Result<Self, Error> {
-        let kp = SecretKey::from_bytes(pt).map_err(|_| err_msg!("Invalid signing key bytes"))?;
-        Ok(Self(kp))
-    }
-
-    pub fn to_bytes(&self) -> SecretBytes {
-        SecretBytes::from(self.0.to_bytes().to_vec())
-    }
-
-    pub fn key_exchange_with(&self, pk: &P256ExchPublicKey) -> SecretBytes {
-        let xk = diffie_hellman(self.0.secret_scalar(), pk.0.as_affine());
-        SecretBytes::from(xk.as_bytes().to_vec())
-    }
-
-    pub fn public_key(&self) -> P256ExchPublicKey {
-        P256ExchPublicKey(self.0.public_key())
-    }
+struct Keypair {
+    // SECURITY: SecretKey zeroizes on drop
+    secret: Option<SecretKey>,
+    public: PublicKey,
 }
-
-// impl TryFrom<&AnyPrivateKey> for P256ExchPrivateKey {
-//     type Error = Error;
-
-//     fn try_from(value: &AnyPrivateKey) -> Result<Self, Self::Error> {
-//         if value.alg == KeyAlg::Ecdh(EcCurves::Secp256r1) {
-//             Self::from_bytes(value.data.as_ref())
-//         } else {
-//             Err(err_msg!(Unsupported, "Expected p-256 key type"))
-//         }
-//     }
-// }
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct P256ExchPublicKey(PublicKey);
-
-impl P256ExchPublicKey {
-    pub fn from_str(key: impl AsRef<str>) -> Result<Self, Error> {
-        let key = key.as_ref();
-        let key = key.strip_suffix(":p256/ecdh").unwrap_or(key);
-        let mut bval = [0u8; 32];
-        bs58::decode(key)
-            .into(&mut bval)
-            .map_err(|_| err_msg!("Invalid base58 public key"))?;
-        Self::from_bytes(bval)
-    }
-
-    pub fn from_bytes(pk: impl AsRef<[u8]>) -> Result<Self, Error> {
-        let encp = EncodedPoint::from_bytes(pk.as_ref())
-            .map_err(|_| err_msg!("Invalid public key bytes"))?;
-        if encp.is_identity() {
-            return Err(err_msg!("Invalid public key: identity point"));
-        }
-        Ok(Self(
-            PublicKey::from_encoded_point(&encp).ok_or_else(|| err_msg!("Invalid public key"))?,
-        ))
-    }
-
-    pub fn to_base58(&self) -> String {
-        bs58::encode(self.to_bytes()).into_string()
-    }
-
-    pub fn to_bytes(&self) -> [u8; 32] {
-        let mut k = [0u8; 32];
-        let encp = EncodedPoint::from(&self.0);
-        k.copy_from_slice(encp.as_bytes());
-        k
-    }
-
-    pub fn to_string(&self) -> String {
-        let mut sval = String::with_capacity(64);
-        bs58::encode(self.to_bytes()).into(&mut sval).unwrap();
-        sval.push_str(":p256/ecdh");
-        sval
-    }
-
-    pub fn to_jwk(&self) -> Result<serde_json::Value, Error> {
-        let encp = EncodedPoint::encode(self.0, false);
-        let (x, y) = match encp.coordinates() {
-            Coordinates::Identity => return Err(err_msg!("Cannot convert identity point to JWK")),
-            Coordinates::Uncompressed { x, y } => (
-                base64::encode_config(x, base64::URL_SAFE_NO_PAD),
-                base64::encode_config(y, base64::URL_SAFE_NO_PAD),
-            ),
-            Coordinates::Compressed { .. } => unreachable!(),
-        };
-        Ok(json!({
-            "kty": "EC",
-            "crv": "P-256",
-            "x": x,
-            "y": y,
-            "key_ops": ["deriveKey"]
-        }))
-    }
-}
-
-// impl TryFrom<&AnyPublicKey> for P256ExchPublicKey {
-//     type Error = Error;
-
-//     fn try_from(value: &AnyPublicKey) -> Result<Self, Self::Error> {
-//         if value.alg == KeyAlg::Ecdh(EcCurves::Secp256r1) {
-//             Self::from_bytes(&value.data)
-//         } else {
-//             Err(err_msg!(Unsupported, "Expected p-256 key type"))
-//         }
-//     }
-// }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn create_keypair_random() {
-        let sk = P256SigningKey::generate().expect("Error creating signing key");
-        let _vk = sk.public_key();
-    }
 
     #[test]
     fn jwk_expected() {
@@ -361,51 +215,72 @@ mod tests {
         // "y":"x_FEzRu9m36HLN_tue659LNpXW6pCyStikYjKIWI5a0",
         // "d":"jpsQnnGQmL-YBIffH1136cspYG6-0iY7X1fCE9-E9LI"
         // }
-        let test_pvt = base64::decode_config(
-            "jpsQnnGQmL-YBIffH1136cspYG6-0iY7X1fCE9-E9LI",
-            base64::URL_SAFE,
-        )
-        .unwrap();
-        let sk = P256SigningKey::from_bytes(&test_pvt).expect("Error creating signing key");
-        let vk = sk.public_key();
-        let jwk = vk.to_jwk().expect("Error converting public key to JWK");
-        assert_eq!(jwk["kty"], "EC");
-        assert_eq!(jwk["crv"], "P-256");
-        assert_eq!(jwk["x"], "f83OJ3D2xF1Bg8vub9tLe1gHMzV76e8Tus9uPHvRVEU");
-        assert_eq!(jwk["y"], "x_FEzRu9m36HLN_tue659LNpXW6pCyStikYjKIWI5a0");
+        let test_pvt_b64 = "jpsQnnGQmL-YBIffH1136cspYG6-0iY7X1fCE9-E9LI";
+        let test_pub_b64 = (
+            "f83OJ3D2xF1Bg8vub9tLe1gHMzV76e8Tus9uPHvRVEU",
+            "x_FEzRu9m36HLN_tue659LNpXW6pCyStikYjKIWI5a0",
+        );
+        let test_pvt = base64::decode_config(test_pvt_b64, base64::URL_SAFE).unwrap();
+        let sk = P256KeyPair::from_secret_key_bytes(&test_pvt).expect("Error creating signing key");
+
+        let jwk = sk.to_jwk().expect("Error converting key to JWK");
+        let jwk = jwk.to_parts().expect("Error parsing JWK");
+        assert_eq!(jwk.kty, "EC");
+        assert_eq!(jwk.crv, JWK_CURVE);
+        assert_eq!(jwk.x, test_pub_b64.0);
+        assert_eq!(jwk.y, test_pub_b64.1);
+        assert_eq!(jwk.d, None);
+
+        let jwk = sk.to_jwk_secret().expect("Error converting key to JWK");
+        let jwk = jwk.to_parts().expect("Error parsing JWK");
+        assert_eq!(jwk.kty, "EC");
+        assert_eq!(jwk.crv, JWK_CURVE);
+        assert_eq!(jwk.x, test_pub_b64.0);
+        assert_eq!(jwk.y, test_pub_b64.1);
+        assert_eq!(jwk.d, test_pvt_b64);
     }
 
     #[test]
     fn sign_verify_expected() {
         let test_msg = b"This is a dummy message for use with tests";
-        let test_sig =  hex::decode("241f765f19d4e6148452f2249d2fa69882244a6ad6e70aadb8848a6409d207124e85faf9587100247de7bdace13a3073b47ec8a531ca91c1375b2b6134344413").unwrap();
+        let test_sig = &hex!(
+            "241f765f19d4e6148452f2249d2fa69882244a6ad6e70aadb8848a6409d20712
+            4e85faf9587100247de7bdace13a3073b47ec8a531ca91c1375b2b6134344413"
+        );
         let test_pvt = base64::decode_config(
             "jpsQnnGQmL-YBIffH1136cspYG6-0iY7X1fCE9-E9LI",
             base64::URL_SAFE_NO_PAD,
         )
         .unwrap();
-        let kp = P256SigningKey::from_bytes(&&test_pvt).unwrap();
-        let sig = kp.sign(&test_msg[..]);
-        assert_eq!(sig, test_sig.as_slice());
-        assert_eq!(kp.public_key().verify(&test_msg[..], &sig), true);
-        assert_eq!(kp.public_key().verify(b"Not the message", &sig), false);
-        assert_eq!(kp.public_key().verify(&test_msg[..], &[0u8; 64]), false);
+        let kp = P256KeyPair::from_secret_key_bytes(&test_pvt).unwrap();
+        let sig = kp.sign(&test_msg[..]).unwrap();
+        assert_eq!(sig, &test_sig[..]);
+        assert_eq!(kp.verify_signature(&test_msg[..], &sig[..]), true);
+        assert_eq!(kp.verify_signature(b"Not the message", &sig[..]), false);
+        assert_eq!(kp.verify_signature(&test_msg[..], &[0u8; 64]), false);
     }
 
     #[test]
     fn key_exchange_random() {
-        let kp1 = P256ExchPrivateKey::generate().unwrap();
-        let kp2 = P256ExchPrivateKey::generate().unwrap();
-        assert_ne!(kp1.to_bytes(), kp2.to_bytes());
+        let kp1 = P256KeyPair::generate().unwrap();
+        let kp2 = P256KeyPair::generate().unwrap();
+        assert_ne!(
+            kp1.to_keypair_bytes().unwrap(),
+            kp2.to_keypair_bytes().unwrap()
+        );
 
-        let xch1 = kp1.key_exchange_with(&kp2.public_key());
-        let xch2 = kp2.key_exchange_with(&kp1.public_key());
+        let xch1 = kp1.key_exchange_with(&kp2);
+        let xch2 = kp2.key_exchange_with(&kp1);
         assert_eq!(xch1, xch2);
+    }
 
-        // test round trip
-        let xch3 = P256ExchPrivateKey::from_bytes(&kp1.to_bytes())
-            .unwrap()
-            .key_exchange_with(&kp2.public_key());
-        assert_eq!(xch3, xch1);
+    #[test]
+    fn round_trip_bytes() {
+        let kp = P256KeyPair::generate().unwrap();
+        let cmp = P256KeyPair::from_keypair_bytes(&kp.to_keypair_bytes().unwrap()).unwrap();
+        assert_eq!(
+            kp.to_keypair_bytes().unwrap(),
+            cmp.to_keypair_bytes().unwrap()
+        );
     }
 }

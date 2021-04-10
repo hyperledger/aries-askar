@@ -25,6 +25,8 @@ pub const PUBLIC_KEY_LENGTH: usize = 33; // compressed size
 pub const SECRET_KEY_LENGTH: usize = 32;
 pub const KEYPAIR_LENGTH: usize = SECRET_KEY_LENGTH + PUBLIC_KEY_LENGTH;
 
+pub static JWK_CURVE: &'static str = "secp256k1";
+
 #[derive(Clone, Debug)]
 pub struct K256KeyPair(Box<Keypair>);
 
@@ -87,7 +89,7 @@ impl K256KeyPair {
 
     pub fn to_keypair_bytes(&self) -> Option<SecretBytes> {
         if let Some(secret) = self.0.secret.as_ref() {
-            let encp = EncodedPoint::encode(self.0.public.clone(), true);
+            let encp = EncodedPoint::encode(self.0.public, true);
             let output = SecretBytes::new_with(KEYPAIR_LENGTH, |buf| {
                 buf[..SECRET_KEY_LENGTH].copy_from_slice(&secret.to_bytes()[..]);
                 buf[SECRET_KEY_LENGTH..].copy_from_slice(encp.as_ref());
@@ -152,13 +154,7 @@ impl KeyCapVerify for K256KeyPair {
         sig_type: Option<SignatureType>,
     ) -> Result<bool, Error> {
         match sig_type {
-            None | Some(SignatureType::ES256K) => {
-                if let Ok(sig) = TryInto::<&[u8; ES256K_SIGNATURE_LENGTH]>::try_into(signature) {
-                    Ok(self.verify_signature(message, sig))
-                } else {
-                    Ok(false)
-                }
-            }
+            None | Some(SignatureType::ES256K) => Ok(self.verify_signature(message, signature)),
             #[allow(unreachable_patterns)]
             _ => Err(err_msg!(Unsupported, "Unsupported signature type")),
         }
@@ -169,14 +165,14 @@ impl KeyToJwk for K256KeyPair {
     const KTY: &'static str = "EC";
 
     fn to_jwk_buffer<B: WriteBuffer>(&self, buffer: &mut JwkEncoder<B>) -> Result<(), Error> {
-        let encp = EncodedPoint::encode(self.0.public.clone(), false);
+        let encp = EncodedPoint::encode(self.0.public, false);
         let (x, y) = match encp.coordinates() {
             Coordinates::Identity => return Err(err_msg!("Cannot convert identity point to JWK")),
             Coordinates::Uncompressed { x, y } => (x, y),
             Coordinates::Compressed { .. } => unreachable!(),
         };
 
-        buffer.add_str("crv", "secp256k1")?;
+        buffer.add_str("crv", JWK_CURVE)?;
         buffer.add_as_base64("x", &x[..])?;
         buffer.add_as_base64("y", &y[..])?;
         // buffer.add_str("use", "enc")?;
@@ -234,21 +230,37 @@ mod tests {
         // "y": "36uMVGM7hnw-N6GnjFcihWE3SkrhMLzzLCdPMXPEXlA"
         // }
         let test_pvt_b64 = "rhYFsBPF9q3-uZThy7B3c4LDF_8wnozFUAEm5LLC4Zw";
+        let test_pub_b64 = (
+            "dWCvM4fTdeM0KmloF57zxtBPXTOythHPMm1HCLrdd3A",
+            "36uMVGM7hnw-N6GnjFcihWE3SkrhMLzzLCdPMXPEXlA",
+        );
         let test_pvt = base64::decode_config(test_pvt_b64, base64::URL_SAFE).unwrap();
         let sk = K256KeyPair::from_secret_key_bytes(&test_pvt).expect("Error creating signing key");
+
+        let jwk = sk.to_jwk().expect("Error converting key to JWK");
+        let jwk = jwk.to_parts().expect("Error parsing JWK");
+        assert_eq!(jwk.kty, "EC");
+        assert_eq!(jwk.crv, JWK_CURVE);
+        assert_eq!(jwk.x, test_pub_b64.0);
+        assert_eq!(jwk.y, test_pub_b64.1);
+        assert_eq!(jwk.d, None);
+
         let jwk = sk.to_jwk_secret().expect("Error converting key to JWK");
         let jwk = jwk.to_parts().expect("Error parsing JWK");
         assert_eq!(jwk.kty, "EC");
-        assert_eq!(jwk.crv, "secp256k1");
-        assert_eq!(jwk.x, "dWCvM4fTdeM0KmloF57zxtBPXTOythHPMm1HCLrdd3A");
-        assert_eq!(jwk.y, "36uMVGM7hnw-N6GnjFcihWE3SkrhMLzzLCdPMXPEXlA");
+        assert_eq!(jwk.crv, JWK_CURVE);
+        assert_eq!(jwk.x, test_pub_b64.0);
+        assert_eq!(jwk.y, test_pub_b64.1);
         assert_eq!(jwk.d, test_pvt_b64);
     }
 
     #[test]
     fn sign_verify_expected() {
         let test_msg = b"This is a dummy message for use with tests";
-        let test_sig = hex!("a2a3affbe18cda8c5a7b6375f05b304c2303ab8beb21428709a43a519f8f946f6ffa7966afdb337e9b1f70bb575282e71d4fe5bbe6bfa97b229d6bd7e97df1e5");
+        let test_sig = &hex!(
+            "a2a3affbe18cda8c5a7b6375f05b304c2303ab8beb21428709a43a519f8f946f
+            6ffa7966afdb337e9b1f70bb575282e71d4fe5bbe6bfa97b229d6bd7e97df1e5"
+        );
         let test_pvt = base64::decode_config(
             "jv_VrhPomm6_WOzb74xF4eMI0hu9p0W1Zlxi0nz8AFs",
             base64::URL_SAFE_NO_PAD,
