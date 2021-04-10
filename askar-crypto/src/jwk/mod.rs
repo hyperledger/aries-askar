@@ -50,28 +50,23 @@ impl Zeroize for Jwk<'_> {
 pub trait KeyToJwk {
     const KTY: &'static str;
 
+    fn to_jwk_buffer<B: WriteBuffer>(&self, buffer: &mut JwkEncoder<B>) -> Result<(), Error>;
+
     fn to_jwk(&self) -> Result<Jwk<'static>, Error> {
         let mut v = Vec::with_capacity(128);
-        let mut buf = JwkEncoder::new(&mut v, Self::KTY)?;
+        let mut buf = JwkEncoder::new(&mut v, Self::KTY, false)?;
         self.to_jwk_buffer(&mut buf)?;
         buf.finalize()?;
         Ok(Jwk::Encoded(Cow::Owned(String::from_utf8(v).unwrap())))
     }
 
-    fn to_jwk_buffer<B: WriteBuffer>(&self, buffer: &mut JwkEncoder<B>) -> Result<(), Error>;
-}
-
-pub trait KeyToJwkSecret: KeyToJwk {
     fn to_jwk_secret(&self) -> Result<Jwk<'static>, Error> {
         let mut v = Vec::with_capacity(128);
-        let mut buf = JwkEncoder::new(&mut v, Self::KTY)?;
-        self.to_jwk_buffer_secret(&mut buf)?;
+        let mut buf = JwkEncoder::new(&mut v, Self::KTY, true)?;
+        self.to_jwk_buffer(&mut buf)?;
         buf.finalize()?;
         Ok(Jwk::Encoded(Cow::Owned(String::from_utf8(v).unwrap())))
     }
-
-    fn to_jwk_buffer_secret<B: WriteBuffer>(&self, buffer: &mut JwkEncoder<B>)
-        -> Result<(), Error>;
 }
 
 // pub trait JwkBuilder<'s> {

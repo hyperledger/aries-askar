@@ -16,7 +16,7 @@ use crate::{
     buffer::{SecretBytes, WriteBuffer},
     caps::{KeyCapSign, KeyCapVerify, SignatureType},
     error::Error,
-    jwk::{JwkEncoder, KeyToJwk, KeyToJwkSecret},
+    jwk::{JwkEncoder, KeyToJwk},
 };
 
 pub const ES256K_SIGNATURE_LENGTH: usize = 64;
@@ -175,23 +175,13 @@ impl KeyToJwk for K256KeyPair {
         buffer.add_str("crv", JWK_CURVE)?;
         buffer.add_as_base64("x", &x[..])?;
         buffer.add_as_base64("y", &y[..])?;
+        if buffer.is_secret() {
+            if let Some(sk) = self.0.secret.as_ref() {
+                buffer.add_as_base64("d", &sk.to_bytes()[..])?;
+            }
+        }
         // buffer.add_str("use", "enc")?;
         Ok(())
-    }
-}
-
-impl KeyToJwkSecret for K256KeyPair {
-    fn to_jwk_buffer_secret<B: WriteBuffer>(
-        &self,
-        buffer: &mut JwkEncoder<B>,
-    ) -> Result<(), Error> {
-        self.to_jwk_buffer(buffer)?;
-        if let Some(sk) = self.0.secret.as_ref() {
-            buffer.add_as_base64("d", &sk.to_bytes()[..])?;
-            Ok(())
-        } else {
-            self.to_jwk_buffer(buffer)
-        }
     }
 }
 

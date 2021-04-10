@@ -1,5 +1,8 @@
 use alloc::boxed::Box;
-use core::convert::TryInto;
+use core::{
+    convert::TryInto,
+    fmt::{self, Debug, Formatter},
+};
 
 use rand::rngs::OsRng;
 use x25519_dalek::{PublicKey, StaticSecret as SecretKey};
@@ -8,7 +11,7 @@ use zeroize::Zeroize;
 use crate::{
     buffer::{SecretBytes, WriteBuffer},
     error::Error,
-    jwk::{JwkEncoder, KeyToJwk, KeyToJwkSecret},
+    jwk::{JwkEncoder, KeyToJwk},
 };
 
 pub const PUBLIC_KEY_LENGTH: usize = 32;
@@ -18,7 +21,6 @@ pub const KEYPAIR_LENGTH: usize = SECRET_KEY_LENGTH + PUBLIC_KEY_LENGTH;
 pub static JWK_CURVE: &'static str = "X25519";
 
 #[derive(Clone)]
-// FIXME implement zeroize
 pub struct X25519KeyPair(Box<Keypair>);
 
 impl X25519KeyPair {
@@ -129,37 +131,43 @@ impl X25519KeyPair {
     }
 }
 
+impl Debug for X25519KeyPair {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.debug_struct("X25519KeyPair")
+            .field(
+                "secret",
+                if self.0.secret.is_some() {
+                    &"<secret>"
+                } else {
+                    &"None"
+                },
+            )
+            .field("public", &self.0.public)
+            .finish()
+    }
+}
+
 impl KeyToJwk for X25519KeyPair {
     const KTY: &'static str = "OKP";
 
     fn to_jwk_buffer<B: WriteBuffer>(&self, buffer: &mut JwkEncoder<B>) -> Result<(), Error> {
         buffer.add_str("crv", JWK_CURVE)?;
         buffer.add_as_base64("x", &self.to_public_key_bytes()[..])?;
+        if buffer.is_secret() {
+            if let Some(sk) = self.0.secret.as_ref() {
+                let mut sk = sk.to_bytes();
+                buffer.add_as_base64("d", &sk[..])?;
+                sk.zeroize();
+            }
+        }
         buffer.add_str("use", "enc")?;
         Ok(())
     }
 }
 
-impl KeyToJwkSecret for X25519KeyPair {
-    fn to_jwk_buffer_secret<B: WriteBuffer>(
-        &self,
-        buffer: &mut JwkEncoder<B>,
-    ) -> Result<(), Error> {
-        if let Some(sk) = self.0.secret.as_ref() {
-            let mut sk = sk.to_bytes();
-            buffer.add_str("crv", JWK_CURVE)?;
-            buffer.add_as_base64("x", &self.to_public_key_bytes()[..])?;
-            buffer.add_as_base64("d", &sk[..])?;
-            sk.zeroize();
-            Ok(())
-        } else {
-            self.to_jwk_buffer(buffer)
-        }
-    }
-}
-
 #[derive(Clone)]
 struct Keypair {
+    // SECURITY: SecretKey (StaticSecret) zeroizes on drop
     secret: Option<SecretKey>,
     public: PublicKey,
 }

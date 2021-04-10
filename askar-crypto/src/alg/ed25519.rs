@@ -1,5 +1,8 @@
 use alloc::boxed::Box;
-use core::convert::{TryFrom, TryInto};
+use core::{
+    convert::{TryFrom, TryInto},
+    fmt::{self, Debug, Formatter},
+};
 
 use curve25519_dalek::edwards::CompressedEdwardsY;
 use ed25519_dalek::{ExpandedSecretKey, PublicKey, SecretKey, Signature};
@@ -13,7 +16,7 @@ use crate::{
     buffer::{SecretBytes, WriteBuffer},
     caps::{KeyCapSign, KeyCapVerify, SignatureType},
     error::Error,
-    jwk::{JwkEncoder, KeyToJwk, KeyToJwkSecret},
+    jwk::{JwkEncoder, KeyToJwk},
 };
 
 // FIXME - check for low-order points when loading public keys?
@@ -27,7 +30,6 @@ pub const KEYPAIR_LENGTH: usize = SECRET_KEY_LENGTH + PUBLIC_KEY_LENGTH;
 
 pub static JWK_CURVE: &'static str = "Ed25519";
 
-// FIXME implement debug
 pub struct Ed25519KeyPair(Box<Keypair>);
 
 impl Ed25519KeyPair {
@@ -157,6 +159,22 @@ impl Clone for Ed25519KeyPair {
     }
 }
 
+impl Debug for Ed25519KeyPair {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Ed25519KeyPair")
+            .field(
+                "secret",
+                if self.0.secret.is_some() {
+                    &"<secret>"
+                } else {
+                    &"None"
+                },
+            )
+            .field("public", &self.0.public)
+            .finish()
+    }
+}
+
 impl KeyCapSign for Ed25519KeyPair {
     fn key_sign<B: WriteBuffer>(
         &self,
@@ -201,24 +219,13 @@ impl KeyToJwk for Ed25519KeyPair {
     fn to_jwk_buffer<B: WriteBuffer>(&self, buffer: &mut JwkEncoder<B>) -> Result<(), Error> {
         buffer.add_str("crv", JWK_CURVE)?;
         buffer.add_as_base64("x", &self.to_public_key_bytes()[..])?;
+        if buffer.is_secret() {
+            if let Some(sk) = self.0.secret.as_ref() {
+                buffer.add_as_base64("d", sk.as_bytes())?;
+            }
+        }
         buffer.add_str("use", "sig")?;
         Ok(())
-    }
-}
-
-impl KeyToJwkSecret for Ed25519KeyPair {
-    fn to_jwk_buffer_secret<B: WriteBuffer>(
-        &self,
-        buffer: &mut JwkEncoder<B>,
-    ) -> Result<(), Error> {
-        if let Some(sk) = self.0.secret.as_ref() {
-            buffer.add_str("crv", JWK_CURVE)?;
-            buffer.add_as_base64("x", &self.to_public_key_bytes()[..])?;
-            buffer.add_as_base64("d", sk.as_bytes())?;
-            Ok(())
-        } else {
-            self.to_jwk_buffer(buffer)
-        }
     }
 }
 

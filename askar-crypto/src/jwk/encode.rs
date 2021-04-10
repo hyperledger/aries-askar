@@ -24,14 +24,15 @@ impl<B: WriteBuffer> bs58::encode::EncodeTarget for JwkBuffer<'_, B> {
 
 pub struct JwkEncoder<'b, B: WriteBuffer> {
     buffer: &'b mut B,
+    secret: bool,
 }
 
 impl<'b, B: WriteBuffer> JwkEncoder<'b, B> {
-    pub fn new(buffer: &'b mut B, kty: &str) -> Result<Self, Error> {
+    pub fn new(buffer: &'b mut B, kty: &str, secret: bool) -> Result<Self, Error> {
         buffer.extend_from_slice(b"{\"kty\":\"")?;
         buffer.extend_from_slice(kty.as_bytes())?;
         buffer.extend_from_slice(b"\"")?;
-        Ok(Self { buffer })
+        Ok(Self { buffer, secret })
     }
 
     pub fn add_str(&mut self, key: &str, value: &str) -> Result<(), Error> {
@@ -76,6 +77,10 @@ impl<'b, B: WriteBuffer> JwkEncoder<'b, B> {
         }
         buffer.extend_from_slice(b"]")?;
         Ok(())
+    }
+
+    pub fn is_secret(&self) -> bool {
+        self.secret
     }
 
     pub fn finalize(self) -> Result<(), Error> {
