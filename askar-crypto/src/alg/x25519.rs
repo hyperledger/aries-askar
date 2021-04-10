@@ -8,7 +8,7 @@ use zeroize::Zeroize;
 use crate::{
     buffer::{SecretBytes, WriteBuffer},
     error::Error,
-    jwk::{JwkEncoder, KeyToJwk, KeyToJwkPrivate},
+    jwk::{JwkEncoder, KeyToJwk, KeyToJwkSecret},
 };
 
 pub const PUBLIC_KEY_LENGTH: usize = 32;
@@ -62,6 +62,7 @@ impl X25519KeyPair {
         })))
     }
 
+    #[inline]
     pub(crate) fn from_secret_key(sk: SecretKey) -> Self {
         let public = PublicKey::from(&sk);
         Self(Box::new(Keypair {
@@ -102,11 +103,11 @@ impl X25519KeyPair {
         Ok(Self::from_secret_key(sk))
     }
 
-    pub fn public_key_bytes(&self) -> [u8; PUBLIC_KEY_LENGTH] {
+    pub fn to_public_key_bytes(&self) -> [u8; PUBLIC_KEY_LENGTH] {
         self.0.public.to_bytes()
     }
 
-    pub fn secret_key_bytes(&self) -> Option<SecretBytes> {
+    pub fn to_secret_key_bytes(&self) -> Option<SecretBytes> {
         self.0
             .secret
             .as_ref()
@@ -131,21 +132,21 @@ impl KeyToJwk for X25519KeyPair {
 
     fn to_jwk_buffer<B: WriteBuffer>(&self, buffer: &mut JwkEncoder<B>) -> Result<(), Error> {
         buffer.add_str("crv", "X25519")?;
-        buffer.add_as_base64("x", &self.public_key_bytes()[..])?;
+        buffer.add_as_base64("x", &self.to_public_key_bytes()[..])?;
         buffer.add_str("use", "enc")?;
         Ok(())
     }
 }
 
-impl KeyToJwkPrivate for X25519KeyPair {
-    fn to_jwk_buffer_private<B: WriteBuffer>(
+impl KeyToJwkSecret for X25519KeyPair {
+    fn to_jwk_buffer_secret<B: WriteBuffer>(
         &self,
         buffer: &mut JwkEncoder<B>,
     ) -> Result<(), Error> {
         if let Some(sk) = self.0.secret.as_ref() {
             let mut sk = sk.to_bytes();
             buffer.add_str("crv", "X25519")?;
-            buffer.add_as_base64("x", &self.public_key_bytes()[..])?;
+            buffer.add_as_base64("x", &self.to_public_key_bytes()[..])?;
             buffer.add_as_base64("d", &sk[..])?;
             sk.zeroize();
             Ok(())
@@ -198,7 +199,7 @@ mod tests {
         assert_eq!(jwk.d, None);
 
         let jwk = kp
-            .to_jwk_private()
+            .to_jwk_secret()
             .expect("Error converting private key to JWK");
         let jwk = jwk.to_parts().expect("Error parsing JWK output");
         assert_eq!(jwk.kty, "OKP");

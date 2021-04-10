@@ -61,19 +61,17 @@ pub trait KeyToJwk {
     fn to_jwk_buffer<B: WriteBuffer>(&self, buffer: &mut JwkEncoder<B>) -> Result<(), Error>;
 }
 
-pub trait KeyToJwkPrivate: KeyToJwk {
-    fn to_jwk_private(&self) -> Result<Jwk<'static>, Error> {
+pub trait KeyToJwkSecret: KeyToJwk {
+    fn to_jwk_secret(&self) -> Result<Jwk<'static>, Error> {
         let mut v = Vec::with_capacity(128);
         let mut buf = JwkEncoder::new(&mut v, Self::KTY)?;
-        self.to_jwk_buffer_private(&mut buf)?;
+        self.to_jwk_buffer_secret(&mut buf)?;
         buf.finalize()?;
         Ok(Jwk::Encoded(Cow::Owned(String::from_utf8(v).unwrap())))
     }
 
-    fn to_jwk_buffer_private<B: WriteBuffer>(
-        &self,
-        buffer: &mut JwkEncoder<B>,
-    ) -> Result<(), Error>;
+    fn to_jwk_buffer_secret<B: WriteBuffer>(&self, buffer: &mut JwkEncoder<B>)
+        -> Result<(), Error>;
 }
 
 // pub trait JwkBuilder<'s> {
