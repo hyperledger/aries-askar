@@ -452,7 +452,7 @@ mod tests {
     #[test]
     fn test_write_vec() {
         let mut v = Vec::new();
-        let mut b = &mut v as &mut dyn WriteBuffer;
+        let b = &mut v as &mut dyn WriteBuffer;
         b.extend_from_slice(b"hello").unwrap();
         b.truncate_by(3);
         b.extend_from_slice(b"y").unwrap();

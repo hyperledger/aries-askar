@@ -1,4 +1,8 @@
-use core::{fmt, marker::PhantomData};
+use core::{
+    fmt::{self, Debug, Formatter},
+    marker::PhantomData,
+    ops::Deref,
+};
 
 use serde::de::{Deserialize, Deserializer, MapAccess, SeqAccess, Visitor};
 
@@ -7,21 +11,85 @@ use super::ops::{KeyOps, KeyOpsSet};
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct JwkParts<'a> {
     // key type
-    kty: &'a str,
+    pub kty: &'a str,
     // key ID
-    kid: Option<&'a str>,
+    pub kid: OptStr<'a>,
     // curve type
-    crv: Option<&'a str>,
+    pub crv: OptStr<'a>,
     // curve key public y coordinate
-    x: Option<&'a str>,
+    pub x: OptStr<'a>,
     // curve key public y coordinate
-    y: Option<&'a str>,
+    pub y: OptStr<'a>,
     // curve key private key bytes
-    d: Option<&'a str>,
+    pub d: OptStr<'a>,
     // used by symmetric keys like AES
-    k: Option<&'a str>,
+    pub k: OptStr<'a>,
     // recognized key operations
-    key_ops: Option<KeyOpsSet>,
+    pub key_ops: Option<KeyOpsSet>,
+}
+
+#[derive(Copy, Clone, Default, PartialEq, Eq)]
+#[repr(transparent)]
+pub struct OptStr<'a>(Option<&'a str>);
+
+impl OptStr<'_> {
+    pub fn is_none(&self) -> bool {
+        self.0.is_none()
+    }
+
+    pub fn to_option(&self) -> Option<&str> {
+        self.0
+    }
+}
+
+impl AsRef<[u8]> for OptStr<'_> {
+    fn as_ref(&self) -> &[u8] {
+        self.0.unwrap_or_default().as_bytes()
+    }
+}
+
+impl Debug for OptStr<'_> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self.0 {
+            None => f.write_str("None"),
+            Some(s) => f.write_fmt(format_args!("{:?}", s)),
+        }
+    }
+}
+
+impl Deref for OptStr<'_> {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        self.0.unwrap_or_default()
+    }
+}
+
+impl<'o> From<&'o str> for OptStr<'o> {
+    fn from(s: &'o str) -> Self {
+        Self(Some(s))
+    }
+}
+
+impl<'o> From<Option<&'o str>> for OptStr<'o> {
+    fn from(s: Option<&'o str>) -> Self {
+        Self(s)
+    }
+}
+
+impl PartialEq<Option<&str>> for OptStr<'_> {
+    fn eq(&self, other: &Option<&str>) -> bool {
+        self.0 == *other
+    }
+}
+
+impl PartialEq<&str> for OptStr<'_> {
+    fn eq(&self, other: &&str) -> bool {
+        match self.0 {
+            None => false,
+            Some(s) => (*other) == s,
+        }
+    }
 }
 
 struct JwkMapVisitor<'de>(PhantomData<&'de ()>);
@@ -55,6 +123,18 @@ impl<'de> Visitor<'de> for JwkMapVisitor<'de> {
                 "y" => y = Some(access.next_value()?),
                 "d" => d = Some(access.next_value()?),
                 "k" => k = Some(access.next_value()?),
+                "use" => {
+                    let ops = match access.next_value()? {
+                        "enc" => {
+                            KeyOps::Encrypt | KeyOps::Decrypt | KeyOps::WrapKey | KeyOps::UnwrapKey
+                        }
+                        "sig" => KeyOps::Sign | KeyOps::Verify,
+                        _ => KeyOpsSet::new(),
+                    };
+                    if !ops.is_empty() {
+                        key_ops = Some(key_ops.unwrap_or_default() | ops);
+                    }
+                }
                 "key_ops" => key_ops = Some(access.next_value()?),
                 _ => (),
             }
@@ -63,12 +143,12 @@ impl<'de> Visitor<'de> for JwkMapVisitor<'de> {
         if let Some(kty) = kty {
             Ok(JwkParts {
                 kty,
-                kid,
-                crv,
-                x,
-                y,
-                d,
-                k,
+                kid: OptStr::from(kid),
+                crv: OptStr::from(crv),
+                x: OptStr::from(x),
+                y: OptStr::from(y),
+                d: OptStr::from(d),
+                k: OptStr::from(k),
                 key_ops,
             })
         } else {
@@ -139,18 +219,17 @@ mod tests {
             "key_ops": ["sign", "verify"],
             "kid": "FdFYFzERwC2uCBB46pZQi4GG85LujR8obt-KWRBICVQ"
         }"#;
+        let parts = serde_json::from_str::<JwkParts>(jwk).unwrap();
+        assert_eq!(parts.kty, "OKP");
         assert_eq!(
-            serde_json::from_str::<JwkParts>(jwk).unwrap(),
-            JwkParts {
-                kty: "OKP",
-                kid: Some("FdFYFzERwC2uCBB46pZQi4GG85LujR8obt-KWRBICVQ"),
-                crv: Some("Ed25519"),
-                x: Some("11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo"),
-                y: None,
-                d: Some("nWGxne_9WmC6hEr0kuwsxERJxWl7MmkZcDusAxyuf2A"),
-                k: None,
-                key_ops: Some(KeyOps::Sign | KeyOps::Verify)
-            }
-        )
+            parts.kid,
+            Some("FdFYFzERwC2uCBB46pZQi4GG85LujR8obt-KWRBICVQ")
+        );
+        assert_eq!(parts.crv, Some("Ed25519"));
+        assert_eq!(parts.x, Some("11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo"));
+        assert_eq!(parts.y, None);
+        assert_eq!(parts.d, Some("nWGxne_9WmC6hEr0kuwsxERJxWl7MmkZcDusAxyuf2A"));
+        assert_eq!(parts.k, None);
+        assert_eq!(parts.key_ops, Some(KeyOps::Sign | KeyOps::Verify));
     }
 }

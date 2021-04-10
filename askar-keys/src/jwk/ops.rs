@@ -88,6 +88,12 @@ impl KeyOpsSet {
     }
 }
 
+impl Default for KeyOpsSet {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl BitOr<Self> for KeyOpsSet {
     type Output = Self;
 

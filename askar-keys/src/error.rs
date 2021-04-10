@@ -42,6 +42,8 @@ impl Display for ErrorKind {
 #[derive(Debug)]
 pub struct Error {
     pub(crate) kind: ErrorKind,
+    #[cfg(not(feature = "std"))]
+    pub(crate) cause: Option<String>,
     #[cfg(feature = "std")]
     pub(crate) cause: Option<Box<dyn StdError + Send + Sync + 'static>>,
     pub(crate) message: Option<String>,
@@ -51,7 +53,6 @@ impl Error {
     pub(crate) fn from_msg<T: Into<String>>(kind: ErrorKind, msg: T) -> Self {
         Self {
             kind,
-            #[cfg(feature = "std")]
             cause: None,
             message: Some(msg.into()),
         }
@@ -61,7 +62,6 @@ impl Error {
     pub(crate) fn from_opt_msg<T: Into<String>>(kind: ErrorKind, msg: Option<T>) -> Self {
         Self {
             kind,
-            #[cfg(feature = "std")]
             cause: None,
             message: msg.map(Into::into),
         }
@@ -70,6 +70,12 @@ impl Error {
     /// Accessor for the error kind
     pub fn kind(&self) -> ErrorKind {
         self.kind
+    }
+
+    #[cfg(not(feature = "std"))]
+    pub(crate) fn with_cause<T: Into<Option<String>>>(mut self, err: T) -> Self {
+        self.cause = err.into();
+        self
     }
 
     #[cfg(feature = "std")]
@@ -86,7 +92,6 @@ impl Display for Error {
         } else {
             f.write_str(self.kind.as_str())?;
         }
-        #[cfg(feature = "std")]
         if let Some(cause) = self.cause.as_ref() {
             write!(f, "\nCaused by: {}", cause)?;
         }
@@ -113,7 +118,6 @@ impl From<ErrorKind> for Error {
     fn from(kind: ErrorKind) -> Self {
         Self {
             kind,
-            #[cfg(feature = "std")]
             cause: None,
             message: None,
         }
@@ -145,6 +149,6 @@ macro_rules! err_map {
 #[cfg(not(feature = "std"))]
 macro_rules! err_map {
     ($($params:tt)*) => {
-        |_| err_msg!($($params)*)
+        |err| err_msg!($($params)*).with_cause(alloc::string::ToString::to_string(&err))
     };
 }

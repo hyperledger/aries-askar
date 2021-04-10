@@ -4,11 +4,14 @@ use zeroize::Zeroize;
 
 use crate::{buffer::WriteBuffer, error::Error};
 
+mod encode;
+pub use encode::JwkEncoder;
+
 mod ops;
 pub use self::ops::{KeyOps, KeyOpsSet};
 
-mod parse;
-pub use self::parse::JwkParts;
+mod parts;
+pub use self::parts::JwkParts;
 
 #[derive(Clone, Debug)]
 pub enum Jwk<'a> {
@@ -17,12 +20,19 @@ pub enum Jwk<'a> {
 }
 
 impl Jwk<'_> {
-    pub fn to_parts(&self) -> Result<Jwk<'_>, Error> {
+    pub fn to_parts(&self) -> Result<JwkParts<'_>, Error> {
         match self {
-            Self::Encoded(s) => Ok(Jwk::Parts(
-                serde_json::from_str(s.as_ref()).map_err(err_map!("Error deserializing JWK"))?,
-            )),
-            Self::Parts(p) => Ok(Jwk::Parts(*p)),
+            Self::Encoded(s) => Ok(
+                serde_json::from_str(s.as_ref()).map_err(err_map!("Error deserializing JWK"))?
+            ),
+            Self::Parts(p) => Ok(*p),
+        }
+    }
+
+    pub fn as_opt_str(&self) -> Option<&str> {
+        match self {
+            Self::Encoded(s) => Some(s.as_ref()),
+            Self::Parts(_) => None,
         }
     }
 }
@@ -37,101 +47,27 @@ impl Zeroize for Jwk<'_> {
     }
 }
 
-struct JwkBuffer<'s, B>(&'s mut B);
-
-impl<B: WriteBuffer> bs58::encode::EncodeTarget for JwkBuffer<'_, B> {
-    fn encode_with(
-        &mut self,
-        max_len: usize,
-        f: impl for<'a> FnOnce(&'a mut [u8]) -> Result<usize, bs58::encode::Error>,
-    ) -> Result<usize, bs58::encode::Error> {
-        if let Some(ext) = self.0.extend_buffer(max_len) {
-            let len = f(ext)?;
-            if len < max_len {
-                self.0.truncate_by(max_len - len);
-            }
-            Ok(len)
-        } else {
-            Err(bs58::encode::Error::BufferTooSmall)
-        }
-    }
-}
-
-pub struct JwkEncoder<'b, B: WriteBuffer> {
-    buffer: &'b mut B,
-}
-
-impl<'b, B: WriteBuffer> JwkEncoder<'b, B> {
-    pub fn new(buffer: &'b mut B, kty: &str) -> Result<Self, Error> {
-        buffer.extend_from_slice(b"{\"kty\":\"")?;
-        buffer.extend_from_slice(kty.as_bytes())?;
-        buffer.extend_from_slice(b"\"")?;
-        Ok(Self { buffer })
-    }
-
-    pub fn add_str(&mut self, key: &str, value: &str) -> Result<(), Error> {
-        let buffer = &mut *self.buffer;
-        buffer.extend_from_slice(b",\"")?;
-        buffer.extend_from_slice(key.as_bytes())?;
-        buffer.extend_from_slice(b"\":\"")?;
-        buffer.extend_from_slice(value.as_bytes())?;
-        buffer.extend_from_slice(b"\"")?;
-        Ok(())
-    }
-
-    pub fn add_as_base58(&mut self, key: &str, value: &[u8]) -> Result<(), Error> {
-        let buffer = &mut *self.buffer;
-        buffer.extend_from_slice(b",\"")?;
-        buffer.extend_from_slice(key.as_bytes())?;
-        buffer.extend_from_slice(b"\":\"")?;
-        bs58::encode(value)
-            .into(JwkBuffer(buffer))
-            .map_err(|_| err_msg!("buffer too small"))?;
-        buffer.extend_from_slice(b"\"")?;
-        Ok(())
-    }
-
-    pub fn add_key_ops(&mut self, ops: impl Into<KeyOpsSet>) -> Result<(), Error> {
-        let buffer = &mut *self.buffer;
-        buffer.extend_from_slice(b",\"key_ops\":[")?;
-        for (idx, op) in ops.into().into_iter().enumerate() {
-            if idx > 0 {
-                buffer.extend_from_slice(b",\"")?;
-            } else {
-                buffer.extend_from_slice(b"\"")?;
-            }
-            buffer.extend_from_slice(op.as_str().as_bytes())?;
-            buffer.extend_from_slice(b"\"")?;
-        }
-        buffer.extend_from_slice(b"]")?;
-        Ok(())
-    }
-
-    pub fn finalize(self) -> Result<(), Error> {
-        self.buffer.extend_from_slice(b"}")?;
-        Ok(())
-    }
-}
-
 pub trait KeyToJwk {
     const KTY: &'static str;
 
-    fn to_jwk(&self) -> Result<String, Error> {
+    fn to_jwk(&self) -> Result<Jwk<'static>, Error> {
         let mut v = Vec::with_capacity(128);
         let mut buf = JwkEncoder::new(&mut v, Self::KTY)?;
         self.to_jwk_buffer(&mut buf)?;
-        Ok(String::from_utf8(v).unwrap())
+        buf.finalize()?;
+        Ok(Jwk::Encoded(Cow::Owned(String::from_utf8(v).unwrap())))
     }
 
     fn to_jwk_buffer<B: WriteBuffer>(&self, buffer: &mut JwkEncoder<B>) -> Result<(), Error>;
 }
 
 pub trait KeyToJwkPrivate: KeyToJwk {
-    fn to_jwk_private(&self) -> Result<String, Error> {
+    fn to_jwk_private(&self) -> Result<Jwk<'static>, Error> {
         let mut v = Vec::with_capacity(128);
         let mut buf = JwkEncoder::new(&mut v, Self::KTY)?;
         self.to_jwk_buffer_private(&mut buf)?;
-        Ok(String::from_utf8(v).unwrap())
+        buf.finalize()?;
+        Ok(Jwk::Encoded(Cow::Owned(String::from_utf8(v).unwrap())))
     }
 
     fn to_jwk_buffer_private<B: WriteBuffer>(
