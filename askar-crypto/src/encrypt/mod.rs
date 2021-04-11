@@ -3,6 +3,9 @@ use crate::{
     error::Error,
 };
 
+mod ecdh_1pu;
+pub use ecdh_1pu::ecdh_1pu_direct;
+
 pub trait KeyAeadInPlace {
     /// Encrypt a secret value in place, appending the verification tag
     fn encrypt_in_place<B: ResizeBuffer>(

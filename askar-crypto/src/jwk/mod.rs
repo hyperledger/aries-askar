@@ -37,6 +37,30 @@ impl Jwk<'_> {
     }
 }
 
+impl<'a> From<Cow<'a, str>> for Jwk<'a> {
+    fn from(jwk: Cow<'a, str>) -> Self {
+        Jwk::Encoded(jwk)
+    }
+}
+
+impl<'a> From<&'a str> for Jwk<'a> {
+    fn from(jwk: &'a str) -> Self {
+        Jwk::Encoded(Cow::Borrowed(jwk))
+    }
+}
+
+impl<'a> From<String> for Jwk<'a> {
+    fn from(jwk: String) -> Self {
+        Jwk::Encoded(Cow::Owned(jwk))
+    }
+}
+
+impl<'a> From<JwkParts<'a>> for Jwk<'a> {
+    fn from(jwk: JwkParts<'a>) -> Self {
+        Jwk::Parts(jwk)
+    }
+}
+
 impl Zeroize for Jwk<'_> {
     fn zeroize(&mut self) {
         match self {
