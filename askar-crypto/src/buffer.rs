@@ -457,20 +457,44 @@ pub trait WriteBuffer {
     ) -> Result<usize, Error>;
 }
 
+pub trait ResizeBuffer: WriteBuffer {
+    fn as_ref(&self) -> &[u8];
+
+    fn as_mut(&mut self) -> &mut [u8];
+
+    fn reserve(&mut self, len: usize) -> Result<(), Error> {
+        self.write_with(len, |buf| {
+            for idx in 0..len {
+                buf[idx] = 0u8;
+            }
+            Ok(len)
+        })?;
+        Ok(())
+    }
+
+    fn truncate(&mut self, len: usize);
+}
+
 pub struct Writer<B> {
     inner: B,
     pos: usize,
 }
 
-impl<'w> Writer<&'w mut [u8]> {
-    pub fn from_slice(slice: &'w mut [u8]) -> Self {
+impl<'b> Writer<&'b mut [u8]> {
+    #[inline]
+    pub fn from_slice(slice: &'b mut [u8]) -> Self {
         Writer {
             inner: slice,
             pos: 0,
         }
     }
 
-    pub fn pos(&self) -> usize {
+    #[inline]
+    pub fn from_slice_position(slice: &'b mut [u8], pos: usize) -> Self {
+        Writer { inner: slice, pos }
+    }
+
+    pub fn position(&self) -> usize {
         self.pos
     }
 }
@@ -492,6 +516,21 @@ impl<'b> WriteBuffer for Writer<&'b mut [u8]> {
     }
 }
 
+impl<'b> ResizeBuffer for Writer<&'b mut [u8]> {
+    fn as_ref(&self) -> &[u8] {
+        &self.inner[..self.pos]
+    }
+
+    fn as_mut(&mut self) -> &mut [u8] {
+        &mut self.inner[..self.pos]
+    }
+
+    fn truncate(&mut self, len: usize) {
+        assert!(len <= self.pos);
+        self.pos = len;
+    }
+}
+
 impl WriteBuffer for Vec<u8> {
     fn write_with(
         &mut self,
@@ -505,6 +544,20 @@ impl WriteBuffer for Vec<u8> {
             self.truncate(len + written);
         }
         Ok(written)
+    }
+}
+
+impl ResizeBuffer for Vec<u8> {
+    fn as_ref(&self) -> &[u8] {
+        &self[..]
+    }
+
+    fn as_mut(&mut self) -> &mut [u8] {
+        &mut self[..]
+    }
+
+    fn truncate(&mut self, len: usize) {
+        self.truncate(len);
     }
 }
 
@@ -524,6 +577,20 @@ impl WriteBuffer for SecretBytes {
     }
 }
 
+impl ResizeBuffer for SecretBytes {
+    fn as_ref(&self) -> &[u8] {
+        &self.0[..]
+    }
+
+    fn as_mut(&mut self) -> &mut [u8] {
+        &mut self.0[..]
+    }
+
+    fn truncate(&mut self, len: usize) {
+        self.0.truncate(len);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -538,7 +605,7 @@ mod tests {
         })
         .unwrap();
         w.write_slice(b"y").unwrap();
-        assert_eq!(w.pos(), 3);
+        assert_eq!(w.position(), 3);
         assert_eq!(&buf[..3], b"hey");
     }
 

@@ -35,17 +35,11 @@ pub use self::buffer::{PassKey, SecretBytes};
 
 pub mod caps;
 pub use self::caps::{
-    KeyAlg,
-    KeyCapVerify,
-    KeyCategory,
-    KeyGen,
-    KeyGenInPlace,
-    KeySecretBytes,
-    SignatureFormat,
-    SignatureType, // KeyCapSign
+    KeyAlg, KeyCapSign, KeyCapVerify, KeyCategory, KeyGen, KeyGenInPlace, KeySecretBytes,
+    SignatureFormat, SignatureType,
 };
 
-// pub mod encrypt;
+pub mod encrypt;
 
 pub mod jwk;
 
