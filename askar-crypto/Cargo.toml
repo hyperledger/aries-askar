@@ -23,6 +23,7 @@ hex-literal = "0.3"
 
 [dependencies]
 aead = "0.3"
+aes-gcm = { version = "0.8", default-features = false, features = ["aes", "alloc"] }
 argon2 = "0.1"
 base64 = { version = "0.13", default-features = false, features = ["alloc"] }
 blake2 = { version = "0.9", default-features = false }

@@ -1,7 +1,5 @@
-use alloc::boxed::Box;
-
 use aead::{Aead, AeadInPlace, NewAead};
-use chacha20poly1305::{ChaCha20Poly1305, XChaCha20Poly1305};
+use aes_gcm::{Aes128Gcm, Aes256Gcm};
 use zeroize::Zeroize;
 
 use crate::generic_array::{typenum::Unsigned, GenericArray};
@@ -12,10 +10,9 @@ use crate::{
     encrypt::KeyAeadInPlace,
     error::Error,
     jwk::{JwkEncoder, KeyToJwk},
-    random::{fill_random, fill_random_deterministic},
 };
 
-pub trait Chacha20Type {
+pub trait AesGcmType {
     type Aead: NewAead + Aead + AeadInPlace;
 
     const JWK_ALG: &'static str;
@@ -25,52 +22,42 @@ pub trait Chacha20Type {
     }
 }
 
-pub struct C20P;
+pub struct A128;
 
-impl Chacha20Type for C20P {
-    type Aead = ChaCha20Poly1305;
+impl AesGcmType for A128 {
+    type Aead = Aes128Gcm;
 
-    const JWK_ALG: &'static str = "C20P";
+    const JWK_ALG: &'static str = "A128GCM";
 }
 
-pub struct XC20P;
+pub struct A256;
 
-impl Chacha20Type for XC20P {
-    type Aead = XChaCha20Poly1305;
+impl AesGcmType for A256 {
+    type Aead = Aes256Gcm;
 
-    const JWK_ALG: &'static str = "XC20P";
+    const JWK_ALG: &'static str = "A256GCM";
 }
 
-type KeyType<A> = ArrayKey<<<A as Chacha20Type>::Aead as NewAead>::KeySize>;
+type KeyType<A> = ArrayKey<<<A as AesGcmType>::Aead as NewAead>::KeySize>;
 
-type NonceSize<A> = <<A as Chacha20Type>::Aead as Aead>::NonceSize;
+type NonceSize<A> = <<A as AesGcmType>::Aead as Aead>::NonceSize;
 
-type TagSize<A> = <<A as Chacha20Type>::Aead as Aead>::TagSize;
+type TagSize<A> = <<A as AesGcmType>::Aead as Aead>::TagSize;
 
 #[derive(Clone, Debug, Zeroize)]
 // SECURITY: ArrayKey is zeroized on drop
-pub struct Chacha20Key<T: Chacha20Type>(KeyType<T>);
+pub struct AesGcmKey<T: AesGcmType>(KeyType<T>);
 
-impl<T: Chacha20Type> Chacha20Key<T> {
-    // this is consistent with Indy's wallet wrapping key generation
-    // FIXME: move to a trait to allow custom impl for Box<Chacha20Key>
-    pub fn from_seed(seed: &[u8]) -> Result<Self, Error> {
-        let mut slf = KeyType::<T>::default();
-        fill_random_deterministic(seed, &mut slf)?;
-        Ok(Self(slf))
-    }
-}
-
-impl<T: Chacha20Type> KeyGen for Chacha20Key<T> {
+impl<T: AesGcmType> KeyGen for AesGcmKey<T> {
     fn generate() -> Result<Self, Error> {
-        Ok(Chacha20Key(KeyType::<T>::random()))
+        Ok(AesGcmKey(KeyType::<T>::random()))
     }
 }
 
-impl<T: Chacha20Type> KeySecretBytes for Chacha20Key<T> {
+impl<T: AesGcmType> KeySecretBytes for AesGcmKey<T> {
     fn from_key_secret_bytes(key: &[u8]) -> Result<Self, Error> {
         if key.len() != <T::Aead as NewAead>::KeySize::USIZE {
-            return Err(err_msg!("Invalid length for chacha20 key"));
+            return Err(err_msg!("Invalid length for AES-GCM key"));
         }
         Ok(Self(KeyType::<T>::from_slice(key)))
     }
@@ -80,42 +67,7 @@ impl<T: Chacha20Type> KeySecretBytes for Chacha20Key<T> {
     }
 }
 
-#[inline]
-pub fn init_boxed<T: Chacha20Type>(f: impl FnOnce(&mut [u8])) -> Box<Chacha20Key<T>> {
-    let mut slf = Box::new(Chacha20Key(KeyType::<T>::default()));
-    f(&mut slf.0);
-    slf
-}
-
-#[inline]
-pub fn try_init_boxed<T: Chacha20Type>(
-    f: impl FnOnce(&mut [u8]) -> Result<(), Error>,
-) -> Result<Box<Chacha20Key<T>>, Error> {
-    let mut slf = Box::new(Chacha20Key(KeyType::<T>::default()));
-    f(&mut slf.0)?;
-    Ok(slf)
-}
-
-impl<T: Chacha20Type> KeyGen for Box<Chacha20Key<T>> {
-    fn generate() -> Result<Self, Error> {
-        Ok(init_boxed(fill_random))
-    }
-}
-
-impl<T: Chacha20Type> KeySecretBytes for Box<Chacha20Key<T>> {
-    fn from_key_secret_bytes(key: &[u8]) -> Result<Self, Error> {
-        if key.len() != <T::Aead as NewAead>::KeySize::USIZE {
-            return Err(err_msg!("Invalid length for chacha20 key"));
-        }
-        Ok(init_boxed(|buf| buf.copy_from_slice(key)))
-    }
-
-    fn to_key_secret_buffer<B: WriteBuffer>(&self, out: &mut B) -> Result<(), Error> {
-        out.write_slice(&self.0[..])
-    }
-}
-
-impl<T: Chacha20Type> KeyAeadInPlace for Chacha20Key<T> {
+impl<T: AesGcmType> KeyAeadInPlace for AesGcmKey<T> {
     /// Encrypt a secret value in place, appending the verification tag
     fn encrypt_in_place<B: ResizeBuffer>(
         &self,
@@ -178,7 +130,7 @@ impl<T: Chacha20Type> KeyAeadInPlace for Chacha20Key<T> {
     }
 }
 
-impl<T: Chacha20Type> KeyToJwk for Chacha20Key<T> {
+impl<T: AesGcmType> KeyToJwk for AesGcmKey<T> {
     const KTY: &'static str = "oct";
 
     fn to_jwk_buffer<B: WriteBuffer>(&self, buffer: &mut JwkEncoder<B>) -> Result<(), Error> {
@@ -199,19 +151,19 @@ mod tests {
 
     #[test]
     fn encrypt_round_trip() {
-        fn test_encrypt<T: Chacha20Type>() {
+        fn test_encrypt<T: AesGcmType>() {
             let input = b"hello";
-            let key = Chacha20Key::<T>::generate().unwrap();
+            let key = AesGcmKey::<T>::generate().unwrap();
             let mut buffer = SecretBytes::from_slice(input);
             let mut nonce = GenericArray::<u8, NonceSize<T>>::default();
             fill_random(&mut nonce);
             key.encrypt_in_place(&mut buffer, &nonce, &[]).unwrap();
-            assert_eq!(buffer.len(), input.len() + Chacha20Key::<T>::tag_size());
+            assert_eq!(buffer.len(), input.len() + AesGcmKey::<T>::tag_size());
             assert_ne!(&buffer[..], input);
             key.decrypt_in_place(&mut buffer, &nonce, &[]).unwrap();
             assert_eq!(&buffer[..], input);
         }
-        test_encrypt::<C20P>();
-        test_encrypt::<XC20P>();
+        test_encrypt::<A128>();
+        test_encrypt::<A256>();
     }
 }
