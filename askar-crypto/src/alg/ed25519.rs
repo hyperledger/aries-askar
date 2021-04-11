@@ -15,7 +15,7 @@ use crate::{
     buffer::{SecretBytes, WriteBuffer},
     caps::{KeyCapSign, KeyCapVerify, KeyGen, KeySecretBytes, SignatureType},
     error::Error,
-    jwk::{JwkEncoder, KeyToJwk},
+    jwk::{JwkEncoder, ToJwk},
 };
 
 // FIXME - check for low-order points when loading public keys?
@@ -27,6 +27,7 @@ pub const PUBLIC_KEY_LENGTH: usize = 32;
 pub const SECRET_KEY_LENGTH: usize = 32;
 pub const KEYPAIR_LENGTH: usize = SECRET_KEY_LENGTH + PUBLIC_KEY_LENGTH;
 
+pub static JWK_KEY_TYPE: &'static str = "OKP";
 pub static JWK_CURVE: &'static str = "Ed25519";
 
 pub struct Ed25519KeyPair {
@@ -215,10 +216,9 @@ impl KeyCapVerify for Ed25519KeyPair {
     }
 }
 
-impl KeyToJwk for Ed25519KeyPair {
-    const KTY: &'static str = "OKP";
-
+impl ToJwk for Ed25519KeyPair {
     fn to_jwk_buffer<B: WriteBuffer>(&self, buffer: &mut JwkEncoder<B>) -> Result<(), Error> {
+        buffer.add_str("kty", JWK_KEY_TYPE)?;
         buffer.add_str("crv", JWK_CURVE)?;
         buffer.add_as_base64("x", &self.to_public_key_bytes()[..])?;
         if buffer.is_secret() {
@@ -301,7 +301,9 @@ mod tests {
         let test_pvt = base64::decode_config(test_pvt_b64, base64::URL_SAFE).unwrap();
         let kp =
             Ed25519KeyPair::from_key_secret_bytes(&test_pvt).expect("Error creating signing key");
-        let jwk = kp.to_jwk().expect("Error converting public key to JWK");
+        let jwk = kp
+            .to_jwk_public()
+            .expect("Error converting public key to JWK");
         let jwk = jwk.to_parts().expect("Error parsing JWK output");
         assert_eq!(jwk.kty, "OKP");
         assert_eq!(jwk.crv, JWK_CURVE);

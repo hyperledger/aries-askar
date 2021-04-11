@@ -8,7 +8,7 @@ use core::{
     fmt::{self, Debug, Formatter},
     marker::PhantomData,
     mem::{self, ManuallyDrop},
-    ops::{Deref, DerefMut},
+    ops::Deref,
 };
 
 use crate::generic_array::{typenum, ArrayLength, GenericArray};
@@ -18,7 +18,7 @@ use zeroize::Zeroize;
 use crate::{error::Error, random::fill_random};
 
 /// A secure key representation for fixed-length keys
-#[derive(Clone, Hash, Zeroize)]
+#[derive(Clone, Hash)]
 pub struct ArrayKey<L: ArrayLength<u8>>(GenericArray<u8, L>);
 
 impl<L: ArrayLength<u8>> ArrayKey<L> {
@@ -48,6 +48,18 @@ impl<L: ArrayLength<u8>> ArrayKey<L> {
     }
 }
 
+impl<L: ArrayLength<u8>> AsRef<GenericArray<u8, L>> for ArrayKey<L> {
+    fn as_ref(&self) -> &GenericArray<u8, L> {
+        &self.0
+    }
+}
+
+impl<L: ArrayLength<u8>> AsMut<GenericArray<u8, L>> for ArrayKey<L> {
+    fn as_mut(&mut self) -> &mut GenericArray<u8, L> {
+        &mut self.0
+    }
+}
+
 impl<L: ArrayLength<u8>> Default for ArrayKey<L> {
     #[inline]
     fn default() -> Self {
@@ -71,34 +83,21 @@ impl<L: ArrayLength<u8>> Debug for ArrayKey<L> {
     }
 }
 
-impl<L: ArrayLength<u8>> Deref for ArrayKey<L> {
-    type Target = GenericArray<u8, L>;
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl<L: ArrayLength<u8>> DerefMut for ArrayKey<L> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
-}
-
 impl<L: ArrayLength<u8>> PartialEq for ArrayKey<L> {
     fn eq(&self, other: &Self) -> bool {
-        **self == **other
+        self.as_ref() == other.as_ref()
     }
 }
 impl<L: ArrayLength<u8>> Eq for ArrayKey<L> {}
 
 impl<L: ArrayLength<u8>> PartialOrd for ArrayKey<L> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        self.0.partial_cmp(&*other)
+        self.0.partial_cmp(other.as_ref())
     }
 }
 impl<L: ArrayLength<u8>> Ord for ArrayKey<L> {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.0.cmp(&*other)
+        self.0.cmp(other.as_ref())
     }
 }
 
@@ -120,6 +119,12 @@ impl<'a, L: ArrayLength<u8>> Deserialize<'a> for ArrayKey<L> {
         D: Deserializer<'a>,
     {
         deserializer.deserialize_str(KeyVisitor { _pd: PhantomData })
+    }
+}
+
+impl<L: ArrayLength<u8>> Zeroize for ArrayKey<L> {
+    fn zeroize(&mut self) {
+        self.0.zeroize();
     }
 }
 

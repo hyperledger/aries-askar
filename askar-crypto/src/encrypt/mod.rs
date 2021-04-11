@@ -37,6 +37,6 @@ pub trait KeyExchange<Rhs = Self> {
     }
 }
 
-pub trait KeyFromExchange<Lhs, Rhs>: Sized {
-    fn key_from_exchange(lhs: &Lhs, other: &Rhs) -> Result<Self, Error>;
+pub trait FromKeyExchange<Lhs, Rhs>: Sized {
+    fn from_key_exchange(lhs: &Lhs, rhs: &Rhs) -> Result<Self, Error>;
 }

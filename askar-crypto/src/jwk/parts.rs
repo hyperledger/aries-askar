@@ -1,54 +1,72 @@
 use core::{
     fmt::{self, Debug, Formatter},
     marker::PhantomData,
-    ops::Deref,
 };
 
 use serde::de::{Deserialize, Deserializer, MapAccess, SeqAccess, Visitor};
 
 use super::ops::{KeyOps, KeyOpsSet};
+use crate::error::Error;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct JwkParts<'a> {
     // key type
     pub kty: &'a str,
     // key ID
-    pub kid: OptStr<'a>,
+    pub kid: OptAttr<'a>,
     // curve type
-    pub crv: OptStr<'a>,
+    pub crv: OptAttr<'a>,
     // curve key public y coordinate
-    pub x: OptStr<'a>,
+    pub x: OptAttr<'a>,
     // curve key public y coordinate
-    pub y: OptStr<'a>,
+    pub y: OptAttr<'a>,
     // curve key private key bytes
-    pub d: OptStr<'a>,
+    pub d: OptAttr<'a>,
     // used by symmetric keys like AES
-    pub k: OptStr<'a>,
+    pub k: OptAttr<'a>,
     // recognized key operations
     pub key_ops: Option<KeyOpsSet>,
 }
 
 #[derive(Copy, Clone, Default, PartialEq, Eq)]
 #[repr(transparent)]
-pub struct OptStr<'a>(Option<&'a str>);
+pub struct OptAttr<'a>(Option<&'a str>);
 
-impl OptStr<'_> {
+impl OptAttr<'_> {
     pub fn is_none(&self) -> bool {
         self.0.is_none()
+    }
+
+    pub fn is_some(&self) -> bool {
+        self.0.is_some()
     }
 
     pub fn to_option(&self) -> Option<&str> {
         self.0
     }
+
+    pub fn decode_base64(&self, output: &mut [u8]) -> Result<usize, Error> {
+        if let Some(s) = self.0 {
+            let max_input = (output.len() * 4 + 2) / 3; // ceil(4*n/3)
+            if s.len() > max_input {
+                Err(err_msg!("base64 length exceeds max"))
+            } else {
+                base64::decode_config_slice(s, base64::URL_SAFE_NO_PAD, output)
+                    .map_err(|e| err_msg!("base64 decode error: {}", e))
+            }
+        } else {
+            Err(err_msg!("empty attribute"))
+        }
+    }
 }
 
-impl AsRef<[u8]> for OptStr<'_> {
+impl AsRef<[u8]> for OptAttr<'_> {
     fn as_ref(&self) -> &[u8] {
         self.0.unwrap_or_default().as_bytes()
     }
 }
 
-impl Debug for OptStr<'_> {
+impl Debug for OptAttr<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self.0 {
             None => f.write_str("None"),
@@ -57,33 +75,31 @@ impl Debug for OptStr<'_> {
     }
 }
 
-impl Deref for OptStr<'_> {
-    type Target = str;
-
-    fn deref(&self) -> &Self::Target {
+impl AsRef<str> for OptAttr<'_> {
+    fn as_ref(&self) -> &str {
         self.0.unwrap_or_default()
     }
 }
 
-impl<'o> From<&'o str> for OptStr<'o> {
+impl<'o> From<&'o str> for OptAttr<'o> {
     fn from(s: &'o str) -> Self {
         Self(Some(s))
     }
 }
 
-impl<'o> From<Option<&'o str>> for OptStr<'o> {
+impl<'o> From<Option<&'o str>> for OptAttr<'o> {
     fn from(s: Option<&'o str>) -> Self {
         Self(s)
     }
 }
 
-impl PartialEq<Option<&str>> for OptStr<'_> {
+impl PartialEq<Option<&str>> for OptAttr<'_> {
     fn eq(&self, other: &Option<&str>) -> bool {
         self.0 == *other
     }
 }
 
-impl PartialEq<&str> for OptStr<'_> {
+impl PartialEq<&str> for OptAttr<'_> {
     fn eq(&self, other: &&str) -> bool {
         match self.0 {
             None => false,
@@ -143,12 +159,12 @@ impl<'de> Visitor<'de> for JwkMapVisitor<'de> {
         if let Some(kty) = kty {
             Ok(JwkParts {
                 kty,
-                kid: OptStr::from(kid),
-                crv: OptStr::from(crv),
-                x: OptStr::from(x),
-                y: OptStr::from(y),
-                d: OptStr::from(d),
-                k: OptStr::from(k),
+                kid: kid.into(),
+                crv: crv.into(),
+                x: x.into(),
+                y: y.into(),
+                d: d.into(),
+                k: k.into(),
                 key_ops,
             })
         } else {

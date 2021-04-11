@@ -5,17 +5,16 @@ use p256::{
         signature::{Signer, Verifier},
         Signature, SigningKey, VerifyingKey,
     },
-    elliptic_curve::{ecdh::diffie_hellman, sec1::Coordinates},
+    elliptic_curve::{ecdh::diffie_hellman, sec1::Coordinates, Curve},
     EncodedPoint, PublicKey, SecretKey,
 };
 
 use crate::{
-    buffer::{SecretBytes, WriteBuffer},
-    // any::{AnyPrivateKey, AnyPublicKey},
+    buffer::{ArrayKey, SecretBytes, WriteBuffer},
     caps::{KeyCapSign, KeyCapVerify, KeyGen, KeySecretBytes, SignatureType},
     encrypt::KeyExchange,
     error::Error,
-    jwk::{JwkEncoder, KeyToJwk},
+    jwk::{FromJwk, JwkEncoder, JwkParts, ToJwk},
     random::with_rng,
 };
 
@@ -25,7 +24,10 @@ pub const PUBLIC_KEY_LENGTH: usize = 33; // compressed size
 pub const SECRET_KEY_LENGTH: usize = 32;
 pub const KEYPAIR_LENGTH: usize = SECRET_KEY_LENGTH + PUBLIC_KEY_LENGTH;
 
+pub static JWK_KEY_TYPE: &'static str = "EC";
 pub static JWK_CURVE: &'static str = "P-256";
+
+type FieldSize = <p256::NistP256 as Curve>::FieldSize;
 
 #[derive(Clone, Debug)]
 pub struct P256KeyPair {
@@ -82,6 +84,10 @@ impl P256KeyPair {
         } else {
             None
         }
+    }
+
+    pub fn to_public_key_bytes(&self) -> SecretBytes {
+        SecretBytes::from(EncodedPoint::encode(self.public, true).as_ref().to_vec())
     }
 
     pub(crate) fn to_signing_key(&self) -> Option<SigningKey> {
@@ -167,9 +173,7 @@ impl KeyCapVerify for P256KeyPair {
     }
 }
 
-impl KeyToJwk for P256KeyPair {
-    const KTY: &'static str = "EC";
-
+impl ToJwk for P256KeyPair {
     fn to_jwk_buffer<B: WriteBuffer>(&self, buffer: &mut JwkEncoder<B>) -> Result<(), Error> {
         let encp = EncodedPoint::encode(self.public, false);
         let (x, y) = match encp.coordinates() {
@@ -178,6 +182,7 @@ impl KeyToJwk for P256KeyPair {
             Coordinates::Compressed { .. } => unreachable!(),
         };
 
+        buffer.add_str("kty", JWK_KEY_TYPE)?;
         buffer.add_str("crv", JWK_CURVE)?;
         buffer.add_as_base64("x", &x[..])?;
         buffer.add_as_base64("y", &y[..])?;
@@ -188,6 +193,39 @@ impl KeyToJwk for P256KeyPair {
         }
         // buffer.add_str("use", "enc")?;
         Ok(())
+    }
+}
+
+impl FromJwk for P256KeyPair {
+    fn from_jwk_parts(jwk: JwkParts<'_>) -> Result<Self, Error> {
+        // SECURITY: ArrayKey zeroizes on drop
+        let mut pk_x = ArrayKey::<FieldSize>::default();
+        let mut pk_y = ArrayKey::<FieldSize>::default();
+        if jwk.x.decode_base64(pk_x.as_mut())? != pk_x.as_ref().len() {
+            return Err(err_msg!("invalid length for p-256 attribute 'x'"));
+        }
+        if jwk.y.decode_base64(pk_y.as_mut())? != pk_y.as_ref().len() {
+            return Err(err_msg!("invalid length for p-256 attribute 'y'"));
+        }
+        let pk = EncodedPoint::from_affine_coordinates(pk_x.as_ref(), pk_y.as_ref(), false)
+            .decode()
+            .map_err(|_| err_msg!("error decoding p-256 public key"))?;
+        let sk = if jwk.d.is_some() {
+            let mut sk = ArrayKey::<FieldSize>::default();
+            if jwk.d.decode_base64(sk.as_mut())? != sk.as_ref().len() {
+                return Err(err_msg!("invalid length for p-256 attribute 'd'"));
+            }
+            Some(
+                SecretKey::from_bytes(sk.as_ref())
+                    .map_err(|_| err_msg!("Invalid p-256 secret key bytes"))?,
+            )
+        } else {
+            None
+        };
+        Ok(Self {
+            secret: sk,
+            public: pk,
+        })
     }
 }
 
@@ -225,13 +263,15 @@ mod tests {
         let test_pvt = base64::decode_config(test_pvt_b64, base64::URL_SAFE).unwrap();
         let sk = P256KeyPair::from_key_secret_bytes(&test_pvt).expect("Error creating signing key");
 
-        let jwk = sk.to_jwk().expect("Error converting key to JWK");
+        let jwk = sk.to_jwk_public().expect("Error converting key to JWK");
         let jwk = jwk.to_parts().expect("Error parsing JWK");
         assert_eq!(jwk.kty, "EC");
         assert_eq!(jwk.crv, JWK_CURVE);
         assert_eq!(jwk.x, test_pub_b64.0);
         assert_eq!(jwk.y, test_pub_b64.1);
         assert_eq!(jwk.d, None);
+        let pk_load = P256KeyPair::from_jwk_parts(jwk).unwrap();
+        assert_eq!(sk.to_public_key_bytes(), pk_load.to_public_key_bytes());
 
         let jwk = sk.to_jwk_secret().expect("Error converting key to JWK");
         let jwk = jwk.to_parts().expect("Error parsing JWK");
@@ -240,6 +280,11 @@ mod tests {
         assert_eq!(jwk.x, test_pub_b64.0);
         assert_eq!(jwk.y, test_pub_b64.1);
         assert_eq!(jwk.d, test_pvt_b64);
+        let sk_load = P256KeyPair::from_jwk_parts(jwk).unwrap();
+        assert_eq!(
+            sk.to_keypair_bytes().unwrap(),
+            sk_load.to_keypair_bytes().unwrap()
+        );
     }
 
     #[test]

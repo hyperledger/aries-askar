@@ -5,13 +5,15 @@ use zeroize::Zeroize;
 use crate::generic_array::{typenum::Unsigned, GenericArray};
 
 use crate::{
-    buffer::{ArrayKey, ResizeBuffer, WriteBuffer},
+    buffer::{ArrayKey, ResizeBuffer, WriteBuffer, Writer},
     caps::{KeyGen, KeySecretBytes},
-    encrypt::KeyAeadInPlace,
+    encrypt::{FromKeyExchange, KeyAeadInPlace, KeyExchange},
     error::Error,
-    jwk::{JwkEncoder, KeyToJwk},
+    jwk::{JwkEncoder, ToJwk},
     random::fill_random_deterministic,
 };
+
+pub static JWK_KEY_TYPE: &'static str = "oct";
 
 pub trait Chacha20Type {
     type Aead: NewAead + Aead + AeadInPlace;
@@ -50,12 +52,17 @@ type TagSize<A> = <<A as Chacha20Type>::Aead as Aead>::TagSize;
 pub struct Chacha20Key<T: Chacha20Type>(KeyType<T>);
 
 impl<T: Chacha20Type> Chacha20Key<T> {
+    #[inline]
+    pub(crate) fn uninit() -> Self {
+        Self(KeyType::<T>::default())
+    }
+
     // this is consistent with Indy's wallet wrapping key generation
     // FIXME - move to aries_askar, use from_key_secret_bytes
     pub fn from_seed(seed: &[u8]) -> Result<Self, Error> {
-        let mut slf = KeyType::<T>::default();
-        fill_random_deterministic(seed, &mut slf)?;
-        Ok(Self(slf))
+        let mut key = KeyType::<T>::default();
+        fill_random_deterministic(seed, key.as_mut())?;
+        Ok(Self(key))
     }
 }
 
@@ -74,7 +81,7 @@ impl<T: Chacha20Type> KeySecretBytes for Chacha20Key<T> {
     }
 
     fn to_key_secret_buffer<B: WriteBuffer>(&self, out: &mut B) -> Result<(), Error> {
-        out.write_slice(&self.0[..])
+        out.write_slice(self.0.as_ref())
     }
 }
 
@@ -106,7 +113,7 @@ impl<T: Chacha20Type> KeyAeadInPlace for Chacha20Key<T> {
             ));
         }
         let nonce = GenericArray::from_slice(nonce);
-        let chacha = T::Aead::new(&self.0);
+        let chacha = T::Aead::new(self.0.as_ref());
         let tag = chacha
             .encrypt_in_place_detached(nonce, aad, buffer.as_mut())
             .map_err(|e| err_msg!(Encryption, "{}", e))?;
@@ -135,7 +142,7 @@ impl<T: Chacha20Type> KeyAeadInPlace for Chacha20Key<T> {
         let tag_start = buf_len - TagSize::<T>::USIZE;
         let mut tag = GenericArray::default();
         tag.clone_from_slice(&buffer.as_ref()[tag_start..]);
-        let chacha = T::Aead::new(&self.0);
+        let chacha = T::Aead::new(self.0.as_ref());
         chacha
             .decrypt_in_place_detached(nonce, aad, &mut buffer.as_mut()[..tag_start], &tag)
             .map_err(|e| err_msg!(Encryption, "{}", e))?;
@@ -154,17 +161,35 @@ impl<T: Chacha20Type> KeyAeadInPlace for Chacha20Key<T> {
     }
 }
 
-impl<T: Chacha20Type> KeyToJwk for Chacha20Key<T> {
-    const KTY: &'static str = "oct";
-
+impl<T: Chacha20Type> ToJwk for Chacha20Key<T> {
     fn to_jwk_buffer<B: WriteBuffer>(&self, buffer: &mut JwkEncoder<B>) -> Result<(), Error> {
+        buffer.add_str("kty", JWK_KEY_TYPE)?;
         if !buffer.is_secret() {
             return Err(err_msg!(Unsupported, "Cannot export as a public key"));
         }
         buffer.add_str("alg", T::JWK_ALG)?;
-        buffer.add_as_base64("k", &self.0[..])?;
+        buffer.add_as_base64("k", self.0.as_ref())?;
         buffer.add_str("use", "enc")?;
         Ok(())
+    }
+}
+
+// for direct key agreement (not used currently)
+impl<Lhs, Rhs, T> FromKeyExchange<Lhs, Rhs> for Chacha20Key<T>
+where
+    Lhs: KeyExchange<Rhs>,
+    T: Chacha20Type,
+{
+    fn from_key_exchange(lhs: &Lhs, rhs: &Rhs) -> Result<Self, Error> {
+        // NOTE: currently requires the exchange to produce a key of the same length,
+        // while it may be acceptable to just use the prefix if the output is longer?
+        let mut key = Self::uninit();
+        let mut buf = Writer::from_slice(key.0.as_mut());
+        lhs.key_exchange_buffer(rhs, &mut buf)?;
+        if buf.position() != T::key_size() {
+            return Err(err_msg!("invalid length for key exchange output"));
+        }
+        Ok(key)
     }
 }
 
