@@ -4,7 +4,10 @@ use crate::{
 };
 
 mod ecdh_1pu;
-pub use ecdh_1pu::ecdh_1pu_direct;
+pub use self::ecdh_1pu::ecdh_1pu_direct;
+
+mod ecdh_es;
+pub use self::ecdh_es::ecdh_es_direct;
 
 pub trait KeyAeadInPlace {
     /// Encrypt a secret value in place, appending the verification tag

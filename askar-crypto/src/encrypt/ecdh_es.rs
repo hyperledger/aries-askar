@@ -10,9 +10,8 @@ use crate::{
     kdf::concat::{ConcatKDFHash, ConcatKDFParams},
 };
 
-fn ecdh_1pu_derive_shared<Key>(
+fn ecdh_es_derive_shared<Key>(
     ephem_key: &Key,
-    send_key: &Key,
     recip_key: &Key,
     params: ConcatKDFParams,
     key_output: &mut [u8],
@@ -26,9 +25,8 @@ where
     let mut kdf = ConcatKDFHash::<Sha256>::new();
     kdf.start_pass();
 
-    // hash Zs and Ze directly into the KDF
+    // hash Z directly into the KDF
     ephem_key.key_exchange_buffer(recip_key, &mut kdf)?;
-    send_key.key_exchange_buffer(recip_key, &mut kdf)?;
 
     let mut key = kdf.finish_pass(params, output_len);
     key_output.copy_from_slice(&key[..output_len]);
@@ -37,8 +35,7 @@ where
     Ok(())
 }
 
-pub fn ecdh_1pu_direct<Key, B: WriteBuffer>(
-    send_key: &Key,
+pub fn ecdh_es_direct<Key, B: WriteBuffer>(
     recip_key: &Key,
     alg: &[u8],
     apu: &[u8],
@@ -54,7 +51,7 @@ where
     ephem_key.to_jwk_buffer(&mut encoder)?;
 
     let params = ConcatKDFParams { alg, apu, apv };
-    ecdh_1pu_derive_shared(&ephem_key, send_key, recip_key, params, key_output)?;
+    ecdh_es_derive_shared(&ephem_key, recip_key, params, key_output)?;
 
     // SECURITY: keys must zeroize themselves on drop
     drop(ephem_key);
@@ -67,42 +64,36 @@ mod tests {
     use super::*;
 
     #[test]
-    // from RFC: https://tools.ietf.org/html/draft-madden-jose-ecdh-1pu-03#appendix-A
-    fn expected_1pu_direct_output() {
-        use crate::alg::p256::P256KeyPair;
+    // based on RFC sample keys
+    // https://tools.ietf.org/html/rfc8037#appendix-A.6
+    fn expected_es_direct_output() {
+        use crate::alg::x25519::X25519KeyPair;
         use crate::jwk::{FromJwk, Jwk};
 
-        let alice_sk = P256KeyPair::from_jwk(Jwk::from(
-            r#"{"kty":"EC",
-            "crv":"P-256",
-            "x":"WKn-ZIGevcwGIyyrzFoZNBdaq9_TsqzGl96oc0CWuis",
-            "y":"y77t-RvAHRKTsSGdIYUfweuOvwrvDD-Q3Hv5J0fSKbE",
-            "d":"Hndv7ZZjs_ke8o9zXYo3iq-Yr8SewI5vrqd0pAvEPqg"}"#,
+        let bob_pk = X25519KeyPair::from_jwk(Jwk::from(
+            r#"{"kty":"OKP","crv":"X25519","kid":"Bob",
+            "x":"3p7bfXt9wbTTW2HC7OQ1Nz-DQ8hbeGdNrfx-FG-IK08"}"#,
         ))
         .unwrap();
-        let bob_sk = P256KeyPair::from_jwk(Jwk::from(
-            r#"{"kty":"EC",
-            "crv":"P-256",
-            "x":"weNJy2HscCSM6AEDTDg04biOvhFhyyWvOHQfeF_PxMQ",
-            "y":"e8lnCO-AlStT-NJVX-crhB7QRYhiix03illJOVAOyck",
-            "d":"VEmDZpDXXK8p8N0Cndsxs924q6nS1RXFASRl6BfUqdw"}"#,
+        let ephem_sk = X25519KeyPair::from_jwk(Jwk::from(
+            r#"{"kty":"OKP","crv":"X25519",
+            "d":"dwdtCnMYpX08FsFyUbJmRd9ML4frwJkqsXf7pR25LCo",
+            "x":"hSDwCYkwp1R0i33ctD73Wg2_Og0mOBr066SpjqqbTmo"}
+         "#,
         ))
         .unwrap();
-        let ephem_sk = P256KeyPair::from_jwk(Jwk::from(
-            r#"{"kty":"EC",
-            "crv":"P-256",
-            "x":"gI0GAILBdu7T53akrFmMyGcsF3n5dO7MmwNBHKW5SV0",
-            "y":"SLW_xSffzlPWrHEVI30DHM_4egVwt3NQqeUD7nMFpps",
-            "d":"0_NxaRPUMQoAJt50Gz8YiTr8gRTwyEaCumd-MToTmIo"}"#,
-        ))
-        .unwrap();
+
+        let xk = ephem_sk.key_exchange_bytes(&bob_pk).unwrap();
+        assert_eq!(
+            xk,
+            &hex!("4a5d9d5ba4ce2de1728e3bf480350f25e07e21c947d19e3376f09b3c1e161742")[..]
+        );
 
         let mut key_output = [0u8; 32];
 
-        ecdh_1pu_derive_shared(
-            &alice_sk,
-            &bob_sk,
+        ecdh_es_derive_shared(
             &ephem_sk,
+            &bob_pk,
             ConcatKDFParams {
                 alg: b"A256GCM",
                 apu: b"Alice",
@@ -114,7 +105,7 @@ mod tests {
 
         assert_eq!(
             key_output,
-            hex!("6caf13723d14850ad4b42cd6dde935bffd2fff00a9ba70de05c203a5e1722ca7")
+            hex!("2f3636918ddb57fe0b3569113f19c4b6c518c2843f8930f05db25cd55dee53c1")
         );
     }
 }

@@ -3,16 +3,17 @@ use core::{
     fmt::{self, Debug, Formatter},
 };
 
+use crate::generic_array::typenum::U32;
 use rand::rngs::OsRng;
 use x25519_dalek::{PublicKey, StaticSecret as SecretKey};
 use zeroize::Zeroize;
 
 use crate::{
-    buffer::{SecretBytes, WriteBuffer},
+    buffer::{ArrayKey, SecretBytes, WriteBuffer},
     caps::{KeyGen, KeySecretBytes},
     encrypt::KeyExchange,
     error::Error,
-    jwk::{JwkEncoder, ToJwk},
+    jwk::{FromJwk, JwkEncoder, JwkParts, ToJwk},
 };
 
 pub const PUBLIC_KEY_LENGTH: usize = 32;
@@ -165,6 +166,34 @@ impl ToJwk for X25519KeyPair {
     }
 }
 
+impl FromJwk for X25519KeyPair {
+    fn from_jwk_parts(jwk: JwkParts<'_>) -> Result<Self, Error> {
+        // SECURITY: ArrayKey zeroizes on drop
+        let mut pk = ArrayKey::<U32>::default();
+        if jwk.x.decode_base64(pk.as_mut())? != pk.as_ref().len() {
+            return Err(err_msg!("invalid length for x25519 attribute 'x'"));
+        }
+        let pk = PublicKey::from(
+            TryInto::<[u8; PUBLIC_KEY_LENGTH]>::try_into(&pk.as_ref()[..]).unwrap(),
+        );
+        let sk = if jwk.d.is_some() {
+            let mut sk = ArrayKey::<U32>::default();
+            if jwk.d.decode_base64(sk.as_mut())? != sk.as_ref().len() {
+                return Err(err_msg!("invalid length for x25519 attribute 'd'"));
+            }
+            Some(SecretKey::from(
+                TryInto::<[u8; SECRET_KEY_LENGTH]>::try_into(&sk.as_ref()[..]).unwrap(),
+            ))
+        } else {
+            None
+        };
+        Ok(Self {
+            secret: sk,
+            public: pk,
+        })
+    }
+}
+
 impl KeyExchange for X25519KeyPair {
     fn key_exchange_buffer<B: WriteBuffer>(&self, other: &Self, out: &mut B) -> Result<(), Error> {
         match self.secret.as_ref() {
@@ -177,18 +206,6 @@ impl KeyExchange for X25519KeyPair {
         }
     }
 }
-
-// impl TryFrom<&AnyPrivateKey> for X25519KeyPair {
-//     type Error = Error;
-
-//     fn try_from(value: &AnyPrivateKey) -> Result<Self, Self::Error> {
-//         if value.alg == KeyAlg::X25519 {
-//             Self::from_bytes(value.data.as_ref())
-//         } else {
-//             Err(err_msg!(Unsupported, "Expected x25519 key type"))
-//         }
-//     }
-// }
 
 #[cfg(test)]
 mod tests {
@@ -215,6 +232,8 @@ mod tests {
         assert_eq!(jwk.crv, JWK_CURVE);
         assert_eq!(jwk.x, "tGskN_ae61DP4DLY31_fjkbvnKqf-ze7kA6Cj2vyQxU");
         assert_eq!(jwk.d, None);
+        let pk_load = X25519KeyPair::from_jwk_parts(jwk).unwrap();
+        assert_eq!(kp.to_public_key_bytes(), pk_load.to_public_key_bytes());
 
         let jwk = kp
             .to_jwk_secret()
@@ -224,6 +243,11 @@ mod tests {
         assert_eq!(jwk.crv, JWK_CURVE);
         assert_eq!(jwk.x, "tGskN_ae61DP4DLY31_fjkbvnKqf-ze7kA6Cj2vyQxU");
         assert_eq!(jwk.d, test_pvt_b64);
+        let sk_load = X25519KeyPair::from_jwk_parts(jwk).unwrap();
+        assert_eq!(
+            kp.to_keypair_bytes().unwrap(),
+            sk_load.to_keypair_bytes().unwrap()
+        );
     }
 
     #[test]

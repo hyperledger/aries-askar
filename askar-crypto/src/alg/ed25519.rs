@@ -11,11 +11,11 @@ use x25519_dalek::{PublicKey as XPublicKey, StaticSecret as XSecretKey};
 
 use super::x25519::X25519KeyPair;
 use crate::{
-    // any::{AnyPrivateKey, AnyPublicKey},
-    buffer::{SecretBytes, WriteBuffer},
+    buffer::{ArrayKey, SecretBytes, WriteBuffer},
     caps::{KeyCapSign, KeyCapVerify, KeyGen, KeySecretBytes, SignatureType},
     error::Error,
-    jwk::{JwkEncoder, ToJwk},
+    generic_array::typenum::U32,
+    jwk::{FromJwk, JwkEncoder, JwkParts, ToJwk},
 };
 
 // FIXME - check for low-order points when loading public keys?
@@ -231,6 +231,34 @@ impl ToJwk for Ed25519KeyPair {
     }
 }
 
+impl FromJwk for Ed25519KeyPair {
+    fn from_jwk_parts(jwk: JwkParts<'_>) -> Result<Self, Error> {
+        // SECURITY: ArrayKey zeroizes on drop
+        let mut pk = ArrayKey::<U32>::default();
+        if jwk.x.decode_base64(pk.as_mut())? != pk.as_ref().len() {
+            return Err(err_msg!("invalid length for ed25519 attribute 'x'"));
+        }
+        let pk = PublicKey::from_bytes(&pk.as_ref()[..])
+            .map_err(|_| err_msg!("Invalid ed25519 public key bytes"))?;
+        let sk = if jwk.d.is_some() {
+            let mut sk = ArrayKey::<U32>::default();
+            if jwk.d.decode_base64(sk.as_mut())? != sk.as_ref().len() {
+                return Err(err_msg!("invalid length for ed25519 attribute 'd'"));
+            }
+            Some(
+                SecretKey::from_bytes(&sk.as_ref()[..])
+                    .map_err(|_| err_msg!("Invalid ed25519 secret key bytes"))?,
+            )
+        } else {
+            None
+        };
+        Ok(Self {
+            secret: sk,
+            public: pk,
+        })
+    }
+}
+
 /// FIXME implement debug
 // SECURITY: ExpandedSecretKey zeroizes on drop
 pub struct Ed25519SigningKey<'p>(ExpandedSecretKey, &'p PublicKey);
@@ -240,18 +268,6 @@ impl Ed25519SigningKey<'_> {
         self.0.sign(message, &self.1).to_bytes()
     }
 }
-
-// impl TryFrom<&AnyPrivateKey> for Ed25519KeyPair {
-//     type Error = Error;
-
-//     fn try_from(value: &AnyPrivateKey) -> Result<Self, Self::Error> {
-//         if value.alg == KeyAlg::Ed25519 {
-//             Self::from_bytes(value.data.as_ref())
-//         } else {
-//             Err(err_msg!(Unsupported, "Expected ed25519 key type"))
-//         }
-//     }
-// }
 
 #[cfg(test)]
 mod tests {
@@ -308,6 +324,8 @@ mod tests {
         assert_eq!(jwk.kty, "OKP");
         assert_eq!(jwk.crv, JWK_CURVE);
         assert_eq!(jwk.x, "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo");
+        let pk_load = Ed25519KeyPair::from_jwk_parts(jwk).unwrap();
+        assert_eq!(kp.to_public_key_bytes(), pk_load.to_public_key_bytes());
 
         let jwk = kp
             .to_jwk_secret()
@@ -317,6 +335,11 @@ mod tests {
         assert_eq!(jwk.crv, JWK_CURVE);
         assert_eq!(jwk.x, test_pub_b64);
         assert_eq!(jwk.d, test_pvt_b64);
+        let sk_load = Ed25519KeyPair::from_jwk_parts(jwk).unwrap();
+        assert_eq!(
+            kp.to_keypair_bytes().unwrap(),
+            sk_load.to_keypair_bytes().unwrap()
+        );
     }
 
     #[test]

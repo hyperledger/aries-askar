@@ -242,18 +242,6 @@ impl KeyExchange for K256KeyPair {
     }
 }
 
-// impl TryFrom<&AnyPrivateKey> for K256SigningKey {
-//     type Error = Error;
-
-//     fn try_from(value: &AnyPrivateKey) -> Result<Self, Self::Error> {
-//         if value.alg == KeyAlg::Ecdsa(EcCurves::Secp256k1) {
-//             Self::from_bytes(value.data.as_ref())
-//         } else {
-//             Err(err_msg!(Unsupported, "Expected k-256 key type"))
-//         }
-//     }
-// }
-
 #[cfg(test)]
 mod tests {
     use super::*;
