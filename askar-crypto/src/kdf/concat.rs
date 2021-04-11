@@ -2,26 +2,28 @@
 
 use core::marker::PhantomData;
 
-use digest::{Digest, FixedOutput};
+use digest::Digest;
 
-use crate::error::Error;
+use crate::generic_array::GenericArray;
+
+use crate::{buffer::WriteBuffer, error::Error};
 
 pub struct ConcatKDF<H>(PhantomData<H>);
 
-#[derive(Default)]
-pub struct Params<'p> {
-    alg: &'p [u8],
-    apu: &'p [u8],
-    apv: &'p [u8],
+#[derive(Clone, Copy, Default)]
+pub struct ConcatKDFParams<'p> {
+    pub alg: &'p [u8],
+    pub apu: &'p [u8],
+    pub apv: &'p [u8],
 }
 
 impl<H> ConcatKDF<H>
 where
-    H: Digest + FixedOutput,
+    H: Digest,
 {
     pub fn derive_key(
         message: &[u8],
-        params: Params<'_>,
+        params: ConcatKDFParams<'_>,
         mut output: &mut [u8],
     ) -> Result<(), Error> {
         let output_len = output.len();
@@ -29,27 +31,82 @@ where
             // output_len is used as SuppPubInfo later
             return Err(err_msg!("exceeded max output size for concat KDF"));
         }
-        let mut counter = 1u32;
+        let mut hasher = ConcatKDFHash::<H>::new();
         let mut remain = output_len;
-        let mut hash = H::new();
         while remain > 0 {
-            hash.update(counter.to_be_bytes());
-            hash.update(message);
-            hash.update((params.alg.len() as u32).to_be_bytes());
-            hash.update(params.alg);
-            hash.update((params.apu.len() as u32).to_be_bytes());
-            hash.update(params.apu);
-            hash.update((params.apv.len() as u32).to_be_bytes());
-            hash.update(params.apv);
-            hash.update((output_len as u32 * 8).to_be_bytes());
-            let hashed = hash.finalize_reset();
+            hasher.start_pass();
+            hasher.hash_message(message);
+            let hashed = hasher.finish_pass(params, output_len);
             let cp_size = hashed.len().min(remain);
             &output[..cp_size].copy_from_slice(&hashed[..cp_size]);
             output = &mut output[cp_size..];
             remain -= cp_size;
-            counter += 1;
         }
         Ok(())
+    }
+}
+
+pub(crate) struct ConcatKDFHash<H: Digest> {
+    hasher: H,
+    counter: u32,
+}
+
+impl<H: Digest> ConcatKDFHash<H> {
+    pub fn new() -> Self {
+        Self {
+            hasher: H::new(),
+            counter: 1,
+        }
+    }
+
+    pub fn start_pass(&mut self) {
+        self.hasher.update(self.counter.to_be_bytes());
+        self.counter += 1;
+    }
+
+    pub fn hash_message(&mut self, message: &[u8]) {
+        self.hasher.update(message);
+    }
+
+    pub fn finish_pass(
+        &mut self,
+        params: ConcatKDFParams<'_>,
+        output_len: usize,
+    ) -> GenericArray<u8, H::OutputSize> {
+        let hash = &mut self.hasher;
+        hash.update((params.alg.len() as u32).to_be_bytes());
+        hash.update(params.alg);
+        hash.update((params.apu.len() as u32).to_be_bytes());
+        hash.update(params.apu);
+        hash.update((params.apv.len() as u32).to_be_bytes());
+        hash.update(params.apv);
+        hash.update((output_len as u32 * 8).to_be_bytes());
+        hash.finalize_reset()
+    }
+}
+
+const HASH_BUFFER_SIZE: usize = 128;
+
+impl<D: Digest> WriteBuffer for ConcatKDFHash<D> {
+    fn write_slice(&mut self, data: &[u8]) -> Result<(), Error> {
+        self.hasher.update(data);
+        Ok(())
+    }
+
+    fn write_with(
+        &mut self,
+        max_len: usize,
+        f: impl FnOnce(&mut [u8]) -> Result<usize, Error>,
+    ) -> Result<usize, Error> {
+        // this could use a Vec to support larger inputs
+        // but for current purposes a small fixed buffer is fine
+        if max_len > HASH_BUFFER_SIZE {
+            return Err(err_msg!("exceeded hash buffer size"));
+        }
+        let mut buf = [0u8; HASH_BUFFER_SIZE];
+        let written = f(&mut buf[..max_len])?;
+        self.write_slice(&buf[..written])?;
+        Ok(written)
     }
 }
 
@@ -59,6 +116,7 @@ mod tests {
     use sha2::Sha256;
 
     #[test]
+    // testing with ConcatKDF - single pass via ConcatKDFHash is tested elsewhere
     fn expected_1pu_output() {
         let z = hex!(
             "9e56d91d817135d372834283bf84269cfb316ea3da806a48f6daa7798cfe90c4
@@ -67,7 +125,7 @@ mod tests {
         let mut output = [0u8; 32];
         ConcatKDF::<Sha256>::derive_key(
             &z,
-            Params {
+            ConcatKDFParams {
                 alg: b"A256GCM",
                 apu: b"Alice",
                 apv: b"Bob",
