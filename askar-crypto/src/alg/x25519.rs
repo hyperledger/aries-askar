@@ -10,6 +10,7 @@ use zeroize::Zeroize;
 use crate::{
     buffer::{SecretBytes, WriteBuffer},
     caps::{KeyGen, KeySecretBytes},
+    encrypt::KeyExchange,
     error::Error,
     jwk::{JwkEncoder, KeyToJwk},
 };
@@ -33,16 +34,6 @@ impl X25519KeyPair {
         Self {
             secret: sk,
             public: pk,
-        }
-    }
-
-    pub fn key_exchange_with(&self, other: &Self) -> Result<SecretBytes, Error> {
-        match self.secret.as_ref() {
-            Some(sk) => {
-                let xk = sk.diffie_hellman(&other.public);
-                Ok(SecretBytes::from(xk.as_bytes().to_vec()))
-            }
-            None => Err(err_msg!(MissingSecretKey)),
         }
     }
 
@@ -174,6 +165,19 @@ impl KeyToJwk for X25519KeyPair {
     }
 }
 
+impl KeyExchange for X25519KeyPair {
+    fn key_exchange_buffer<B: WriteBuffer>(&self, other: &Self, out: &mut B) -> Result<(), Error> {
+        match self.secret.as_ref() {
+            Some(sk) => {
+                let xk = sk.diffie_hellman(&other.public);
+                out.write_slice(xk.as_bytes())?;
+                Ok(())
+            }
+            None => Err(err_msg!(MissingSecretKey)),
+        }
+    }
+}
+
 // impl TryFrom<&AnyPrivateKey> for X25519KeyPair {
 //     type Error = Error;
 
@@ -229,8 +233,9 @@ mod tests {
             kp2.to_keypair_bytes().unwrap()
         );
 
-        let xch1 = kp1.key_exchange_with(&kp2);
-        let xch2 = kp2.key_exchange_with(&kp1);
+        let xch1 = kp1.key_exchange_bytes(&kp2).unwrap();
+        let xch2 = kp2.key_exchange_bytes(&kp1).unwrap();
+        assert_eq!(xch1.len(), 32);
         assert_eq!(xch1, xch2);
     }
 

@@ -391,17 +391,6 @@ impl SecretBytesMut<'_> {
     }
 }
 
-impl aead::Buffer for SecretBytesMut<'_> {
-    fn extend_from_slice(&mut self, other: &[u8]) -> Result<(), aead::Error> {
-        self.extend_from_slice(other);
-        Ok(())
-    }
-
-    fn truncate(&mut self, len: usize) {
-        self.truncate(len);
-    }
-}
-
 impl AsRef<[u8]> for SecretBytesMut<'_> {
     fn as_ref(&self) -> &[u8] {
         self.0.as_slice()

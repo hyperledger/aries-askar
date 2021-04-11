@@ -10,9 +10,9 @@ use k256::{
 };
 
 use crate::{
-    // any::{AnyPrivateKey, AnyPublicKey},
     buffer::{SecretBytes, WriteBuffer},
     caps::{KeyCapSign, KeyCapVerify, KeyGen, KeySecretBytes, SignatureType},
+    encrypt::KeyExchange,
     error::Error,
     jwk::{JwkEncoder, KeyToJwk},
     random::with_rng,
@@ -67,16 +67,6 @@ impl K256KeyPair {
         Self {
             secret: Some(sk),
             public: pk,
-        }
-    }
-
-    pub fn key_exchange_with(&self, other: &Self) -> Option<SecretBytes> {
-        match self.secret.as_ref() {
-            Some(sk) => {
-                let xk = diffie_hellman(sk.secret_scalar(), other.public.as_affine());
-                Some(SecretBytes::from(xk.as_bytes().to_vec()))
-            }
-            None => None,
         }
     }
 
@@ -200,6 +190,19 @@ impl KeyToJwk for K256KeyPair {
     }
 }
 
+impl KeyExchange for K256KeyPair {
+    fn key_exchange_buffer<B: WriteBuffer>(&self, other: &Self, out: &mut B) -> Result<(), Error> {
+        match self.secret.as_ref() {
+            Some(sk) => {
+                let xk = diffie_hellman(sk.secret_scalar(), other.public.as_affine());
+                out.write_slice(xk.as_bytes())?;
+                Ok(())
+            }
+            None => Err(err_msg!(MissingSecretKey)),
+        }
+    }
+}
+
 // impl TryFrom<&AnyPrivateKey> for K256SigningKey {
 //     type Error = Error;
 
@@ -281,8 +284,9 @@ mod tests {
             kp2.to_keypair_bytes().unwrap()
         );
 
-        let xch1 = kp1.key_exchange_with(&kp2);
-        let xch2 = kp2.key_exchange_with(&kp1);
+        let xch1 = kp1.key_exchange_bytes(&kp2).unwrap();
+        let xch2 = kp2.key_exchange_bytes(&kp1).unwrap();
+        assert_eq!(xch1.len(), 32);
         assert_eq!(xch1, xch2);
     }
 
