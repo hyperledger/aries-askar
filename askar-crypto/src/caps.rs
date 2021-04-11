@@ -6,22 +6,51 @@ use core::{
 
 use zeroize::Zeroize;
 
-use crate::{buffer::WriteBuffer, error::Error};
+use crate::{
+    buffer::{SecretBytes, WriteBuffer},
+    error::Error,
+};
 
 // #[cfg(feature = "any")]
 // use crate::any::AnyKey;
 
-// pub trait KeyCapGetPublic {
-//     fn key_get_public(&self, alg: Option<KeyAlg>) -> Result<AnyPublicKey, Error>;
-// }
+/// Generate a new random key.
+pub trait KeyGen: Sized {
+    fn generate() -> Result<Self, Error>;
+}
+
+/// Allows a key to be created uninitialized and populated later,
+/// for instance when nested inside another struct.
+pub trait KeyGenInPlace {
+    fn generate_in_place(&mut self) -> Result<(), Error>;
+}
+
+/// Initialize a key from an array of bytes.
+pub trait KeySecretBytes: Sized {
+    fn from_key_secret_bytes(key: &[u8]) -> Result<Self, Error>;
+
+    fn to_key_secret_buffer<B: WriteBuffer>(&self, out: &mut B) -> Result<(), Error>;
+
+    fn to_key_secret_bytes(&self) -> Result<SecretBytes, Error> {
+        let mut buf = SecretBytes::with_capacity(128);
+        self.to_key_secret_buffer(&mut buf)?;
+        Ok(buf)
+    }
+}
 
 pub trait KeyCapSign {
-    fn key_sign<B: WriteBuffer>(
+    fn key_sign_buffer<B: WriteBuffer>(
         &self,
         data: &[u8],
         sig_type: Option<SignatureType>,
         out: &mut B,
-    ) -> Result<usize, Error>;
+    ) -> Result<(), Error>;
+
+    fn key_sign(&self, data: &[u8], sig_type: Option<SignatureType>) -> Result<SecretBytes, Error> {
+        let mut buf = SecretBytes::with_capacity(128);
+        self.key_sign_buffer(data, sig_type, &mut buf)?;
+        Ok(buf)
+    }
 }
 
 pub trait KeyCapVerify {

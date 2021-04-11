@@ -1,4 +1,3 @@
-use alloc::boxed::Box;
 use core::{
     convert::TryInto,
     fmt::{self, Debug, Formatter},
@@ -10,6 +9,7 @@ use zeroize::Zeroize;
 
 use crate::{
     buffer::{SecretBytes, WriteBuffer},
+    caps::{KeyGen, KeySecretBytes},
     error::Error,
     jwk::{JwkEncoder, KeyToJwk},
 };
@@ -21,30 +21,28 @@ pub const KEYPAIR_LENGTH: usize = SECRET_KEY_LENGTH + PUBLIC_KEY_LENGTH;
 pub static JWK_CURVE: &'static str = "X25519";
 
 #[derive(Clone)]
-pub struct X25519KeyPair(Box<Keypair>);
+pub struct X25519KeyPair {
+    // SECURITY: SecretKey (StaticSecret) zeroizes on drop
+    secret: Option<SecretKey>,
+    public: PublicKey,
+}
 
 impl X25519KeyPair {
     #[inline(always)]
     pub(crate) fn new(sk: Option<SecretKey>, pk: PublicKey) -> Self {
-        Self(Box::new(Keypair {
+        Self {
             secret: sk,
             public: pk,
-        }))
+        }
     }
 
-    pub fn generate() -> Result<Self, Error> {
-        let sk = SecretKey::new(OsRng);
-        let pk = PublicKey::from(&sk);
-        Ok(Self::new(Some(sk), pk))
-    }
-
-    pub fn key_exchange_with(&self, other: &Self) -> Option<SecretBytes> {
-        match self.0.secret.as_ref() {
+    pub fn key_exchange_with(&self, other: &Self) -> Result<SecretBytes, Error> {
+        match self.secret.as_ref() {
             Some(sk) => {
-                let xk = sk.diffie_hellman(&other.0.public);
-                Some(SecretBytes::from(xk.as_bytes().to_vec()))
+                let xk = sk.diffie_hellman(&other.public);
+                Ok(SecretBytes::from(xk.as_bytes().to_vec()))
             }
-            None => None,
+            None => Err(err_msg!(MissingSecretKey)),
         }
     }
 
@@ -60,19 +58,19 @@ impl X25519KeyPair {
         );
         // FIXME: derive pk from sk and check value?
 
-        Ok(Self(Box::new(Keypair {
+        Ok(Self {
             secret: Some(sk),
             public: pk,
-        })))
+        })
     }
 
     #[inline]
     pub(crate) fn from_secret_key(sk: SecretKey) -> Self {
         let public = PublicKey::from(&sk);
-        Self(Box::new(Keypair {
+        Self {
             secret: Some(sk),
             public,
-        }))
+        }
     }
 
     pub fn from_public_key_bytes(key: &[u8]) -> Result<Self, Error> {
@@ -85,7 +83,49 @@ impl X25519KeyPair {
         ))
     }
 
-    pub fn from_secret_key_bytes(key: &[u8]) -> Result<Self, Error> {
+    pub fn to_public_key_bytes(&self) -> [u8; PUBLIC_KEY_LENGTH] {
+        self.public.to_bytes()
+    }
+
+    pub fn to_keypair_bytes(&self) -> Option<SecretBytes> {
+        if let Some(secret) = self.secret.as_ref() {
+            let output = SecretBytes::new_with(KEYPAIR_LENGTH, |buf| {
+                buf[..SECRET_KEY_LENGTH].copy_from_slice(&secret.to_bytes()[..]);
+                buf[SECRET_KEY_LENGTH..].copy_from_slice(self.public.as_bytes());
+            });
+            Some(output)
+        } else {
+            None
+        }
+    }
+}
+
+impl Debug for X25519KeyPair {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.debug_struct("X25519KeyPair")
+            .field(
+                "secret",
+                if self.secret.is_some() {
+                    &"<secret>"
+                } else {
+                    &"None"
+                },
+            )
+            .field("public", &self.public)
+            .finish()
+    }
+}
+
+impl KeyGen for X25519KeyPair {
+    fn generate() -> Result<Self, Error> {
+        let sk = SecretKey::new(OsRng);
+        let pk = PublicKey::from(&sk);
+        Ok(Self::new(Some(sk), pk))
+    }
+}
+
+impl KeySecretBytes for X25519KeyPair {
+    fn from_key_secret_bytes(key: &[u8]) -> Result<Self, Error> {
         if key.len() != SECRET_KEY_LENGTH {
             return Err(err_msg!("Invalid x25519 key length"));
         }
@@ -107,43 +147,12 @@ impl X25519KeyPair {
         Ok(Self::from_secret_key(sk))
     }
 
-    pub fn to_public_key_bytes(&self) -> [u8; PUBLIC_KEY_LENGTH] {
-        self.0.public.to_bytes()
-    }
-
-    pub fn to_secret_key_bytes(&self) -> Option<SecretBytes> {
-        self.0
-            .secret
-            .as_ref()
-            .map(|sk| SecretBytes::from_slice(&sk.to_bytes()[..]))
-    }
-
-    pub fn to_keypair_bytes(&self) -> Option<SecretBytes> {
-        if let Some(secret) = self.0.secret.as_ref() {
-            let output = SecretBytes::new_with(KEYPAIR_LENGTH, |buf| {
-                buf[..SECRET_KEY_LENGTH].copy_from_slice(&secret.to_bytes()[..]);
-                buf[SECRET_KEY_LENGTH..].copy_from_slice(self.0.public.as_bytes());
-            });
-            Some(output)
+    fn to_key_secret_buffer<B: WriteBuffer>(&self, out: &mut B) -> Result<(), Error> {
+        if let Some(sk) = self.secret.as_ref() {
+            out.write_slice(&sk.to_bytes()[..])
         } else {
-            None
+            Err(err_msg!(MissingSecretKey))
         }
-    }
-}
-
-impl Debug for X25519KeyPair {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.debug_struct("X25519KeyPair")
-            .field(
-                "secret",
-                if self.0.secret.is_some() {
-                    &"<secret>"
-                } else {
-                    &"None"
-                },
-            )
-            .field("public", &self.0.public)
-            .finish()
     }
 }
 
@@ -154,7 +163,7 @@ impl KeyToJwk for X25519KeyPair {
         buffer.add_str("crv", JWK_CURVE)?;
         buffer.add_as_base64("x", &self.to_public_key_bytes()[..])?;
         if buffer.is_secret() {
-            if let Some(sk) = self.0.secret.as_ref() {
+            if let Some(sk) = self.secret.as_ref() {
                 let mut sk = sk.to_bytes();
                 buffer.add_as_base64("d", &sk[..])?;
                 sk.zeroize();
@@ -163,13 +172,6 @@ impl KeyToJwk for X25519KeyPair {
         buffer.add_str("use", "enc")?;
         Ok(())
     }
-}
-
-#[derive(Clone)]
-struct Keypair {
-    // SECURITY: SecretKey (StaticSecret) zeroizes on drop
-    secret: Option<SecretKey>,
-    public: PublicKey,
 }
 
 // impl TryFrom<&AnyPrivateKey> for X25519KeyPair {
@@ -200,7 +202,7 @@ mod tests {
         let test_pvt_b64 = "qL25gw-HkNJC9m4EsRzCoUx1KntjwHPzxo6a2xUcyFQ";
         let test_pvt = base64::decode_config(test_pvt_b64, base64::URL_SAFE).unwrap();
         let kp =
-            X25519KeyPair::from_secret_key_bytes(&test_pvt).expect("Error creating x25519 keypair");
+            X25519KeyPair::from_key_secret_bytes(&test_pvt).expect("Error creating x25519 keypair");
         let jwk = kp.to_jwk().expect("Error converting public key to JWK");
         let jwk = jwk.to_parts().expect("Error parsing JWK output");
         assert_eq!(jwk.kty, "OKP");

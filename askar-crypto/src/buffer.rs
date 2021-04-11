@@ -10,27 +10,23 @@ use core::{
     mem::{self, ManuallyDrop},
     ops::{Deref, DerefMut},
 };
-use fmt::Write;
 
-use aead::{
-    generic_array::{typenum, ArrayLength, GenericArray},
-    Buffer,
-};
+use crate::generic_array::{typenum, ArrayLength, GenericArray};
 use serde::{de::Visitor, Deserialize, Deserializer, Serialize, Serializer};
 use zeroize::Zeroize;
 
-use crate::{error::Error, random::random_array};
+use crate::{error::Error, random::fill_random};
 
 /// A secure key representation for fixed-length keys
-#[derive(Clone, Debug, Hash, Zeroize)]
+#[derive(Clone, Hash, Zeroize)]
 pub struct ArrayKey<L: ArrayLength<u8>>(GenericArray<u8, L>);
 
 impl<L: ArrayLength<u8>> ArrayKey<L> {
     pub const SIZE: usize = L::USIZE;
 
     #[inline]
-    pub fn from_slice<D: AsRef<[u8]>>(data: D) -> Self {
-        Self(GenericArray::clone_from_slice(data.as_ref()))
+    pub fn copy_from_slice<D: AsRef<[u8]>>(&mut self, data: D) {
+        self.0[..].copy_from_slice(data.as_ref());
     }
 
     #[inline]
@@ -39,8 +35,16 @@ impl<L: ArrayLength<u8>> ArrayKey<L> {
     }
 
     #[inline]
+    pub fn from_slice(data: &[u8]) -> Self {
+        // like <&GenericArray>::from_slice, panics if the length is incorrect
+        Self(GenericArray::from_slice(data).clone())
+    }
+
+    #[inline]
     pub fn random() -> Self {
-        Self(random_array())
+        let mut slf = GenericArray::default();
+        fill_random(&mut slf);
+        Self(slf)
     }
 }
 
@@ -54,6 +58,16 @@ impl<L: ArrayLength<u8>> Default for ArrayKey<L> {
 impl<L: ArrayLength<u8>> From<GenericArray<u8, L>> for ArrayKey<L> {
     fn from(key: GenericArray<u8, L>) -> Self {
         Self(key)
+    }
+}
+
+impl<L: ArrayLength<u8>> Debug for ArrayKey<L> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        if cfg!(test) {
+            f.debug_tuple("ArrayKey").field(&*self).finish()
+        } else {
+            f.debug_tuple("ArrayKey").field(&"<secret>").finish()
+        }
     }
 }
 
@@ -367,7 +381,7 @@ impl SecretBytesMut<'_> {
     }
 
     pub fn resize(&mut self, new_len: usize) {
-        let len = self.len();
+        let len = self.0.len();
         if new_len > len {
             self.reserve(new_len - len);
             self.0.resize(new_len, 0u8);
@@ -377,7 +391,7 @@ impl SecretBytesMut<'_> {
     }
 }
 
-impl Buffer for SecretBytesMut<'_> {
+impl aead::Buffer for SecretBytesMut<'_> {
     fn extend_from_slice(&mut self, other: &[u8]) -> Result<(), aead::Error> {
         self.extend_from_slice(other);
         Ok(())
@@ -400,6 +414,14 @@ impl AsMut<[u8]> for SecretBytesMut<'_> {
     }
 }
 
+impl Deref for SecretBytesMut<'_> {
+    type Target = Vec<u8>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
 /// A utility type for debug printing of byte strings
 struct MaybeStr<'a>(&'a [u8]);
 
@@ -408,40 +430,97 @@ impl Debug for MaybeStr<'_> {
         if let Ok(sval) = core::str::from_utf8(self.0) {
             write!(f, "{:?}", sval)
         } else {
-            f.write_char('<')?;
+            fmt::Write::write_char(f, '<')?;
             for c in self.0 {
                 f.write_fmt(format_args!("{:02x}", c))?;
             }
-            f.write_char('>')?;
+            fmt::Write::write_char(f, '>')?;
             Ok(())
         }
     }
 }
 
 pub trait WriteBuffer {
-    fn extend_from_slice(&mut self, data: &[u8]) -> Result<(), Error> {
-        if let Some(ext) = self.extend_buffer(data.len()) {
+    fn write_slice(&mut self, data: &[u8]) -> Result<(), Error> {
+        let len = data.len();
+        self.write_with(len, |ext| {
             ext.copy_from_slice(data);
-            Ok(())
-        } else {
-            Err(err_msg!(Unexpected, "JWK buffer too small"))
+            Ok(len)
+        })?;
+        Ok(())
+    }
+
+    fn write_with(
+        &mut self,
+        max_len: usize,
+        f: impl FnOnce(&mut [u8]) -> Result<usize, Error>,
+    ) -> Result<usize, Error>;
+}
+
+pub struct Writer<B> {
+    inner: B,
+    pos: usize,
+}
+
+impl<'w> Writer<&'w mut [u8]> {
+    pub fn from_slice(slice: &'w mut [u8]) -> Self {
+        Writer {
+            inner: slice,
+            pos: 0,
         }
     }
 
-    fn extend_buffer(&mut self, max_len: usize) -> Option<&mut [u8]>;
+    pub fn pos(&self) -> usize {
+        self.pos
+    }
+}
 
-    fn truncate_by(&mut self, len: usize);
+impl<'b> WriteBuffer for Writer<&'b mut [u8]> {
+    fn write_with(
+        &mut self,
+        max_len: usize,
+        f: impl FnOnce(&mut [u8]) -> Result<usize, Error>,
+    ) -> Result<usize, Error> {
+        let total = self.inner.len();
+        let end = max_len + self.pos;
+        if end > total {
+            return Err(err_msg!("exceeded buffer size"));
+        }
+        let written = f(&mut self.inner[self.pos..end])?;
+        self.pos += written;
+        Ok(written)
+    }
 }
 
 impl WriteBuffer for Vec<u8> {
-    fn extend_buffer(&mut self, max_len: usize) -> Option<&mut [u8]> {
+    fn write_with(
+        &mut self,
+        max_len: usize,
+        f: impl FnOnce(&mut [u8]) -> Result<usize, Error>,
+    ) -> Result<usize, Error> {
         let len = self.len();
         self.resize(len + max_len, 0u8);
-        Some(&mut self[len..(len + max_len)])
+        let written = f(&mut self[len..(len + max_len)])?;
+        if written < max_len {
+            self.truncate(len + written);
+        }
+        Ok(written)
     }
+}
 
-    fn truncate_by(&mut self, len: usize) {
-        self.truncate(self.len().saturating_sub(len));
+impl WriteBuffer for SecretBytes {
+    fn write_with(
+        &mut self,
+        max_len: usize,
+        f: impl FnOnce(&mut [u8]) -> Result<usize, Error>,
+    ) -> Result<usize, Error> {
+        let len = self.len();
+        self.0.resize(len + max_len, 0u8);
+        let written = f(&mut self.0[len..(len + max_len)])?;
+        if written < max_len {
+            self.0.truncate(len + written);
+        }
+        Ok(written)
     }
 }
 
@@ -450,13 +529,41 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_write_vec() {
-        let mut v = Vec::new();
-        let b = &mut v as &mut dyn WriteBuffer;
-        b.extend_from_slice(b"hello").unwrap();
-        b.truncate_by(3);
-        b.extend_from_slice(b"y").unwrap();
-        assert_eq!(&v[..], b"hey");
+    fn write_buffer_slice() {
+        let mut buf = [0u8; 10];
+        let mut w = Writer::from_slice(&mut buf);
+        w.write_with(5, |buf| {
+            buf.copy_from_slice(b"hello");
+            Ok(2)
+        })
+        .unwrap();
+        w.write_slice(b"y").unwrap();
+        assert_eq!(w.pos(), 3);
+        assert_eq!(&buf[..3], b"hey");
+    }
+
+    #[test]
+    fn write_buffer_vec() {
+        let mut w = Vec::new();
+        w.write_with(5, |buf| {
+            buf.copy_from_slice(b"hello");
+            Ok(2)
+        })
+        .unwrap();
+        w.write_slice(b"y").unwrap();
+        assert_eq!(&w[..], b"hey");
+    }
+
+    #[test]
+    fn write_buffer_secret() {
+        let mut w = SecretBytes::with_capacity(10);
+        w.write_with(5, |buf| {
+            buf.copy_from_slice(b"hello");
+            Ok(2)
+        })
+        .unwrap();
+        w.write_slice(b"y").unwrap();
+        assert_eq!(&w[..], b"hey");
     }
 
     #[test]

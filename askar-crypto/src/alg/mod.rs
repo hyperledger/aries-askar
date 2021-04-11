@@ -1,5 +1,7 @@
 // pub mod bls;
 
+pub mod chacha;
+
 pub mod ed25519;
 pub mod x25519;
 

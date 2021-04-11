@@ -1,4 +1,3 @@
-use alloc::boxed::Box;
 use core::convert::{TryFrom, TryInto};
 
 use k256::{
@@ -9,14 +8,14 @@ use k256::{
     elliptic_curve::{ecdh::diffie_hellman, sec1::Coordinates},
     EncodedPoint, PublicKey, SecretKey,
 };
-use rand::rngs::OsRng;
 
 use crate::{
     // any::{AnyPrivateKey, AnyPublicKey},
     buffer::{SecretBytes, WriteBuffer},
-    caps::{KeyCapSign, KeyCapVerify, SignatureType},
+    caps::{KeyCapSign, KeyCapVerify, KeyGen, KeySecretBytes, SignatureType},
     error::Error,
     jwk::{JwkEncoder, KeyToJwk},
+    random::with_rng,
 };
 
 pub const ES256K_SIGNATURE_LENGTH: usize = 64;
@@ -28,13 +27,13 @@ pub const KEYPAIR_LENGTH: usize = SECRET_KEY_LENGTH + PUBLIC_KEY_LENGTH;
 pub static JWK_CURVE: &'static str = "secp256k1";
 
 #[derive(Clone, Debug)]
-pub struct K256KeyPair(Box<Keypair>);
+pub struct K256KeyPair {
+    // SECURITY: SecretKey zeroizes on drop
+    secret: Option<SecretKey>,
+    public: PublicKey,
+}
 
 impl K256KeyPair {
-    pub fn generate() -> Result<Self, Error> {
-        Ok(Self::from_secret_key(SecretKey::random(OsRng)))
-    }
-
     pub fn from_keypair_bytes(kp: &[u8]) -> Result<Self, Error> {
         if kp.len() != KEYPAIR_LENGTH {
             return Err(err_msg!("Invalid keypair bytes"));
@@ -46,41 +45,35 @@ impl K256KeyPair {
             .map_err(|_| err_msg!("Invalid k-256 public key bytes"))?;
         // FIXME: derive pk from sk and check value?
 
-        Ok(Self(Box::new(Keypair {
+        Ok(Self {
             secret: Some(sk),
             public: pk,
-        })))
+        })
     }
 
     pub fn from_public_key_bytes(key: &[u8]) -> Result<Self, Error> {
         let pk = EncodedPoint::from_bytes(key)
             .and_then(|pt| pt.decode())
             .map_err(|_| err_msg!("Invalid k-256 public key bytes"))?;
-        Ok(Self(Box::new(Keypair {
+        Ok(Self {
             secret: None,
             public: pk,
-        })))
-    }
-
-    pub fn from_secret_key_bytes(key: &[u8]) -> Result<Self, Error> {
-        Ok(Self::from_secret_key(
-            SecretKey::from_bytes(key).map_err(|_| err_msg!("Invalid k-256 secret key bytes"))?,
-        ))
+        })
     }
 
     #[inline]
     pub(crate) fn from_secret_key(sk: SecretKey) -> Self {
         let pk = sk.public_key();
-        Self(Box::new(Keypair {
+        Self {
             secret: Some(sk),
             public: pk,
-        }))
+        }
     }
 
     pub fn key_exchange_with(&self, other: &Self) -> Option<SecretBytes> {
-        match self.0.secret.as_ref() {
+        match self.secret.as_ref() {
             Some(sk) => {
-                let xk = diffie_hellman(sk.secret_scalar(), other.0.public.as_affine());
+                let xk = diffie_hellman(sk.secret_scalar(), other.public.as_affine());
                 Some(SecretBytes::from(xk.as_bytes().to_vec()))
             }
             None => None,
@@ -88,8 +81,8 @@ impl K256KeyPair {
     }
 
     pub fn to_keypair_bytes(&self) -> Option<SecretBytes> {
-        if let Some(secret) = self.0.secret.as_ref() {
-            let encp = EncodedPoint::encode(self.0.public, true);
+        if let Some(secret) = self.secret.as_ref() {
+            let encp = EncodedPoint::encode(self.public, true);
             let output = SecretBytes::new_with(KEYPAIR_LENGTH, |buf| {
                 buf[..SECRET_KEY_LENGTH].copy_from_slice(&secret.to_bytes()[..]);
                 buf[SECRET_KEY_LENGTH..].copy_from_slice(encp.as_ref());
@@ -101,7 +94,7 @@ impl K256KeyPair {
     }
 
     pub(crate) fn to_signing_key(&self) -> Option<SigningKey> {
-        self.0.secret.as_ref().map(SigningKey::from)
+        self.secret.as_ref().map(SigningKey::from)
     }
 
     pub fn sign(&self, message: &[u8]) -> Option<[u8; ES256K_SIGNATURE_LENGTH]> {
@@ -116,7 +109,7 @@ impl K256KeyPair {
 
     pub fn verify_signature(&self, message: &[u8], signature: &[u8]) -> bool {
         if let Ok(sig) = Signature::try_from(signature) {
-            let vk = VerifyingKey::from(self.0.public.as_affine());
+            let vk = VerifyingKey::from(self.public.as_affine());
             vk.verify(message, &sig).is_ok()
         } else {
             false
@@ -124,18 +117,40 @@ impl K256KeyPair {
     }
 }
 
+impl KeyGen for K256KeyPair {
+    fn generate() -> Result<Self, Error> {
+        Ok(Self::from_secret_key(with_rng(|r| SecretKey::random(r))))
+    }
+}
+
+impl KeySecretBytes for K256KeyPair {
+    fn from_key_secret_bytes(key: &[u8]) -> Result<Self, Error> {
+        Ok(Self::from_secret_key(
+            SecretKey::from_bytes(key).map_err(|_| err_msg!("Invalid k-256 secret key bytes"))?,
+        ))
+    }
+
+    fn to_key_secret_buffer<B: WriteBuffer>(&self, out: &mut B) -> Result<(), Error> {
+        if let Some(sk) = self.secret.as_ref() {
+            out.write_slice(&sk.to_bytes()[..])
+        } else {
+            Err(err_msg!(MissingSecretKey))
+        }
+    }
+}
+
 impl KeyCapSign for K256KeyPair {
-    fn key_sign<B: WriteBuffer>(
+    fn key_sign_buffer<B: WriteBuffer>(
         &self,
         message: &[u8],
         sig_type: Option<SignatureType>,
         out: &mut B,
-    ) -> Result<usize, Error> {
+    ) -> Result<(), Error> {
         match sig_type {
             None | Some(SignatureType::ES256K) => {
                 if let Some(sig) = self.sign(message) {
-                    out.extend_from_slice(&sig[..])?;
-                    Ok(ES256K_SIGNATURE_LENGTH)
+                    out.write_slice(&sig[..])?;
+                    Ok(())
                 } else {
                     Err(err_msg!(Unsupported, "Undefined secret key"))
                 }
@@ -165,7 +180,7 @@ impl KeyToJwk for K256KeyPair {
     const KTY: &'static str = "EC";
 
     fn to_jwk_buffer<B: WriteBuffer>(&self, buffer: &mut JwkEncoder<B>) -> Result<(), Error> {
-        let encp = EncodedPoint::encode(self.0.public, false);
+        let encp = EncodedPoint::encode(self.public, false);
         let (x, y) = match encp.coordinates() {
             Coordinates::Identity => return Err(err_msg!("Cannot convert identity point to JWK")),
             Coordinates::Uncompressed { x, y } => (x, y),
@@ -176,7 +191,7 @@ impl KeyToJwk for K256KeyPair {
         buffer.add_as_base64("x", &x[..])?;
         buffer.add_as_base64("y", &y[..])?;
         if buffer.is_secret() {
-            if let Some(sk) = self.0.secret.as_ref() {
+            if let Some(sk) = self.secret.as_ref() {
                 buffer.add_as_base64("d", &sk.to_bytes()[..])?;
             }
         }
@@ -196,13 +211,6 @@ impl KeyToJwk for K256KeyPair {
 //         }
 //     }
 // }
-
-#[derive(Clone, Debug)]
-struct Keypair {
-    // SECURITY: SecretKey zeroizes on drop
-    secret: Option<SecretKey>,
-    public: PublicKey,
-}
 
 #[cfg(test)]
 mod tests {
@@ -225,7 +233,7 @@ mod tests {
             "36uMVGM7hnw-N6GnjFcihWE3SkrhMLzzLCdPMXPEXlA",
         );
         let test_pvt = base64::decode_config(test_pvt_b64, base64::URL_SAFE).unwrap();
-        let sk = K256KeyPair::from_secret_key_bytes(&test_pvt).expect("Error creating signing key");
+        let sk = K256KeyPair::from_key_secret_bytes(&test_pvt).expect("Error creating signing key");
 
         let jwk = sk.to_jwk().expect("Error converting key to JWK");
         let jwk = jwk.to_parts().expect("Error parsing JWK");
@@ -256,7 +264,7 @@ mod tests {
             base64::URL_SAFE_NO_PAD,
         )
         .unwrap();
-        let kp = K256KeyPair::from_secret_key_bytes(&test_pvt).unwrap();
+        let kp = K256KeyPair::from_key_secret_bytes(&test_pvt).unwrap();
         let sig = kp.sign(&test_msg[..]).unwrap();
         assert_eq!(sig, &test_sig[..]);
         assert_eq!(kp.verify_signature(&test_msg[..], &sig[..]), true);

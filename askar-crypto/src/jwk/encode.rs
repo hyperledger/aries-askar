@@ -8,17 +8,14 @@ impl<B: WriteBuffer> bs58::encode::EncodeTarget for JwkBuffer<'_, B> {
     fn encode_with(
         &mut self,
         max_len: usize,
-        f: impl for<'a> FnOnce(&'a mut [u8]) -> Result<usize, bs58::encode::Error>,
+        f: impl FnOnce(&mut [u8]) -> Result<usize, bs58::encode::Error>,
     ) -> Result<usize, bs58::encode::Error> {
-        if let Some(ext) = self.0.extend_buffer(max_len) {
-            let len = f(ext)?;
-            if len < max_len {
-                self.0.truncate_by(max_len - len);
-            }
-            Ok(len)
-        } else {
-            Err(bs58::encode::Error::BufferTooSmall)
-        }
+        self.0
+            .write_with(max_len, |buf| {
+                // this cannot fail - there is enough space allocated
+                Ok(f(buf).unwrap())
+            })
+            .map_err(|_| bs58::encode::Error::BufferTooSmall)
     }
 }
 
@@ -29,53 +26,49 @@ pub struct JwkEncoder<'b, B: WriteBuffer> {
 
 impl<'b, B: WriteBuffer> JwkEncoder<'b, B> {
     pub fn new(buffer: &'b mut B, kty: &str, secret: bool) -> Result<Self, Error> {
-        buffer.extend_from_slice(b"{\"kty\":\"")?;
-        buffer.extend_from_slice(kty.as_bytes())?;
-        buffer.extend_from_slice(b"\"")?;
+        buffer.write_slice(b"{\"kty\":\"")?;
+        buffer.write_slice(kty.as_bytes())?;
+        buffer.write_slice(b"\"")?;
         Ok(Self { buffer, secret })
     }
 
     pub fn add_str(&mut self, key: &str, value: &str) -> Result<(), Error> {
         let buffer = &mut *self.buffer;
-        buffer.extend_from_slice(b",\"")?;
-        buffer.extend_from_slice(key.as_bytes())?;
-        buffer.extend_from_slice(b"\":\"")?;
-        buffer.extend_from_slice(value.as_bytes())?;
-        buffer.extend_from_slice(b"\"")?;
+        buffer.write_slice(b",\"")?;
+        buffer.write_slice(key.as_bytes())?;
+        buffer.write_slice(b"\":\"")?;
+        buffer.write_slice(value.as_bytes())?;
+        buffer.write_slice(b"\"")?;
         Ok(())
     }
 
     pub fn add_as_base64(&mut self, key: &str, value: &[u8]) -> Result<(), Error> {
         let buffer = &mut *self.buffer;
-        buffer.extend_from_slice(b",\"")?;
-        buffer.extend_from_slice(key.as_bytes())?;
-        buffer.extend_from_slice(b"\":\"")?;
+        buffer.write_slice(b",\"")?;
+        buffer.write_slice(key.as_bytes())?;
+        buffer.write_slice(b"\":\"")?;
         let enc_size = ((value.len() << 2) + 2) / 3;
-        if let Some(mbuf) = buffer.extend_buffer(enc_size) {
+        buffer.write_with(enc_size, |mbuf| {
             let len = base64::encode_config_slice(value, base64::URL_SAFE_NO_PAD, mbuf);
-            if len < enc_size {
-                buffer.truncate_by(enc_size - len);
-            }
-        } else {
-            return Err(err_msg!("buffer too small"));
-        }
-        buffer.extend_from_slice(b"\"")?;
+            Ok(len)
+        })?;
+        buffer.write_slice(b"\"")?;
         Ok(())
     }
 
     pub fn add_key_ops(&mut self, ops: impl Into<KeyOpsSet>) -> Result<(), Error> {
         let buffer = &mut *self.buffer;
-        buffer.extend_from_slice(b",\"key_ops\":[")?;
+        buffer.write_slice(b",\"key_ops\":[")?;
         for (idx, op) in ops.into().into_iter().enumerate() {
             if idx > 0 {
-                buffer.extend_from_slice(b",\"")?;
+                buffer.write_slice(b",\"")?;
             } else {
-                buffer.extend_from_slice(b"\"")?;
+                buffer.write_slice(b"\"")?;
             }
-            buffer.extend_from_slice(op.as_str().as_bytes())?;
-            buffer.extend_from_slice(b"\"")?;
+            buffer.write_slice(op.as_str().as_bytes())?;
+            buffer.write_slice(b"\"")?;
         }
-        buffer.extend_from_slice(b"]")?;
+        buffer.write_slice(b"]")?;
         Ok(())
     }
 
@@ -84,7 +77,7 @@ impl<'b, B: WriteBuffer> JwkEncoder<'b, B> {
     }
 
     pub fn finalize(self) -> Result<(), Error> {
-        self.buffer.extend_from_slice(b"}")?;
+        self.buffer.write_slice(b"}")?;
         Ok(())
     }
 }
