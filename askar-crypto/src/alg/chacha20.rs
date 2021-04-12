@@ -7,9 +7,10 @@ use crate::generic_array::{typenum::Unsigned, GenericArray};
 use crate::{
     buffer::{ArrayKey, ResizeBuffer, WriteBuffer, Writer},
     caps::{KeyGen, KeySecretBytes},
-    encrypt::{FromKeyExchange, KeyAeadInPlace, KeyExchange},
+    encrypt::KeyAeadInPlace,
     error::Error,
     jwk::{JwkEncoder, ToJwk},
+    kdf::{FromKeyExchange, KeyExchange},
     random::fill_random_deterministic,
 };
 

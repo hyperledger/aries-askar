@@ -10,9 +10,10 @@ use crate::{
 use crate::{
     buffer::{ArrayKey, ResizeBuffer, WriteBuffer},
     caps::{KeyGen, KeySecretBytes},
-    encrypt::{FromKeyExchange, KeyAeadInPlace, KeyExchange},
+    encrypt::KeyAeadInPlace,
     error::Error,
     jwk::{JwkEncoder, ToJwk},
+    kdf::{FromKeyExchange, KeyExchange},
 };
 
 pub static JWK_KEY_TYPE: &'static str = "oct";

@@ -12,9 +12,9 @@ use k256::{
 use crate::{
     buffer::{ArrayKey, SecretBytes, WriteBuffer},
     caps::{KeyCapSign, KeyCapVerify, KeyGen, KeySecretBytes, SignatureType},
-    encrypt::KeyExchange,
     error::Error,
     jwk::{FromJwk, JwkEncoder, JwkParts, ToJwk},
+    kdf::KeyExchange,
     random::with_rng,
 };
 

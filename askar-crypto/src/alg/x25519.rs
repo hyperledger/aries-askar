@@ -11,9 +11,9 @@ use zeroize::Zeroize;
 use crate::{
     buffer::{ArrayKey, SecretBytes, WriteBuffer},
     caps::{KeyGen, KeySecretBytes},
-    encrypt::KeyExchange,
     error::Error,
     jwk::{FromJwk, JwkEncoder, JwkParts, ToJwk},
+    kdf::KeyExchange,
 };
 
 pub const PUBLIC_KEY_LENGTH: usize = 32;

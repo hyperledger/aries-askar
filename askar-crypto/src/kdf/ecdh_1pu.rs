@@ -1,65 +1,70 @@
+use core::marker::PhantomData;
+
 use sha2::Sha256;
 use zeroize::Zeroize;
 
+use super::{
+    concat::{ConcatKDFHash, ConcatKDFParams},
+    KeyExchange,
+};
 use crate::{
     buffer::WriteBuffer,
     caps::KeyGen,
-    encrypt::KeyExchange,
     error::Error,
     jwk::{JwkEncoder, JwkEncoderMode, ToJwk},
-    kdf::concat::{ConcatKDFHash, ConcatKDFParams},
 };
 
-fn ecdh_1pu_derive_shared<Key>(
-    ephem_key: &Key,
-    send_key: &Key,
-    recip_key: &Key,
-    params: ConcatKDFParams,
-    key_output: &mut [u8],
-) -> Result<(), Error>
-where
-    Key: KeyExchange,
-{
-    let output_len = key_output.len();
-    // one-pass KDF only produces 256 bits of output
-    assert!(output_len <= 32);
-    let mut kdf = ConcatKDFHash::<Sha256>::new();
-    kdf.start_pass();
+pub struct Ecdh1PU<Key>(PhantomData<Key>);
 
-    // hash Zs and Ze directly into the KDF
-    ephem_key.key_exchange_buffer(recip_key, &mut kdf)?;
-    send_key.key_exchange_buffer(recip_key, &mut kdf)?;
+impl<Key: KeyExchange> Ecdh1PU<Key> {
+    fn derive_key_config(
+        ephem_key: &Key,
+        send_key: &Key,
+        recip_key: &Key,
+        params: ConcatKDFParams,
+        key_output: &mut [u8],
+    ) -> Result<(), Error> {
+        let output_len = key_output.len();
+        // one-pass KDF only produces 256 bits of output
+        assert!(output_len <= 32);
+        let mut kdf = ConcatKDFHash::<Sha256>::new();
+        kdf.start_pass();
 
-    let mut key = kdf.finish_pass(params, output_len);
-    key_output.copy_from_slice(&key[..output_len]);
-    key.zeroize();
+        // hash Zs and Ze directly into the KDF
+        ephem_key.key_exchange_buffer(recip_key, &mut kdf)?;
+        send_key.key_exchange_buffer(recip_key, &mut kdf)?;
 
-    Ok(())
-}
+        let mut key = kdf.finish_pass(params, output_len);
+        key_output.copy_from_slice(&key[..output_len]);
+        key.zeroize();
 
-pub fn ecdh_1pu_direct<Key, B: WriteBuffer>(
-    send_key: &Key,
-    recip_key: &Key,
-    alg: &[u8],
-    apu: &[u8],
-    apv: &[u8],
-    key_output: &mut [u8],
-    jwk_output: &mut B,
-) -> Result<(), Error>
-where
-    Key: KeyGen + KeyExchange + ToJwk,
-{
-    let ephem_key = Key::generate()?;
-    let mut encoder = JwkEncoder::new(jwk_output, JwkEncoderMode::PublicKey)?;
-    ephem_key.to_jwk_buffer(&mut encoder)?;
+        Ok(())
+    }
 
-    let params = ConcatKDFParams { alg, apu, apv };
-    ecdh_1pu_derive_shared(&ephem_key, send_key, recip_key, params, key_output)?;
+    pub fn derive_key<B: WriteBuffer>(
+        send_key: &Key,
+        recip_key: &Key,
+        alg: &[u8],
+        apu: &[u8],
+        apv: &[u8],
+        key_output: &mut [u8],
+        jwk_output: &mut B,
+    ) -> Result<(), Error>
+    where
+        Key: KeyGen + ToJwk,
+    {
+        let ephem_key = Key::generate()?;
+        let mut encoder = JwkEncoder::new(jwk_output, JwkEncoderMode::PublicKey)?;
+        ephem_key.to_jwk_buffer(&mut encoder)?;
 
-    // SECURITY: keys must zeroize themselves on drop
-    drop(ephem_key);
+        let params = ConcatKDFParams { alg, apu, apv };
+        Self::derive_key_config(&ephem_key, send_key, recip_key, params, key_output)?;
 
-    Ok(())
+        // SECURITY: keys must zeroize themselves on drop
+        drop(ephem_key);
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -99,10 +104,10 @@ mod tests {
 
         let mut key_output = [0u8; 32];
 
-        ecdh_1pu_derive_shared(
+        Ecdh1PU::derive_key_config(
+            &ephem_sk,
             &alice_sk,
             &bob_sk,
-            &ephem_sk,
             ConcatKDFParams {
                 alg: b"A256GCM",
                 apu: b"Alice",

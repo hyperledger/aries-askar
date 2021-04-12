@@ -2,9 +2,6 @@ use crate::{buffer::SecretBytes, error::Error, random::random_secret};
 
 pub use argon2::{Algorithm, Version};
 
-pub const LEVEL_INTERACTIVE: &'static str = "13:int";
-pub const LEVEL_MODERATE: &'static str = "13:mod";
-
 pub const HASH_SIZE: usize = 32;
 pub const SALT_SIZE: usize = 16;
 
@@ -27,6 +24,9 @@ pub struct Params {
     mem_cost: u32,
     time_cost: u32,
 }
+
+// pub const LEVEL_INTERACTIVE: &'static str = "13:int";
+// pub const LEVEL_MODERATE: &'static str = "13:mod";
 
 // #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 // pub enum Level {
