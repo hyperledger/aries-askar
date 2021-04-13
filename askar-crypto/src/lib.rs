@@ -31,7 +31,7 @@ pub use self::any::{AnyPrivateKey, AnyPublicKey};
 pub mod alg;
 
 mod buffer;
-pub use self::buffer::{PassKey, SecretBytes};
+pub use self::buffer::{ResizeBuffer, SecretBytes, WriteBuffer, Writer};
 
 pub mod caps;
 pub use self::caps::{

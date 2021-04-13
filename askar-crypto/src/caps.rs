@@ -174,7 +174,7 @@ pub enum SignatureFormat {
     /// Base64-encoded binary signature
     Base64,
     /// Base64-URL-encoded binary signature
-    Base64_URL,
+    Base64Url,
     /// Hex-encoded binary signature
     Hex,
     /// Raw binary signature (method dependent)

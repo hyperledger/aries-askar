@@ -1,5 +1,7 @@
 use crate::{buffer::ResizeBuffer, error::Error};
 
+pub mod nacl_box;
+
 pub trait KeyAeadInPlace {
     /// Encrypt a secret value in place, appending the verification tag
     fn encrypt_in_place<B: ResizeBuffer>(

@@ -26,8 +26,8 @@ pub static JWK_CURVE: &'static str = "X25519";
 #[derive(Clone)]
 pub struct X25519KeyPair {
     // SECURITY: SecretKey (StaticSecret) zeroizes on drop
-    secret: Option<SecretKey>,
-    public: PublicKey,
+    pub(crate) secret: Option<SecretKey>,
+    pub(crate) public: PublicKey,
 }
 
 impl X25519KeyPair {

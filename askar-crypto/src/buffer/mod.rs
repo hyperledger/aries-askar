@@ -1,21 +1,23 @@
-use alloc::{
-    borrow::Cow,
-    string::{String, ToString},
-    vec::Vec,
-};
+use alloc::{string::String, vec::Vec};
 use core::{
     cmp::Ordering,
     fmt::{self, Debug, Formatter},
     marker::PhantomData,
-    mem::{self, ManuallyDrop},
+    mem,
     ops::Deref,
 };
 
-use crate::generic_array::{typenum, ArrayLength, GenericArray};
+use crate::generic_array::{ArrayLength, GenericArray};
 use serde::{de::Visitor, Deserialize, Deserializer, Serialize, Serializer};
 use zeroize::Zeroize;
 
 use crate::{error::Error, random::fill_random};
+
+mod string;
+pub(crate) use self::string::{HexRepr, MaybeStr};
+
+mod writer;
+pub use self::writer::Writer;
 
 /// A secure key representation for fixed-length keys
 #[derive(Clone, Hash)]
@@ -106,10 +108,7 @@ impl<L: ArrayLength<u8>> Serialize for ArrayKey<L> {
     where
         S: Serializer,
     {
-        // create an array twice the size of L on the stack (could be made clearer with const generics)
-        let mut hex_str = GenericArray::<u8, typenum::UInt<L, typenum::B0>>::default();
-        hex::encode_to_slice(&self.0.as_slice(), &mut hex_str).unwrap();
-        serializer.serialize_str(core::str::from_utf8(&hex_str[..]).unwrap())
+        serializer.collect_str(&HexRepr(&self.0))
     }
 }
 
@@ -155,100 +154,6 @@ impl<'a, L: ArrayLength<u8>> Visitor<'a> for KeyVisitor<L> {
     }
 }
 
-/// A possibly-empty password or key used to derive a store wrap key
-#[derive(Clone)]
-pub struct PassKey<'a>(Option<Cow<'a, str>>);
-
-impl PassKey<'_> {
-    /// Create a scoped reference to the passkey
-    pub fn as_ref(&self) -> PassKey<'_> {
-        PassKey(Some(Cow::Borrowed(&**self)))
-    }
-
-    pub(crate) fn is_none(&self) -> bool {
-        self.0.is_none()
-    }
-
-    pub(crate) fn into_owned(self) -> PassKey<'static> {
-        let mut slf = ManuallyDrop::new(self);
-        let val = slf.0.take();
-        PassKey(match val {
-            None => None,
-            Some(Cow::Borrowed(s)) => Some(Cow::Owned(s.to_string())),
-            Some(Cow::Owned(s)) => Some(Cow::Owned(s)),
-        })
-    }
-}
-
-impl Debug for PassKey<'_> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        if cfg!(test) {
-            f.debug_tuple("PassKey").field(&*self).finish()
-        } else {
-            f.debug_tuple("PassKey").field(&"<secret>").finish()
-        }
-    }
-}
-
-impl Default for PassKey<'_> {
-    fn default() -> Self {
-        Self(None)
-    }
-}
-
-impl Deref for PassKey<'_> {
-    type Target = str;
-
-    fn deref(&self) -> &str {
-        match self.0.as_ref() {
-            None => "",
-            Some(s) => s.as_ref(),
-        }
-    }
-}
-
-impl Drop for PassKey<'_> {
-    fn drop(&mut self) {
-        self.zeroize();
-    }
-}
-
-impl<'a> From<&'a str> for PassKey<'a> {
-    fn from(inner: &'a str) -> Self {
-        Self(Some(Cow::Borrowed(inner)))
-    }
-}
-
-impl From<String> for PassKey<'_> {
-    fn from(inner: String) -> Self {
-        Self(Some(Cow::Owned(inner)))
-    }
-}
-
-impl<'a> From<Option<&'a str>> for PassKey<'a> {
-    fn from(inner: Option<&'a str>) -> Self {
-        Self(inner.map(Cow::Borrowed))
-    }
-}
-
-impl<'a, 'b> PartialEq<PassKey<'b>> for PassKey<'a> {
-    fn eq(&self, other: &PassKey<'b>) -> bool {
-        &**self == &**other
-    }
-}
-impl Eq for PassKey<'_> {}
-
-impl Zeroize for PassKey<'_> {
-    fn zeroize(&mut self) {
-        match self.0.take() {
-            Some(Cow::Owned(mut s)) => {
-                s.zeroize();
-            }
-            _ => (),
-        }
-    }
-}
-
 /// A heap-allocated, zeroized byte buffer
 #[derive(Clone, Hash, PartialEq, Eq, PartialOrd, Ord, Zeroize)]
 pub struct SecretBytes(Vec<u8>);
@@ -256,18 +161,13 @@ pub struct SecretBytes(Vec<u8>);
 impl SecretBytes {
     pub fn new_with(len: usize, f: impl FnOnce(&mut [u8])) -> Self {
         let mut slf = Self::with_capacity(len);
-        let mut buf = slf.as_buffer();
-        buf.resize(len);
-        f(buf.as_mut());
+        slf.0.resize(len, 0u8);
+        f(slf.0.as_mut());
         slf
     }
 
     pub fn with_capacity(max_len: usize) -> Self {
         Self(Vec::with_capacity(max_len))
-    }
-
-    pub(crate) fn as_buffer(&mut self) -> SecretBytesMut<'_> {
-        SecretBytesMut(&mut self.0)
     }
 
     pub fn from_slice(data: &[u8]) -> Self {
@@ -281,12 +181,16 @@ impl SecretBytes {
         core::str::from_utf8(self.0.as_slice()).ok()
     }
 
-    pub(crate) fn into_vec(mut self) -> Vec<u8> {
+    pub fn into_vec(mut self) -> Vec<u8> {
         // FIXME zeroize extra capacity?
         let mut v = Vec::new(); // note: no heap allocation for empty vec
         mem::swap(&mut v, &mut self.0);
         mem::forget(self);
         v
+    }
+
+    pub(crate) fn as_vec_mut(&mut self) -> &mut Vec<u8> {
+        &mut self.0
     }
 }
 
@@ -305,6 +209,12 @@ impl Debug for SecretBytes {
 impl AsRef<[u8]> for SecretBytes {
     fn as_ref(&self) -> &[u8] {
         self.0.as_slice()
+    }
+}
+
+impl AsMut<[u8]> for SecretBytes {
+    fn as_mut(&mut self) -> &mut [u8] {
+        self.0.as_mut_slice()
     }
 }
 
@@ -358,82 +268,6 @@ impl PartialEq<Vec<u8>> for SecretBytes {
     }
 }
 
-pub(crate) struct SecretBytesMut<'m>(&'m mut Vec<u8>);
-
-impl SecretBytesMut<'_> {
-    /// Securely extend the buffer without leaving copies
-    #[inline]
-    pub fn extend_from_slice(&mut self, data: &[u8]) {
-        self.reserve(data.len());
-        self.0.extend_from_slice(data);
-    }
-
-    fn truncate(&mut self, len: usize) {
-        self.0.truncate(len);
-    }
-
-    /// Obtain a large-enough SecretBytes without creating unsafe copies of
-    /// the contained data
-    pub fn reserve(&mut self, extra: usize) {
-        let len = self.0.len();
-        if extra + len > self.0.capacity() {
-            // allocate a new buffer and copy the secure data over
-            let mut buf = Vec::with_capacity(extra + len);
-            buf.extend_from_slice(&self.0[..]);
-            mem::swap(&mut buf, &mut self.0);
-            buf.zeroize()
-        }
-    }
-
-    pub fn resize(&mut self, new_len: usize) {
-        let len = self.0.len();
-        if new_len > len {
-            self.reserve(new_len - len);
-            self.0.resize(new_len, 0u8);
-        } else {
-            self.0.truncate(new_len);
-        }
-    }
-}
-
-impl AsRef<[u8]> for SecretBytesMut<'_> {
-    fn as_ref(&self) -> &[u8] {
-        self.0.as_slice()
-    }
-}
-
-impl AsMut<[u8]> for SecretBytesMut<'_> {
-    fn as_mut(&mut self) -> &mut [u8] {
-        self.0.as_mut_slice()
-    }
-}
-
-impl Deref for SecretBytesMut<'_> {
-    type Target = Vec<u8>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-/// A utility type for debug printing of byte strings
-struct MaybeStr<'a>(&'a [u8]);
-
-impl Debug for MaybeStr<'_> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        if let Ok(sval) = core::str::from_utf8(self.0) {
-            write!(f, "{:?}", sval)
-        } else {
-            fmt::Write::write_char(f, '<')?;
-            for c in self.0 {
-                f.write_fmt(format_args!("{:02x}", c))?;
-            }
-            fmt::Write::write_char(f, '>')?;
-            Ok(())
-        }
-    }
-}
-
 pub trait WriteBuffer {
     fn write_slice(&mut self, data: &[u8]) -> Result<(), Error> {
         let len = data.len();
@@ -451,78 +285,8 @@ pub trait WriteBuffer {
     ) -> Result<usize, Error>;
 }
 
-pub trait ResizeBuffer: WriteBuffer {
-    fn as_ref(&self) -> &[u8];
-
-    fn as_mut(&mut self) -> &mut [u8];
-
-    fn reserve(&mut self, len: usize) -> Result<(), Error> {
-        self.write_with(len, |buf| {
-            for idx in 0..len {
-                buf[idx] = 0u8;
-            }
-            Ok(len)
-        })?;
-        Ok(())
-    }
-
-    fn truncate(&mut self, len: usize);
-}
-
-pub struct Writer<B> {
-    inner: B,
-    pos: usize,
-}
-
-impl<'b> Writer<&'b mut [u8]> {
-    #[inline]
-    pub fn from_slice(slice: &'b mut [u8]) -> Self {
-        Writer {
-            inner: slice,
-            pos: 0,
-        }
-    }
-
-    #[inline]
-    pub fn from_slice_position(slice: &'b mut [u8], pos: usize) -> Self {
-        Writer { inner: slice, pos }
-    }
-
-    pub fn position(&self) -> usize {
-        self.pos
-    }
-}
-
-impl<'b> WriteBuffer for Writer<&'b mut [u8]> {
-    fn write_with(
-        &mut self,
-        max_len: usize,
-        f: impl FnOnce(&mut [u8]) -> Result<usize, Error>,
-    ) -> Result<usize, Error> {
-        let total = self.inner.len();
-        let end = max_len + self.pos;
-        if end > total {
-            return Err(err_msg!("exceeded buffer size"));
-        }
-        let written = f(&mut self.inner[self.pos..end])?;
-        self.pos += written;
-        Ok(written)
-    }
-}
-
-impl<'b> ResizeBuffer for Writer<&'b mut [u8]> {
-    fn as_ref(&self) -> &[u8] {
-        &self.inner[..self.pos]
-    }
-
-    fn as_mut(&mut self) -> &mut [u8] {
-        &mut self.inner[..self.pos]
-    }
-
-    fn truncate(&mut self, len: usize) {
-        assert!(len <= self.pos);
-        self.pos = len;
-    }
+pub trait ResizeBuffer: WriteBuffer + AsRef<[u8]> + AsMut<[u8]> {
+    fn buffer_resize(&mut self, len: usize) -> Result<(), Error>;
 }
 
 impl WriteBuffer for Vec<u8> {
@@ -542,16 +306,9 @@ impl WriteBuffer for Vec<u8> {
 }
 
 impl ResizeBuffer for Vec<u8> {
-    fn as_ref(&self) -> &[u8] {
-        &self[..]
-    }
-
-    fn as_mut(&mut self) -> &mut [u8] {
-        &mut self[..]
-    }
-
-    fn truncate(&mut self, len: usize) {
-        self.truncate(len);
+    fn buffer_resize(&mut self, len: usize) -> Result<(), Error> {
+        self.resize(len, 0u8);
+        Ok(())
     }
 }
 
@@ -561,9 +318,10 @@ impl WriteBuffer for SecretBytes {
         max_len: usize,
         f: impl FnOnce(&mut [u8]) -> Result<usize, Error>,
     ) -> Result<usize, Error> {
-        let len = self.len();
-        self.0.resize(len + max_len, 0u8);
-        let written = f(&mut self.0[len..(len + max_len)])?;
+        let len = self.0.len();
+        let new_len = len + max_len;
+        self.buffer_resize(new_len)?;
+        let written = f(&mut self.0[len..new_len])?;
         if written < max_len {
             self.0.truncate(len + written);
         }
@@ -572,36 +330,24 @@ impl WriteBuffer for SecretBytes {
 }
 
 impl ResizeBuffer for SecretBytes {
-    fn as_ref(&self) -> &[u8] {
-        &self.0[..]
-    }
-
-    fn as_mut(&mut self) -> &mut [u8] {
-        &mut self.0[..]
-    }
-
-    fn truncate(&mut self, len: usize) {
-        self.0.truncate(len);
+    fn buffer_resize(&mut self, len: usize) -> Result<(), Error> {
+        let cap = self.0.capacity();
+        if cap > 0 && len >= cap {
+            // allocate a new buffer and copy the secure data over
+            let new_cap = len.max(cap * 2).max(32);
+            let mut buf = SecretBytes::with_capacity(new_cap);
+            buf.0.extend_from_slice(&self.0[..]);
+            mem::swap(&mut buf, self);
+            // old buf zeroized on drop
+        }
+        self.0.resize(len, 0u8);
+        Ok(())
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn write_buffer_slice() {
-        let mut buf = [0u8; 10];
-        let mut w = Writer::from_slice(&mut buf);
-        w.write_with(5, |buf| {
-            buf.copy_from_slice(b"hello");
-            Ok(2)
-        })
-        .unwrap();
-        w.write_slice(b"y").unwrap();
-        assert_eq!(w.position(), 3);
-        assert_eq!(&buf[..3], b"hey");
-    }
 
     #[test]
     fn write_buffer_vec() {
@@ -625,11 +371,5 @@ mod tests {
         .unwrap();
         w.write_slice(b"y").unwrap();
         assert_eq!(&w[..], b"hey");
-    }
-
-    #[test]
-    fn test_maybe_str() {
-        assert_eq!(format!("{:?}", MaybeStr(&[])), "\"\"");
-        assert_eq!(format!("{:?}", MaybeStr(&[255, 0])), "<ff00>");
     }
 }

@@ -13,6 +13,9 @@ pub enum ErrorKind {
     /// The input parameters to the method were incorrect
     Input,
 
+    /// The provided nonce was invalid (bad length)
+    InvalidNonce,
+
     /// A secret key is required but not present
     MissingSecretKey,
 
@@ -29,6 +32,7 @@ impl ErrorKind {
         match self {
             Self::Encryption => "Encryption error",
             Self::Input => "Input error",
+            Self::InvalidNonce => "Invalid encryption nonce",
             Self::MissingSecretKey => "Missing secret key",
             Self::Unexpected => "Unexpected error",
             Self::Unsupported => "Unsupported",

@@ -128,7 +128,7 @@ impl<T: AesGcmType> KeyAeadInPlace for AesGcmKey<T> {
         chacha
             .decrypt_in_place_detached(nonce, aad, &mut buffer.as_mut()[..tag_start], &tag)
             .map_err(|e| err_msg!(Encryption, "{}", e))?;
-        buffer.truncate(tag_start);
+        buffer.buffer_resize(tag_start)?;
         Ok(())
     }
 
