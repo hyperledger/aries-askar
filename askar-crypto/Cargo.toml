@@ -19,7 +19,16 @@ any = []
 std = []
 
 [dev-dependencies]
+criterion = "0.3"
 hex-literal = "0.3"
+
+[[bench]]
+name = "enc"
+harness = false
+
+[[bench]]
+name = "kdf"
+harness = false
 
 [dependencies]
 aead = "0.3"
