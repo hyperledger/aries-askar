@@ -168,7 +168,7 @@ impl<'de> Visitor<'de> for JwkMapVisitor<'de> {
                 key_ops,
             })
         } else {
-            Err(serde::de::Error::custom("missing 'kty' property for JWK"))
+            Err(serde::de::Error::missing_field("kty"))
         }
     }
 }
@@ -199,10 +199,7 @@ impl<'de> Visitor<'de> for KeyOpsVisitor {
         while let Some(op) = seq.next_element()? {
             if let Some(op) = KeyOps::from_str(op) {
                 if ops & op {
-                    return Err(serde::de::Error::custom(alloc::format!(
-                        "duplicate key operation: {}",
-                        op
-                    )));
+                    return Err(serde::de::Error::duplicate_field(op.as_str()));
                 } else {
                     ops = ops | op;
                 }

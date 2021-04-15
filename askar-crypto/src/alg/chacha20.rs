@@ -2,6 +2,7 @@ use core::fmt::{self, Debug, Formatter};
 
 use aead::{Aead, AeadInPlace, NewAead};
 use chacha20poly1305::{ChaCha20Poly1305, XChaCha20Poly1305};
+use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
 use crate::generic_array::{typenum::Unsigned, GenericArray};
@@ -46,7 +47,14 @@ type NonceSize<A> = <<A as Chacha20Type>::Aead as Aead>::NonceSize;
 
 type TagSize<A> = <<A as Chacha20Type>::Aead as Aead>::TagSize;
 
-#[derive(PartialEq, Eq, Zeroize)]
+#[derive(Serialize, Deserialize, Zeroize)]
+#[serde(
+    transparent,
+    bound(
+        deserialize = "KeyType<T>: for<'a> Deserialize<'a>",
+        serialize = "KeyType<T>: Serialize"
+    )
+)]
 // SECURITY: ArrayKey is zeroized on drop
 pub struct Chacha20Key<T: Chacha20Type>(KeyType<T>);
 
@@ -83,6 +91,14 @@ impl<T: Chacha20Type> Debug for Chacha20Key<T> {
             .finish()
     }
 }
+
+impl<T: Chacha20Type> PartialEq for Chacha20Key<T> {
+    fn eq(&self, other: &Self) -> bool {
+        other.0 == self.0
+    }
+}
+
+impl<T: Chacha20Type> Eq for Chacha20Key<T> {}
 
 impl<T: Chacha20Type> KeyMeta for Chacha20Key<T> {
     type KeySize = <T::Aead as NewAead>::KeySize;
@@ -235,5 +251,18 @@ mod tests {
         }
         test_encrypt::<C20P>();
         test_encrypt::<XC20P>();
+    }
+
+    #[test]
+    fn serialize_round_trip() {
+        fn test_serialize<T: Chacha20Type>() {
+            let key = Chacha20Key::<T>::generate().unwrap();
+            let sk = key.to_secret_bytes().unwrap();
+            let bytes = serde_cbor::to_vec(&key).unwrap();
+            let deser: &[u8] = serde_cbor::from_slice(bytes.as_ref()).unwrap();
+            assert_eq!(deser, sk.as_ref());
+        }
+        test_serialize::<C20P>();
+        test_serialize::<XC20P>();
     }
 }

@@ -5,6 +5,7 @@ use core::{
     ops::{Deref, Range},
 };
 
+use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 use zeroize::Zeroize;
 
 use super::{string::MaybeStr, ResizeBuffer, WriteBuffer};
@@ -189,6 +190,41 @@ impl ResizeBuffer for SecretBytes {
         self.0.splice(range, iter::repeat(0u8).take(len));
         f(&mut self.0[start..(start + len)])?;
         Ok(())
+    }
+}
+
+impl Serialize for SecretBytes {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_bytes(self.as_ref())
+    }
+}
+
+impl<'de> Deserialize<'de> for SecretBytes {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        deserializer.deserialize_bytes(SecVisitor)
+    }
+}
+
+struct SecVisitor;
+
+impl<'de> de::Visitor<'de> for SecVisitor {
+    type Value = SecretBytes;
+
+    fn expecting(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
+        formatter.write_str("bytes")
+    }
+
+    fn visit_bytes<E>(self, value: &[u8]) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        Ok(SecretBytes::from_slice(value))
     }
 }
 

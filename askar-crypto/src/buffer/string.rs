@@ -2,18 +2,19 @@ use core::fmt::{self, Debug, Display, Formatter, Write};
 
 /// A utility type used to print or serialize a byte string as hex
 #[derive(Debug)]
-pub struct HexRepr<'r>(pub &'r [u8]);
+pub struct HexRepr<B>(pub B);
 
-impl<'r> Display for HexRepr<'r> {
+impl<B: AsRef<[u8]>> Display for HexRepr<B> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        for c in self.0 {
+        for c in self.0.as_ref() {
             f.write_fmt(format_args!("{:02x}", c))?;
         }
         Ok(())
     }
 }
 
-impl PartialEq<[u8]> for HexRepr<'_> {
+// Compare to another hex value as [u8]
+impl<B: AsRef<[u8]>> PartialEq<[u8]> for HexRepr<B> {
     fn eq(&self, other: &[u8]) -> bool {
         struct CmpWrite<'s>(::core::slice::Iter<'s, u8>);
 
@@ -32,7 +33,7 @@ impl PartialEq<[u8]> for HexRepr<'_> {
     }
 }
 
-impl PartialEq<&str> for HexRepr<'_> {
+impl<B: AsRef<[u8]>> PartialEq<&str> for HexRepr<B> {
     fn eq(&self, other: &&str) -> bool {
         self == other.as_bytes()
     }
