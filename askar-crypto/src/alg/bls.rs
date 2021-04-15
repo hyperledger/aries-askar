@@ -243,7 +243,7 @@ where
 
 fn augment_message(pk: &impl GroupEncoding, message: &[u8]) -> Vec<u8> {
     let pk = pk.to_bytes();
-    let mut ext_msg = Vec::with_capacity(pk.as_ref().len() + message.len());
+    let mut ext_msg = Vec::with_capacity(pk.len() + message.len());
     ext_msg.extend_from_slice(&pk.as_ref());
     ext_msg.extend_from_slice(&message);
     ext_msg

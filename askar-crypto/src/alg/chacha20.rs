@@ -85,7 +85,7 @@ impl<T: Chacha20Type> Debug for Chacha20Key<T> {
 }
 
 impl<T: Chacha20Type> KeyMeta for Chacha20Key<T> {
-    type SecretKeySize = <T::Aead as NewAead>::KeySize;
+    type KeySize = <T::Aead as NewAead>::KeySize;
 }
 
 impl<T: Chacha20Type> KeyGen for Chacha20Key<T> {
@@ -218,7 +218,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{buffer::SecretBytes, random::fill_random};
+    use crate::buffer::SecretBytes;
 
     #[test]
     fn encrypt_round_trip() {
@@ -226,8 +226,7 @@ mod tests {
             let input = b"hello";
             let key = Chacha20Key::<T>::generate().unwrap();
             let mut buffer = SecretBytes::from_slice(input);
-            let mut nonce = GenericArray::<u8, NonceSize<T>>::default();
-            fill_random(&mut nonce);
+            let nonce = Chacha20Key::<T>::random_nonce();
             key.encrypt_in_place(&mut buffer, &nonce, &[]).unwrap();
             assert_eq!(buffer.len(), input.len() + Chacha20Key::<T>::TAG_LENGTH);
             assert_ne!(&buffer[..], input);

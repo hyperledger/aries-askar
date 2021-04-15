@@ -46,6 +46,11 @@ impl<L: ArrayLength<u8>> ArrayKey<L> {
     }
 
     #[inline]
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    #[inline]
     pub fn random() -> Self {
         let mut slf = GenericArray::default();
         fill_random(&mut slf);

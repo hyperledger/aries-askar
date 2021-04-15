@@ -22,14 +22,21 @@ impl SecretBytes {
         slf
     }
 
+    #[inline]
     pub fn with_capacity(max_len: usize) -> Self {
         Self(Vec::with_capacity(max_len))
     }
 
+    #[inline]
     pub fn from_slice(data: &[u8]) -> Self {
         let mut v = Vec::with_capacity(data.len());
         v.extend_from_slice(data);
         Self(v)
+    }
+
+    #[inline]
+    pub fn len(&self) -> usize {
+        self.0.len()
     }
 
     /// Try to convert the buffer value to a string reference
@@ -51,10 +58,12 @@ impl SecretBytes {
         }
     }
 
+    #[inline]
     pub fn reserve(&mut self, extra: usize) {
         self.ensure_capacity(self.len() + extra)
     }
 
+    #[inline]
     pub fn into_vec(mut self) -> Vec<u8> {
         // FIXME zeroize extra capacity?
         let mut v = Vec::new(); // note: no heap allocation for empty vec

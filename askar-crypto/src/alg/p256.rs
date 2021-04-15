@@ -104,7 +104,7 @@ impl P256KeyPair {
 }
 
 impl KeyMeta for P256KeyPair {
-    type SecretKeySize = U32;
+    type KeySize = U32;
 }
 
 impl KeypairMeta for P256KeyPair {
@@ -221,10 +221,10 @@ impl FromJwk for P256KeyPair {
         // SECURITY: ArrayKey zeroizes on drop
         let mut pk_x = ArrayKey::<FieldSize>::default();
         let mut pk_y = ArrayKey::<FieldSize>::default();
-        if jwk.x.decode_base64(pk_x.as_mut())? != pk_x.as_ref().len() {
+        if jwk.x.decode_base64(pk_x.as_mut())? != pk_x.len() {
             return Err(err_msg!("invalid length for p-256 attribute 'x'"));
         }
-        if jwk.y.decode_base64(pk_y.as_mut())? != pk_y.as_ref().len() {
+        if jwk.y.decode_base64(pk_y.as_mut())? != pk_y.len() {
             return Err(err_msg!("invalid length for p-256 attribute 'y'"));
         }
         let pk = EncodedPoint::from_affine_coordinates(pk_x.as_ref(), pk_y.as_ref(), false)
@@ -232,7 +232,7 @@ impl FromJwk for P256KeyPair {
             .map_err(|_| err_msg!("error decoding p-256 public key"))?;
         let sk = if jwk.d.is_some() {
             let mut sk = ArrayKey::<FieldSize>::default();
-            if jwk.d.decode_base64(sk.as_mut())? != sk.as_ref().len() {
+            if jwk.d.decode_base64(sk.as_mut())? != sk.len() {
                 return Err(err_msg!("invalid length for p-256 attribute 'd'"));
             }
             Some(

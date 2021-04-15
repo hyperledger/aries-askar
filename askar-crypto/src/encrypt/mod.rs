@@ -1,6 +1,9 @@
-use crate::generic_array::ArrayLength;
-
-use crate::{buffer::ResizeBuffer, error::Error};
+use crate::{
+    buffer::ResizeBuffer,
+    error::Error,
+    generic_array::{ArrayLength, GenericArray},
+    random::fill_random,
+};
 
 pub mod nacl_box;
 
@@ -33,4 +36,10 @@ pub trait KeyAeadInPlace {
 pub trait KeyAeadMeta {
     type NonceSize: ArrayLength<u8>;
     type TagSize: ArrayLength<u8>;
+
+    fn random_nonce() -> GenericArray<u8, Self::NonceSize> {
+        let mut nonce = GenericArray::default();
+        fill_random(nonce.as_mut_slice());
+        nonce
+    }
 }

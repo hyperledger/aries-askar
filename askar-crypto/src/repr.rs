@@ -61,7 +61,7 @@ pub trait KeyPublicBytes {
 
 /// For concrete secret key types
 pub trait KeyMeta {
-    type SecretKeySize: ArrayLength<u8>;
+    type KeySize: ArrayLength<u8>;
 }
 
 /// For concrete secret + public key types

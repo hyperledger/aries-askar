@@ -96,7 +96,7 @@ impl Debug for X25519KeyPair {
 }
 
 impl KeyMeta for X25519KeyPair {
-    type SecretKeySize = U32;
+    type KeySize = U32;
 }
 
 impl KeypairMeta for X25519KeyPair {
@@ -184,7 +184,7 @@ impl FromJwk for X25519KeyPair {
     fn from_jwk_parts(jwk: JwkParts<'_>) -> Result<Self, Error> {
         // SECURITY: ArrayKey zeroizes on drop
         let mut pk = ArrayKey::<U32>::default();
-        if jwk.x.decode_base64(pk.as_mut())? != pk.as_ref().len() {
+        if jwk.x.decode_base64(pk.as_mut())? != pk.len() {
             return Err(err_msg!("invalid length for x25519 attribute 'x'"));
         }
         let pk = PublicKey::from(
@@ -192,7 +192,7 @@ impl FromJwk for X25519KeyPair {
         );
         let sk = if jwk.d.is_some() {
             let mut sk = ArrayKey::<U32>::default();
-            if jwk.d.decode_base64(sk.as_mut())? != sk.as_ref().len() {
+            if jwk.d.decode_base64(sk.as_mut())? != sk.len() {
                 return Err(err_msg!("invalid length for x25519 attribute 'd'"));
             }
             Some(SecretKey::from(

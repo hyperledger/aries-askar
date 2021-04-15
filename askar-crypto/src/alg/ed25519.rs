@@ -148,7 +148,7 @@ impl KeyGen for Ed25519KeyPair {
 }
 
 impl KeyMeta for Ed25519KeyPair {
-    type SecretKeySize = U32;
+    type KeySize = U32;
 }
 
 impl KeypairMeta for Ed25519KeyPair {
@@ -247,14 +247,14 @@ impl FromJwk for Ed25519KeyPair {
     fn from_jwk_parts(jwk: JwkParts<'_>) -> Result<Self, Error> {
         // SECURITY: ArrayKey zeroizes on drop
         let mut pk = ArrayKey::<U32>::default();
-        if jwk.x.decode_base64(pk.as_mut())? != pk.as_ref().len() {
+        if jwk.x.decode_base64(pk.as_mut())? != pk.len() {
             return Err(err_msg!("invalid length for ed25519 attribute 'x'"));
         }
         let pk = PublicKey::from_bytes(&pk.as_ref()[..])
             .map_err(|_| err_msg!("Invalid ed25519 public key bytes"))?;
         let sk = if jwk.d.is_some() {
             let mut sk = ArrayKey::<U32>::default();
-            if jwk.d.decode_base64(sk.as_mut())? != sk.as_ref().len() {
+            if jwk.d.decode_base64(sk.as_mut())? != sk.len() {
                 return Err(err_msg!("invalid length for ed25519 attribute 'd'"));
             }
             Some(
