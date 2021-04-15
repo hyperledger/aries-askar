@@ -1,3 +1,5 @@
+//! Storage backends supported by aries-askar
+
 #[cfg(feature = "any")]
 #[cfg_attr(docsrs, doc(cfg(feature = "any")))]
 /// Generic backend (from URI) support

@@ -14,17 +14,16 @@ mod store_key;
 pub use self::store_key::StoreKey;
 
 mod wrap_key;
-pub use self::wrap_key::{generate_raw_wrap_key, WrapKey, WrapKeyMethod};
+pub use self::wrap_key::{generate_raw_wrap_key, WrapKey, WrapKeyMethod, WrapKeyReference};
 
 use crate::{
     crypto::buffer::SecretBytes,
     error::Error,
     future::unblock,
-    storage::{
-        entry::{EncEntryTag, EntryTag},
-        types::ProfileId,
-    },
+    storage::entry::{EncEntryTag, EntryTag},
 };
+
+pub type ProfileId = i64;
 
 #[derive(Debug)]
 pub struct KeyCache {
@@ -40,7 +39,7 @@ impl KeyCache {
         }
     }
 
-    pub async fn load_key(&self, ciphertext: SecretBytes) -> Result<StoreKey, Error> {
+    pub async fn load_key(&self, ciphertext: Vec<u8>) -> Result<StoreKey, Error> {
         let wrap_key = self.wrap_key.clone();
         unblock(move || {
             let mut data = wrap_key
@@ -69,32 +68,32 @@ impl KeyCache {
 }
 
 pub(crate) trait EntryEncryptor {
-    fn prepare_input(input: &[u8]) -> Result<SecretBytes, Error> {
-        Ok(SecretBytes::from(input))
+    fn prepare_input(input: &[u8]) -> SecretBytes {
+        SecretBytes::from(input)
     }
 
-    fn encrypt_entry_category(&self, category: SecretBytes) -> Result<SecretBytes, Error>;
-    fn encrypt_entry_name(&self, name: SecretBytes) -> Result<SecretBytes, Error>;
-    fn encrypt_entry_value(&self, value: SecretBytes) -> Result<SecretBytes, Error>;
+    fn encrypt_entry_category(&self, category: SecretBytes) -> Result<Vec<u8>, Error>;
+    fn encrypt_entry_name(&self, name: SecretBytes) -> Result<Vec<u8>, Error>;
+    fn encrypt_entry_value(&self, value: SecretBytes) -> Result<Vec<u8>, Error>;
     fn encrypt_entry_tags(&self, tags: Vec<EntryTag>) -> Result<Vec<EncEntryTag>, Error>;
 
-    fn decrypt_entry_category(&self, enc_category: SecretBytes) -> Result<String, Error>;
-    fn decrypt_entry_name(&self, enc_name: SecretBytes) -> Result<String, Error>;
-    fn decrypt_entry_value(&self, enc_value: SecretBytes) -> Result<SecretBytes, Error>;
+    fn decrypt_entry_category(&self, enc_category: Vec<u8>) -> Result<String, Error>;
+    fn decrypt_entry_name(&self, enc_name: Vec<u8>) -> Result<String, Error>;
+    fn decrypt_entry_value(&self, enc_value: Vec<u8>) -> Result<SecretBytes, Error>;
     fn decrypt_entry_tags(&self, enc_tags: Vec<EncEntryTag>) -> Result<Vec<EntryTag>, Error>;
 }
 
 pub struct NullEncryptor;
 
 impl EntryEncryptor for NullEncryptor {
-    fn encrypt_entry_category(&self, category: SecretBytes) -> Result<SecretBytes, Error> {
-        Ok(category)
+    fn encrypt_entry_category(&self, category: SecretBytes) -> Result<Vec<u8>, Error> {
+        Ok(category.into_vec())
     }
-    fn encrypt_entry_name(&self, name: SecretBytes) -> Result<SecretBytes, Error> {
-        Ok(name)
+    fn encrypt_entry_name(&self, name: SecretBytes) -> Result<Vec<u8>, Error> {
+        Ok(name.into_vec())
     }
-    fn encrypt_entry_value(&self, value: SecretBytes) -> Result<SecretBytes, Error> {
-        Ok(value)
+    fn encrypt_entry_value(&self, value: SecretBytes) -> Result<Vec<u8>, Error> {
+        Ok(value.into_vec())
     }
     fn encrypt_entry_tags(&self, tags: Vec<EntryTag>) -> Result<Vec<EncEntryTag>, Error> {
         Ok(tags
@@ -114,19 +113,19 @@ impl EntryEncryptor for NullEncryptor {
             .collect())
     }
 
-    fn decrypt_entry_category(&self, enc_category: SecretBytes) -> Result<String, Error> {
-        Ok(String::from_utf8(enc_category.into_vec()).map_err(err_map!(Encryption))?)
+    fn decrypt_entry_category(&self, enc_category: Vec<u8>) -> Result<String, Error> {
+        Ok(String::from_utf8(enc_category).map_err(err_map!(Encryption))?)
     }
-    fn decrypt_entry_name(&self, enc_name: SecretBytes) -> Result<String, Error> {
-        Ok(String::from_utf8(enc_name.into_vec()).map_err(err_map!(Encryption))?)
+    fn decrypt_entry_name(&self, enc_name: Vec<u8>) -> Result<String, Error> {
+        Ok(String::from_utf8(enc_name).map_err(err_map!(Encryption))?)
     }
-    fn decrypt_entry_value(&self, enc_value: SecretBytes) -> Result<SecretBytes, Error> {
+    fn decrypt_entry_value(&self, enc_value: Vec<u8>) -> Result<SecretBytes, Error> {
         Ok(enc_value.into())
     }
     fn decrypt_entry_tags(&self, enc_tags: Vec<EncEntryTag>) -> Result<Vec<EntryTag>, Error> {
         Ok(enc_tags.into_iter().try_fold(vec![], |mut acc, tag| {
-            let name = String::from_utf8(tag.name.into_vec()).map_err(err_map!(Encryption))?;
-            let value = String::from_utf8(tag.value.into_vec()).map_err(err_map!(Encryption))?;
+            let name = String::from_utf8(tag.name).map_err(err_map!(Encryption))?;
+            let value = String::from_utf8(tag.value).map_err(err_map!(Encryption))?;
             acc.push(if tag.plaintext {
                 EntryTag::Plaintext(name, value)
             } else {

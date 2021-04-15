@@ -21,7 +21,7 @@ extern crate log;
 #[macro_use]
 extern crate serde;
 
-pub mod backends;
+pub mod backend;
 
 pub use askar_crypto as crypto;
 
@@ -33,23 +33,19 @@ pub mod future;
 /// Indy wallet compatibility support
 pub mod indy_compat;
 
-// #[cfg(feature = "ffi")]
-// #[macro_use]
-// extern crate serde_json;
+#[cfg(feature = "ffi")]
+#[macro_use]
+extern crate serde_json;
 
-// #[cfg(feature = "ffi")]
-// mod ffi;
+#[cfg(feature = "ffi")]
+mod ffi;
 
-pub mod protect;
+mod protect;
+pub use protect::{generate_raw_wrap_key, PassKey, WrapKeyMethod};
 
-pub mod storage;
-
-// #[macro_use]
-// pub(crate) mod serde_utils;
-
-// mod keys;
-// pub use self::keys::{
-//     derive_verkey, verify_signature,
-//     wrap::{generate_raw_wrap_key, WrapKeyMethod},
-//     KeyAlg, KeyCategory, KeyEntry, KeyParams, PassKey,
-// };
+mod storage;
+pub use storage::{
+    entry::{Entry, EntryTag, TagFilter},
+    key::KeyAlg,
+    types::{Backend, ManageBackend, Store},
+};

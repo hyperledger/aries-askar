@@ -14,16 +14,18 @@ use sqlx::{
     Database, Error as SqlxError, Row, TransactionManager,
 };
 
-use crate::db_utils::{
-    decode_tags, decrypt_scan_batch, encode_store_key, encode_tag_filter, expiry_timestamp,
-    extend_query, prepare_tags, random_profile_name, DbSession, DbSessionActive, DbSessionRef,
-    EncScanEntry, ExtDatabase, QueryParams, QueryPrepare, PAGE_SIZE,
+use crate::{
+    backend::db_utils::{
+        decode_tags, decrypt_scan_batch, encode_store_key, encode_tag_filter, expiry_timestamp,
+        extend_query, prepare_tags, random_profile_name, DbSession, DbSessionActive, DbSessionRef,
+        EncScanEntry, ExtDatabase, QueryParams, QueryPrepare, PAGE_SIZE,
+    },
+    error::Error,
+    future::{unblock, BoxFuture},
+    protect::{EntryEncryptor, KeyCache, PassKey, ProfileId, StoreKey, WrapKeyMethod},
+    storage::entry::{EncEntryTag, Entry, EntryKind, EntryOperation, EntryTag, TagFilter},
+    storage::types::{Backend, QueryBackend, Scan},
 };
-use crate::error::Error;
-use crate::future::{unblock, BoxFuture};
-use crate::keys::{store::StoreKey, wrap::WrapKeyMethod, EntryEncryptor, KeyCache, PassKey};
-use crate::store::{Backend, QueryBackend, Scan};
-use crate::types::{EncEntryTag, Entry, EntryKind, EntryOperation, EntryTag, ProfileId, TagFilter};
 
 mod provision;
 pub use provision::SqliteStoreOptions;
@@ -92,16 +94,16 @@ impl QueryPrepare for SqliteStore {
 impl Backend for SqliteStore {
     type Session = DbSession<Sqlite>;
 
-    fn create_profile(&self, name: Option<String>) -> BoxFuture<'_, Result<String>> {
+    fn create_profile(&self, name: Option<String>) -> BoxFuture<'_, Result<String, Error>> {
         let name = name.unwrap_or_else(random_profile_name);
         Box::pin(async move {
             let key = StoreKey::new()?;
-            let enc_key = key.to_string()?;
+            let enc_key = key.to_bytes()?;
             let mut conn = self.conn_pool.acquire().await?;
             let done =
                 sqlx::query("INSERT OR IGNORE INTO profiles (name, store_key) VALUES (?1, ?2)")
                     .bind(&name)
-                    .bind(enc_key)
+                    .bind(enc_key.into_vec())
                     .execute(&mut conn)
                     .await?;
             if done.rows_affected() == 0 {
@@ -118,7 +120,7 @@ impl Backend for SqliteStore {
         self.default_profile.as_str()
     }
 
-    fn remove_profile(&self, name: String) -> BoxFuture<'_, Result<bool>> {
+    fn remove_profile(&self, name: String) -> BoxFuture<'_, Result<bool, Error>> {
         Box::pin(async move {
             let mut conn = self.conn_pool.acquire().await?;
             Ok(sqlx::query("DELETE FROM profiles WHERE name=?")
@@ -134,7 +136,7 @@ impl Backend for SqliteStore {
         &mut self,
         method: WrapKeyMethod,
         pass_key: PassKey<'_>,
-    ) -> BoxFuture<'_, Result<()>> {
+    ) -> BoxFuture<'_, Result<(), Error>> {
         let pass_key = pass_key.into_owned();
         Box::pin(async move {
             let (wrap_key, wrap_key_ref) = unblock(move || method.resolve(pass_key)).await?;
@@ -190,7 +192,7 @@ impl Backend for SqliteStore {
         tag_filter: Option<TagFilter>,
         offset: Option<i64>,
         limit: Option<i64>,
-    ) -> BoxFuture<'_, Result<Scan<'static, Entry>>> {
+    ) -> BoxFuture<'_, Result<Scan<'static, Entry>, Error>> {
         Box::pin(async move {
             let session = self.session(profile, false)?;
             let mut active = session.owned_ref();
@@ -214,7 +216,7 @@ impl Backend for SqliteStore {
         })
     }
 
-    fn session(&self, profile: Option<String>, transaction: bool) -> Result<Self::Session> {
+    fn session(&self, profile: Option<String>, transaction: bool) -> Result<Self::Session, Error> {
         Ok(DbSession::new(
             self.conn_pool.clone(),
             self.key_cache.clone(),
@@ -223,7 +225,7 @@ impl Backend for SqliteStore {
         ))
     }
 
-    fn close(&self) -> BoxFuture<'_, Result<()>> {
+    fn close(&self) -> BoxFuture<'_, Result<(), Error>> {
         Box::pin(async move {
             self.conn_pool.close().await;
             Ok(())
@@ -237,7 +239,7 @@ impl QueryBackend for DbSession<Sqlite> {
         kind: EntryKind,
         category: &'q str,
         tag_filter: Option<TagFilter>,
-    ) -> BoxFuture<'q, Result<i64>> {
+    ) -> BoxFuture<'q, Result<i64, Error>> {
         let category = StoreKey::prepare_input(category.as_bytes());
 
         Box::pin(async move {
@@ -248,7 +250,7 @@ impl QueryBackend for DbSession<Sqlite> {
             let (enc_category, tag_filter) = unblock({
                 let params_len = params.len() + 1; // plus category
                 move || {
-                    Result::Ok((
+                    Result::<_, Error>::Ok((
                         key.encrypt_entry_category(category)?,
                         encode_tag_filter::<SqliteStore>(tag_filter, &key, params_len)?,
                     ))
@@ -272,7 +274,7 @@ impl QueryBackend for DbSession<Sqlite> {
         category: &str,
         name: &str,
         _for_update: bool,
-    ) -> BoxFuture<'_, Result<Option<Entry>>> {
+    ) -> BoxFuture<'_, Result<Option<Entry>, Error>> {
         let category = category.to_string();
         let name = name.to_string();
 
@@ -283,7 +285,7 @@ impl QueryBackend for DbSession<Sqlite> {
                 let category = StoreKey::prepare_input(category.as_bytes());
                 let name = StoreKey::prepare_input(name.as_bytes());
                 move || {
-                    Result::Ok((
+                    Result::<_, Error>::Ok((
                         key.encrypt_entry_category(category)?,
                         key.encrypt_entry_name(name)?,
                     ))
@@ -306,7 +308,7 @@ impl QueryBackend for DbSession<Sqlite> {
                     let enc_tags = decode_tags(tags)
                         .map_err(|_| err_msg!(Unexpected, "Error decoding entry tags"))?;
                     let tags = Some(key.decrypt_entry_tags(enc_tags)?);
-                    Result::Ok((value, tags))
+                    Result::<_, Error>::Ok((value, tags))
                 })
                 .await?;
                 Ok(Some(Entry::new(category, name, value, tags)))
@@ -323,7 +325,7 @@ impl QueryBackend for DbSession<Sqlite> {
         tag_filter: Option<TagFilter>,
         limit: Option<i64>,
         _for_update: bool,
-    ) -> BoxFuture<'q, Result<Vec<Entry>>> {
+    ) -> BoxFuture<'q, Result<Vec<Entry>, Error>> {
         let category = category.to_string();
         Box::pin(async move {
             let mut active = self.borrow_mut();
@@ -356,7 +358,7 @@ impl QueryBackend for DbSession<Sqlite> {
         kind: EntryKind,
         category: &'q str,
         tag_filter: Option<TagFilter>,
-    ) -> BoxFuture<'q, Result<i64>> {
+    ) -> BoxFuture<'q, Result<i64, Error>> {
         let category = StoreKey::prepare_input(category.as_bytes());
 
         Box::pin(async move {
@@ -367,7 +369,7 @@ impl QueryBackend for DbSession<Sqlite> {
             let (enc_category, tag_filter) = unblock({
                 let params_len = params.len() + 1; // plus category
                 move || {
-                    Result::Ok((
+                    Result::<_, Error>::Ok((
                         key.encrypt_entry_category(category)?,
                         encode_tag_filter::<SqliteStore>(tag_filter, &key, params_len)?,
                     ))
@@ -396,7 +398,7 @@ impl QueryBackend for DbSession<Sqlite> {
         value: Option<&'q [u8]>,
         tags: Option<&'q [EntryTag]>,
         expiry_ms: Option<i64>,
-    ) -> BoxFuture<'q, Result<()>> {
+    ) -> BoxFuture<'q, Result<(), Error>> {
         let category = StoreKey::prepare_input(category.as_bytes());
         let name = StoreKey::prepare_input(name.as_bytes());
 
@@ -407,11 +409,13 @@ impl QueryBackend for DbSession<Sqlite> {
                 Box::pin(async move {
                     let (_, key) = acquire_key(&mut *self).await?;
                     let (enc_category, enc_name, enc_value, enc_tags) = unblock(move || {
-                        Result::Ok((
+                        Result::<_, Error>::Ok((
                             key.encrypt_entry_category(category)?,
                             key.encrypt_entry_name(name)?,
                             key.encrypt_entry_value(value)?,
-                            tags.map(|t| key.encrypt_entry_tags(t)).transpose()?,
+                            tags.transpose()?
+                                .map(|t| key.encrypt_entry_tags(t))
+                                .transpose()?,
                         ))
                     })
                     .await?;
@@ -438,7 +442,7 @@ impl QueryBackend for DbSession<Sqlite> {
             EntryOperation::Remove => Box::pin(async move {
                 let (_, key) = acquire_key(&mut *self).await?;
                 let (enc_category, enc_name) = unblock(move || {
-                    Result::Ok((
+                    Result::<_, Error>::Ok((
                         key.encrypt_entry_category(category)?,
                         key.encrypt_entry_name(name)?,
                     ))
@@ -450,7 +454,7 @@ impl QueryBackend for DbSession<Sqlite> {
         }
     }
 
-    fn close(self, commit: bool) -> BoxFuture<'static, Result<()>> {
+    fn close(self, commit: bool) -> BoxFuture<'static, Result<(), Error>> {
         Box::pin(DbSession::close(self, commit))
     }
 }
@@ -474,7 +478,7 @@ impl ExtDatabase for Sqlite {
     }
 }
 
-async fn acquire_key(session: &mut DbSession<Sqlite>) -> Result<(ProfileId, Arc<StoreKey>)> {
+async fn acquire_key(session: &mut DbSession<Sqlite>) -> Result<(ProfileId, Arc<StoreKey>), Error> {
     if let Some(ret) = session.profile_and_key() {
         Ok(ret)
     } else {
@@ -485,7 +489,7 @@ async fn acquire_key(session: &mut DbSession<Sqlite>) -> Result<(ProfileId, Arc<
 
 async fn acquire_session<'q>(
     session: &'q mut DbSession<Sqlite>,
-) -> Result<DbSessionActive<'q, Sqlite>> {
+) -> Result<DbSessionActive<'q, Sqlite>, Error> {
     session.make_active(&resolve_profile_key).await
 }
 
@@ -493,7 +497,7 @@ async fn resolve_profile_key(
     conn: &mut PoolConnection<Sqlite>,
     cache: Arc<KeyCache>,
     profile: String,
-) -> Result<(ProfileId, Arc<StoreKey>)> {
+) -> Result<(ProfileId, Arc<StoreKey>), Error> {
     if let Some((pid, key)) = cache.get_profile(profile.as_str()).await {
         Ok((pid, key))
     } else {
@@ -520,7 +524,7 @@ async fn perform_insert<'q>(
     enc_value: &[u8],
     enc_tags: Option<Vec<EncEntryTag>>,
     expiry_ms: Option<i64>,
-) -> Result<()> {
+) -> Result<(), Error> {
     trace!("Insert entry");
     let done = sqlx::query(INSERT_QUERY)
         .bind(active.profile_id)
@@ -555,7 +559,7 @@ async fn perform_remove<'q>(
     enc_category: &[u8],
     enc_name: &[u8],
     ignore_error: bool,
-) -> Result<()> {
+) -> Result<(), Error> {
     trace!("Remove entry");
     let done = sqlx::query(DELETE_QUERY)
         .bind(active.profile_id)
@@ -580,7 +584,7 @@ fn perform_scan<'q>(
     tag_filter: Option<TagFilter>,
     offset: Option<i64>,
     limit: Option<i64>,
-) -> impl Stream<Item = Result<Vec<EncScanEntry>>> + 'q {
+) -> impl Stream<Item = Result<Vec<EncScanEntry>, Error>> + 'q {
     try_stream! {
         let mut params = QueryParams::new();
         params.push(profile_id);
@@ -590,7 +594,7 @@ fn perform_scan<'q>(
             let category = StoreKey::prepare_input(category.as_bytes());
             let params_len = params.len() + 1; // plus category
             move || {
-                Result::Ok((
+                Result::<_, Error>::Ok((
                     key.encrypt_entry_category(category)?,
                     encode_tag_filter::<SqliteStore>(tag_filter, &key, params_len)?
                 ))
@@ -624,9 +628,9 @@ fn perform_scan<'q>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db_utils::replace_arg_placeholders;
+    use crate::backend::db_utils::replace_arg_placeholders;
     use crate::future::block_on;
-    use crate::keys::wrap::{generate_raw_wrap_key, WrapKeyMethod};
+    use crate::protect::{generate_raw_wrap_key, WrapKeyMethod};
 
     #[test]
     fn sqlite_check_expiry_timestamp() {
@@ -646,7 +650,7 @@ mod tests {
             if !cmp {
                 panic!("now ({}) > expiry timestamp ({})", now, cmp_ts);
             }
-            Result::Ok(())
+            Result::<_, Error>::Ok(())
         })
         .unwrap();
     }

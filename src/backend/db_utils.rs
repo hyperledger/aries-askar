@@ -7,20 +7,22 @@ use sqlx::{
     IntoArguments, Pool, TransactionManager, Type,
 };
 
-use super::entry::{EncEntryTag, Entry, EntryTag, Expiry, ProfileId, TagFilter};
-use super::wql::{
-    sql::TagSqlEncoder,
-    tags::{tag_query, TagQueryEncoder},
-};
-use crate::error::Error;
-use crate::future::BoxFuture;
-use crate::keys::{
-    store::StoreKey,
-    wrap::{WrapKey, WrapKeyMethod},
-    EntryEncryptor, KeyCache, PassKey,
+use crate::{
+    error::Error,
+    future::BoxFuture,
+    protect::{EntryEncryptor, KeyCache, PassKey, ProfileId, StoreKey, WrapKey, WrapKeyMethod},
+    storage::{
+        entry::{EncEntryTag, Entry, EntryTag, TagFilter},
+        wql::{
+            sql::TagSqlEncoder,
+            tags::{tag_query, TagQueryEncoder},
+        },
+    },
 };
 
 pub const PAGE_SIZE: usize = 32;
+
+pub type Expiry = chrono::DateTime<chrono::Utc>;
 
 #[derive(Debug)]
 pub(crate) enum DbSessionState<DB: ExtDatabase> {
@@ -169,7 +171,7 @@ impl<'q, DB: ExtDatabase> Drop for DbSession<DB> {
 }
 
 pub(crate) trait GetProfileKey<'a, DB: Database> {
-    type Fut: Future<Output = Result<(ProfileId, Arc<StoreKey>)>, Error>;
+    type Fut: Future<Output = Result<(ProfileId, Arc<StoreKey>), Error>>;
     fn call_once(
         self,
         conn: &'a mut PoolConnection<DB>,
@@ -555,7 +557,7 @@ pub fn encode_tag_filter<Q: QueryPrepare>(
 
 // convert a slice of tags into a Vec, when ensuring there is
 // adequate space in the allocations to reuse them during encryption
-pub fn prepare_tags(tags: &[EntryTag]) -> Vec<EntryTag> {
+pub fn prepare_tags(tags: &[EntryTag]) -> Result<Vec<EntryTag>, Error> {
     let mut result = Vec::with_capacity(tags.len());
     for tag in tags {
         result.push(match tag {
@@ -577,7 +579,7 @@ pub fn prepare_tags(tags: &[EntryTag]) -> Vec<EntryTag> {
             ),
         });
     }
-    result
+    Ok(result)
 }
 
 pub fn extend_query<'q, Q: QueryPrepare>(
@@ -614,9 +616,7 @@ pub fn init_keys<'a>(
 }
 
 pub fn encode_store_key(store_key: &StoreKey, wrap_key: &WrapKey) -> Result<Vec<u8>, Error> {
-    let enc_store_key = store_key.to_string()?;
-    let result = wrap_key.wrap_data(enc_store_key.into())?;
-    Ok(result)
+    wrap_key.wrap_data(store_key.to_bytes()?)
 }
 
 #[inline]

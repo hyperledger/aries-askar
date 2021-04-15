@@ -105,37 +105,37 @@ macro_rules! backend_tests {
             })
         }
 
-        #[test]
-        fn keypair_create_fetch() {
-            block_on(async {
-                let db = $init.await;
-                super::utils::db_keypair_create_fetch(&db).await;
-            })
-        }
+        // #[test]
+        // fn keypair_create_fetch() {
+        //     block_on(async {
+        //         let db = $init.await;
+        //         super::utils::db_keypair_create_fetch(&db).await;
+        //     })
+        // }
 
-        #[test]
-        fn keypair_sign_verify() {
-            block_on(async {
-                let db = $init.await;
-                super::utils::db_keypair_sign_verify(&db).await;
-            })
-        }
+        // #[test]
+        // fn keypair_sign_verify() {
+        //     block_on(async {
+        //         let db = $init.await;
+        //         super::utils::db_keypair_sign_verify(&db).await;
+        //     })
+        // }
 
-        #[test]
-        fn keypair_pack_unpack_anon() {
-            block_on(async {
-                let db = $init.await;
-                super::utils::db_keypair_pack_unpack_anon(&db).await;
-            })
-        }
+        // #[test]
+        // fn keypair_pack_unpack_anon() {
+        //     block_on(async {
+        //         let db = $init.await;
+        //         super::utils::db_keypair_pack_unpack_anon(&db).await;
+        //     })
+        // }
 
-        #[test]
-        fn keypair_pack_unpack_auth() {
-            block_on(async {
-                let db = $init.await;
-                super::utils::db_keypair_pack_unpack_auth(&db).await;
-            })
-        }
+        // #[test]
+        // fn keypair_pack_unpack_auth() {
+        //     block_on(async {
+        //         let db = $init.await;
+        //         super::utils::db_keypair_pack_unpack_auth(&db).await;
+        //     })
+        // }
 
         #[test]
         fn txn_rollback() {
@@ -181,7 +181,7 @@ macro_rules! backend_tests {
 
 #[cfg(feature = "sqlite")]
 mod sqlite {
-    use aries_askar::sqlite::{SqliteStore, SqliteStoreOptions};
+    use aries_askar::backend::sqlite::{SqliteStore, SqliteStoreOptions};
     use aries_askar::{generate_raw_wrap_key, ManageBackend, Store, WrapKeyMethod};
     use std::path::Path;
 

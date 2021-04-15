@@ -57,27 +57,28 @@ impl WrapKey {
         self.0.is_none()
     }
 
-    pub fn wrap_data(&self, mut data: SecretBytes) -> Result<SecretBytes, Error> {
+    pub fn wrap_data(&self, mut data: SecretBytes) -> Result<Vec<u8>, Error> {
         match &self.0 {
             Some(key) => {
                 let nonce = WrapKeyNonce::random();
                 key.encrypt_in_place(&mut data, nonce.as_ref(), &[])?;
                 data.buffer_insert_slice(0, nonce.as_ref())?;
-                Ok(data)
+                Ok(data.into_vec())
             }
-            None => Ok(data),
+            None => Ok(data.into_vec()),
         }
     }
 
-    pub fn unwrap_data(&self, mut ciphertext: SecretBytes) -> Result<SecretBytes, Error> {
+    pub fn unwrap_data(&self, ciphertext: Vec<u8>) -> Result<SecretBytes, Error> {
         match &self.0 {
             Some(key) => {
-                let nonce = WrapKeyNonce::from_slice(&ciphertext.as_ref()[..WrapKeyNonce::SIZE]);
-                ciphertext.buffer_remove(0..WrapKeyNonce::SIZE)?;
-                key.decrypt_in_place(&mut ciphertext, nonce.as_ref(), &[])?;
-                Ok(ciphertext)
+                let nonce = WrapKeyNonce::from_slice(&ciphertext[..WrapKeyNonce::SIZE]);
+                let mut buffer = SecretBytes::from(ciphertext);
+                buffer.buffer_remove(0..WrapKeyNonce::SIZE)?;
+                key.decrypt_in_place(&mut buffer, nonce.as_ref(), &[])?;
+                Ok(buffer)
             }
-            None => Ok(ciphertext),
+            None => Ok(ciphertext.into()),
         }
     }
 
@@ -275,13 +276,10 @@ mod tests {
     #[test]
     fn derived_key_unwrap_expected() {
         let input = b"test data";
-        let wrapped = SecretBytes::from_slice(
-            &[
-                194, 156, 102, 253, 229, 11, 48, 184, 160, 119, 218, 30, 169, 188, 244, 223, 235,
-                95, 171, 234, 18, 5, 9, 115, 174, 208, 232, 37, 31, 32, 250, 216, 32, 92, 253, 45,
-                236,
-            ][..],
-        );
+        let wrapped = vec![
+            194, 156, 102, 253, 229, 11, 48, 184, 160, 119, 218, 30, 169, 188, 244, 223, 235, 95,
+            171, 234, 18, 5, 9, 115, 174, 208, 232, 37, 31, 32, 250, 216, 32, 92, 253, 45, 236,
+        ];
         let pass = PassKey::from("pass");
         let key_ref = WrapKeyReference::parse_uri("kdf:argon2i:13:mod?salt=MR6B1jrReV2JioaizEaRo6")
             .expect("Error parsing derived key ref");
@@ -292,13 +290,10 @@ mod tests {
 
     #[test]
     fn derived_key_check_bad_password() {
-        let wrapped = SecretBytes::from_slice(
-            &[
-                194, 156, 102, 253, 229, 11, 48, 184, 160, 119, 218, 30, 169, 188, 244, 223, 235,
-                95, 171, 234, 18, 5, 9, 115, 174, 208, 232, 37, 31, 32, 250, 216, 32, 92, 253, 45,
-                236,
-            ][..],
-        );
+        let wrapped = vec![
+            194, 156, 102, 253, 229, 11, 48, 184, 160, 119, 218, 30, 169, 188, 244, 223, 235, 95,
+            171, 234, 18, 5, 9, 115, 174, 208, 232, 37, 31, 32, 250, 216, 32, 92, 253, 45, 236,
+        ];
         let key_ref = WrapKeyReference::parse_uri("kdf:argon2i:13:mod?salt=MR6B1jrReV2JioaizEaRo6")
             .expect("Error parsing derived key ref");
         let check_bad_pass = key_ref

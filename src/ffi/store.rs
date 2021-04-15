@@ -1,11 +1,14 @@
-use std::collections::BTreeMap;
-use std::ffi::CString;
-use std::mem;
-use std::os::raw::c_char;
-use std::ptr;
-use std::sync::{
-    atomic::{AtomicUsize, Ordering},
-    Arc,
+use std::{
+    collections::BTreeMap,
+    ffi::CString,
+    mem,
+    os::raw::c_char,
+    ptr,
+    str::FromStr,
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    },
 };
 
 use async_mutex::{Mutex, MutexGuardArc};
@@ -14,14 +17,18 @@ use indy_utils::new_handle_type;
 use once_cell::sync::Lazy;
 use zeroize::Zeroize;
 
-use super::error::set_last_error;
-use super::{CallbackId, EnsureCallback, ErrorCode};
-use crate::any::{AnySession, AnyStore};
-use crate::entry::{Entry, EntryOperation, EntryTagSet, TagFilter};
-use crate::error::Result as KvResult;
-use crate::future::spawn_ok;
-use crate::keys::{wrap::WrapKeyMethod, KeyAlg, KeyCategory, KeyEntry, PassKey};
-use crate::store::{ManageBackend, Scan};
+use super::{error::set_last_error, CallbackId, EnsureCallback, ErrorCode};
+use crate::{
+    backend::any::{AnySession, AnyStore},
+    error::Result as KvResult,
+    future::spawn_ok,
+    protect::{PassKey, WrapKeyMethod},
+    storage::{
+        entry::{Entry, EntryOperation, EntryTagSet, TagFilter},
+        key::{KeyCategory, KeyEntry},
+        types::{ManageBackend, Scan},
+    },
+};
 
 new_handle_type!(StoreHandle, FFI_STORE_COUNTER);
 new_handle_type!(SessionHandle, FFI_SESSION_COUNTER);
@@ -261,13 +268,6 @@ impl FfiEntry {
             }
         }
     }
-}
-
-#[repr(C)]
-pub struct FfiUnpackResult {
-    unpacked: ByteBuffer,
-    recipient: *const c_char,
-    sender: *const c_char,
 }
 
 #[no_mangle]
@@ -880,62 +880,6 @@ pub extern "C" fn askar_session_update(
 }
 
 #[no_mangle]
-pub extern "C" fn askar_session_create_keypair(
-    handle: SessionHandle,
-    alg: FfiStr<'_>,
-    metadata: FfiStr<'_>,
-    tags: FfiStr<'_>,
-    seed: ByteBuffer,
-    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, results: *const c_char)>,
-    cb_id: CallbackId,
-) -> ErrorCode {
-    catch_err! {
-        trace!("Create keypair");
-        let cb = cb.ok_or_else(|| err_msg!("No callback provided"))?;
-        let alg = alg.as_opt_str().map(|alg| KeyAlg::from_str(alg).unwrap()).ok_or_else(|| err_msg!("Key algorithm not provided"))?;
-        let metadata = metadata.into_opt_string();
-        let tags = if let Some(tags) = tags.as_opt_str() {
-            Some(
-                serde_json::from_str::<EntryTagSet>(tags)
-                    .map_err(err_map!("Error decoding tags"))?
-                    .into_inner(),
-            )
-        } else {
-            None
-        };
-        let seed = if seed.as_slice().len() > 0 {
-            Some(seed.as_slice().to_vec())
-        } else {
-            None
-        };
-
-        let cb = EnsureCallback::new(move |result|
-            match result {
-                Ok(ident) => {
-                    cb(cb_id, ErrorCode::Success, rust_string_to_c(ident))
-                }
-                Err(err) => cb(cb_id, set_last_error(Some(err)), ptr::null()),
-            }
-        );
-
-        spawn_ok(async move {
-            let result = async {
-                let mut session = handle.load().await?;
-                let key_entry = session.create_keypair(
-                    alg,
-                    metadata.as_ref().map(String::as_str),
-                    seed.as_ref().map(Vec::as_ref),
-                    tags.as_ref().map(Vec::as_slice),
-                ).await?;
-                Ok(key_entry.ident.clone())
-            }.await;
-            cb.resolve(result);
-        });
-        Ok(ErrorCode::Success)
-    }
-}
-
-#[no_mangle]
 pub extern "C" fn askar_session_fetch_keypair(
     handle: SessionHandle,
     ident: FfiStr<'_>,
@@ -1020,138 +964,6 @@ pub extern "C" fn askar_session_update_keypair(
                     tags.as_ref().map(Vec::as_slice)
                 ).await?;
                 Ok(())
-            }.await;
-            cb.resolve(result);
-        });
-        Ok(ErrorCode::Success)
-    }
-}
-
-#[no_mangle]
-pub extern "C" fn askar_session_sign_message(
-    handle: SessionHandle,
-    key_ident: FfiStr<'_>,
-    message: ByteBuffer,
-    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, results: ByteBuffer)>,
-    cb_id: CallbackId,
-) -> ErrorCode {
-    catch_err! {
-        trace!("Sign message");
-        let cb = cb.ok_or_else(|| err_msg!("No callback provided"))?;
-        let key_ident = key_ident.into_opt_string().ok_or_else(|| err_msg!("Key identity not provided"))?;
-        // copy message so the caller can drop it
-        let message = message.as_slice().to_vec();
-
-        let cb = EnsureCallback::new(move |result|
-            match result {
-                Ok(sig) => {
-                    cb(cb_id, ErrorCode::Success, ByteBuffer::from_vec(sig))
-                }
-                Err(err) => cb(cb_id, set_last_error(Some(err)), ByteBuffer::default()),
-            }
-        );
-
-        spawn_ok(async move {
-            let result = async {
-                let mut session = handle.load().await?;
-                let signature = session.sign_message(
-                    &key_ident,
-                    &message,
-                ).await?;
-                Ok(signature)
-            }.await;
-            cb.resolve(result);
-        });
-        Ok(ErrorCode::Success)
-    }
-}
-
-#[no_mangle]
-pub extern "C" fn askar_session_pack_message(
-    handle: SessionHandle,
-    recipient_vks: FfiStr<'_>,
-    from_key_ident: FfiStr<'_>,
-    message: ByteBuffer,
-    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, packed: ByteBuffer)>,
-    cb_id: CallbackId,
-) -> ErrorCode {
-    catch_err! {
-        trace!("Pack message");
-        let cb = cb.ok_or_else(|| err_msg!("No callback provided"))?;
-        let mut recips = recipient_vks.as_opt_str().ok_or_else(|| err_msg!("Recipient verkey(s) not provided"))?;
-        let mut recipient_vks = vec![];
-        loop {
-            if let Some(pos) = recips.find(",") {
-                recipient_vks.push((&recips[..pos]).to_string());
-                recips = &recips[(pos+1)..];
-            } else {
-                if !recips.is_empty() {
-                    recipient_vks.push(recips.to_string());
-                }
-                break;
-            }
-        }
-        let from_key_ident = from_key_ident.into_opt_string();
-        let message = message.as_slice().to_vec();
-
-        let cb = EnsureCallback::new(move |result|
-                match result {
-                    Ok(packed) => {
-                        cb(cb_id, ErrorCode::Success, ByteBuffer::from_vec(packed))
-                    }
-                    Err(err) => cb(cb_id, set_last_error(Some(err)), ByteBuffer::default()),
-                }
-            );
-
-        spawn_ok(async move {
-            let result = async {
-                let mut session = handle.load().await?;
-                let packed = session.pack_message(
-                    recipient_vks.iter().map(String::as_str),
-                    from_key_ident.as_ref().map(String::as_str),
-                    &message
-                ).await?;
-                Ok(packed)
-            }.await;
-            cb.resolve(result);
-        });
-        Ok(ErrorCode::Success)
-    }
-}
-
-#[no_mangle]
-pub extern "C" fn askar_session_unpack_message(
-    handle: SessionHandle,
-    message: ByteBuffer,
-    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, result: FfiUnpackResult)>,
-    cb_id: CallbackId,
-) -> ErrorCode {
-    catch_err! {
-        trace!("Unpack message");
-        let cb = cb.ok_or_else(|| err_msg!("No callback provided"))?;
-        let message = message.as_slice().to_vec();
-
-        let cb = EnsureCallback::new(move |result: KvResult<(Vec<u8>, String, Option<String>)>|
-                match result {
-                    Ok((unpacked, recipient, sender)) => {
-                        cb(cb_id, ErrorCode::Success, FfiUnpackResult {
-                            unpacked: ByteBuffer::from_vec(unpacked), recipient: rust_string_to_c(recipient), sender: sender.map(rust_string_to_c).unwrap_or(ptr::null_mut())}
-                        )
-                    }
-                    Err(err) => {
-                        eprintln!("err: {:?}", &err);
-                        cb(cb_id, set_last_error(Some(err)), FfiUnpackResult { unpacked: ByteBuffer::default(), recipient: ptr::null(), sender: ptr::null() })
-                    }
-                }
-            );
-
-        spawn_ok(async move {
-            let result = async {
-                let mut session = handle.load().await?;
-                let (unpacked, recipient, sender) = session.unpack_message(
-                    &message
-                ).await?;
-                Ok((unpacked, recipient.to_base58(), sender.map(|s| s.to_base58())))
             }.await;
             cb.resolve(result);
         });

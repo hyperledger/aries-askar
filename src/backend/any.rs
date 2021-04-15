@@ -9,10 +9,10 @@ use crate::storage::{
 };
 
 #[cfg(feature = "postgres")]
-use super::backends::postgres::{self, PostgresStore};
+use super::postgres::{self, PostgresStore};
 
 #[cfg(feature = "sqlite")]
-use super::backends::sqlite::{self, SqliteStore};
+use super::sqlite::{self, SqliteStore};
 
 /// A generic `Store` implementation for any supported backend
 pub type AnyStore = Store<AnyBackend>;

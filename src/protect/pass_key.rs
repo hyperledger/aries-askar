@@ -17,6 +17,7 @@ impl PassKey<'_> {
         PassKey(Some(Cow::Borrowed(&**self)))
     }
 
+    /// Create an empty passkey
     pub fn empty() -> PassKey<'static> {
         PassKey(None)
     }

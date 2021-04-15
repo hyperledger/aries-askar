@@ -27,6 +27,7 @@ use crate::{
 pub struct HmacKey<L: ArrayLength<u8>, H>(ArrayKey<L>, PhantomData<H>);
 
 impl<L: ArrayLength<u8>, H> HmacKey<L, H> {
+    #[allow(dead_code)]
     pub fn from_slice(key: &[u8]) -> Result<Self, Error> {
         if key.len() != L::USIZE {
             return Err(err_msg!(Encryption, "invalid length for hmac key"));

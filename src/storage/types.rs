@@ -18,10 +18,6 @@ use crate::{
     protect::{PassKey, WrapKeyMethod},
 };
 
-pub type ProfileId = i64;
-
-pub type Expiry = chrono::DateTime<chrono::Utc>;
-
 /// Represents a generic backend implementation
 pub trait Backend: Send + Sync {
     /// The type of session managed by this backend

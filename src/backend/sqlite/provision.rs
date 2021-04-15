@@ -9,15 +9,14 @@ use sqlx::{
 };
 
 use super::SqliteStore;
-use crate::db_utils::{init_keys, random_profile_name};
-use crate::error::Result;
-use crate::future::{unblock, BoxFuture};
-use crate::keys::{
-    wrap::{WrapKeyMethod, WrapKeyReference},
-    KeyCache, PassKey,
+use crate::{
+    backend::db_utils::{init_keys, random_profile_name},
+    error::Error,
+    future::{unblock, BoxFuture},
+    protect::{KeyCache, PassKey, WrapKeyMethod, WrapKeyReference},
+    storage::options::{IntoOptions, Options},
+    storage::types::{ManageBackend, Store},
 };
-use crate::options::{IntoOptions, Options};
-use crate::store::{ManageBackend, Store};
 
 /// Configuration options for Sqlite stores
 #[derive(Debug)]
@@ -29,7 +28,7 @@ pub struct SqliteStoreOptions {
 
 impl SqliteStoreOptions {
     /// Initialize `SqliteStoreOptions` from a generic set of options
-    pub fn new<'a>(options: impl IntoOptions<'a>) -> Result<Self> {
+    pub fn new<'a>(options: impl IntoOptions<'a>) -> Result<Self, Error> {
         let mut opts = options.into_options()?;
         let max_connections = if let Some(max_conn) = opts.query.remove("max_connections") {
             max_conn
@@ -74,7 +73,7 @@ impl SqliteStoreOptions {
         pass_key: PassKey<'_>,
         profile: Option<&'_ str>,
         recreate: bool,
-    ) -> Result<Store<SqliteStore>> {
+    ) -> Result<Store<SqliteStore>, Error> {
         if recreate && !self.in_memory {
             try_remove_file(self.path.to_string()).await?;
         }
@@ -119,7 +118,7 @@ impl SqliteStoreOptions {
         method: Option<WrapKeyMethod>,
         pass_key: PassKey<'_>,
         profile: Option<&'_ str>,
-    ) -> Result<Store<SqliteStore>> {
+    ) -> Result<Store<SqliteStore>, Error> {
         let conn_pool = match self.pool(false).await {
             Ok(pool) => Ok(pool),
             Err(SqlxError::Database(db_err)) => {
@@ -139,7 +138,7 @@ impl SqliteStoreOptions {
     }
 
     /// Remove the Sqlite store defined by these configuration options
-    pub async fn remove(self) -> Result<bool> {
+    pub async fn remove(self) -> Result<bool, Error> {
         if self.in_memory {
             Ok(true)
         } else {
@@ -170,7 +169,7 @@ impl<'a> ManageBackend<'a> for SqliteStoreOptions {
         method: Option<WrapKeyMethod>,
         pass_key: PassKey<'a>,
         profile: Option<&'a str>,
-    ) -> BoxFuture<'a, Result<Store<SqliteStore>>> {
+    ) -> BoxFuture<'a, Result<Store<SqliteStore>, Error>> {
         Box::pin(self.open(method, pass_key, profile))
     }
 
@@ -180,11 +179,11 @@ impl<'a> ManageBackend<'a> for SqliteStoreOptions {
         pass_key: PassKey<'a>,
         profile: Option<&'a str>,
         recreate: bool,
-    ) -> BoxFuture<'a, Result<Store<SqliteStore>>> {
+    ) -> BoxFuture<'a, Result<Store<SqliteStore>, Error>> {
         Box::pin(self.provision(method, pass_key, profile, recreate))
     }
 
-    fn remove_backend(self) -> BoxFuture<'a, Result<bool>> {
+    fn remove_backend(self) -> BoxFuture<'a, Result<bool, Error>> {
         Box::pin(self.remove())
     }
 }
@@ -194,7 +193,7 @@ async fn init_db(
     profile_name: &str,
     method: WrapKeyMethod,
     pass_key: PassKey<'_>,
-) -> Result<KeyCache> {
+) -> Result<KeyCache, Error> {
     let (store_key, enc_store_key, wrap_key, wrap_key_ref) = unblock({
         let pass_key = pass_key.into_owned();
         move || init_keys(method, pass_key)
@@ -290,7 +289,7 @@ async fn open_db(
     pass_key: PassKey<'_>,
     profile: Option<&str>,
     path: String,
-) -> Result<Store<SqliteStore>> {
+) -> Result<Store<SqliteStore>, Error> {
     let mut conn = conn_pool.acquire().await?;
     let mut ver_ok = false;
     let mut default_profile: Option<String> = None;
@@ -356,7 +355,7 @@ async fn open_db(
     )))
 }
 
-async fn try_remove_file(path: String) -> Result<bool> {
+async fn try_remove_file(path: String) -> Result<bool, Error> {
     unblock(|| match remove_file(path) {
         Ok(()) => Ok(true),
         Err(err) if err.kind() == IoErrorKind::NotFound => Ok(false),

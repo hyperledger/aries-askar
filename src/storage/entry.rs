@@ -299,8 +299,8 @@ impl Serialize for EntryTagSet {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct EncEntryTag {
-    pub name: SecretBytes,
-    pub value: SecretBytes,
+    pub name: Vec<u8>,
+    pub value: Vec<u8>,
     pub plaintext: bool,
 }
 
