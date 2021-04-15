@@ -3,7 +3,6 @@ use std::fmt::{self, Debug, Formatter};
 use std::sync::Arc;
 
 use async_stream::try_stream;
-
 use futures_lite::{
     pin,
     stream::{Stream, StreamExt},
@@ -11,90 +10,87 @@ use futures_lite::{
 
 use sqlx::{
     pool::PoolConnection,
-    postgres::{PgPool, Postgres},
-    Row,
+    sqlite::{Sqlite, SqlitePool},
+    Database, Error as SqlxError, Row, TransactionManager,
 };
 
-use super::db_utils::{
+use crate::db_utils::{
     decode_tags, decrypt_scan_batch, encode_store_key, encode_tag_filter, expiry_timestamp,
-    extend_query, prepare_tags, random_profile_name, replace_arg_placeholders, DbSession,
-    DbSessionActive, DbSessionRef, EncScanEntry, ExtDatabase, QueryParams, QueryPrepare, PAGE_SIZE,
+    extend_query, prepare_tags, random_profile_name, DbSession, DbSessionActive, DbSessionRef,
+    EncScanEntry, ExtDatabase, QueryParams, QueryPrepare, PAGE_SIZE,
 };
-use super::error::Result;
-use super::future::{unblock, BoxFuture};
-use super::keys::{store::StoreKey, wrap::WrapKeyMethod, EntryEncryptor, KeyCache, PassKey};
-use super::store::{Backend, QueryBackend, Scan};
-use super::types::{EncEntryTag, Entry, EntryKind, EntryOperation, EntryTag, ProfileId, TagFilter};
-
-const COUNT_QUERY: &'static str = "SELECT COUNT(*) FROM items i
-    WHERE profile_id = $1 AND kind = $2 AND category = $3
-    AND (expiry IS NULL OR expiry > CURRENT_TIMESTAMP)";
-const DELETE_QUERY: &'static str = "DELETE FROM items
-    WHERE profile_id = $1 AND kind = $2 AND category = $3 AND name = $4";
-const FETCH_QUERY: &'static str = "SELECT id, value,
-    (SELECT ARRAY_TO_STRING(ARRAY_AGG(it.plaintext || ':'
-        || ENCODE(it.name, 'hex') || ':' || ENCODE(it.value, 'hex')), ',')
-        FROM items_tags it WHERE it.item_id = i.id) tags
-    FROM items i
-    WHERE profile_id = $1 AND kind = $2 AND category = $3 AND name = $4
-    AND (expiry IS NULL OR expiry > CURRENT_TIMESTAMP)";
-const FETCH_QUERY_UPDATE: &'static str = "SELECT id, value,
-    (SELECT ARRAY_TO_STRING(ARRAY_AGG(it.plaintext || ':'
-        || ENCODE(it.name, 'hex') || ':' || ENCODE(it.value, 'hex')), ',')
-        FROM items_tags it WHERE it.item_id = i.id) tags
-    FROM items i
-    WHERE profile_id = $1 AND kind = $2 AND category = $3 AND name = $4
-    AND (expiry IS NULL OR expiry > CURRENT_TIMESTAMP) FOR UPDATE";
-const INSERT_QUERY: &'static str =
-    "INSERT INTO items (profile_id, kind, category, name, value, expiry)
-    VALUES ($1, $2, $3, $4, $5, $6)
-    ON CONFLICT DO NOTHING RETURNING id";
-const SCAN_QUERY: &'static str = "SELECT id, name, value,
-    (SELECT ARRAY_TO_STRING(ARRAY_AGG(it.plaintext || ':'
-        || ENCODE(it.name, 'hex') || ':' || ENCODE(it.value, 'hex')), ',')
-        FROM items_tags it WHERE it.item_id = i.id) tags
-    FROM items i WHERE profile_id = $1 AND kind = $2 AND category = $3
-    AND (expiry IS NULL OR expiry > CURRENT_TIMESTAMP)";
-const DELETE_ALL_QUERY: &'static str = "DELETE FROM items i
-    WHERE i.profile_id = $1 AND i.kind = $2 AND i.category = $3";
-const TAG_INSERT_QUERY: &'static str = "INSERT INTO items_tags
-    (item_id, name, value, plaintext) VALUES ($1, $2, $3, $4)";
+use crate::error::Error;
+use crate::future::{unblock, BoxFuture};
+use crate::keys::{store::StoreKey, wrap::WrapKeyMethod, EntryEncryptor, KeyCache, PassKey};
+use crate::store::{Backend, QueryBackend, Scan};
+use crate::types::{EncEntryTag, Entry, EntryKind, EntryOperation, EntryTag, ProfileId, TagFilter};
 
 mod provision;
-pub use provision::PostgresStoreOptions;
+pub use provision::SqliteStoreOptions;
 
-#[cfg(feature = "pg_test")]
-pub mod test_db;
+const COUNT_QUERY: &'static str = "SELECT COUNT(*) FROM items i
+    WHERE profile_id = ?1 AND kind = ?2 AND category = ?3
+    AND (expiry IS NULL OR expiry > DATETIME('now'))";
+const DELETE_QUERY: &'static str = "DELETE FROM items
+    WHERE profile_id = ?1 AND kind = ?2 AND category = ?3 AND name = ?4";
+const FETCH_QUERY: &'static str = "SELECT i.id, i.value,
+    (SELECT GROUP_CONCAT(it.plaintext || ':' || HEX(it.name) || ':' || HEX(it.value))
+        FROM items_tags it WHERE it.item_id = i.id) AS tags
+    FROM items i WHERE i.profile_id = ?1 AND i.kind = ?2
+    AND i.category = ?3 AND i.name = ?4
+    AND (i.expiry IS NULL OR i.expiry > DATETIME('now'))";
+const INSERT_QUERY: &'static str =
+    "INSERT OR IGNORE INTO items (profile_id, kind, category, name, value, expiry)
+    VALUES (?1, ?2, ?3, ?4, ?5, ?6)";
+const SCAN_QUERY: &'static str = "SELECT i.id, i.name, i.value,
+    (SELECT GROUP_CONCAT(it.plaintext || ':' || HEX(it.name) || ':' || HEX(it.value))
+        FROM items_tags it WHERE it.item_id = i.id) AS tags
+    FROM items i WHERE i.profile_id = ?1 AND i.kind = ?2 AND i.category = ?3
+    AND (i.expiry IS NULL OR i.expiry > DATETIME('now'))";
+const DELETE_ALL_QUERY: &'static str = "DELETE FROM items AS i
+    WHERE i.profile_id = ?1 AND i.kind = ?2 AND i.category = ?3";
+const TAG_INSERT_QUERY: &'static str = "INSERT INTO items_tags
+    (item_id, name, value, plaintext) VALUES (?1, ?2, ?3, ?4)";
 
-/// A PostgreSQL database store
-pub struct PostgresStore {
-    conn_pool: PgPool,
+/// A Sqlite database store
+pub struct SqliteStore {
+    conn_pool: SqlitePool,
     default_profile: String,
     key_cache: Arc<KeyCache>,
-    host: String,
-    name: String,
+    path: String,
 }
 
-impl PostgresStore {
+impl SqliteStore {
     pub(crate) fn new(
-        conn_pool: PgPool,
+        conn_pool: SqlitePool,
         default_profile: String,
         key_cache: KeyCache,
-        host: String,
-        name: String,
+        path: String,
     ) -> Self {
         Self {
             conn_pool,
             default_profile,
             key_cache: Arc::new(key_cache),
-            host,
-            name,
+            path,
         }
     }
 }
 
-impl Backend for PostgresStore {
-    type Session = DbSession<Postgres>;
+impl Debug for SqliteStore {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SqliteStore")
+            .field("default_profile", &self.default_profile)
+            .field("path", &self.path)
+            .finish()
+    }
+}
+
+impl QueryPrepare for SqliteStore {
+    type DB = Sqlite;
+}
+
+impl Backend for SqliteStore {
+    type Session = DbSession<Sqlite>;
 
     fn create_profile(&self, name: Option<String>) -> BoxFuture<'_, Result<String>> {
         let name = name.unwrap_or_else(random_profile_name);
@@ -102,22 +98,19 @@ impl Backend for PostgresStore {
             let key = StoreKey::new()?;
             let enc_key = key.to_string()?;
             let mut conn = self.conn_pool.acquire().await?;
-            if let Some(pid) = sqlx::query_scalar(
-                "INSERT INTO profiles (name, store_key) VALUES ($1, $2) 
-                ON CONFLICT DO NOTHING RETURNING id",
-            )
-            .bind(&name)
-            .bind(enc_key.as_bytes())
-            .fetch_optional(&mut conn)
-            .await?
-            {
-                self.key_cache
-                    .add_profile(name.clone(), pid, Arc::new(key))
-                    .await;
-                Ok(name)
-            } else {
-                Err(err_msg!(Duplicate, "Duplicate profile name"))
+            let done =
+                sqlx::query("INSERT OR IGNORE INTO profiles (name, store_key) VALUES (?1, ?2)")
+                    .bind(&name)
+                    .bind(enc_key)
+                    .execute(&mut conn)
+                    .await?;
+            if done.rows_affected() == 0 {
+                return Err(err_msg!(Duplicate, "Duplicate profile name"));
             }
+            self.key_cache
+                .add_profile(name.clone(), done.last_insert_rowid(), Arc::new(key))
+                .await;
+            Ok(name)
         })
     }
 
@@ -128,7 +121,7 @@ impl Backend for PostgresStore {
     fn remove_profile(&self, name: String) -> BoxFuture<'_, Result<bool>> {
         Box::pin(async move {
             let mut conn = self.conn_pool.acquire().await?;
-            Ok(sqlx::query("DELETE FROM profiles WHERE name=$1")
+            Ok(sqlx::query("DELETE FROM profiles WHERE name=?")
                 .bind(&name)
                 .execute(&mut conn)
                 .await?
@@ -163,7 +156,7 @@ impl Backend for PostgresStore {
             }
             drop(rows);
             for (pid, key) in upd_keys {
-                if sqlx::query("UPDATE profiles SET store_key=$1 WHERE id=$2")
+                if sqlx::query("UPDATE profiles SET store_key=?1 WHERE id=?2")
                     .bind(key)
                     .bind(pid)
                     .execute(&mut txn)
@@ -174,7 +167,7 @@ impl Backend for PostgresStore {
                     return Err(err_msg!(Backend, "Error updating profile store key"));
                 }
             }
-            if sqlx::query("UPDATE config SET value=$1 WHERE name='wrap_key'")
+            if sqlx::query("UPDATE config SET value=?1 WHERE name='wrap_key'")
                 .bind(wrap_key_ref.into_uri())
                 .execute(&mut txn)
                 .await?
@@ -211,7 +204,6 @@ impl Backend for PostgresStore {
                 tag_filter,
                 offset,
                 limit,
-                false,
             );
             let stream = scan.then(move |enc_rows| {
                 let category = category.clone();
@@ -239,17 +231,7 @@ impl Backend for PostgresStore {
     }
 }
 
-impl Debug for PostgresStore {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.debug_struct("PostgresStore")
-            .field("default_profile", &self.default_profile)
-            .field("host", &self.host)
-            .field("name", &self.name)
-            .finish()
-    }
-}
-
-impl QueryBackend for DbSession<Postgres> {
+impl QueryBackend for DbSession<Sqlite> {
     fn count<'q>(
         &'q mut self,
         kind: EntryKind,
@@ -268,14 +250,14 @@ impl QueryBackend for DbSession<Postgres> {
                 move || {
                     Result::Ok((
                         key.encrypt_entry_category(category)?,
-                        encode_tag_filter::<PostgresStore>(tag_filter, &key, params_len)?,
+                        encode_tag_filter::<SqliteStore>(tag_filter, &key, params_len)?,
                     ))
                 }
             })
             .await?;
             params.push(enc_category);
             let query =
-                extend_query::<PostgresStore>(COUNT_QUERY, &mut params, tag_filter, None, None)?;
+                extend_query::<SqliteStore>(COUNT_QUERY, &mut params, tag_filter, None, None)?;
             let mut active = acquire_session(&mut *self).await?;
             let count = sqlx::query_scalar_with(query.as_str(), params)
                 .fetch_one(active.connection_mut())
@@ -289,7 +271,7 @@ impl QueryBackend for DbSession<Postgres> {
         kind: EntryKind,
         category: &str,
         name: &str,
-        for_update: bool,
+        _for_update: bool,
     ) -> BoxFuture<'_, Result<Option<Entry>>> {
         let category = category.to_string();
         let name = name.to_string();
@@ -309,32 +291,21 @@ impl QueryBackend for DbSession<Postgres> {
             })
             .await?;
             let mut active = acquire_session(&mut *self).await?;
-            if let Some(row) = sqlx::query(if for_update && active.is_transaction() {
-                FETCH_QUERY_UPDATE
-            } else {
-                FETCH_QUERY
-            })
-            .bind(profile_id)
-            .bind(kind as i16)
-            .bind(enc_category)
-            .bind(enc_name)
-            .fetch_optional(active.connection_mut())
-            .await?
+            if let Some(row) = sqlx::query(FETCH_QUERY)
+                .bind(profile_id)
+                .bind(kind as i16)
+                .bind(enc_category)
+                .bind(enc_name)
+                .fetch_optional(active.connection_mut())
+                .await?
             {
                 let value = row.try_get(1)?;
-                let tags = row.try_get::<Option<String>, _>(2)?.map(String::into_bytes);
+                let tags = row.try_get(2)?;
                 let (value, tags) = unblock(move || {
                     let value = key.decrypt_entry_value(value)?;
-                    let tags = if let Some(enc_tags) = tags {
-                        Some(
-                            key.decrypt_entry_tags(
-                                decode_tags(enc_tags)
-                                    .map_err(|_| err_msg!(Unexpected, "Error decoding tags"))?,
-                            )?,
-                        )
-                    } else {
-                        None
-                    };
+                    let enc_tags = decode_tags(tags)
+                        .map_err(|_| err_msg!(Unexpected, "Error decoding entry tags"))?;
+                    let tags = Some(key.decrypt_entry_tags(enc_tags)?);
                     Result::Ok((value, tags))
                 })
                 .await?;
@@ -351,11 +322,10 @@ impl QueryBackend for DbSession<Postgres> {
         category: &'q str,
         tag_filter: Option<TagFilter>,
         limit: Option<i64>,
-        for_update: bool,
+        _for_update: bool,
     ) -> BoxFuture<'q, Result<Vec<Entry>>> {
         let category = category.to_string();
         Box::pin(async move {
-            let for_update = for_update && self.is_transaction();
             let mut active = self.borrow_mut();
             let (profile_id, key) = acquire_key(&mut *active).await?;
             let scan = perform_scan(
@@ -367,7 +337,6 @@ impl QueryBackend for DbSession<Postgres> {
                 tag_filter,
                 None,
                 limit,
-                for_update,
             );
             pin!(scan);
             let mut enc_rows = vec![];
@@ -400,19 +369,14 @@ impl QueryBackend for DbSession<Postgres> {
                 move || {
                     Result::Ok((
                         key.encrypt_entry_category(category)?,
-                        encode_tag_filter::<PostgresStore>(tag_filter, &key, params_len)?,
+                        encode_tag_filter::<SqliteStore>(tag_filter, &key, params_len)?,
                     ))
                 }
             })
             .await?;
             params.push(enc_category);
-            let query = extend_query::<PostgresStore>(
-                DELETE_ALL_QUERY,
-                &mut params,
-                tag_filter,
-                None,
-                None,
-            )?;
+            let query =
+                extend_query::<SqliteStore>(DELETE_ALL_QUERY, &mut params, tag_filter, None, None)?;
 
             let mut active = acquire_session(&mut *self).await?;
             let removed = sqlx::query_with(query.as_str(), params)
@@ -437,7 +401,7 @@ impl QueryBackend for DbSession<Postgres> {
         let name = StoreKey::prepare_input(name.as_bytes());
 
         match operation {
-            EntryOperation::Insert => {
+            op @ EntryOperation::Insert | op @ EntryOperation::Replace => {
                 let value = StoreKey::prepare_input(value.unwrap());
                 let tags = tags.map(prepare_tags);
                 Box::pin(async move {
@@ -453,38 +417,9 @@ impl QueryBackend for DbSession<Postgres> {
                     .await?;
                     let mut active = acquire_session(&mut *self).await?;
                     let mut txn = active.as_transaction().await?;
-                    perform_insert(
-                        &mut txn,
-                        kind,
-                        &enc_category,
-                        &enc_name,
-                        &enc_value,
-                        enc_tags,
-                        expiry_ms,
-                    )
-                    .await?;
-                    txn.commit().await?;
-                    Ok(())
-                })
-            }
-            EntryOperation::Replace => {
-                let value = StoreKey::prepare_input(value.unwrap());
-                let tags = tags.map(prepare_tags);
-                Box::pin(async move {
-                    let (_, key) = acquire_key(&mut *self).await?;
-                    let (enc_category, enc_name, enc_value, enc_tags) = unblock(move || {
-                        Result::Ok((
-                            key.encrypt_entry_category(category)?,
-                            key.encrypt_entry_name(name)?,
-                            key.encrypt_entry_value(value)?,
-                            tags.map(|t| key.encrypt_entry_tags(t)).transpose()?,
-                        ))
-                    })
-                    .await?;
-
-                    let mut active = acquire_session(&mut *self).await?;
-                    let mut txn = active.as_transaction().await?;
-                    perform_remove(&mut txn, kind, &enc_category, &enc_name, false).await?;
+                    if op == EntryOperation::Replace {
+                        perform_remove(&mut txn, kind, &enc_category, &enc_name, false).await?;
+                    }
                     perform_insert(
                         &mut txn,
                         kind,
@@ -520,36 +455,26 @@ impl QueryBackend for DbSession<Postgres> {
     }
 }
 
-impl ExtDatabase for Postgres {}
-
-impl QueryPrepare for PostgresStore {
-    type DB = Postgres;
-
-    fn placeholder(index: i64) -> String {
-        format!("${}", index)
-    }
-
-    fn limit_query<'q>(
-        mut query: String,
-        args: &mut QueryParams<'q, Self::DB>,
-        offset: Option<i64>,
-        limit: Option<i64>,
-    ) -> String
-    where
-        i64: for<'e> sqlx::Encode<'e, Self::DB> + sqlx::Type<Self::DB>,
-    {
-        if offset.is_some() || limit.is_some() {
-            let last_idx = (args.len() + 1) as i64;
-            args.push(limit);
-            args.push(offset.unwrap_or(0));
-            let limit = replace_arg_placeholders::<Self>(" LIMIT $$ OFFSET $$", last_idx);
-            query.push_str(&limit);
-        }
-        query
+impl ExtDatabase for Sqlite {
+    fn start_transaction(
+        conn: &mut PoolConnection<Self>,
+        nested: bool,
+    ) -> BoxFuture<'_, std::result::Result<(), SqlxError>> {
+        // FIXME - this is a horrible workaround because there is currently
+        // no good way to start an immediate transaction with sqlx. Without this
+        // adjustment, updates will run into 'database is locked' errors.
+        Box::pin(async move {
+            <Sqlite as Database>::TransactionManager::begin(&mut *conn).await?;
+            if !nested {
+                sqlx::query("ROLLBACK").execute(&mut *conn).await?;
+                sqlx::query("BEGIN IMMEDIATE").execute(conn).await?;
+            }
+            Ok(())
+        })
     }
 }
 
-async fn acquire_key(session: &mut DbSession<Postgres>) -> Result<(ProfileId, Arc<StoreKey>)> {
+async fn acquire_key(session: &mut DbSession<Sqlite>) -> Result<(ProfileId, Arc<StoreKey>)> {
     if let Some(ret) = session.profile_and_key() {
         Ok(ret)
     } else {
@@ -559,13 +484,13 @@ async fn acquire_key(session: &mut DbSession<Postgres>) -> Result<(ProfileId, Ar
 }
 
 async fn acquire_session<'q>(
-    session: &'q mut DbSession<Postgres>,
-) -> Result<DbSessionActive<'q, Postgres>> {
+    session: &'q mut DbSession<Sqlite>,
+) -> Result<DbSessionActive<'q, Sqlite>> {
     session.make_active(&resolve_profile_key).await
 }
 
 async fn resolve_profile_key(
-    conn: &mut PoolConnection<Postgres>,
+    conn: &mut PoolConnection<Sqlite>,
     cache: Arc<KeyCache>,
     profile: String,
 ) -> Result<(ProfileId, Arc<StoreKey>)> {
@@ -588,7 +513,7 @@ async fn resolve_profile_key(
 }
 
 async fn perform_insert<'q>(
-    active: &mut DbSessionActive<'q, Postgres>,
+    active: &mut DbSessionActive<'q, Sqlite>,
     kind: EntryKind,
     enc_category: &[u8],
     enc_name: &[u8],
@@ -597,16 +522,19 @@ async fn perform_insert<'q>(
     expiry_ms: Option<i64>,
 ) -> Result<()> {
     trace!("Insert entry");
-    let row_id: i64 = sqlx::query_scalar(INSERT_QUERY)
+    let done = sqlx::query(INSERT_QUERY)
         .bind(active.profile_id)
         .bind(kind as i16)
         .bind(enc_category)
         .bind(enc_name)
         .bind(enc_value)
         .bind(expiry_ms.map(expiry_timestamp).transpose()?)
-        .fetch_optional(active.connection_mut())
-        .await?
-        .ok_or_else(|| err_msg!(Duplicate, "Duplicate row"))?;
+        .execute(active.connection_mut())
+        .await?;
+    if done.rows_affected() == 0 {
+        return Err(err_msg!(Duplicate, "Duplicate row"));
+    }
+    let row_id = done.last_insert_rowid();
     if let Some(tags) = enc_tags {
         for tag in tags {
             sqlx::query(TAG_INSERT_QUERY)
@@ -622,7 +550,7 @@ async fn perform_insert<'q>(
 }
 
 async fn perform_remove<'q>(
-    active: &mut DbSessionActive<'q, Postgres>,
+    active: &mut DbSessionActive<'q, Sqlite>,
     kind: EntryKind,
     enc_category: &[u8],
     enc_name: &[u8],
@@ -644,7 +572,7 @@ async fn perform_remove<'q>(
 }
 
 fn perform_scan<'q>(
-    mut active: DbSessionRef<'q, Postgres>,
+    mut active: DbSessionRef<'q, Sqlite>,
     profile_id: ProfileId,
     key: Arc<StoreKey>,
     kind: EntryKind,
@@ -652,7 +580,6 @@ fn perform_scan<'q>(
     tag_filter: Option<TagFilter>,
     offset: Option<i64>,
     limit: Option<i64>,
-    for_update: bool,
 ) -> impl Stream<Item = Result<Vec<EncScanEntry>>> + 'q {
     try_stream! {
         let mut params = QueryParams::new();
@@ -665,22 +592,20 @@ fn perform_scan<'q>(
             move || {
                 Result::Ok((
                     key.encrypt_entry_category(category)?,
-                    encode_tag_filter::<PostgresStore>(tag_filter, &key, params_len)?
+                    encode_tag_filter::<SqliteStore>(tag_filter, &key, params_len)?
                 ))
             }
         }).await?;
         params.push(enc_category);
-        let mut query = extend_query::<PostgresStore>(SCAN_QUERY, &mut params, tag_filter, offset, limit)?;
-        if for_update {
-            query.push_str(" FOR UPDATE");
-        }
+        let query = extend_query::<SqliteStore>(SCAN_QUERY, &mut params, tag_filter, offset, limit)?;
+
         let mut batch = Vec::with_capacity(PAGE_SIZE);
 
         let mut acquired = acquire_session(&mut *active).await?;
         let mut rows = sqlx::query_with(query.as_str(), params).fetch(acquired.connection_mut());
         while let Some(row) = rows.try_next().await? {
             batch.push(EncScanEntry {
-                name: row.try_get(1)?, value: row.try_get(2)?, tags: row.try_get::<Option<String>, _>(3)?.map(String::into_bytes)
+                name: row.try_get(1)?, value: row.try_get(2)?, tags: row.try_get(3)?
             });
             if batch.len() == PAGE_SIZE {
                 yield batch.split_off(0);
@@ -690,7 +615,7 @@ fn perform_scan<'q>(
         drop(acquired);
         drop(active);
 
-        if batch.len() > 0 {
+        if !batch.is_empty() {
             yield batch;
         }
     }
@@ -700,12 +625,41 @@ fn perform_scan<'q>(
 mod tests {
     use super::*;
     use crate::db_utils::replace_arg_placeholders;
+    use crate::future::block_on;
+    use crate::keys::wrap::{generate_raw_wrap_key, WrapKeyMethod};
 
     #[test]
-    fn postgres_simple_and_convert_args_works() {
+    fn sqlite_check_expiry_timestamp() {
+        block_on(async {
+            let key = generate_raw_wrap_key(None)?;
+            let db = SqliteStoreOptions::in_memory()
+                .provision(WrapKeyMethod::RawKey, key, None, false)
+                .await?;
+            let ts = expiry_timestamp(1000).unwrap();
+            let check = sqlx::query("SELECT datetime('now'), ?1, ?1 > datetime('now')")
+                .bind(ts)
+                .fetch_one(&db.inner().conn_pool)
+                .await?;
+            let now: String = check.try_get(0)?;
+            let cmp_ts: String = check.try_get(1)?;
+            let cmp: bool = check.try_get(2)?;
+            if !cmp {
+                panic!("now ({}) > expiry timestamp ({})", now, cmp_ts);
+            }
+            Result::Ok(())
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn sqlite_query_placeholders() {
         assert_eq!(
-            &replace_arg_placeholders::<PostgresStore>("This $$ is $10 a $$ string!", 3),
-            "This $3 is $12 a $5 string!",
+            &replace_arg_placeholders::<SqliteStore>("This $$ is $10 a $$ string!", 3),
+            "This ?3 is ?12 a ?5 string!",
+        );
+        assert_eq!(
+            &replace_arg_placeholders::<SqliteStore>("This $a is a string!", 1),
+            "This $a is a string!",
         );
     }
 }

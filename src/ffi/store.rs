@@ -3,7 +3,6 @@ use std::ffi::CString;
 use std::mem;
 use std::os::raw::c_char;
 use std::ptr;
-use std::str::FromStr;
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
     Arc,
@@ -18,11 +17,11 @@ use zeroize::Zeroize;
 use super::error::set_last_error;
 use super::{CallbackId, EnsureCallback, ErrorCode};
 use crate::any::{AnySession, AnyStore};
+use crate::entry::{Entry, EntryOperation, EntryTagSet, TagFilter};
 use crate::error::Result as KvResult;
 use crate::future::spawn_ok;
 use crate::keys::{wrap::WrapKeyMethod, KeyAlg, KeyCategory, KeyEntry, PassKey};
 use crate::store::{ManageBackend, Scan};
-use crate::types::{Entry, EntryOperation, EntryTagSet, TagFilter};
 
 new_handle_type!(StoreHandle, FFI_STORE_COUNTER);
 new_handle_type!(SessionHandle, FFI_SESSION_COUNTER);

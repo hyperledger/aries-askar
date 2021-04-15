@@ -1,9 +1,17 @@
-// use super::wrap::PREFIX_KDF;
-use crate::error::Result;
+use super::wrap_key::{WrapKey, PREFIX_KDF};
+use crate::{
+    crypto::{
+        buffer::{ArrayKey, HexRepr},
+        generic_array::ArrayLength,
+    },
+    error::Error,
+    storage::options::Options,
+};
 // use crate::keys::wrap::WrapKey;
 // use crate::options::Options;
 
-use askar_keys::kdf::argon2::{generate_salt, Level as Argon2Level, SALT_SIZE};
+mod argon2;
+use self::argon2::{Level as Argon2Level, SaltSize as Argon2Salt};
 
 pub const METHOD_ARGON2I: &'static str = "argon2i";
 
@@ -54,37 +62,34 @@ impl KdfMethod {
         }
     }
 
-    pub fn derive_new_key(&self, password: &str) -> Result<(WrapKey, String)> {
+    pub fn derive_new_key(&self, password: &str) -> Result<(WrapKey, String), Error> {
         match self {
             Self::Argon2i(level) => {
-                let salt = generate_salt();
-                let key = level.derive_key(&salt, password)?;
-                let detail = format!("?salt={}", bs58::encode(&salt));
+                let salt = level.generate_salt();
+                let key = level.derive_key(password.as_bytes(), salt.as_ref())?;
+                let detail = format!("?salt={}", HexRepr(salt.as_ref()));
                 Ok((key.into(), detail))
             }
         }
     }
 
-    pub fn derive_key(&self, password: &str, detail: &str) -> Result<WrapKey> {
+    pub fn derive_key(&self, password: &str, detail: &str) -> Result<WrapKey, Error> {
         match self {
             Self::Argon2i(level) => {
-                let salt = parse_salt(detail)?;
-                let key = level.derive_key(&salt, password)?;
+                let salt = parse_salt::<Argon2Salt>(detail)?;
+                let key = level.derive_key(password.as_bytes(), salt.as_ref())?;
                 Ok(key.into())
             }
         }
     }
 }
 
-fn parse_salt(detail: &str) -> Result<Vec<u8>> {
+fn parse_salt<L: ArrayLength<u8>>(detail: &str) -> Result<ArrayKey<L>, Error> {
     let opts = Options::parse_uri(detail)?;
     if let Some(salt) = opts.query.get("salt") {
-        if let Ok(salt) = base58::decode(salt) {
-            if salt.len() >= SALT_SIZE {
-                Ok(salt)
-            } else {
-                Err(err_msg!(Input, "Invalid salt length"))
-            }
+        let mut salt_arr = ArrayKey::<L>::default();
+        if hex::decode_to_slice(salt, salt_arr.as_mut()).is_ok() {
+            Ok(salt_arr)
         } else {
             Err(err_msg!(Input, "Invalid salt"))
         }

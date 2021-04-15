@@ -7,19 +7,17 @@ use sqlx::{
     IntoArguments, Pool, TransactionManager, Type,
 };
 
-use crate::EntryTag;
-
-use super::error::Result;
-use super::future::BoxFuture;
-use super::keys::{
-    store::StoreKey,
-    wrap::{WrapKey, WrapKeyMethod},
-    EntryEncryptor, KeyCache, PassKey,
-};
-use super::types::{EncEntryTag, Entry, Expiry, ProfileId, TagFilter};
+use super::entry::{EncEntryTag, Entry, EntryTag, Expiry, ProfileId, TagFilter};
 use super::wql::{
     sql::TagSqlEncoder,
     tags::{tag_query, TagQueryEncoder},
+};
+use crate::error::Error;
+use crate::future::BoxFuture;
+use crate::keys::{
+    store::StoreKey,
+    wrap::{WrapKey, WrapKeyMethod},
+    EntryEncryptor, KeyCache, PassKey,
 };
 
 pub const PAGE_SIZE: usize = 32;
@@ -91,7 +89,10 @@ impl<DB: ExtDatabase> DbSession<DB> {
         }
     }
 
-    pub(crate) async fn make_active<I>(&mut self, init_key: I) -> Result<DbSessionActive<'_, DB>>
+    pub(crate) async fn make_active<I>(
+        &mut self,
+        init_key: I,
+    ) -> Result<DbSessionActive<'_, DB>, Error>
     where
         I: for<'a> GetProfileKey<'a, DB>,
     {
@@ -136,7 +137,7 @@ impl<DB: ExtDatabase> DbSession<DB> {
         DbSessionRef::Owned(self)
     }
 
-    pub(crate) async fn close(mut self, commit: bool) -> Result<()> {
+    pub(crate) async fn close(mut self, commit: bool) -> Result<(), Error> {
         if self.transaction {
             if let Some(conn) = self.connection_mut() {
                 if commit {
@@ -168,7 +169,7 @@ impl<'q, DB: ExtDatabase> Drop for DbSession<DB> {
 }
 
 pub(crate) trait GetProfileKey<'a, DB: Database> {
-    type Fut: Future<Output = Result<(ProfileId, Arc<StoreKey>)>>;
+    type Fut: Future<Output = Result<(ProfileId, Arc<StoreKey>)>, Error>;
     fn call_once(
         self,
         conn: &'a mut PoolConnection<DB>,
@@ -180,7 +181,7 @@ pub(crate) trait GetProfileKey<'a, DB: Database> {
 impl<'a, DB: Database, F, Fut> GetProfileKey<'a, DB> for F
 where
     F: FnOnce(&'a mut PoolConnection<DB>, Arc<KeyCache>, String) -> Fut,
-    Fut: Future<Output = Result<(ProfileId, Arc<StoreKey>)>> + 'a,
+    Fut: Future<Output = Result<(ProfileId, Arc<StoreKey>), Error>> + 'a,
 {
     type Fut = Fut;
     fn call_once(
@@ -209,7 +210,7 @@ pub trait ExtDatabase: Database {
     fn start_transaction(
         conn: &mut PoolConnection<Self>,
         _nested: bool,
-    ) -> BoxFuture<'_, std::result::Result<(), SqlxError>> {
+    ) -> BoxFuture<'_, Result<(), SqlxError>> {
         <Self as Database>::TransactionManager::begin(conn)
     }
 }
@@ -252,7 +253,7 @@ impl<'q, DB: ExtDatabase> DbSessionActive<'q, DB> {
         self.inner.connection_mut().unwrap()
     }
 
-    pub async fn commit(mut self) -> Result<()> {
+    pub async fn commit(mut self) -> Result<(), Error> {
         if self.txn_depth > 0 && !self.false_txn {
             let conn = self.connection_mut();
             info!("Commit transaction");
@@ -269,7 +270,7 @@ impl<'q, DB: ExtDatabase> DbSessionActive<'q, DB> {
     }
 
     #[allow(unused)]
-    pub async fn transaction<'t>(&'t mut self) -> Result<DbSessionActive<'t, DB>>
+    pub async fn transaction<'t>(&'t mut self) -> Result<DbSessionActive<'t, DB>, Error>
     where
         'q: 't,
     {
@@ -283,7 +284,7 @@ impl<'q, DB: ExtDatabase> DbSessionActive<'q, DB> {
         })
     }
 
-    pub async fn as_transaction<'t>(&'t mut self) -> Result<DbSessionActive<'t, DB>>
+    pub async fn as_transaction<'t>(&'t mut self) -> Result<DbSessionActive<'t, DB>, Error>
     where
         'q: 't,
     {
@@ -317,14 +318,14 @@ impl<'a, DB: ExtDatabase> Drop for DbSessionActive<'a, DB> {
 }
 
 pub(crate) trait RunInTransaction<'a, 'q: 'a, DB: ExtDatabase> {
-    type Fut: Future<Output = Result<()>>;
+    type Fut: Future<Output = Result<(), Error>>;
     fn call_once(self, conn: &'a mut DbSessionActive<'q, DB>) -> Self::Fut;
 }
 
 impl<'a, 'q: 'a, DB: ExtDatabase, F, Fut> RunInTransaction<'a, 'q, DB> for F
 where
     F: FnOnce(&'a mut DbSessionActive<'q, DB>) -> Fut,
-    Fut: Future<Output = Result<()>> + 'a,
+    Fut: Future<Output = Result<(), Error>> + 'a,
 {
     type Fut = Fut;
     fn call_once(self, conn: &'a mut DbSessionActive<'q, DB>) -> Self::Fut {
@@ -452,7 +453,7 @@ pub fn replace_arg_placeholders<Q: QueryPrepare + ?Sized>(
     buffer
 }
 
-pub(crate) fn decode_tags(tags: Vec<u8>) -> std::result::Result<Vec<EncEntryTag>, ()> {
+pub(crate) fn decode_tags(tags: Vec<u8>) -> Result<Vec<EncEntryTag>, ()> {
     let mut idx = 0;
     let mut plaintext;
     let mut name_start;
@@ -499,7 +500,7 @@ pub fn decrypt_scan_batch(
     category: String,
     enc_rows: Vec<EncScanEntry>,
     key: &StoreKey,
-) -> Result<Vec<Entry>> {
+) -> Result<Vec<Entry>, Error> {
     let mut batch = Vec::with_capacity(enc_rows.len());
     for enc_entry in enc_rows {
         batch.push(decrypt_scan_entry(category.clone(), enc_entry, key)?);
@@ -511,7 +512,7 @@ pub fn decrypt_scan_entry(
     category: String,
     enc_entry: EncScanEntry,
     key: &StoreKey,
-) -> Result<Entry> {
+) -> Result<Entry, Error> {
     let name = key.decrypt_entry_name(enc_entry.name)?;
     let value = key.decrypt_entry_value(enc_entry.value)?;
     let tags = if let Some(enc_tags) = enc_entry.tags {
@@ -524,7 +525,7 @@ pub fn decrypt_scan_entry(
     Ok(Entry::new(category.to_string(), name, value, tags))
 }
 
-pub fn expiry_timestamp(expire_ms: i64) -> Result<Expiry> {
+pub fn expiry_timestamp(expire_ms: i64) -> Result<Expiry, Error> {
     chrono::Utc::now()
         .checked_add_signed(chrono::Duration::milliseconds(expire_ms))
         .ok_or_else(|| err_msg!(Unexpected, "Invalid expiry timestamp"))
@@ -534,7 +535,7 @@ pub fn encode_tag_filter<Q: QueryPrepare>(
     tag_filter: Option<TagFilter>,
     key: &StoreKey,
     offset: usize,
-) -> Result<Option<(String, Vec<Vec<u8>>)>> {
+) -> Result<Option<(String, Vec<Vec<u8>>)>, Error> {
     if let Some(tag_filter) = tag_filter {
         let tag_query = tag_query(tag_filter.query)?;
         let mut enc = TagSqlEncoder::new(
@@ -585,7 +586,7 @@ pub fn extend_query<'q, Q: QueryPrepare>(
     tag_filter: Option<(String, Vec<Vec<u8>>)>,
     offset: Option<i64>,
     limit: Option<i64>,
-) -> Result<String>
+) -> Result<String, Error>
 where
     i64: for<'e> Encode<'e, Q::DB> + Type<Q::DB>,
     Vec<u8>: for<'e> Encode<'e, Q::DB> + Type<Q::DB>,
@@ -605,14 +606,14 @@ where
 pub fn init_keys<'a>(
     method: WrapKeyMethod,
     pass_key: PassKey<'a>,
-) -> Result<(StoreKey, Vec<u8>, WrapKey, String)> {
+) -> Result<(StoreKey, Vec<u8>, WrapKey, String), Error> {
     let (wrap_key, wrap_key_ref) = method.resolve(pass_key)?;
     let store_key = StoreKey::new()?;
     let enc_store_key = encode_store_key(&store_key, &wrap_key)?;
     Ok((store_key, enc_store_key, wrap_key, wrap_key_ref.into_uri()))
 }
 
-pub fn encode_store_key(store_key: &StoreKey, wrap_key: &WrapKey) -> Result<Vec<u8>> {
+pub fn encode_store_key(store_key: &StoreKey, wrap_key: &WrapKey) -> Result<Vec<u8>, Error> {
     let enc_store_key = store_key.to_string()?;
     let result = wrap_key.wrap_data(enc_store_key.into())?;
     Ok(result)

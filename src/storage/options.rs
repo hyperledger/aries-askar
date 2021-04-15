@@ -3,7 +3,7 @@ use std::collections::HashMap;
 
 use percent_encoding::{percent_decode_str, utf8_percent_encode, NON_ALPHANUMERIC};
 
-use super::error::Result;
+use crate::error::Error;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Options<'a> {
@@ -17,7 +17,7 @@ pub struct Options<'a> {
 }
 
 impl<'a> Options<'a> {
-    pub fn parse_uri(uri: &str) -> Result<Options<'_>> {
+    pub fn parse_uri(uri: &str) -> Result<Options<'_>, Error> {
         let mut fragment_and_remain = uri.splitn(2, '#');
         let uri = fragment_and_remain.next().unwrap_or_default();
         let fragment = percent_decode(fragment_and_remain.next().unwrap_or_default());
@@ -127,17 +127,17 @@ fn percent_encode_into(result: &mut String, s: &str) {
 }
 
 pub trait IntoOptions<'a> {
-    fn into_options(self) -> Result<Options<'a>>;
+    fn into_options(self) -> Result<Options<'a>, Error>;
 }
 
 impl<'a> IntoOptions<'a> for Options<'a> {
-    fn into_options(self) -> Result<Options<'a>> {
+    fn into_options(self) -> Result<Options<'a>, Error> {
         Ok(self)
     }
 }
 
 impl<'a> IntoOptions<'a> for &'a str {
-    fn into_options(self) -> Result<Options<'a>> {
+    fn into_options(self) -> Result<Options<'a>, Error> {
         Options::parse_uri(self)
     }
 }

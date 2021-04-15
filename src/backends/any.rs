@@ -1,15 +1,18 @@
-use super::error::Result;
-use super::future::BoxFuture;
-use super::keys::{wrap::WrapKeyMethod, PassKey};
-use super::options::IntoOptions;
-use super::store::{Backend, ManageBackend, QueryBackend, Scan, Session, Store};
-use super::types::{Entry, EntryKind, EntryOperation, EntryTag, TagFilter};
+use crate::error::Error;
+use crate::future::BoxFuture;
+use crate::protect::{PassKey, WrapKeyMethod};
+
+use crate::storage::{
+    entry::{Entry, EntryKind, EntryOperation, EntryTag, TagFilter},
+    options::IntoOptions,
+    types::{Backend, ManageBackend, QueryBackend, Scan, Session, Store},
+};
 
 #[cfg(feature = "postgres")]
-use super::postgres::PostgresStore;
+use super::backends::postgres::{self, PostgresStore};
 
 #[cfg(feature = "sqlite")]
-use super::sqlite::SqliteStore;
+use super::backends::sqlite::{self, SqliteStore};
 
 /// A generic `Store` implementation for any supported backend
 pub type AnyStore = Store<AnyBackend>;
@@ -50,7 +53,7 @@ macro_rules! with_backend {
 impl Backend for AnyBackend {
     type Session = AnyQueryBackend;
 
-    fn create_profile(&self, name: Option<String>) -> BoxFuture<'_, Result<String>> {
+    fn create_profile(&self, name: Option<String>) -> BoxFuture<'_, Result<String, Error>> {
         with_backend!(self, store, store.create_profile(name))
     }
 
@@ -58,7 +61,7 @@ impl Backend for AnyBackend {
         with_backend!(self, store, store.get_profile_name())
     }
 
-    fn remove_profile(&self, name: String) -> BoxFuture<'_, Result<bool>> {
+    fn remove_profile(&self, name: String) -> BoxFuture<'_, Result<bool, Error>> {
         with_backend!(self, store, store.remove_profile(name))
     }
 
@@ -70,7 +73,7 @@ impl Backend for AnyBackend {
         tag_filter: Option<TagFilter>,
         offset: Option<i64>,
         limit: Option<i64>,
-    ) -> BoxFuture<'_, Result<Scan<'static, Entry>>> {
+    ) -> BoxFuture<'_, Result<Scan<'static, Entry>, Error>> {
         with_backend!(
             self,
             store,
@@ -78,7 +81,7 @@ impl Backend for AnyBackend {
         )
     }
 
-    fn session(&self, profile: Option<String>, transaction: bool) -> Result<Self::Session> {
+    fn session(&self, profile: Option<String>, transaction: bool) -> Result<Self::Session, Error> {
         match self {
             #[cfg(feature = "postgres")]
             Self::Postgres(store) => {
@@ -101,11 +104,11 @@ impl Backend for AnyBackend {
         &mut self,
         method: WrapKeyMethod,
         pass_key: PassKey<'_>,
-    ) -> BoxFuture<'_, Result<()>> {
+    ) -> BoxFuture<'_, Result<(), Error>> {
         with_backend!(self, store, store.rekey_backend(method, pass_key))
     }
 
-    fn close(&self) -> BoxFuture<'_, Result<()>> {
+    fn close(&self) -> BoxFuture<'_, Result<(), Error>> {
         with_backend!(self, store, store.close())
     }
 }
@@ -132,7 +135,7 @@ impl QueryBackend for AnyQueryBackend {
         kind: EntryKind,
         category: &'q str,
         tag_filter: Option<TagFilter>,
-    ) -> BoxFuture<'q, Result<i64>> {
+    ) -> BoxFuture<'q, Result<i64, Error>> {
         match self {
             #[cfg(feature = "postgres")]
             Self::PostgresSession(session) => session.count(kind, category, tag_filter),
@@ -150,7 +153,7 @@ impl QueryBackend for AnyQueryBackend {
         category: &'q str,
         name: &'q str,
         for_update: bool,
-    ) -> BoxFuture<'q, Result<Option<Entry>>> {
+    ) -> BoxFuture<'q, Result<Option<Entry>, Error>> {
         match self {
             #[cfg(feature = "postgres")]
             Self::PostgresSession(session) => session.fetch(kind, category, name, for_update),
@@ -169,7 +172,7 @@ impl QueryBackend for AnyQueryBackend {
         tag_filter: Option<TagFilter>,
         limit: Option<i64>,
         for_update: bool,
-    ) -> BoxFuture<'q, Result<Vec<Entry>>> {
+    ) -> BoxFuture<'q, Result<Vec<Entry>, Error>> {
         match self {
             #[cfg(feature = "postgres")]
             Self::PostgresSession(session) => {
@@ -190,7 +193,7 @@ impl QueryBackend for AnyQueryBackend {
         kind: EntryKind,
         category: &'q str,
         tag_filter: Option<TagFilter>,
-    ) -> BoxFuture<'q, Result<i64>> {
+    ) -> BoxFuture<'q, Result<i64, Error>> {
         match self {
             #[cfg(feature = "postgres")]
             Self::PostgresSession(session) => session.remove_all(kind, category, tag_filter),
@@ -211,7 +214,7 @@ impl QueryBackend for AnyQueryBackend {
         value: Option<&'q [u8]>,
         tags: Option<&'q [EntryTag]>,
         expiry_ms: Option<i64>,
-    ) -> BoxFuture<'q, Result<()>> {
+    ) -> BoxFuture<'q, Result<(), Error>> {
         match self {
             #[cfg(feature = "postgres")]
             Self::PostgresSession(session) => {
@@ -227,7 +230,7 @@ impl QueryBackend for AnyQueryBackend {
         }
     }
 
-    fn close(self, commit: bool) -> BoxFuture<'static, Result<()>> {
+    fn close(self, commit: bool) -> BoxFuture<'static, Result<(), Error>> {
         match self {
             #[cfg(feature = "postgres")]
             Self::PostgresSession(session) => Box::pin(session.close(commit)),
@@ -248,7 +251,7 @@ impl<'a> ManageBackend<'a> for &'a str {
         method: Option<WrapKeyMethod>,
         pass_key: PassKey<'a>,
         profile: Option<&'a str>,
-    ) -> BoxFuture<'a, Result<Self::Store>> {
+    ) -> BoxFuture<'a, Result<Self::Store, Error>> {
         Box::pin(async move {
             let opts = self.into_options()?;
             debug!("Open store with options: {:?}", &opts);
@@ -256,14 +259,14 @@ impl<'a> ManageBackend<'a> for &'a str {
             match opts.schema.as_ref() {
                 #[cfg(feature = "postgres")]
                 "postgres" => {
-                    let opts = super::postgres::PostgresStoreOptions::new(opts)?;
+                    let opts = postgres::PostgresStoreOptions::new(opts)?;
                     let mgr = opts.open(method, pass_key, profile).await?;
                     Ok(Store::new(AnyBackend::Postgres(mgr.into_inner())))
                 }
 
                 #[cfg(feature = "sqlite")]
                 "sqlite" => {
-                    let opts = super::sqlite::SqliteStoreOptions::new(opts)?;
+                    let opts = sqlite::SqliteStoreOptions::new(opts)?;
                     let mgr = opts.open(method, pass_key, profile).await?;
                     Ok(Store::new(AnyBackend::Sqlite(mgr.into_inner())))
                 }
@@ -279,7 +282,7 @@ impl<'a> ManageBackend<'a> for &'a str {
         pass_key: PassKey<'a>,
         profile: Option<&'a str>,
         recreate: bool,
-    ) -> BoxFuture<'a, Result<Self::Store>> {
+    ) -> BoxFuture<'a, Result<Self::Store, Error>> {
         Box::pin(async move {
             let opts = self.into_options()?;
             debug!("Provision store with options: {:?}", &opts);
@@ -287,14 +290,14 @@ impl<'a> ManageBackend<'a> for &'a str {
             match opts.schema.as_ref() {
                 #[cfg(feature = "postgres")]
                 "postgres" => {
-                    let opts = super::postgres::PostgresStoreOptions::new(opts)?;
+                    let opts = postgres::PostgresStoreOptions::new(opts)?;
                     let mgr = opts.provision(method, pass_key, profile, recreate).await?;
                     Ok(Store::new(AnyBackend::Postgres(mgr.into_inner())))
                 }
 
                 #[cfg(feature = "sqlite")]
                 "sqlite" => {
-                    let opts = super::sqlite::SqliteStoreOptions::new(opts)?;
+                    let opts = sqlite::SqliteStoreOptions::new(opts)?;
                     let mgr = opts.provision(method, pass_key, profile, recreate).await?;
                     Ok(Store::new(AnyBackend::Sqlite(mgr.into_inner())))
                 }
@@ -304,7 +307,7 @@ impl<'a> ManageBackend<'a> for &'a str {
         })
     }
 
-    fn remove_backend(self) -> BoxFuture<'a, Result<bool>> {
+    fn remove_backend(self) -> BoxFuture<'a, Result<bool, Error>> {
         Box::pin(async move {
             let opts = self.into_options()?;
             debug!("Remove store with options: {:?}", &opts);
@@ -312,13 +315,13 @@ impl<'a> ManageBackend<'a> for &'a str {
             match opts.schema.as_ref() {
                 #[cfg(feature = "postgres")]
                 "postgres" => {
-                    let opts = super::postgres::PostgresStoreOptions::new(opts)?;
+                    let opts = postgres::PostgresStoreOptions::new(opts)?;
                     Ok(opts.remove().await?)
                 }
 
                 #[cfg(feature = "sqlite")]
                 "sqlite" => {
-                    let opts = super::sqlite::SqliteStoreOptions::new(opts)?;
+                    let opts = sqlite::SqliteStoreOptions::new(opts)?;
                     Ok(opts.remove().await?)
                 }
 

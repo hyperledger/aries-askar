@@ -7,6 +7,10 @@
 mod error;
 pub use self::error::{Error, ErrorKind};
 
+#[cfg(test)]
+#[macro_use]
+extern crate hex_literal;
+
 #[macro_use]
 mod macros;
 
@@ -17,10 +21,9 @@ extern crate log;
 #[macro_use]
 extern crate serde;
 
-#[cfg(any(feature = "postgres", feature = "sqlite"))]
-mod db_utils;
+pub mod backends;
 
-mod didcomm;
+pub use askar_crypto as crypto;
 
 #[doc(hidden)]
 pub mod future;
@@ -30,46 +33,23 @@ pub mod future;
 /// Indy wallet compatibility support
 pub mod indy_compat;
 
-mod options;
+// #[cfg(feature = "ffi")]
+// #[macro_use]
+// extern crate serde_json;
 
-mod random;
+// #[cfg(feature = "ffi")]
+// mod ffi;
 
-#[cfg(feature = "ffi")]
-#[macro_use]
-extern crate serde_json;
+pub mod protect;
 
-#[cfg(feature = "ffi")]
-mod ffi;
+pub mod storage;
 
-#[cfg(feature = "postgres")]
-#[cfg_attr(docsrs, doc(cfg(feature = "postgres")))]
-/// Postgres database support
-pub mod postgres;
+// #[macro_use]
+// pub(crate) mod serde_utils;
 
-#[macro_use]
-pub(crate) mod serde_utils;
-
-#[cfg(feature = "sqlite")]
-#[cfg_attr(docsrs, doc(cfg(feature = "sqlite")))]
-/// Sqlite database support
-pub mod sqlite;
-
-#[cfg(feature = "any")]
-#[cfg_attr(docsrs, doc(cfg(feature = "any")))]
-/// Generic backend (from URI) support
-pub mod any;
-
-mod keys;
-pub use self::keys::{
-    derive_verkey, verify_signature,
-    wrap::{generate_raw_wrap_key, WrapKeyMethod},
-    KeyAlg, KeyCategory, KeyEntry, KeyParams, PassKey,
-};
-
-mod store;
-pub use self::store::{Backend, ManageBackend, QueryBackend, Scan, Session, Store};
-
-mod types;
-pub use self::types::{Entry, EntryOperation, EntryTag, SecretBytes, TagFilter};
-
-mod wql;
+// mod keys;
+// pub use self::keys::{
+//     derive_verkey, verify_signature,
+//     wrap::{generate_raw_wrap_key, WrapKeyMethod},
+//     KeyAlg, KeyCategory, KeyEntry, KeyParams, PassKey,
+// };

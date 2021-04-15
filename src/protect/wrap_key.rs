@@ -1,79 +1,97 @@
 use super::kdf::KdfMethod;
 
-use askar_keys::{
-    encrypt::{aead::ChaChaEncrypt, SymEncrypt, SymEncryptKey},
-    PassKey, SecretBytes,
+use super::pass_key::PassKey;
+use crate::{
+    crypto::{
+        alg::chacha20::{Chacha20Key, C20P},
+        buffer::{ArrayKey, ResizeBuffer, SecretBytes},
+        encrypt::{KeyAeadInPlace, KeyAeadMeta},
+        repr::{KeyGen, KeyMeta, KeySecretBytes},
+    },
+    error::Error,
 };
 
 pub const PREFIX_KDF: &'static str = "kdf";
 pub const PREFIX_RAW: &'static str = "raw";
 pub const PREFIX_NONE: &'static str = "none";
 
-pub type WrapKeyAlg = ChaChaEncrypt;
-pub type WrapKeyData = <WrapKeyAlg as SymEncrypt>::Key;
-pub const WRAP_KEY_SIZE: usize = <WrapKeyAlg as SymEncrypt>::Key::SIZE;
+pub type WrapKeyType = Chacha20Key<C20P>;
+
+type WrapKeyNonce = ArrayKey<<WrapKeyType as KeyAeadMeta>::NonceSize>;
 
 /// Create a new raw wrap key for a store
-pub fn generate_raw_wrap_key(seed: Option<&[u8]>) -> Result<PassKey<'static>> {
+pub fn generate_raw_wrap_key(seed: Option<&[u8]>) -> Result<PassKey<'static>, Error> {
     let key = if let Some(seed) = seed {
-        WrapKey::from(WrapKeyData::from_seed(seed)?)
+        WrapKey::from(WrapKeyType::from_seed(seed)?)
     } else {
-        WrapKey::from(WrapKeyData::random_key())
+        WrapKey::from(WrapKeyType::generate()?)
     };
-    Ok(key.to_opt_string().unwrap().into())
+    Ok(key.to_passkey())
 }
 
-pub fn parse_raw_key(raw_key: &str) -> Result<WrapKey> {
-    let key = base58::decode(raw_key)
+pub fn parse_raw_key(raw_key: &str) -> Result<WrapKey, Error> {
+    let mut key = ArrayKey::<<WrapKeyType as KeyMeta>::KeySize>::default();
+    let key_len = bs58::decode(raw_key)
+        .into(key.as_mut())
         .map_err(|_| err_msg!(Input, "Error parsing raw key as base58 value"))?;
-    if key.len() != WRAP_KEY_SIZE {
+    if key_len != key.len() {
         Err(err_msg!(Input, "Incorrect length for encoded raw key"))
     } else {
-        Ok(WrapKey::from(WrapKeyData::from_slice(key)))
+        Ok(WrapKey::from(WrapKeyType::from_secret_bytes(key.as_ref())?))
     }
 }
 
 #[derive(Clone, Debug)]
-pub struct WrapKey(pub Option<WrapKeyData>);
+pub struct WrapKey(pub Option<WrapKeyType>);
 
 impl WrapKey {
     pub const fn empty() -> Self {
         Self(None)
     }
 
-    pub fn random() -> Result<Self> {
-        Ok(Self(Some(WrapKeyData::random())))
+    pub fn random() -> Result<Self, Error> {
+        Ok(Self(Some(WrapKeyType::generate()?)))
     }
 
     pub fn is_empty(&self) -> bool {
         self.0.is_none()
     }
 
-    pub fn prepare_input(&self, input: &[u8]) -> SecretBytes {
-        WrapKeyAlg::prepare_input(input)
-    }
-
-    pub fn wrap_data(&self, data: SecretBytes) -> Result<Vec<u8>> {
+    pub fn wrap_data(&self, mut data: SecretBytes) -> Result<SecretBytes, Error> {
         match &self.0 {
-            Some(key) => Ok(WrapKeyAlg::encrypt(data, key, None)?),
-            None => Ok(data.into_vec()),
+            Some(key) => {
+                let nonce = WrapKeyNonce::random();
+                key.encrypt_in_place(&mut data, nonce.as_ref(), &[])?;
+                data.buffer_insert_slice(0, nonce.as_ref())?;
+                Ok(data)
+            }
+            None => Ok(data),
         }
     }
 
-    pub fn unwrap_data(&self, ciphertext: Vec<u8>) -> Result<SecretBytes> {
+    pub fn unwrap_data(&self, mut ciphertext: SecretBytes) -> Result<SecretBytes, Error> {
         match &self.0 {
-            Some(key) => Ok(WrapKeyAlg::decrypt(ciphertext, key)?),
-            None => Ok(ciphertext.into()),
+            Some(key) => {
+                let nonce = WrapKeyNonce::from_slice(&ciphertext.as_ref()[..WrapKeyNonce::SIZE]);
+                ciphertext.buffer_remove(0..WrapKeyNonce::SIZE)?;
+                key.decrypt_in_place(&mut ciphertext, nonce.as_ref(), &[])?;
+                Ok(ciphertext)
+            }
+            None => Ok(ciphertext),
         }
     }
 
-    pub fn to_opt_string(&self) -> Option<String> {
-        self.0.as_ref().map(|key| base58::encode(key.as_slice()))
+    pub fn to_passkey(&self) -> PassKey<'static> {
+        if let Some(key) = self.0.as_ref() {
+            PassKey::from(key.with_secret_bytes(|sk| bs58::encode(sk.unwrap()).into_string()))
+        } else {
+            PassKey::empty()
+        }
     }
 }
 
-impl From<WrapKeyData> for WrapKey {
-    fn from(data: WrapKeyData) -> Self {
+impl From<WrapKeyType> for WrapKey {
+    fn from(data: WrapKeyType) -> Self {
         Self(Some(data))
     }
 }
@@ -92,7 +110,7 @@ pub enum WrapKeyMethod {
 }
 
 impl WrapKeyMethod {
-    pub(crate) fn parse_uri(uri: &str) -> Result<Self> {
+    pub(crate) fn parse_uri(uri: &str) -> Result<Self, Error> {
         let mut prefix_and_detail = uri.splitn(2, ':');
         let prefix = prefix_and_detail.next().unwrap_or_default();
         // let detail = prefix_and_detail.next().unwrap_or_default();
@@ -107,7 +125,10 @@ impl WrapKeyMethod {
         }
     }
 
-    pub(crate) fn resolve(&self, pass_key: PassKey<'_>) -> Result<(WrapKey, WrapKeyReference)> {
+    pub(crate) fn resolve(
+        &self,
+        pass_key: PassKey<'_>,
+    ) -> Result<(WrapKey, WrapKeyReference), Error> {
         match self {
             // Self::CreateManagedKey(_mgr_ref) => unimplemented!(),
             // Self::ExistingManagedKey(String) => unimplemented!(),
@@ -148,7 +169,7 @@ pub enum WrapKeyReference {
 }
 
 impl WrapKeyReference {
-    pub fn parse_uri(uri: &str) -> Result<Self> {
+    pub fn parse_uri(uri: &str) -> Result<Self, Error> {
         let mut prefix_and_detail = uri.splitn(2, ':');
         let prefix = prefix_and_detail.next().unwrap_or_default();
         match prefix {
@@ -189,7 +210,7 @@ impl WrapKeyReference {
         }
     }
 
-    pub fn resolve(&self, pass_key: PassKey<'_>) -> Result<WrapKey> {
+    pub fn resolve(&self, pass_key: PassKey<'_>) -> Result<WrapKey, Error> {
         match self {
             // Self::ManagedKey(_key_ref) => unimplemented!(),
             Self::DeriveKey(method, detail) => {
@@ -242,9 +263,9 @@ mod tests {
             .expect("Error deriving new key");
         assert!(!key.is_empty());
         let wrapped = key
-            .wrap_data(key.prepare_input(input))
+            .wrap_data((&input[..]).into())
             .expect("Error wrapping input");
-        assert_ne!(wrapped, input);
+        assert_ne!(wrapped, &input[..]);
         let unwrapped = key.unwrap_data(wrapped).expect("Error unwrapping data");
         assert_eq!(unwrapped, &input[..]);
         let key_uri = key_ref.into_uri();
@@ -254,32 +275,36 @@ mod tests {
     #[test]
     fn derived_key_unwrap_expected() {
         let input = b"test data";
-        let wrapped: &[u8] = &[
-            194, 156, 102, 253, 229, 11, 48, 184, 160, 119, 218, 30, 169, 188, 244, 223, 235, 95,
-            171, 234, 18, 5, 9, 115, 174, 208, 232, 37, 31, 32, 250, 216, 32, 92, 253, 45, 236,
-        ];
+        let wrapped = SecretBytes::from_slice(
+            &[
+                194, 156, 102, 253, 229, 11, 48, 184, 160, 119, 218, 30, 169, 188, 244, 223, 235,
+                95, 171, 234, 18, 5, 9, 115, 174, 208, 232, 37, 31, 32, 250, 216, 32, 92, 253, 45,
+                236,
+            ][..],
+        );
         let pass = PassKey::from("pass");
         let key_ref = WrapKeyReference::parse_uri("kdf:argon2i:13:mod?salt=MR6B1jrReV2JioaizEaRo6")
             .expect("Error parsing derived key ref");
         let key = key_ref.resolve(pass).expect("Error deriving existing key");
-        let unwrapped = key
-            .unwrap_data(wrapped.to_vec())
-            .expect("Error unwrapping data");
+        let unwrapped = key.unwrap_data(wrapped).expect("Error unwrapping data");
         assert_eq!(unwrapped, &input[..]);
     }
 
     #[test]
     fn derived_key_check_bad_password() {
-        let wrapped: &[u8] = &[
-            194, 156, 102, 253, 229, 11, 48, 184, 160, 119, 218, 30, 169, 188, 244, 223, 235, 95,
-            171, 234, 18, 5, 9, 115, 174, 208, 232, 37, 31, 32, 250, 216, 32, 92, 253, 45, 236,
-        ];
+        let wrapped = SecretBytes::from_slice(
+            &[
+                194, 156, 102, 253, 229, 11, 48, 184, 160, 119, 218, 30, 169, 188, 244, 223, 235,
+                95, 171, 234, 18, 5, 9, 115, 174, 208, 232, 37, 31, 32, 250, 216, 32, 92, 253, 45,
+                236,
+            ][..],
+        );
         let key_ref = WrapKeyReference::parse_uri("kdf:argon2i:13:mod?salt=MR6B1jrReV2JioaizEaRo6")
             .expect("Error parsing derived key ref");
         let check_bad_pass = key_ref
             .resolve("not my pass".into())
             .expect("Error deriving comparison key");
-        let unwrapped_err = check_bad_pass.unwrap_data(wrapped.to_vec());
+        let unwrapped_err = check_bad_pass.unwrap_data(wrapped);
         assert_eq!(unwrapped_err.is_err(), true);
     }
 
@@ -293,9 +318,9 @@ mod tests {
             .expect("Error resolving raw key");
         assert_eq!(key.is_empty(), false);
         let wrapped = key
-            .wrap_data(key.prepare_input(input))
+            .wrap_data((&input[..]).into())
             .expect("Error wrapping input");
-        assert_ne!(wrapped, input);
+        assert_ne!(wrapped, &input[..]);
 
         // round trip the key reference
         let key_uri = key_ref.into_uri();
@@ -320,9 +345,9 @@ mod tests {
             .expect("Error resolving unprotected");
         assert_eq!(key.is_empty(), true);
         let wrapped = key
-            .wrap_data(key.prepare_input(input))
+            .wrap_data((&input[..]).into())
             .expect("Error wrapping unprotected");
-        assert_eq!(wrapped, input);
+        assert_eq!(wrapped, &input[..]);
 
         // round trip the key reference
         let key_uri = key_ref.into_uri();

@@ -1,6 +1,4 @@
 use std::fmt::{self, Debug, Formatter};
-use std::mem;
-use std::ops::Deref;
 use std::str::FromStr;
 
 use serde::{
@@ -10,12 +8,8 @@ use serde::{
 };
 use zeroize::Zeroize;
 
-use super::error::Error;
 use super::wql;
-
-pub type ProfileId = i64;
-
-pub type Expiry = chrono::DateTime<chrono::Utc>;
+use crate::{crypto::buffer::SecretBytes, error::Error};
 
 pub(crate) fn sorted_tags(tags: &Vec<EntryTag>) -> Option<Vec<&EntryTag>> {
     if tags.len() > 0 {
@@ -305,8 +299,8 @@ impl Serialize for EntryTagSet {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct EncEntryTag {
-    pub name: Vec<u8>,
-    pub value: Vec<u8>,
+    pub name: SecretBytes,
+    pub value: SecretBytes,
     pub plaintext: bool,
 }
 

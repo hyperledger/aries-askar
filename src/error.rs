@@ -83,6 +83,11 @@ impl Error {
         self.kind
     }
 
+    /// Accessor for the error message
+    pub fn message(&self) -> Option<&str> {
+        self.message.as_ref().map(String::as_str)
+    }
+
     pub(crate) fn with_cause<T: Into<Box<dyn StdError + Send + Sync>>>(mut self, err: T) -> Self {
         self.cause = Some(err.into());
         self
@@ -151,6 +156,13 @@ impl From<indy_utils::UnexpectedError> for Error {
 impl From<indy_utils::ValidationError> for Error {
     fn from(err: indy_utils::ValidationError) -> Self {
         Error::from_opt_msg(ErrorKind::Input, err.context)
+    }
+}
+
+impl From<askar_crypto::Error> for Error {
+    fn from(err: askar_crypto::Error) -> Self {
+        // FIXME map error types
+        Error::from_opt_msg(ErrorKind::Input, err.message())
     }
 }
 

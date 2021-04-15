@@ -1,23 +1,26 @@
-use std::convert::TryInto;
-use std::fmt::{self, Debug, Formatter};
-use std::future::Future;
-use std::pin::Pin;
-use std::str::FromStr;
-use std::sync::Arc;
+use std::{
+    fmt::{self, Debug, Formatter},
+    pin::Pin,
+    str::FromStr,
+    sync::Arc,
+};
 
 use futures_lite::stream::{Stream, StreamExt};
 use zeroize::Zeroizing;
 
-use super::didcomm::pack::{pack_message, unpack_message, KeyLookup};
-use super::error::Result;
-use super::future::BoxFuture;
-use super::keys::{
-    alg::ed25519::{Ed25519KeyPair, Ed25519PublicKey},
-    caps::KeyCapSign,
-    wrap::WrapKeyMethod,
-    AnyPrivateKey, KeyAlg, KeyCategory, KeyEntry, KeyParams, PassKey,
+use super::{
+    entry::{Entry, EntryKind, EntryOperation, EntryTag, TagFilter},
+    key::{KeyCategory, KeyEntry, KeyParams},
 };
-use super::types::{Entry, EntryKind, EntryOperation, EntryTag, TagFilter};
+use crate::{
+    error::Error,
+    future::BoxFuture,
+    protect::{PassKey, WrapKeyMethod},
+};
+
+pub type ProfileId = i64;
+
+pub type Expiry = chrono::DateTime<chrono::Utc>;
 
 /// Represents a generic backend implementation
 pub trait Backend: Send + Sync {
@@ -25,13 +28,13 @@ pub trait Backend: Send + Sync {
     type Session: QueryBackend;
 
     /// Create a new profile
-    fn create_profile(&self, name: Option<String>) -> BoxFuture<'_, Result<String>>;
+    fn create_profile(&self, name: Option<String>) -> BoxFuture<'_, Result<String, Error>>;
 
     /// Get the name of the active profile
     fn get_profile_name(&self) -> &str;
 
     /// Remove an existing profile
-    fn remove_profile(&self, name: String) -> BoxFuture<'_, Result<bool>>;
+    fn remove_profile(&self, name: String) -> BoxFuture<'_, Result<bool, Error>>;
 
     /// Create a [`Scan`] against the store
     fn scan(
@@ -42,20 +45,20 @@ pub trait Backend: Send + Sync {
         tag_filter: Option<TagFilter>,
         offset: Option<i64>,
         limit: Option<i64>,
-    ) -> BoxFuture<'_, Result<Scan<'static, Entry>>>;
+    ) -> BoxFuture<'_, Result<Scan<'static, Entry>, Error>>;
 
     /// Create a new session against the store
-    fn session(&self, profile: Option<String>, transaction: bool) -> Result<Self::Session>;
+    fn session(&self, profile: Option<String>, transaction: bool) -> Result<Self::Session, Error>;
 
     /// Replace the wrapping key of the store
     fn rekey_backend(
         &mut self,
         method: WrapKeyMethod,
         key: PassKey<'_>,
-    ) -> BoxFuture<'_, Result<()>>;
+    ) -> BoxFuture<'_, Result<(), Error>>;
 
     /// Close the store instance
-    fn close(&self) -> BoxFuture<'_, Result<()>>;
+    fn close(&self) -> BoxFuture<'_, Result<(), Error>>;
 }
 
 /// Create, open, or remove a generic backend implementation
@@ -69,7 +72,7 @@ pub trait ManageBackend<'a> {
         method: Option<WrapKeyMethod>,
         pass_key: PassKey<'a>,
         profile: Option<&'a str>,
-    ) -> BoxFuture<'a, Result<Self::Store>>;
+    ) -> BoxFuture<'a, Result<Self::Store, Error>>;
 
     /// Provision a new store
     fn provision_backend(
@@ -78,10 +81,10 @@ pub trait ManageBackend<'a> {
         pass_key: PassKey<'a>,
         profile: Option<&'a str>,
         recreate: bool,
-    ) -> BoxFuture<'a, Result<Self::Store>>;
+    ) -> BoxFuture<'a, Result<Self::Store, Error>>;
 
     /// Remove an existing store
-    fn remove_backend(self) -> BoxFuture<'a, Result<bool>>;
+    fn remove_backend(self) -> BoxFuture<'a, Result<bool, Error>>;
 }
 
 /// Query from a generic backend implementation
@@ -92,7 +95,7 @@ pub trait QueryBackend: Send {
         kind: EntryKind,
         category: &'q str,
         tag_filter: Option<TagFilter>,
-    ) -> BoxFuture<'q, Result<i64>>;
+    ) -> BoxFuture<'q, Result<i64, Error>>;
 
     /// Fetch a single record from the store by category and name
     fn fetch<'q>(
@@ -101,7 +104,7 @@ pub trait QueryBackend: Send {
         category: &'q str,
         name: &'q str,
         for_update: bool,
-    ) -> BoxFuture<'q, Result<Option<Entry>>>;
+    ) -> BoxFuture<'q, Result<Option<Entry>, Error>>;
 
     /// Fetch all matching records from the store
     fn fetch_all<'q>(
@@ -111,7 +114,7 @@ pub trait QueryBackend: Send {
         tag_filter: Option<TagFilter>,
         limit: Option<i64>,
         for_update: bool,
-    ) -> BoxFuture<'q, Result<Vec<Entry>>>;
+    ) -> BoxFuture<'q, Result<Vec<Entry>, Error>>;
 
     /// Remove all matching records from the store
     fn remove_all<'q>(
@@ -119,7 +122,7 @@ pub trait QueryBackend: Send {
         kind: EntryKind,
         category: &'q str,
         tag_filter: Option<TagFilter>,
-    ) -> BoxFuture<'q, Result<i64>>;
+    ) -> BoxFuture<'q, Result<i64, Error>>;
 
     /// Insert or replace a record in the store
     fn update<'q>(
@@ -131,10 +134,10 @@ pub trait QueryBackend: Send {
         value: Option<&'q [u8]>,
         tags: Option<&'q [EntryTag]>,
         expiry_ms: Option<i64>,
-    ) -> BoxFuture<'q, Result<()>>;
+    ) -> BoxFuture<'q, Result<(), Error>>;
 
     /// Close the current store session
-    fn close(self, commit: bool) -> BoxFuture<'static, Result<()>>;
+    fn close(self, commit: bool) -> BoxFuture<'static, Result<(), Error>>;
 }
 
 #[derive(Debug)]
@@ -164,17 +167,21 @@ impl<B: Backend> Store<B> {
     }
 
     /// Replace the wrapping key on a store
-    pub async fn rekey(&mut self, method: WrapKeyMethod, pass_key: PassKey<'_>) -> Result<()> {
+    pub async fn rekey(
+        &mut self,
+        method: WrapKeyMethod,
+        pass_key: PassKey<'_>,
+    ) -> Result<(), Error> {
         Ok(self.0.rekey_backend(method, pass_key).await?)
     }
 
     /// Create a new profile with the given profile name
-    pub async fn create_profile(&self, name: Option<String>) -> Result<String> {
+    pub async fn create_profile(&self, name: Option<String>) -> Result<String, Error> {
         Ok(self.0.create_profile(name).await?)
     }
 
     /// Remove an existing profile with the given profile name
-    pub async fn remove_profile(&self, name: String) -> Result<bool> {
+    pub async fn remove_profile(&self, name: String) -> Result<bool, Error> {
         Ok(self.0.remove_profile(name).await?)
     }
 
@@ -188,7 +195,7 @@ impl<B: Backend> Store<B> {
         tag_filter: Option<TagFilter>,
         offset: Option<i64>,
         limit: Option<i64>,
-    ) -> Result<Scan<'static, Entry>> {
+    ) -> Result<Scan<'static, Entry>, Error> {
         Ok(self
             .0
             .scan(
@@ -203,22 +210,22 @@ impl<B: Backend> Store<B> {
     }
 
     /// Create a new session against the store
-    pub async fn session(&self, profile: Option<String>) -> Result<Session<B::Session>> {
+    pub async fn session(&self, profile: Option<String>) -> Result<Session<B::Session>, Error> {
         // FIXME - add 'immediate' flag
         Ok(Session::new(self.0.session(profile, false)?))
     }
 
     /// Create a new transaction session against the store
-    pub async fn transaction(&self, profile: Option<String>) -> Result<Session<B::Session>> {
+    pub async fn transaction(&self, profile: Option<String>) -> Result<Session<B::Session>, Error> {
         Ok(Session::new(self.0.session(profile, true)?))
     }
 
     /// Close the store instance, waiting for any shutdown procedures to complete.
-    pub async fn close(self) -> Result<()> {
+    pub async fn close(self) -> Result<(), Error> {
         Ok(self.0.close().await?)
     }
 
-    pub(crate) async fn arc_close(self: Arc<Self>) -> Result<()> {
+    pub(crate) async fn arc_close(self: Arc<Self>) -> Result<(), Error> {
         Ok(self.0.close().await?)
     }
 }
@@ -235,7 +242,11 @@ impl<Q: QueryBackend> Session<Q> {
 
 impl<Q: QueryBackend> Session<Q> {
     /// Count the number of entries for a given record category
-    pub async fn count(&mut self, category: &str, tag_filter: Option<TagFilter>) -> Result<i64> {
+    pub async fn count(
+        &mut self,
+        category: &str,
+        tag_filter: Option<TagFilter>,
+    ) -> Result<i64, Error> {
         Ok(self.0.count(EntryKind::Item, category, tag_filter).await?)
     }
 
@@ -248,7 +259,7 @@ impl<Q: QueryBackend> Session<Q> {
         category: &str,
         name: &str,
         for_update: bool,
-    ) -> Result<Option<Entry>> {
+    ) -> Result<Option<Entry>, Error> {
         Ok(self
             .0
             .fetch(EntryKind::Item, category, name, for_update)
@@ -266,7 +277,7 @@ impl<Q: QueryBackend> Session<Q> {
         tag_filter: Option<TagFilter>,
         limit: Option<i64>,
         for_update: bool,
-    ) -> Result<Vec<Entry>> {
+    ) -> Result<Vec<Entry>, Error> {
         Ok(self
             .0
             .fetch_all(EntryKind::Item, category, tag_filter, limit, for_update)
@@ -281,7 +292,7 @@ impl<Q: QueryBackend> Session<Q> {
         value: &[u8],
         tags: Option<&[EntryTag]>,
         expiry_ms: Option<i64>,
-    ) -> Result<()> {
+    ) -> Result<(), Error> {
         Ok(self
             .0
             .update(
@@ -297,7 +308,7 @@ impl<Q: QueryBackend> Session<Q> {
     }
 
     /// Remove a record from the store
-    pub async fn remove(&mut self, category: &str, name: &str) -> Result<()> {
+    pub async fn remove(&mut self, category: &str, name: &str) -> Result<(), Error> {
         Ok(self
             .0
             .update(
@@ -320,7 +331,7 @@ impl<Q: QueryBackend> Session<Q> {
         value: &[u8],
         tags: Option<&[EntryTag]>,
         expiry_ms: Option<i64>,
-    ) -> Result<()> {
+    ) -> Result<(), Error> {
         Ok(self
             .0
             .update(
@@ -340,7 +351,7 @@ impl<Q: QueryBackend> Session<Q> {
         &mut self,
         category: &str,
         tag_filter: Option<TagFilter>,
-    ) -> Result<i64> {
+    ) -> Result<i64, Error> {
         Ok(self
             .0
             .remove_all(EntryKind::Item, category, tag_filter)
@@ -359,7 +370,7 @@ impl<Q: QueryBackend> Session<Q> {
         value: Option<&[u8]>,
         tags: Option<&[EntryTag]>,
         expiry_ms: Option<i64>,
-    ) -> Result<()> {
+    ) -> Result<(), Error> {
         Ok(self
             .0
             .update(
@@ -374,57 +385,57 @@ impl<Q: QueryBackend> Session<Q> {
             .await?)
     }
 
-    /// Create a new keypair in the store
-    pub async fn create_keypair(
-        &mut self,
-        alg: KeyAlg,
-        metadata: Option<&str>,
-        seed: Option<&[u8]>,
-        tags: Option<&[EntryTag]>,
-        // backend
-    ) -> Result<KeyEntry> {
-        match alg {
-            KeyAlg::Ed25519 => (),
-            _ => return Err(err_msg!(Unsupported, "Unsupported key algorithm")),
-        }
+    // /// Create a new keypair in the store
+    // pub async fn create_keypair(
+    //     &mut self,
+    //     alg: KeyAlg,
+    //     metadata: Option<&str>,
+    //     seed: Option<&[u8]>,
+    //     tags: Option<&[EntryTag]>,
+    //     // backend
+    // ) -> Result<KeyEntry, Error> {
+    //     match alg {
+    //         KeyAlg::Ed25519 => (),
+    //         _ => return Err(err_msg!(Unsupported, "Unsupported key algorithm")),
+    //     }
 
-        let keypair = match seed {
-            None => Ed25519KeyPair::generate(),
-            Some(s) => Ed25519KeyPair::from_seed(s),
-        }
-        .map_err(err_map!(Unexpected, "Error generating keypair"))?;
-        let pk = keypair.public_key();
+    //     let keypair = match seed {
+    //         None => Ed25519KeyPair::generate(),
+    //         Some(s) => Ed25519KeyPair::from_seed(s),
+    //     }
+    //     .map_err(err_map!(Unexpected, "Error generating keypair"))?;
+    //     let pk = keypair.public_key();
 
-        let category = KeyCategory::PrivateKey;
-        let ident = pk.to_string();
+    //     let category = KeyCategory::PrivateKey;
+    //     let ident = pk.to_string();
 
-        let params = KeyParams {
-            alg,
-            metadata: metadata.map(str::to_string),
-            reference: None,
-            data: Some(keypair.to_bytes()),
-        };
-        let value = Zeroizing::new(params.to_vec()?);
+    //     let params = KeyParams {
+    //         alg,
+    //         metadata: metadata.map(str::to_string),
+    //         reference: None,
+    //         data: Some(keypair.to_bytes()),
+    //     };
+    //     let value = Zeroizing::new(params.to_vec()?);
 
-        self.0
-            .update(
-                EntryKind::Key,
-                EntryOperation::Insert,
-                category.as_str(),
-                &ident,
-                Some(value.as_slice()),
-                tags.clone(),
-                None,
-            )
-            .await?;
+    //     self.0
+    //         .update(
+    //             EntryKind::Key,
+    //             EntryOperation::Insert,
+    //             category.as_str(),
+    //             &ident,
+    //             Some(value.as_slice()),
+    //             tags.clone(),
+    //             None,
+    //         )
+    //         .await?;
 
-        Ok(KeyEntry {
-            category,
-            ident,
-            params,
-            tags: tags.map(|t| t.to_vec()),
-        })
-    }
+    //     Ok(KeyEntry {
+    //         category,
+    //         ident,
+    //         params,
+    //         tags: tags.map(|t| t.to_vec()),
+    //     })
+    // }
 
     /// Fetch an existing key from the store
     ///
@@ -435,7 +446,7 @@ impl<Q: QueryBackend> Session<Q> {
         category: KeyCategory,
         ident: &str,
         for_update: bool,
-    ) -> Result<Option<KeyEntry>> {
+    ) -> Result<Option<KeyEntry>, Error> {
         Ok(
             if let Some(row) = self
                 .0
@@ -456,7 +467,7 @@ impl<Q: QueryBackend> Session<Q> {
     }
 
     /// Remove an existing key from the store
-    pub async fn remove_key(&mut self, category: KeyCategory, ident: &str) -> Result<()> {
+    pub async fn remove_key(&mut self, category: KeyCategory, ident: &str) -> Result<(), Error> {
         self.0
             .update(
                 EntryKind::Key,
@@ -477,7 +488,7 @@ impl<Q: QueryBackend> Session<Q> {
         ident: &str,
         metadata: Option<&str>,
         tags: Option<&[EntryTag]>,
-    ) -> Result<()> {
+    ) -> Result<(), Error> {
         let row = self
             .0
             .fetch(EntryKind::Key, category.as_str(), &ident, true)
@@ -503,107 +514,27 @@ impl<Q: QueryBackend> Session<Q> {
         Ok(())
     }
 
-    /// Sign a message using an existing private key in the store identified by `key_ident`
-    pub async fn sign_message(&mut self, key_ident: &str, data: &[u8]) -> Result<Vec<u8>> {
-        if let Some(key) = self
-            .fetch_key(KeyCategory::PrivateKey, key_ident, false)
-            .await?
-        {
-            let sk: AnyPrivateKey = key.try_into()?;
-            sk.key_sign(&data, None, None)
-                .map_err(|e| err_msg!(Unexpected, "Signature error: {}", e))
-        } else {
-            return Err(err_msg!(NotFound, "Unknown key"));
-        }
-    }
-
-    /// Pack a message using an existing private key in the store identified by `key_ident`
-    ///
-    /// This uses the `pack` algorithm defined for DIDComm v1
-    pub async fn pack_message(
-        &mut self,
-        recipient_vks: impl IntoIterator<Item = &str>,
-        from_key_ident: Option<&str>,
-        data: &[u8],
-    ) -> Result<Vec<u8>> {
-        let sign_key = if let Some(ident) = from_key_ident {
-            let sk = self
-                .fetch_key(KeyCategory::PrivateKey, ident, false)
-                .await?
-                .ok_or_else(|| err_msg!(NotFound, "Unknown sender key"))?;
-            let data = sk
-                .key_data()
-                .ok_or_else(|| err_msg!(NotFound, "Missing private key data"))?;
-            Some(Ed25519KeyPair::from_bytes(data)?)
-        } else {
-            None
-        };
-        let vks = recipient_vks
-            .into_iter()
-            .map(|vk| {
-                let vk = Ed25519PublicKey::from_str(&vk)
-                    .map_err(err_map!("Invalid recipient verkey"))?;
-                Ok(vk)
-            })
-            .collect::<Result<Vec<_>>>()?;
-        Ok(pack_message(data, vks, sign_key).map_err(err_map!("Error packing message"))?)
-    }
-
-    /// Unpack a DIDComm v1 message, automatically looking up any associated keypairs
-    pub async fn unpack_message(
-        &mut self,
-        data: &[u8],
-    ) -> Result<(Vec<u8>, Ed25519PublicKey, Option<Ed25519PublicKey>)> {
-        match unpack_message(data, self).await {
-            Ok((message, recip, sender)) => Ok((message, recip, sender)),
-            Err(err) => Err(err_msg!(Unexpected, "Error unpacking message").with_cause(err)),
-        }
-    }
-
     /// Commit the pending transaction
-    pub async fn commit(self) -> Result<()> {
+    pub async fn commit(self) -> Result<(), Error> {
         Ok(self.0.close(true).await?)
     }
 
     /// Roll back the pending transaction
-    pub async fn rollback(self) -> Result<()> {
+    pub async fn rollback(self) -> Result<(), Error> {
         Ok(self.0.close(false).await?)
-    }
-}
-
-impl<'a, Q: QueryBackend> KeyLookup<'a> for &'a mut Session<Q> {
-    fn find<'f>(
-        self,
-        keys: &'f Vec<Ed25519PublicKey>,
-    ) -> std::pin::Pin<Box<dyn Future<Output = Option<(usize, Ed25519KeyPair)>> + Send + 'f>>
-    where
-        'a: 'f,
-    {
-        Box::pin(async move {
-            for (idx, key) in keys.into_iter().enumerate() {
-                let ident = key.to_string();
-                if let Ok(Some(key)) = self.fetch_key(KeyCategory::PrivateKey, &ident, false).await
-                {
-                    if let Some(Ok(sk)) = key.key_data().map(Ed25519KeyPair::from_bytes) {
-                        return Some((idx, sk));
-                    }
-                }
-            }
-            return None;
-        })
     }
 }
 
 /// An active record scan of a store backend
 pub struct Scan<'s, T> {
-    stream: Option<Pin<Box<dyn Stream<Item = Result<Vec<T>>> + Send + 's>>>,
+    stream: Option<Pin<Box<dyn Stream<Item = Result<Vec<T>, Error>> + Send + 's>>>,
     page_size: usize,
 }
 
 impl<'s, T> Scan<'s, T> {
     pub(crate) fn new<S>(stream: S, page_size: usize) -> Self
     where
-        S: Stream<Item = Result<Vec<T>>> + Send + 's,
+        S: Stream<Item = Result<Vec<T>, Error>> + Send + 's,
     {
         Self {
             stream: Some(stream.boxed()),
@@ -612,7 +543,7 @@ impl<'s, T> Scan<'s, T> {
     }
 
     /// Fetch the next set of result rows
-    pub async fn fetch_next(&mut self) -> Result<Option<Vec<T>>> {
+    pub async fn fetch_next(&mut self) -> Result<Option<Vec<T>>, Error> {
         if let Some(mut s) = self.stream.take() {
             match s.try_next().await? {
                 Some(val) => {

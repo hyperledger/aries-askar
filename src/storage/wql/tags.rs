@@ -288,7 +288,6 @@ mod tests {
     use itertools::Itertools;
 
     use super::*;
-    use crate::wql::Query;
 
     struct TestEncoder {}
 
