@@ -9,8 +9,8 @@ use crypto_box::{self as cbox, SalsaBox};
 use crate::{
     alg::x25519::X25519KeyPair,
     buffer::{ResizeBuffer, SecretBytes, WriteBuffer},
-    caps::KeyGen,
     error::Error,
+    repr::{KeyGen, KeyPublicBytes},
 };
 
 const CBOX_NONCE_SIZE: usize = NonceSize::<SalsaBox>::USIZE;
@@ -109,7 +109,7 @@ pub fn crypto_box_seal_open(
     recip_sk: &X25519KeyPair,
     ciphertext: &[u8],
 ) -> Result<SecretBytes, Error> {
-    let ephem_pk = X25519KeyPair::from_public_key_bytes(&ciphertext[..CBOX_KEY_SIZE])?;
+    let ephem_pk = X25519KeyPair::from_public_bytes(&ciphertext[..CBOX_KEY_SIZE])?;
     let mut buffer = SecretBytes::from_slice(&ciphertext[CBOX_KEY_SIZE..]);
     let nonce = crypto_box_nonce(ephem_pk.public.as_bytes(), recip_sk.public.as_bytes())?;
     crypto_box_open(recip_sk, &ephem_pk, &mut buffer, &nonce)?;
@@ -120,15 +120,15 @@ pub fn crypto_box_seal_open(
 mod tests {
     use super::*;
     use crate::buffer::SecretBytes;
-    use crate::caps::KeySecretBytes;
+    use crate::repr::KeySecretBytes;
 
     #[test]
     fn crypto_box_round_trip_expected() {
-        let sk = X25519KeyPair::from_key_secret_bytes(&hex!(
+        let sk = X25519KeyPair::from_secret_bytes(&hex!(
             "a8bdb9830f8790d242f66e04b11cc2a14c752a7b63c073f3c68e9adb151cc854"
         ))
         .unwrap();
-        let pk = X25519KeyPair::from_public_key_bytes(&hex!(
+        let pk = X25519KeyPair::from_public_bytes(&hex!(
             "07d0b594683bdb6af5f4eacb1a392687d580a58db196a752dca316dedb7d251c"
         ))
         .unwrap();
@@ -150,7 +150,7 @@ mod tests {
         let recip = X25519KeyPair::generate().unwrap();
 
         let recip_public =
-            X25519KeyPair::from_public_key_bytes(&recip.to_public_key_bytes()).unwrap();
+            X25519KeyPair::from_public_bytes(recip.to_public_bytes().unwrap().as_ref()).unwrap();
 
         let message = b"hello there";
         let sealed = crypto_box_seal(&recip_public, message).unwrap();

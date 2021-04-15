@@ -1,3 +1,5 @@
+#[cfg(feature = "std")]
+use alloc::boxed::Box;
 use alloc::string::String;
 use core::fmt::{self, Display, Formatter};
 
@@ -12,6 +14,9 @@ pub enum ErrorKind {
 
     /// The input parameters to the method were incorrect
     Input,
+
+    /// Out of space in provided buffer
+    ExceededBuffer,
 
     /// The provided nonce was invalid (bad length)
     InvalidNonce,
@@ -31,6 +36,7 @@ impl ErrorKind {
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::Encryption => "Encryption error",
+            Self::ExceededBuffer => "Exceeded allocated buffer",
             Self::Input => "Input error",
             Self::InvalidNonce => "Invalid encryption nonce",
             Self::MissingSecretKey => "Missing secret key",
@@ -78,6 +84,11 @@ impl Error {
     /// Accessor for the error kind
     pub fn kind(&self) -> ErrorKind {
         self.kind
+    }
+
+    /// Accessor for the error message
+    pub fn message(&self) -> Option<&str> {
+        self.message.as_ref().map(String::as_str)
     }
 
     #[cfg(not(feature = "std"))]

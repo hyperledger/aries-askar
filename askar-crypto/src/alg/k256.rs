@@ -8,14 +8,17 @@ use k256::{
     elliptic_curve::{ecdh::diffie_hellman, sec1::Coordinates, Curve},
     EncodedPoint, PublicKey, SecretKey,
 };
+use zeroize::Zeroizing;
 
 use crate::{
     buffer::{ArrayKey, SecretBytes, WriteBuffer},
-    caps::{KeyCapSign, KeyCapVerify, KeyGen, KeySecretBytes, SignatureType},
+    caps::{KeyCapSign, KeyCapVerify, SignatureType},
     error::Error,
+    generic_array::typenum::{U32, U33, U65},
     jwk::{FromJwk, JwkEncoder, JwkParts, ToJwk},
     kdf::KeyExchange,
     random::with_rng,
+    repr::{KeyGen, KeyMeta, KeyPublicBytes, KeySecretBytes, KeypairMeta},
 };
 
 pub const ES256K_SIGNATURE_LENGTH: usize = 64;
@@ -54,16 +57,6 @@ impl K256KeyPair {
         })
     }
 
-    pub fn from_public_key_bytes(key: &[u8]) -> Result<Self, Error> {
-        let pk = EncodedPoint::from_bytes(key)
-            .and_then(|pt| pt.decode())
-            .map_err(|_| err_msg!("Invalid k-256 public key bytes"))?;
-        Ok(Self {
-            secret: None,
-            public: pk,
-        })
-    }
-
     #[inline]
     pub(crate) fn from_secret_key(sk: SecretKey) -> Self {
         let pk = sk.public_key();
@@ -84,10 +77,6 @@ impl K256KeyPair {
         } else {
             None
         }
-    }
-
-    pub fn to_public_key_bytes(&self) -> SecretBytes {
-        SecretBytes::from(EncodedPoint::encode(self.public, true).as_ref().to_vec())
     }
 
     pub(crate) fn to_signing_key(&self) -> Option<SigningKey> {
@@ -114,6 +103,15 @@ impl K256KeyPair {
     }
 }
 
+impl KeyMeta for K256KeyPair {
+    type SecretKeySize = U32;
+}
+
+impl KeypairMeta for K256KeyPair {
+    type PublicKeySize = U33;
+    type KeypairSize = U65;
+}
+
 impl KeyGen for K256KeyPair {
     fn generate() -> Result<Self, Error> {
         Ok(Self::from_secret_key(with_rng(|r| SecretKey::random(r))))
@@ -121,18 +119,36 @@ impl KeyGen for K256KeyPair {
 }
 
 impl KeySecretBytes for K256KeyPair {
-    fn from_key_secret_bytes(key: &[u8]) -> Result<Self, Error> {
+    fn from_secret_bytes(key: &[u8]) -> Result<Self, Error> {
         Ok(Self::from_secret_key(
             SecretKey::from_bytes(key).map_err(|_| err_msg!("Invalid k-256 secret key bytes"))?,
         ))
     }
 
-    fn to_key_secret_buffer<B: WriteBuffer>(&self, out: &mut B) -> Result<(), Error> {
+    fn with_secret_bytes<O>(&self, f: impl FnOnce(Option<&[u8]>) -> O) -> O {
         if let Some(sk) = self.secret.as_ref() {
-            out.write_slice(&sk.to_bytes()[..])
+            let b = Zeroizing::new(<[u8; SECRET_KEY_LENGTH]>::from(sk.to_bytes()));
+            f(Some(&b[..]))
         } else {
-            Err(err_msg!(MissingSecretKey))
+            f(None)
         }
+    }
+}
+
+impl KeyPublicBytes for K256KeyPair {
+    fn from_public_bytes(key: &[u8]) -> Result<Self, Error> {
+        let pk = EncodedPoint::from_bytes(key)
+            .and_then(|pt| pt.decode())
+            .map_err(|_| err_msg!("Invalid k-256 public key bytes"))?;
+        Ok(Self {
+            secret: None,
+            public: pk,
+        })
+    }
+
+    fn with_public_bytes<O>(&self, f: impl FnOnce(&[u8]) -> O) -> O {
+        let pt = EncodedPoint::encode(self.public, true);
+        f(pt.as_ref())
     }
 }
 
@@ -187,9 +203,13 @@ impl ToJwk for K256KeyPair {
         buffer.add_as_base64("x", &x[..])?;
         buffer.add_as_base64("y", &y[..])?;
         if buffer.is_secret() {
-            if let Some(sk) = self.secret.as_ref() {
-                buffer.add_as_base64("d", &sk.to_bytes()[..])?;
-            }
+            self.with_secret_bytes(|buf| {
+                if let Some(sk) = buf {
+                    buffer.add_as_base64("d", sk)
+                } else {
+                    Ok(())
+                }
+            })?;
         }
         // buffer.add_str("use", "enc")?;
         Ok(())
@@ -263,7 +283,7 @@ mod tests {
             "36uMVGM7hnw-N6GnjFcihWE3SkrhMLzzLCdPMXPEXlA",
         );
         let test_pvt = base64::decode_config(test_pvt_b64, base64::URL_SAFE).unwrap();
-        let sk = K256KeyPair::from_key_secret_bytes(&test_pvt).expect("Error creating signing key");
+        let sk = K256KeyPair::from_secret_bytes(&test_pvt).expect("Error creating signing key");
 
         let jwk = sk.to_jwk_public().expect("Error converting key to JWK");
         let jwk = jwk.to_parts().expect("Error parsing JWK");
@@ -273,7 +293,7 @@ mod tests {
         assert_eq!(jwk.y, test_pub_b64.1);
         assert_eq!(jwk.d, None);
         let pk_load = K256KeyPair::from_jwk_parts(jwk).unwrap();
-        assert_eq!(sk.to_public_key_bytes(), pk_load.to_public_key_bytes());
+        assert_eq!(sk.to_public_bytes(), pk_load.to_public_bytes());
 
         let jwk = sk.to_jwk_secret().expect("Error converting key to JWK");
         let jwk = jwk.to_parts().expect("Error parsing JWK");
@@ -301,7 +321,7 @@ mod tests {
             base64::URL_SAFE_NO_PAD,
         )
         .unwrap();
-        let kp = K256KeyPair::from_key_secret_bytes(&test_pvt).unwrap();
+        let kp = K256KeyPair::from_secret_bytes(&test_pvt).unwrap();
         let sig = kp.sign(&test_msg[..]).unwrap();
         assert_eq!(sig, &test_sig[..]);
         assert_eq!(kp.verify_signature(&test_msg[..], &sig[..]), true);

@@ -1,4 +1,5 @@
 use alloc::vec::Vec;
+use core::ops::Range;
 
 use super::{ResizeBuffer, WriteBuffer};
 use crate::error::Error;
@@ -50,7 +51,7 @@ impl WriteBuffer for Writer<'_, [u8]> {
         let total = self.inner.len();
         let end = max_len + self.pos;
         if end > total {
-            return Err(err_msg!("exceeded buffer size"));
+            return Err(err_msg!(ExceededBuffer));
         }
         let written = f(&mut self.inner[self.pos..end])?;
         self.pos += written;
@@ -62,9 +63,41 @@ impl ResizeBuffer for Writer<'_, [u8]> {
     fn buffer_resize(&mut self, len: usize) -> Result<(), Error> {
         let len = self.pos + len;
         if len > self.inner.len() {
-            return Err(err_msg!("exceeded allocated buffer"));
+            return Err(err_msg!(ExceededBuffer));
         }
         self.pos = len;
+        Ok(())
+    }
+
+    fn buffer_splice_with(
+        &mut self,
+        range: Range<usize>,
+        len: usize,
+        f: impl FnOnce(&mut [u8]) -> Result<(), Error>,
+    ) -> Result<(), Error> {
+        let rem_len = range.len();
+        if rem_len < len {
+            if self.pos + len - rem_len > self.inner.len() {
+                return Err(err_msg!(ExceededBuffer));
+            }
+            let diff = len - rem_len;
+            self.pos += diff;
+            for p in (self.pos - 1)..=range.end {
+                self.inner[p] = self.inner[p - diff];
+            }
+        } else if rem_len != len {
+            let diff = rem_len - len;
+            for p in range.end..self.pos {
+                self.inner[p] = self.inner[p + diff];
+            }
+            self.pos -= diff;
+        }
+        let end = range.start + len;
+        let mslice = &mut self.inner[range.start..end];
+        for p in 0..len {
+            mslice[p] = 0u8;
+        }
+        f(mslice)?;
         Ok(())
     }
 }
@@ -106,6 +139,15 @@ impl<B: ResizeBuffer> AsMut<[u8]> for Writer<'_, B> {
 impl<B: ResizeBuffer> ResizeBuffer for Writer<'_, B> {
     fn buffer_resize(&mut self, len: usize) -> Result<(), Error> {
         self.inner.buffer_resize(self.pos + len)
+    }
+
+    fn buffer_splice_with(
+        &mut self,
+        range: Range<usize>,
+        len: usize,
+        f: impl FnOnce(&mut [u8]) -> Result<(), Error>,
+    ) -> Result<(), Error> {
+        self.inner.buffer_splice_with(range, len, f)
     }
 }
 

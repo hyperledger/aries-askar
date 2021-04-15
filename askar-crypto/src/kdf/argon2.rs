@@ -1,9 +1,13 @@
-use crate::{buffer::SecretBytes, error::Error, random::random_secret};
+use crate::{
+    error::Error,
+    generic_array::typenum::{Unsigned, U16},
+};
 
 pub use argon2::{Algorithm, Version};
 
-pub const HASH_SIZE: usize = 32;
-pub const SALT_SIZE: usize = 16;
+pub type SaltSize = U16;
+
+pub const SALT_LENGTH: usize = SaltSize::USIZE;
 
 pub const PARAMS_INTERACTIVE: Params = Params {
     alg: Algorithm::Argon2i,
@@ -18,53 +22,13 @@ pub const PARAMS_MODERATE: Params = Params {
     time_cost: 6,
 };
 
+#[derive(Copy, Clone, Debug)]
 pub struct Params {
     alg: Algorithm,
     version: Version,
     mem_cost: u32,
     time_cost: u32,
 }
-
-// pub const LEVEL_INTERACTIVE: &'static str = "13:int";
-// pub const LEVEL_MODERATE: &'static str = "13:mod";
-
-// #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
-// pub enum Level {
-//     Interactive,
-//     Moderate,
-// }
-
-// impl Default for Level {
-//     fn default() -> Self {
-//         Self::Moderate
-//     }
-// }
-
-// impl Level {
-//     pub fn from_str(level: &str) -> Option<Self> {
-//         match level {
-//             "int" | LEVEL_INTERACTIVE => Some(Self::Interactive),
-//             "mod" | LEVEL_MODERATE => Some(Self::Moderate),
-//             "" => Some(Self::default()),
-//             _ => None,
-//         }
-//     }
-
-//     pub fn as_str(&self) -> &'static str {
-//         match self {
-//             Self::Interactive => LEVEL_INTERACTIVE,
-//             Self::Moderate => LEVEL_MODERATE,
-//         }
-//     }
-
-//     // pub fn derive_key(&self, salt: &[u8], password: &str) -> Result<EncKey<ChaChaEncrypt>> {
-//     //     let (mem_cost, time_cost) = match self {
-//     //         Self::Interactive => (32768, 4),
-//     //         Self::Moderate => (131072, 6),
-//     //     };
-//     //     derive_key(password, salt, mem_cost, time_cost)
-//     // }
-// }
 
 pub struct Argon2;
 
@@ -75,7 +39,7 @@ impl Argon2 {
         params: Params,
         output: &mut [u8],
     ) -> Result<(), Error> {
-        if salt.len() < SALT_SIZE {
+        if salt.len() < SALT_LENGTH {
             return Err(err_msg!("invalid salt for argon2i hash"));
         }
         if output.len() > u32::MAX as usize {
@@ -88,11 +52,6 @@ impl Argon2 {
             .hash_password_into(params.alg, password, salt, &[], output)
             .map_err(|e| err_msg!("Error deriving key: {}", e))
     }
-}
-
-// FIXME generate into buffer
-pub fn generate_salt() -> SecretBytes {
-    random_secret(SALT_SIZE)
 }
 
 #[cfg(test)]

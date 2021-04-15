@@ -38,7 +38,6 @@ digest = "0.9"
 group = "0.9"
 hex = { version = "0.4", default-features = false }
 hkdf = "0.10"
-hmac = "0.10"
 k256 = { version = "0.7", default-features = false, features = ["arithmetic", "ecdsa", "ecdh", "sha256", "zeroize"] }
 p256 = { version = "0.7", default-features = false, features = ["arithmetic", "ecdsa", "ecdh", "zeroize"] }
 rand = { version = "0.7", default-features = false, features = ["getrandom"] }

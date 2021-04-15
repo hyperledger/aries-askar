@@ -9,9 +9,9 @@ use super::{
 };
 use crate::{
     buffer::WriteBuffer,
-    caps::KeyGen,
     error::Error,
     jwk::{JwkEncoder, JwkEncoderMode, ToJwk},
+    repr::KeyGen,
 };
 
 pub struct Ecdh1PU<Key>(PhantomData<Key>);

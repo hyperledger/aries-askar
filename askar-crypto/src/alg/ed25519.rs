@@ -12,10 +12,11 @@ use x25519_dalek::{PublicKey as XPublicKey, StaticSecret as XSecretKey};
 use super::x25519::X25519KeyPair;
 use crate::{
     buffer::{ArrayKey, SecretBytes, WriteBuffer},
-    caps::{KeyCapSign, KeyCapVerify, KeyGen, KeySecretBytes, SignatureType},
+    caps::{KeyCapSign, KeyCapVerify, SignatureType},
     error::Error,
-    generic_array::typenum::U32,
+    generic_array::typenum::{U32, U64},
     jwk::{FromJwk, JwkEncoder, JwkParts, ToJwk},
+    repr::{KeyGen, KeyMeta, KeyPublicBytes, KeySecretBytes, KeypairMeta},
 };
 
 // FIXME - check for low-order points when loading public keys?
@@ -53,16 +54,6 @@ impl Ed25519KeyPair {
         })
     }
 
-    pub fn from_public_key_bytes(key: &[u8]) -> Result<Self, Error> {
-        if key.len() != PUBLIC_KEY_LENGTH {
-            return Err(err_msg!("Invalid ed25519 public key length"));
-        }
-        Ok(Self {
-            secret: None,
-            public: PublicKey::from_bytes(key).map_err(|_| err_msg!("Invalid keypair bytes"))?,
-        })
-    }
-
     #[inline]
     pub(crate) fn from_secret_key(sk: SecretKey) -> Self {
         let public = PublicKey::from(&sk);
@@ -82,10 +73,6 @@ impl Ed25519KeyPair {
         } else {
             None
         }
-    }
-
-    pub fn to_public_key_bytes(&self) -> [u8; PUBLIC_KEY_LENGTH] {
-        self.public.to_bytes()
     }
 
     pub fn to_signing_key(&self) -> Option<Ed25519SigningKey<'_>> {
@@ -160,8 +147,17 @@ impl KeyGen for Ed25519KeyPair {
     }
 }
 
+impl KeyMeta for Ed25519KeyPair {
+    type SecretKeySize = U32;
+}
+
+impl KeypairMeta for Ed25519KeyPair {
+    type PublicKeySize = U32;
+    type KeypairSize = U64;
+}
+
 impl KeySecretBytes for Ed25519KeyPair {
-    fn from_key_secret_bytes(key: &[u8]) -> Result<Self, Error> {
+    fn from_secret_bytes(key: &[u8]) -> Result<Self, Error> {
         if key.len() != SECRET_KEY_LENGTH {
             return Err(err_msg!("Invalid ed25519 secret key length"));
         }
@@ -169,12 +165,24 @@ impl KeySecretBytes for Ed25519KeyPair {
         Ok(Self::from_secret_key(sk))
     }
 
-    fn to_key_secret_buffer<B: WriteBuffer>(&self, out: &mut B) -> Result<(), Error> {
-        if let Some(sk) = self.secret.as_ref() {
-            out.write_slice(sk.as_bytes())
-        } else {
-            Err(err_msg!(MissingSecretKey))
+    fn with_secret_bytes<O>(&self, f: impl FnOnce(Option<&[u8]>) -> O) -> O {
+        f(self.secret.as_ref().map(|sk| &sk.as_bytes()[..]))
+    }
+}
+
+impl KeyPublicBytes for Ed25519KeyPair {
+    fn from_public_bytes(key: &[u8]) -> Result<Self, Error> {
+        if key.len() != PUBLIC_KEY_LENGTH {
+            return Err(err_msg!("Invalid ed25519 public key length"));
         }
+        Ok(Self {
+            secret: None,
+            public: PublicKey::from_bytes(key).map_err(|_| err_msg!("Invalid keypair bytes"))?,
+        })
+    }
+
+    fn with_public_bytes<O>(&self, f: impl FnOnce(&[u8]) -> O) -> O {
+        f(&self.public.to_bytes()[..])
     }
 }
 
@@ -220,11 +228,15 @@ impl ToJwk for Ed25519KeyPair {
     fn to_jwk_buffer<B: WriteBuffer>(&self, buffer: &mut JwkEncoder<B>) -> Result<(), Error> {
         buffer.add_str("kty", JWK_KEY_TYPE)?;
         buffer.add_str("crv", JWK_CURVE)?;
-        buffer.add_as_base64("x", &self.to_public_key_bytes()[..])?;
+        self.with_public_bytes(|buf| buffer.add_as_base64("x", buf))?;
         if buffer.is_secret() {
-            if let Some(sk) = self.secret.as_ref() {
-                buffer.add_as_base64("d", sk.as_bytes())?;
-            }
+            self.with_secret_bytes(|buf| {
+                if let Some(sk) = buf {
+                    buffer.add_as_base64("d", sk)
+                } else {
+                    Ok(())
+                }
+            })?;
         }
         buffer.add_str("use", "sig")?;
         Ok(())
@@ -278,9 +290,9 @@ mod tests {
         let seed = b"000000000000000000000000Trustee1";
         let test_sk = &hex!("3030303030303030303030303030303030303030303030305472757374656531e33aaf381fffa6109ad591fdc38717945f8fabf7abf02086ae401c63e9913097");
 
-        let kp = Ed25519KeyPair::from_key_secret_bytes(seed).unwrap();
+        let kp = Ed25519KeyPair::from_secret_bytes(seed).unwrap();
         assert_eq!(kp.to_keypair_bytes().unwrap(), &test_sk[..]);
-        assert_eq!(kp.to_key_secret_bytes().unwrap(), &seed[..]);
+        assert_eq!(kp.to_secret_bytes().unwrap(), &seed[..]);
 
         // test round trip
         let cmp = Ed25519KeyPair::from_keypair_bytes(test_sk).unwrap();
@@ -315,8 +327,7 @@ mod tests {
         let test_pvt_b64 = "nWGxne_9WmC6hEr0kuwsxERJxWl7MmkZcDusAxyuf2A";
         let test_pub_b64 = "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo";
         let test_pvt = base64::decode_config(test_pvt_b64, base64::URL_SAFE).unwrap();
-        let kp =
-            Ed25519KeyPair::from_key_secret_bytes(&test_pvt).expect("Error creating signing key");
+        let kp = Ed25519KeyPair::from_secret_bytes(&test_pvt).expect("Error creating signing key");
         let jwk = kp
             .to_jwk_public()
             .expect("Error converting public key to JWK");
@@ -325,7 +336,7 @@ mod tests {
         assert_eq!(jwk.crv, JWK_CURVE);
         assert_eq!(jwk.x, "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo");
         let pk_load = Ed25519KeyPair::from_jwk_parts(jwk).unwrap();
-        assert_eq!(kp.to_public_key_bytes(), pk_load.to_public_key_bytes());
+        assert_eq!(kp.to_public_bytes(), pk_load.to_public_bytes());
 
         let jwk = kp
             .to_jwk_secret()

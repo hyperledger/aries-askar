@@ -1,3 +1,5 @@
+use core::fmt::{self, Debug, Formatter};
+
 use aead::{Aead, AeadInPlace, NewAead};
 use aes_gcm::{Aes128Gcm, Aes256Gcm};
 use zeroize::Zeroize;
@@ -9,11 +11,11 @@ use crate::{
 
 use crate::{
     buffer::{ArrayKey, ResizeBuffer, WriteBuffer},
-    caps::{KeyGen, KeySecretBytes},
-    encrypt::KeyAeadInPlace,
+    encrypt::{KeyAeadInPlace, KeyAeadMeta},
     error::Error,
     jwk::{JwkEncoder, ToJwk},
     kdf::{FromKeyExchange, KeyExchange},
+    repr::{KeyGen, KeyMeta, KeySecretBytes},
 };
 
 pub static JWK_KEY_TYPE: &'static str = "oct";
@@ -22,10 +24,6 @@ pub trait AesGcmType {
     type Aead: NewAead + Aead + AeadInPlace;
 
     const JWK_ALG: &'static str;
-
-    fn key_size() -> usize {
-        <Self::Aead as NewAead>::KeySize::USIZE
-    }
 }
 
 pub struct A128;
@@ -50,15 +48,38 @@ type NonceSize<A> = <<A as AesGcmType>::Aead as Aead>::NonceSize;
 
 type TagSize<A> = <<A as AesGcmType>::Aead as Aead>::TagSize;
 
-#[derive(Clone, Debug, Zeroize)]
+#[derive(PartialEq, Eq, Zeroize)]
 // SECURITY: ArrayKey is zeroized on drop
 pub struct AesGcmKey<T: AesGcmType>(KeyType<T>);
 
 impl<T: AesGcmType> AesGcmKey<T> {
+    pub const KEY_LENGTH: usize = KeyType::<T>::SIZE;
+    pub const NONCE_LENGTH: usize = NonceSize::<T>::USIZE;
+    pub const TAG_LENGTH: usize = TagSize::<T>::USIZE;
+
     #[inline]
     pub(crate) fn uninit() -> Self {
         Self(KeyType::<T>::default())
     }
+}
+
+impl<T: AesGcmType> Clone for AesGcmKey<T> {
+    fn clone(&self) -> Self {
+        Self(self.0.clone())
+    }
+}
+
+impl<T: AesGcmType> Debug for AesGcmKey<T> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.debug_struct("AesGcmKey")
+            .field("alg", &T::JWK_ALG)
+            .field("key", &self.0)
+            .finish()
+    }
+}
+
+impl<T: AesGcmType> KeyMeta for AesGcmKey<T> {
+    type SecretKeySize = <T::Aead as NewAead>::KeySize;
 }
 
 impl<T: AesGcmType> KeyGen for AesGcmKey<T> {
@@ -68,16 +89,21 @@ impl<T: AesGcmType> KeyGen for AesGcmKey<T> {
 }
 
 impl<T: AesGcmType> KeySecretBytes for AesGcmKey<T> {
-    fn from_key_secret_bytes(key: &[u8]) -> Result<Self, Error> {
+    fn from_secret_bytes(key: &[u8]) -> Result<Self, Error> {
         if key.len() != <T::Aead as NewAead>::KeySize::USIZE {
             return Err(err_msg!("Invalid length for AES-GCM key"));
         }
         Ok(Self(KeyType::<T>::from_slice(key)))
     }
 
-    fn to_key_secret_buffer<B: WriteBuffer>(&self, out: &mut B) -> Result<(), Error> {
-        out.write_slice(self.0.as_ref())
+    fn with_secret_bytes<O>(&self, f: impl FnOnce(Option<&[u8]>) -> O) -> O {
+        f(Some(self.0.as_ref()))
     }
+}
+
+impl<T: AesGcmType> KeyAeadMeta for AesGcmKey<T> {
+    type NonceSize = NonceSize<T>;
+    type TagSize = TagSize<T>;
 }
 
 impl<T: AesGcmType> KeyAeadInPlace for AesGcmKey<T> {
@@ -89,10 +115,7 @@ impl<T: AesGcmType> KeyAeadInPlace for AesGcmKey<T> {
         aad: &[u8],
     ) -> Result<(), Error> {
         if nonce.len() != NonceSize::<T>::USIZE {
-            return Err(err_msg!(
-                "invalid size for nonce (expected {} bytes)",
-                NonceSize::<T>::USIZE
-            ));
+            return Err(err_msg!(InvalidNonce));
         }
         let nonce = GenericArray::from_slice(nonce);
         let chacha = T::Aead::new(self.0.as_ref());
@@ -132,13 +155,11 @@ impl<T: AesGcmType> KeyAeadInPlace for AesGcmKey<T> {
         Ok(())
     }
 
-    /// Get the required nonce size for encryption
-    fn nonce_size() -> usize {
+    fn nonce_length() -> usize {
         NonceSize::<T>::USIZE
     }
 
-    /// Get the size of the verification tag
-    fn tag_size() -> usize {
+    fn tag_length() -> usize {
         TagSize::<T>::USIZE
     }
 }
@@ -168,7 +189,7 @@ where
         let mut key = Self::uninit();
         let mut buf = Writer::from_slice(key.0.as_mut());
         lhs.key_exchange_buffer(rhs, &mut buf)?;
-        if buf.position() != T::key_size() {
+        if buf.position() != Self::KEY_LENGTH {
             return Err(err_msg!("invalid length for key exchange output"));
         }
         Ok(key)
@@ -189,7 +210,7 @@ mod tests {
             let mut nonce = GenericArray::<u8, NonceSize<T>>::default();
             fill_random(&mut nonce);
             key.encrypt_in_place(&mut buffer, &nonce, &[]).unwrap();
-            assert_eq!(buffer.len(), input.len() + AesGcmKey::<T>::tag_size());
+            assert_eq!(buffer.len(), input.len() + AesGcmKey::<T>::TAG_LENGTH);
             assert_ne!(&buffer[..], input);
             key.decrypt_in_place(&mut buffer, &nonce, &[]).unwrap();
             assert_eq!(&buffer[..], input);

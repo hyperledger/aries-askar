@@ -1,3 +1,5 @@
+use core::fmt::{self, Debug, Formatter};
+
 use aead::{Aead, AeadInPlace, NewAead};
 use chacha20poly1305::{ChaCha20Poly1305, XChaCha20Poly1305};
 use zeroize::Zeroize;
@@ -6,12 +8,12 @@ use crate::generic_array::{typenum::Unsigned, GenericArray};
 
 use crate::{
     buffer::{ArrayKey, ResizeBuffer, WriteBuffer, Writer},
-    caps::{KeyGen, KeySecretBytes},
-    encrypt::KeyAeadInPlace,
+    encrypt::{KeyAeadInPlace, KeyAeadMeta},
     error::Error,
     jwk::{JwkEncoder, ToJwk},
     kdf::{FromKeyExchange, KeyExchange},
     random::fill_random_deterministic,
+    repr::{KeyGen, KeyMeta, KeySecretBytes},
 };
 
 pub static JWK_KEY_TYPE: &'static str = "oct";
@@ -20,10 +22,6 @@ pub trait Chacha20Type {
     type Aead: NewAead + Aead + AeadInPlace;
 
     const JWK_ALG: &'static str;
-
-    fn key_size() -> usize {
-        <Self::Aead as NewAead>::KeySize::USIZE
-    }
 }
 
 pub struct C20P;
@@ -48,11 +46,15 @@ type NonceSize<A> = <<A as Chacha20Type>::Aead as Aead>::NonceSize;
 
 type TagSize<A> = <<A as Chacha20Type>::Aead as Aead>::TagSize;
 
-#[derive(Clone, Debug, Zeroize)]
+#[derive(PartialEq, Eq, Zeroize)]
 // SECURITY: ArrayKey is zeroized on drop
 pub struct Chacha20Key<T: Chacha20Type>(KeyType<T>);
 
 impl<T: Chacha20Type> Chacha20Key<T> {
+    pub const KEY_LENGTH: usize = KeyType::<T>::SIZE;
+    pub const NONCE_LENGTH: usize = NonceSize::<T>::USIZE;
+    pub const TAG_LENGTH: usize = TagSize::<T>::USIZE;
+
     #[inline]
     pub(crate) fn uninit() -> Self {
         Self(KeyType::<T>::default())
@@ -67,6 +69,25 @@ impl<T: Chacha20Type> Chacha20Key<T> {
     }
 }
 
+impl<T: Chacha20Type> Clone for Chacha20Key<T> {
+    fn clone(&self) -> Self {
+        Self(self.0.clone())
+    }
+}
+
+impl<T: Chacha20Type> Debug for Chacha20Key<T> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Chacha20Key")
+            .field("alg", &T::JWK_ALG)
+            .field("key", &self.0)
+            .finish()
+    }
+}
+
+impl<T: Chacha20Type> KeyMeta for Chacha20Key<T> {
+    type SecretKeySize = <T::Aead as NewAead>::KeySize;
+}
+
 impl<T: Chacha20Type> KeyGen for Chacha20Key<T> {
     fn generate() -> Result<Self, Error> {
         Ok(Chacha20Key(KeyType::<T>::random()))
@@ -74,15 +95,15 @@ impl<T: Chacha20Type> KeyGen for Chacha20Key<T> {
 }
 
 impl<T: Chacha20Type> KeySecretBytes for Chacha20Key<T> {
-    fn from_key_secret_bytes(key: &[u8]) -> Result<Self, Error> {
+    fn from_secret_bytes(key: &[u8]) -> Result<Self, Error> {
         if key.len() != <T::Aead as NewAead>::KeySize::USIZE {
             return Err(err_msg!("Invalid length for chacha20 key"));
         }
         Ok(Self(KeyType::<T>::from_slice(key)))
     }
 
-    fn to_key_secret_buffer<B: WriteBuffer>(&self, out: &mut B) -> Result<(), Error> {
-        out.write_slice(self.0.as_ref())
+    fn with_secret_bytes<O>(&self, f: impl FnOnce(Option<&[u8]>) -> O) -> O {
+        f(Some(self.0.as_ref()))
     }
 }
 
@@ -98,6 +119,11 @@ impl<T: Chacha20Type> KeySecretBytes for Chacha20Key<T> {
 //         out.write_slice(&self.0[..])
 //     }
 // }
+
+impl<T: Chacha20Type> KeyAeadMeta for Chacha20Key<T> {
+    type NonceSize = NonceSize<T>;
+    type TagSize = TagSize<T>;
+}
 
 impl<T: Chacha20Type> KeyAeadInPlace for Chacha20Key<T> {
     /// Encrypt a secret value in place, appending the verification tag
@@ -130,10 +156,7 @@ impl<T: Chacha20Type> KeyAeadInPlace for Chacha20Key<T> {
         aad: &[u8],
     ) -> Result<(), Error> {
         if nonce.len() != NonceSize::<T>::USIZE {
-            return Err(err_msg!(
-                "invalid size for nonce (expected {} bytes)",
-                NonceSize::<T>::USIZE
-            ));
+            return Err(err_msg!(InvalidNonce));
         }
         let nonce = GenericArray::from_slice(nonce);
         let buf_len = buffer.as_ref().len();
@@ -151,13 +174,11 @@ impl<T: Chacha20Type> KeyAeadInPlace for Chacha20Key<T> {
         Ok(())
     }
 
-    /// Get the required nonce size for encryption
-    fn nonce_size() -> usize {
+    fn nonce_length() -> usize {
         NonceSize::<T>::USIZE
     }
 
-    /// Get the size of the verification tag
-    fn tag_size() -> usize {
+    fn tag_length() -> usize {
         TagSize::<T>::USIZE
     }
 }
@@ -187,7 +208,7 @@ where
         let mut key = Self::uninit();
         let mut buf = Writer::from_slice(key.0.as_mut());
         lhs.key_exchange_buffer(rhs, &mut buf)?;
-        if buf.position() != T::key_size() {
+        if buf.position() != Self::KEY_LENGTH {
             return Err(err_msg!("invalid length for key exchange output"));
         }
         Ok(key)
@@ -208,7 +229,7 @@ mod tests {
             let mut nonce = GenericArray::<u8, NonceSize<T>>::default();
             fill_random(&mut nonce);
             key.encrypt_in_place(&mut buffer, &nonce, &[]).unwrap();
-            assert_eq!(buffer.len(), input.len() + Chacha20Key::<T>::tag_size());
+            assert_eq!(buffer.len(), input.len() + Chacha20Key::<T>::TAG_LENGTH);
             assert_ne!(&buffer[..], input);
             key.decrypt_in_place(&mut buffer, &nonce, &[]).unwrap();
             assert_eq!(&buffer[..], input);

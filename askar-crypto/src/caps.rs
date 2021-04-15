@@ -1,4 +1,3 @@
-use alloc::string::{String, ToString};
 use core::{
     fmt::{self, Display, Formatter},
     str::FromStr,
@@ -10,33 +9,6 @@ use crate::{
     buffer::{SecretBytes, WriteBuffer},
     error::Error,
 };
-
-// #[cfg(feature = "any")]
-// use crate::any::AnyKey;
-
-/// Generate a new random key.
-pub trait KeyGen: Sized {
-    fn generate() -> Result<Self, Error>;
-}
-
-/// Allows a key to be created uninitialized and populated later,
-/// for instance when nested inside another struct.
-pub trait KeyGenInPlace {
-    fn generate_in_place(&mut self) -> Result<(), Error>;
-}
-
-/// Initialize a key from an array of bytes.
-pub trait KeySecretBytes: Sized {
-    fn from_key_secret_bytes(key: &[u8]) -> Result<Self, Error>;
-
-    fn to_key_secret_buffer<B: WriteBuffer>(&self, out: &mut B) -> Result<(), Error>;
-
-    fn to_key_secret_bytes(&self) -> Result<SecretBytes, Error> {
-        let mut buf = SecretBytes::with_capacity(128);
-        self.to_key_secret_buffer(&mut buf)?;
-        Ok(buf)
-    }
-}
 
 pub trait KeyCapSign {
     fn key_sign_buffer<B: WriteBuffer>(
@@ -112,56 +84,6 @@ impl FromStr for KeyAlg {
 }
 
 impl Display for KeyAlg {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.write_str(self.as_str())
-    }
-}
-
-/// Categories of keys supported by the default KMS
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Zeroize)]
-pub enum KeyCategory {
-    /// A private key or keypair
-    PrivateKey,
-    /// A public key
-    PublicKey,
-}
-
-impl KeyCategory {
-    /// Get a reference to a string representing the `KeyCategory`
-    pub fn as_str(&self) -> &str {
-        match self {
-            Self::PrivateKey => "private",
-            Self::PublicKey => "public",
-        }
-    }
-
-    /// Convert the `KeyCategory` into an owned string
-    pub fn to_string(&self) -> String {
-        self.as_str().to_string()
-    }
-}
-
-serde_as_str_impl!(KeyCategory);
-
-impl AsRef<str> for KeyCategory {
-    fn as_ref(&self) -> &str {
-        self.as_str()
-    }
-}
-
-impl FromStr for KeyCategory {
-    type Err = Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(match s {
-            "private" => Self::PrivateKey,
-            "public" => Self::PublicKey,
-            _ => return Err(err_msg!("Unknown key category: {}", s)),
-        })
-    }
-}
-
-impl Display for KeyCategory {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         f.write_str(self.as_str())
     }

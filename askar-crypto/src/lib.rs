@@ -6,7 +6,7 @@
 // #[cfg(feature="alloc")]
 extern crate alloc;
 
-#[cfg(test)]
+#[cfg(any(test, feature = "std"))]
 #[macro_use]
 extern crate std;
 
@@ -16,6 +16,7 @@ extern crate hex_literal;
 
 #[macro_use]
 mod error;
+pub use self::error::{Error, ErrorKind};
 
 #[macro_use]
 mod serde_utils;
@@ -30,14 +31,10 @@ pub use self::any::{AnyPrivateKey, AnyPublicKey};
 
 pub mod alg;
 
-mod buffer;
-pub use self::buffer::{ResizeBuffer, SecretBytes, WriteBuffer, Writer};
+pub mod buffer;
 
 pub mod caps;
-pub use self::caps::{
-    KeyAlg, KeyCapSign, KeyCapVerify, KeyCategory, KeyGen, KeyGenInPlace, KeySecretBytes,
-    SignatureFormat, SignatureType,
-};
+pub use self::caps::{KeyAlg, KeyCapSign, KeyCapVerify, SignatureFormat, SignatureType};
 
 pub mod encrypt;
 
@@ -48,3 +45,6 @@ pub mod kdf;
 pub mod pack;
 
 pub mod random;
+
+pub mod repr;
+pub use repr::{KeyGen, KeyGenInPlace, KeySecretBytes};

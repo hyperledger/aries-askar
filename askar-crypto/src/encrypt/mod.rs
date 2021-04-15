@@ -1,7 +1,10 @@
+use crate::generic_array::ArrayLength;
+
 use crate::{buffer::ResizeBuffer, error::Error};
 
 pub mod nacl_box;
 
+/// Trait for key types which perform AEAD encryption
 pub trait KeyAeadInPlace {
     /// Encrypt a secret value in place, appending the verification tag
     fn encrypt_in_place<B: ResizeBuffer>(
@@ -19,9 +22,15 @@ pub trait KeyAeadInPlace {
         aad: &[u8],
     ) -> Result<(), Error>;
 
-    /// Get the required nonce size for encryption
-    fn nonce_size() -> usize;
+    /// Get the required nonce length for encryption
+    fn nonce_length() -> usize;
 
-    /// Get the size of the verification tag
-    fn tag_size() -> usize;
+    /// Get the length of the verification tag
+    fn tag_length() -> usize;
+}
+
+/// For concrete key types with fixed nonce and tag sizes
+pub trait KeyAeadMeta {
+    type NonceSize: ArrayLength<u8>;
+    type TagSize: ArrayLength<u8>;
 }
