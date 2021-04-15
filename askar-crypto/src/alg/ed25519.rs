@@ -12,11 +12,11 @@ use x25519_dalek::{PublicKey as XPublicKey, StaticSecret as XSecretKey};
 use super::x25519::X25519KeyPair;
 use crate::{
     buffer::{ArrayKey, SecretBytes, WriteBuffer},
-    caps::{KeyCapSign, KeyCapVerify, SignatureType},
     error::Error,
     generic_array::typenum::{U32, U64},
     jwk::{FromJwk, JwkEncoder, JwkParts, ToJwk},
     repr::{KeyGen, KeyMeta, KeyPublicBytes, KeySecretBytes, KeypairMeta},
+    sign::{KeySigVerify, KeySign, SignatureType},
 };
 
 // FIXME - check for low-order points when loading public keys?
@@ -186,7 +186,7 @@ impl KeyPublicBytes for Ed25519KeyPair {
     }
 }
 
-impl KeyCapSign for Ed25519KeyPair {
+impl KeySign for Ed25519KeyPair {
     fn key_sign_buffer<B: WriteBuffer>(
         &self,
         data: &[u8],
@@ -209,7 +209,7 @@ impl KeyCapSign for Ed25519KeyPair {
     }
 }
 
-impl KeyCapVerify for Ed25519KeyPair {
+impl KeySigVerify for Ed25519KeyPair {
     fn key_verify(
         &self,
         message: &[u8],

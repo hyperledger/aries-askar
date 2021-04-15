@@ -12,13 +12,13 @@ use zeroize::Zeroizing;
 
 use crate::{
     buffer::{ArrayKey, SecretBytes, WriteBuffer},
-    caps::{KeyCapSign, KeyCapVerify, SignatureType},
     error::Error,
     generic_array::typenum::{U32, U33, U65},
     jwk::{FromJwk, JwkEncoder, JwkParts, ToJwk},
     kdf::KeyExchange,
     random::with_rng,
     repr::{KeyGen, KeyMeta, KeyPublicBytes, KeySecretBytes, KeypairMeta},
+    sign::{KeySigVerify, KeySign, SignatureType},
 };
 
 pub const ES256_SIGNATURE_LENGTH: usize = 64;
@@ -152,7 +152,7 @@ impl KeyPublicBytes for P256KeyPair {
     }
 }
 
-impl KeyCapSign for P256KeyPair {
+impl KeySign for P256KeyPair {
     fn key_sign_buffer<B: WriteBuffer>(
         &self,
         message: &[u8],
@@ -174,7 +174,7 @@ impl KeyCapSign for P256KeyPair {
     }
 }
 
-impl KeyCapVerify for P256KeyPair {
+impl KeySigVerify for P256KeyPair {
     fn key_verify(
         &self,
         message: &[u8],

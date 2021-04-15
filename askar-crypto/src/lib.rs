@@ -1,7 +1,6 @@
 #![no_std]
 // #![deny(missing_debug_implementations)]
 // #![deny(missing_docs)]
-// #![deny(unsafe_code)]
 
 // #[cfg(feature="alloc")]
 extern crate alloc;
@@ -18,9 +17,6 @@ extern crate hex_literal;
 mod error;
 pub use self::error::{Error, ErrorKind};
 
-#[macro_use]
-mod serde_utils;
-
 // re-export
 pub use aead::generic_array;
 
@@ -30,11 +26,9 @@ pub mod any;
 pub use self::any::{AnyPrivateKey, AnyPublicKey};
 
 pub mod alg;
+pub use self::alg::KeyAlg;
 
 pub mod buffer;
-
-pub mod caps;
-pub use self::caps::{KeyAlg, KeyCapSign, KeyCapVerify, SignatureFormat, SignatureType};
 
 pub mod encrypt;
 
@@ -46,5 +40,8 @@ pub mod pack;
 
 pub mod random;
 
+pub mod sign;
+pub use self::sign::{KeySigVerify, KeySign, SignatureType};
+
 pub mod repr;
-pub use repr::{KeyGen, KeyGenInPlace, KeySecretBytes};
+pub use self::repr::{KeyGen, KeyGenInPlace, KeySecretBytes};
