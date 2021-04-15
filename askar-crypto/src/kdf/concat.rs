@@ -15,6 +15,8 @@ pub struct ConcatKDFParams<'p> {
     pub alg: &'p [u8],
     pub apu: &'p [u8],
     pub apv: &'p [u8],
+    pub pub_info: &'p [u8],
+    pub prv_info: &'p [u8],
 }
 
 impl<H> ConcatKDF<H>
@@ -36,7 +38,8 @@ where
         while remain > 0 {
             hasher.start_pass();
             hasher.hash_message(message);
-            let hashed = hasher.finish_pass(params, output_len);
+            hasher.hash_params(params);
+            let hashed = hasher.finish_pass();
             let cp_size = hashed.len().min(remain);
             &output[..cp_size].copy_from_slice(&hashed[..cp_size]);
             output = &mut output[cp_size..];
@@ -46,7 +49,7 @@ where
     }
 }
 
-pub(crate) struct ConcatKDFHash<H: Digest> {
+pub struct ConcatKDFHash<H: Digest> {
     hasher: H,
     counter: u32,
 }
@@ -64,15 +67,11 @@ impl<H: Digest> ConcatKDFHash<H> {
         self.counter += 1;
     }
 
-    pub fn hash_message(&mut self, message: &[u8]) {
-        self.hasher.update(message);
+    pub fn hash_message(&mut self, data: &[u8]) {
+        self.hasher.update(data);
     }
 
-    pub fn finish_pass(
-        &mut self,
-        params: ConcatKDFParams<'_>,
-        output_len: usize,
-    ) -> GenericArray<u8, H::OutputSize> {
+    pub fn hash_params(&mut self, params: ConcatKDFParams<'_>) {
         let hash = &mut self.hasher;
         hash.update((params.alg.len() as u32).to_be_bytes());
         hash.update(params.alg);
@@ -80,8 +79,12 @@ impl<H: Digest> ConcatKDFHash<H> {
         hash.update(params.apu);
         hash.update((params.apv.len() as u32).to_be_bytes());
         hash.update(params.apv);
-        hash.update((output_len as u32 * 8).to_be_bytes());
-        hash.finalize_reset()
+        hash.update(params.pub_info);
+        hash.update(params.prv_info);
+    }
+
+    pub fn finish_pass(&mut self) -> GenericArray<u8, H::OutputSize> {
+        self.hasher.finalize_reset()
     }
 }
 
@@ -129,6 +132,8 @@ mod tests {
                 alg: b"A256GCM",
                 apu: b"Alice",
                 apv: b"Bob",
+                pub_info: &(256u32).to_be_bytes(),
+                prv_info: &[],
             },
             &mut output,
         )

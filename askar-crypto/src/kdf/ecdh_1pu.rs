@@ -21,7 +21,9 @@ impl<Key: KeyExchange> Ecdh1PU<Key> {
         ephem_key: &Key,
         send_key: &Key,
         recip_key: &Key,
-        params: ConcatKDFParams,
+        alg: &[u8],
+        apu: &[u8],
+        apv: &[u8],
         key_output: &mut [u8],
     ) -> Result<(), Error> {
         let output_len = key_output.len();
@@ -34,7 +36,15 @@ impl<Key: KeyExchange> Ecdh1PU<Key> {
         ephem_key.key_exchange_buffer(recip_key, &mut kdf)?;
         send_key.key_exchange_buffer(recip_key, &mut kdf)?;
 
-        let mut key = kdf.finish_pass(params, output_len);
+        kdf.hash_params(ConcatKDFParams {
+            alg,
+            apu,
+            apv,
+            pub_info: &(256u32).to_be_bytes(), // output length in bits
+            prv_info: &[],
+        });
+
+        let mut key = kdf.finish_pass();
         key_output.copy_from_slice(&key[..output_len]);
         key.zeroize();
 
@@ -57,8 +67,7 @@ impl<Key: KeyExchange> Ecdh1PU<Key> {
         let mut encoder = JwkEncoder::new(jwk_output, JwkEncoderMode::PublicKey)?;
         ephem_key.to_jwk_buffer(&mut encoder)?;
 
-        let params = ConcatKDFParams { alg, apu, apv };
-        Self::derive_key_config(&ephem_key, send_key, recip_key, params, key_output)?;
+        Self::derive_key_config(&ephem_key, send_key, recip_key, alg, apu, apv, key_output)?;
 
         // SECURITY: keys must zeroize themselves on drop
         drop(ephem_key);
@@ -108,11 +117,9 @@ mod tests {
             &ephem_sk,
             &alice_sk,
             &bob_sk,
-            ConcatKDFParams {
-                alg: b"A256GCM",
-                apu: b"Alice",
-                apv: b"Bob",
-            },
+            b"A256GCM",
+            b"Alice",
+            b"Bob",
             &mut key_output,
         )
         .unwrap();
