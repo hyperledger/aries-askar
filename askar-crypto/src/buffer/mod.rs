@@ -1,6 +1,8 @@
 #[cfg(feature = "alloc")]
 use alloc::vec::Vec;
-use core::{iter, ops::Range};
+#[cfg(feature = "alloc")]
+use core::iter;
+use core::ops::Range;
 
 use crate::error::Error;
 

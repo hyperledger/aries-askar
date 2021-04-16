@@ -84,7 +84,7 @@ impl KeyMeta for P256KeyPair {
 impl KeySecretBytes for P256KeyPair {
     fn from_secret_bytes(key: &[u8]) -> Result<Self, Error> {
         Ok(Self::from_secret_key(
-            SecretKey::from_bytes(key).map_err(|_| err_msg!("Invalid p-256 secret key bytes"))?,
+            SecretKey::from_bytes(key).map_err(|_| err_msg!(InvalidKeyData))?,
         ))
     }
 
@@ -106,13 +106,13 @@ impl KeypairMeta for P256KeyPair {
 impl KeypairBytes for P256KeyPair {
     fn from_keypair_bytes(kp: &[u8]) -> Result<Self, Error> {
         if kp.len() != KEYPAIR_LENGTH {
-            return Err(err_msg!("Invalid keypair bytes"));
+            return Err(err_msg!(InvalidKeyData));
         }
         let sk = SecretKey::from_bytes(&kp[..SECRET_KEY_LENGTH])
-            .map_err(|_| err_msg!("Invalid k-256 secret key bytes"))?;
+            .map_err(|_| err_msg!(InvalidKeyData))?;
         let pk = EncodedPoint::from_bytes(&kp[SECRET_KEY_LENGTH..])
             .and_then(|pt| pt.decode())
-            .map_err(|_| err_msg!("Invalid k-256 public key bytes"))?;
+            .map_err(|_| err_msg!(InvalidKeyData))?;
         // FIXME: derive pk from sk and check value?
 
         Ok(Self {
@@ -139,7 +139,7 @@ impl KeyPublicBytes for P256KeyPair {
     fn from_public_bytes(key: &[u8]) -> Result<Self, Error> {
         let pk = EncodedPoint::from_bytes(key)
             .and_then(|pt| pt.decode())
-            .map_err(|_| err_msg!("Invalid p-256 public key bytes"))?;
+            .map_err(|_| err_msg!(InvalidKeyData))?;
         Ok(Self {
             secret: None,
             public: pk,
@@ -193,7 +193,12 @@ impl ToJwk for P256KeyPair {
     fn to_jwk_buffer<B: WriteBuffer>(&self, buffer: &mut JwkEncoder<B>) -> Result<(), Error> {
         let encp = EncodedPoint::encode(self.public, false);
         let (x, y) = match encp.coordinates() {
-            Coordinates::Identity => return Err(err_msg!("Cannot convert identity point to JWK")),
+            Coordinates::Identity => {
+                return Err(err_msg!(
+                    Unsupported,
+                    "Cannot convert identity point to JWK"
+                ))
+            }
             Coordinates::Uncompressed { x, y } => (x, y),
             Coordinates::Compressed { .. } => unreachable!(),
         };
@@ -222,23 +227,20 @@ impl FromJwk for P256KeyPair {
         let mut pk_x = ArrayKey::<FieldSize>::default();
         let mut pk_y = ArrayKey::<FieldSize>::default();
         if jwk.x.decode_base64(pk_x.as_mut())? != pk_x.len() {
-            return Err(err_msg!("invalid length for p-256 attribute 'x'"));
+            return Err(err_msg!(InvalidKeyData));
         }
         if jwk.y.decode_base64(pk_y.as_mut())? != pk_y.len() {
-            return Err(err_msg!("invalid length for p-256 attribute 'y'"));
+            return Err(err_msg!(InvalidKeyData));
         }
         let pk = EncodedPoint::from_affine_coordinates(pk_x.as_ref(), pk_y.as_ref(), false)
             .decode()
-            .map_err(|_| err_msg!("error decoding p-256 public key"))?;
+            .map_err(|_| err_msg!(InvalidKeyData))?;
         let sk = if jwk.d.is_some() {
             let mut sk = ArrayKey::<FieldSize>::default();
             if jwk.d.decode_base64(sk.as_mut())? != sk.len() {
-                return Err(err_msg!("invalid length for p-256 attribute 'd'"));
+                return Err(err_msg!(InvalidKeyData));
             }
-            Some(
-                SecretKey::from_bytes(sk.as_ref())
-                    .map_err(|_| err_msg!("Invalid p-256 secret key bytes"))?,
-            )
+            Some(SecretKey::from_bytes(sk.as_ref()).map_err(|_| err_msg!(InvalidKeyData))?)
         } else {
             None
         };

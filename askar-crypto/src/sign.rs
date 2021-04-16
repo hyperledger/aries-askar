@@ -1,8 +1,6 @@
-use crate::{
-    alg::BlsGroups,
-    buffer::{SecretBytes, WriteBuffer},
-    error::Error,
-};
+#[cfg(feature = "alloc")]
+use crate::buffer::SecretBytes;
+use crate::{alg::BlsGroups, buffer::WriteBuffer, error::Error};
 
 pub trait KeySign: KeySigVerify {
     fn key_sign_buffer<B: WriteBuffer>(
@@ -12,6 +10,7 @@ pub trait KeySign: KeySigVerify {
         out: &mut B,
     ) -> Result<(), Error>;
 
+    #[cfg(feature = "alloc")]
     fn key_sign(&self, data: &[u8], sig_type: Option<SignatureType>) -> Result<SecretBytes, Error> {
         let mut buf = SecretBytes::with_capacity(128);
         self.key_sign_buffer(data, sig_type, &mut buf)?;

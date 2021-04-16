@@ -78,7 +78,7 @@ impl FromStr for KeyAlg {
             "p256" => Self::EcCurve(EcCurves::Secp256r1),
             "secp256k1" => Self::EcCurve(EcCurves::Secp256k1),
             "secp256r1" => Self::EcCurve(EcCurves::Secp256r1),
-            _ => return Err(err_msg!("Unknown key algorithm: {}", s)),
+            _ => return Err(err_msg!(Unsupported, "Unknown key algorithm")),
         })
     }
 }

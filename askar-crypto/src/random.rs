@@ -5,7 +5,9 @@ use chacha20::{
 };
 use rand::{rngs::OsRng, RngCore};
 
-use crate::{buffer::SecretBytes, error::Error};
+#[cfg(feature = "alloc")]
+use crate::buffer::SecretBytes;
+use crate::error::Error;
 
 pub const SEED_LENGTH: usize = <ChaCha20 as NewStreamCipher>::KeySize::USIZE;
 
@@ -28,7 +30,7 @@ pub fn fill_random(value: &mut [u8]) {
 /// used to generate a deterministic symmetric encryption key
 pub fn fill_random_deterministic(seed: &[u8], output: &mut [u8]) -> Result<(), Error> {
     if seed.len() != SEED_LENGTH {
-        return Err(err_msg!("Invalid length for seed"));
+        return Err(err_msg!(Usage, "Invalid length for seed"));
     }
     let mut cipher = ChaCha20::new(
         GenericArray::from_slice(seed),
@@ -38,6 +40,7 @@ pub fn fill_random_deterministic(seed: &[u8], output: &mut [u8]) -> Result<(), E
     Ok(())
 }
 
+#[cfg(feature = "alloc")]
 /// Create a new `SecretBytes` instance with random data.
 #[inline(always)]
 pub fn random_secret(len: usize) -> SecretBytes {

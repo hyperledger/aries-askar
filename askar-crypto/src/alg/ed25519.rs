@@ -131,7 +131,7 @@ impl KeyMeta for Ed25519KeyPair {
 impl KeySecretBytes for Ed25519KeyPair {
     fn from_secret_bytes(key: &[u8]) -> Result<Self, Error> {
         if key.len() != SECRET_KEY_LENGTH {
-            return Err(err_msg!("Invalid ed25519 secret key length"));
+            return Err(err_msg!(InvalidKeyData));
         }
         let sk = SecretKey::from_bytes(key).expect("Error loading ed25519 key");
         Ok(Self::from_secret_key(sk))
@@ -150,12 +150,12 @@ impl KeypairMeta for Ed25519KeyPair {
 impl KeypairBytes for Ed25519KeyPair {
     fn from_keypair_bytes(kp: &[u8]) -> Result<Self, Error> {
         if kp.len() != KEYPAIR_LENGTH {
-            return Err(err_msg!("Invalid keypair bytes"));
+            return Err(err_msg!(InvalidKeyData));
         }
         // NB: this is infallible if the slice is the right length
         let sk = SecretKey::from_bytes(&kp[..SECRET_KEY_LENGTH]).unwrap();
         let pk = PublicKey::from_bytes(&kp[SECRET_KEY_LENGTH..])
-            .map_err(|_| err_msg!("Invalid ed25519 public key bytes"))?;
+            .map_err(|_| err_msg!(InvalidKeyData))?;
         // FIXME: derive pk from sk and check value?
 
         Ok(Self {
@@ -179,11 +179,11 @@ impl KeypairBytes for Ed25519KeyPair {
 impl KeyPublicBytes for Ed25519KeyPair {
     fn from_public_bytes(key: &[u8]) -> Result<Self, Error> {
         if key.len() != PUBLIC_KEY_LENGTH {
-            return Err(err_msg!("Invalid ed25519 public key length"));
+            return Err(err_msg!(InvalidKeyData));
         }
         Ok(Self {
             secret: None,
-            public: PublicKey::from_bytes(key).map_err(|_| err_msg!("Invalid keypair bytes"))?,
+            public: PublicKey::from_bytes(key).map_err(|_| err_msg!(InvalidKeyData))?,
         })
     }
 
@@ -254,19 +254,15 @@ impl FromJwk for Ed25519KeyPair {
         // SECURITY: ArrayKey zeroizes on drop
         let mut pk = ArrayKey::<U32>::default();
         if jwk.x.decode_base64(pk.as_mut())? != pk.len() {
-            return Err(err_msg!("invalid length for ed25519 attribute 'x'"));
+            return Err(err_msg!(InvalidKeyData));
         }
-        let pk = PublicKey::from_bytes(&pk.as_ref()[..])
-            .map_err(|_| err_msg!("Invalid ed25519 public key bytes"))?;
+        let pk = PublicKey::from_bytes(&pk.as_ref()[..]).map_err(|_| err_msg!(InvalidKeyData))?;
         let sk = if jwk.d.is_some() {
             let mut sk = ArrayKey::<U32>::default();
             if jwk.d.decode_base64(sk.as_mut())? != sk.len() {
-                return Err(err_msg!("invalid length for ed25519 attribute 'd'"));
+                return Err(err_msg!(InvalidKeyData));
             }
-            Some(
-                SecretKey::from_bytes(&sk.as_ref()[..])
-                    .map_err(|_| err_msg!("Invalid ed25519 secret key bytes"))?,
-            )
+            Some(SecretKey::from_bytes(&sk.as_ref()[..]).map_err(|_| err_msg!(InvalidKeyData))?)
         } else {
             None
         };

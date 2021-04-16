@@ -31,7 +31,7 @@ where
         let output_len = output.len();
         if output_len > u32::MAX as usize / 8 {
             // output_len is used as SuppPubInfo later
-            return Err(err_msg!("exceeded max output size for concat KDF"));
+            return Err(err_msg!(Usage, "Exceeded max output size for concat KDF"));
         }
         let mut hasher = ConcatKDFHash::<H>::new();
         let mut remain = output_len;
@@ -104,7 +104,7 @@ impl<D: Digest> WriteBuffer for ConcatKDFHash<D> {
         // this could use a Vec to support larger inputs
         // but for current purposes a small fixed buffer is fine
         if max_len > HASH_BUFFER_SIZE {
-            return Err(err_msg!("exceeded hash buffer size"));
+            return Err(err_msg!(Usage, "Exceeded hash buffer size"));
         }
         let mut buf = [0u8; HASH_BUFFER_SIZE];
         let written = f(&mut buf[..max_len])?;

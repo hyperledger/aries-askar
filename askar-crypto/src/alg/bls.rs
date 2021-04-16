@@ -60,7 +60,7 @@ impl Bls12PrivateKey {
 
     pub fn from_bytes(sk: &[u8]) -> Result<Self, Error> {
         if sk.len() != 32 {
-            return Err(err_msg!("Invalid key length"));
+            return Err(err_msg!(InvalidKeyLength));
         }
         let mut skb = [0u8; 32];
         skb.copy_from_slice(sk);
@@ -68,9 +68,7 @@ impl Bls12PrivateKey {
         let result: Option<Scalar> = Scalar::from_bytes(&skb).into();
         // turn into little-endian format
         skb.zeroize();
-        Ok(Self(
-            result.ok_or_else(|| err_msg!("Invalid keypair bytes"))?,
-        ))
+        Ok(Self(result.ok_or_else(|| err_msg!(InvalidKeyData))?))
     }
 
     pub fn to_bytes(&self) -> SecretBytes {

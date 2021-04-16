@@ -1,6 +1,5 @@
 #[cfg(feature = "std")]
 use alloc::boxed::Box;
-use alloc::string::String;
 use core::fmt::{self, Display, Formatter};
 
 #[cfg(feature = "std")]
@@ -12,11 +11,14 @@ pub enum ErrorKind {
     /// An encryption or decryption operation failed
     Encryption,
 
-    /// The input parameters to the method were incorrect
-    Input,
-
     /// Out of space in provided buffer
     ExceededBuffer,
+
+    /// The provided input was invalid
+    InvalidData,
+
+    /// The provided key was invalid
+    InvalidKeyData,
 
     /// The provided nonce was invalid (bad length)
     InvalidNonce,
@@ -26,6 +28,9 @@ pub enum ErrorKind {
 
     /// An unexpected error occurred
     Unexpected,
+
+    /// The input parameters to the method were incorrect
+    Usage,
 
     /// An unsupported operation was requested
     Unsupported,
@@ -37,10 +42,12 @@ impl ErrorKind {
         match self {
             Self::Encryption => "Encryption error",
             Self::ExceededBuffer => "Exceeded allocated buffer",
-            Self::Input => "Input error",
+            Self::InvalidData => "Invalid data",
             Self::InvalidNonce => "Invalid encryption nonce",
+            Self::InvalidKeyData => "Invalid key data",
             Self::MissingSecretKey => "Missing secret key",
             Self::Unexpected => "Unexpected error",
+            Self::Usage => "Usage error",
             Self::Unsupported => "Unsupported",
         }
     }
@@ -56,28 +63,18 @@ impl Display for ErrorKind {
 #[derive(Debug)]
 pub struct Error {
     pub(crate) kind: ErrorKind,
-    #[cfg(not(feature = "std"))]
-    pub(crate) cause: Option<String>,
     #[cfg(feature = "std")]
     pub(crate) cause: Option<Box<dyn StdError + Send + Sync + 'static>>,
-    pub(crate) message: Option<String>,
+    pub(crate) message: Option<&'static str>,
 }
 
 impl Error {
-    pub(crate) fn from_msg<T: Into<String>>(kind: ErrorKind, msg: T) -> Self {
+    pub(crate) fn from_msg(kind: ErrorKind, msg: &'static str) -> Self {
         Self {
             kind,
+            #[cfg(feature = "std")]
             cause: None,
-            message: Some(msg.into()),
-        }
-    }
-
-    #[allow(dead_code)]
-    pub(crate) fn from_opt_msg<T: Into<String>>(kind: ErrorKind, msg: Option<T>) -> Self {
-        Self {
-            kind,
-            cause: None,
-            message: msg.map(Into::into),
+            message: Some(msg),
         }
     }
 
@@ -87,14 +84,8 @@ impl Error {
     }
 
     /// Accessor for the error message
-    pub fn message(&self) -> Option<&str> {
-        self.message.as_ref().map(String::as_str)
-    }
-
-    #[cfg(not(feature = "std"))]
-    pub(crate) fn with_cause<T: Into<Option<String>>>(mut self, err: T) -> Self {
-        self.cause = err.into();
-        self
+    pub fn message(&self) -> Option<&'static str> {
+        self.message
     }
 
     #[cfg(feature = "std")]
@@ -106,11 +97,12 @@ impl Error {
 
 impl Display for Error {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        if let Some(msg) = self.message.as_ref() {
+        if let Some(msg) = self.message {
             f.write_str(msg)?;
         } else {
             f.write_str(self.kind.as_str())?;
         }
+        #[cfg(feature = "std")]
         if let Some(cause) = self.cause.as_ref() {
             write!(f, "\nCaused by: {}", cause)?;
         }
@@ -137,6 +129,7 @@ impl From<ErrorKind> for Error {
     fn from(kind: ErrorKind) -> Self {
         Self {
             kind,
+            #[cfg(feature = "std")]
             cause: None,
             message: None,
         }
@@ -144,17 +137,11 @@ impl From<ErrorKind> for Error {
 }
 
 macro_rules! err_msg {
-    () => {
-        $crate::error::Error::from($crate::error::ErrorKind::Input)
-    };
     ($kind:ident) => {
         $crate::error::Error::from($crate::error::ErrorKind::$kind)
     };
-    ($kind:ident, $($args:tt)+) => {
-        $crate::error::Error::from_msg($crate::error::ErrorKind::$kind, $crate::alloc::format!($($args)+))
-    };
-    ($($args:tt)+) => {
-        $crate::error::Error::from_msg($crate::error::ErrorKind::Input, $crate::alloc::format!($($args)+))
+    ($kind:ident, $msg:expr) => {
+        $crate::error::Error::from_msg($crate::error::ErrorKind::$kind, $msg)
     };
 }
 
@@ -168,6 +155,6 @@ macro_rules! err_map {
 #[cfg(not(feature = "std"))]
 macro_rules! err_map {
     ($($params:tt)*) => {
-        |err| err_msg!($($params)*).with_cause(alloc::string::ToString::to_string(&err))
+        |_| err_msg!($($params)*)
     };
 }

@@ -84,12 +84,12 @@ impl KeyMeta for X25519KeyPair {
 impl KeySecretBytes for X25519KeyPair {
     fn from_secret_bytes(key: &[u8]) -> Result<Self, Error> {
         if key.len() != SECRET_KEY_LENGTH {
-            return Err(err_msg!("Invalid x25519 key length"));
+            return Err(err_msg!(InvalidKeyData));
         }
 
         // pre-check key to ensure that clamping has no effect
         if key[0] & 7 != 0 || (key[31] & 127 | 64) != key[31] {
-            return Err(err_msg!("invalid x25519 secret key"));
+            return Err(err_msg!(InvalidKeyData));
         }
 
         let sk = SecretKey::from(TryInto::<[u8; SECRET_KEY_LENGTH]>::try_into(key).unwrap());
@@ -122,7 +122,7 @@ impl KeypairMeta for X25519KeyPair {
 impl KeypairBytes for X25519KeyPair {
     fn from_keypair_bytes(kp: &[u8]) -> Result<Self, Error> {
         if kp.len() != KEYPAIR_LENGTH {
-            return Err(err_msg!("Invalid keypair bytes"));
+            return Err(err_msg!(InvalidKeyData));
         }
         let sk = SecretKey::from(
             TryInto::<[u8; SECRET_KEY_LENGTH]>::try_into(&kp[..SECRET_KEY_LENGTH]).unwrap(),
@@ -154,7 +154,7 @@ impl KeypairBytes for X25519KeyPair {
 impl KeyPublicBytes for X25519KeyPair {
     fn from_public_bytes(key: &[u8]) -> Result<Self, Error> {
         if key.len() != PUBLIC_KEY_LENGTH {
-            return Err(err_msg!("Invalid x25519 public key length"));
+            return Err(err_msg!(InvalidKeyData));
         }
         Ok(Self::new(
             None,
@@ -191,7 +191,7 @@ impl FromJwk for X25519KeyPair {
         // SECURITY: ArrayKey zeroizes on drop
         let mut pk = ArrayKey::<U32>::default();
         if jwk.x.decode_base64(pk.as_mut())? != pk.len() {
-            return Err(err_msg!("invalid length for x25519 attribute 'x'"));
+            return Err(err_msg!(InvalidKeyData));
         }
         let pk = PublicKey::from(
             TryInto::<[u8; PUBLIC_KEY_LENGTH]>::try_into(&pk.as_ref()[..]).unwrap(),
@@ -199,7 +199,7 @@ impl FromJwk for X25519KeyPair {
         let sk = if jwk.d.is_some() {
             let mut sk = ArrayKey::<U32>::default();
             if jwk.d.decode_base64(sk.as_mut())? != sk.len() {
-                return Err(err_msg!("invalid length for x25519 attribute 'd'"));
+                return Err(err_msg!(InvalidKeyData));
             }
             Some(SecretKey::from(
                 TryInto::<[u8; SECRET_KEY_LENGTH]>::try_into(&sk.as_ref()[..]).unwrap(),

@@ -27,25 +27,6 @@ impl AnyPublicKey {
     }
 }
 
-// impl TryFrom<KeyEntry> for AnyPublicKey {
-//     type Error = Error;
-
-//     fn try_from(value: KeyEntry) -> Result<Self, Self::Error> {
-//         if value.category == KeyCategory::PublicKey {
-//             if let Some(data) = value.params.data {
-//                 Ok(AnyPublicKey {
-//                     alg: value.params.alg,
-//                     data: data.into_vec(),
-//                 })
-//             } else {
-//                 Err(err_msg!(Unsupported, "Missing public key raw data"))
-//             }
-//         } else {
-//             Err(err_msg!(Unsupported, "Not a public key entry"))
-//         }
-//     }
-// }
-
 impl KeyCapVerify for AnyPublicKey {
     fn key_verify(
         &self,
@@ -123,22 +104,3 @@ impl KeyCapVerify for AnyPrivateKey {
         }
     }
 }
-
-// impl TryFrom<KeyEntry> for AnyPrivateKey {
-//     type Error = Error;
-
-//     fn try_from(value: KeyEntry) -> Result<Self, Self::Error> {
-//         if value.category == KeyCategory::PrivateKey {
-//             if let Some(data) = value.params.data {
-//                 Ok(AnyPrivateKey {
-//                     alg: value.params.alg,
-//                     data,
-//                 })
-//             } else {
-//                 Err(err_msg!(Unsupported, "Missing private key raw data"))
-//             }
-//         } else {
-//             Err(err_msg!(Unsupported, "Not a private key entry"))
-//         }
-//     }
-// }

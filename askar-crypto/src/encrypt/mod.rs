@@ -5,6 +5,7 @@ use crate::{
     random::fill_random,
 };
 
+#[cfg(feature = "alloc")] // FIXME - support non-alloc
 pub mod nacl_box;
 
 /// Trait for key types which perform AEAD encryption

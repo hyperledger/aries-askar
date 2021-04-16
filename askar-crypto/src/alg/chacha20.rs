@@ -113,7 +113,7 @@ impl<T: Chacha20Type> KeyGen for Chacha20Key<T> {
 impl<T: Chacha20Type> KeySecretBytes for Chacha20Key<T> {
     fn from_secret_bytes(key: &[u8]) -> Result<Self, Error> {
         if key.len() != <T::Aead as NewAead>::KeySize::USIZE {
-            return Err(err_msg!("Invalid length for chacha20 key"));
+            return Err(err_msg!(InvalidKeyData));
         }
         Ok(Self(KeyType::<T>::from_slice(key)))
     }
@@ -150,16 +150,13 @@ impl<T: Chacha20Type> KeyAeadInPlace for Chacha20Key<T> {
         aad: &[u8],
     ) -> Result<(), Error> {
         if nonce.len() != NonceSize::<T>::USIZE {
-            return Err(err_msg!(
-                "invalid size for nonce (expected {} bytes)",
-                NonceSize::<T>::USIZE
-            ));
+            return Err(err_msg!(InvalidNonce));
         }
         let nonce = GenericArray::from_slice(nonce);
         let chacha = T::Aead::new(self.0.as_ref());
         let tag = chacha
             .encrypt_in_place_detached(nonce, aad, buffer.as_mut())
-            .map_err(|e| err_msg!(Encryption, "{}", e))?;
+            .map_err(|_| err_msg!(Encryption, "AEAD encryption error"))?;
         buffer.write_slice(&tag[..])?;
         Ok(())
     }
@@ -177,7 +174,7 @@ impl<T: Chacha20Type> KeyAeadInPlace for Chacha20Key<T> {
         let nonce = GenericArray::from_slice(nonce);
         let buf_len = buffer.as_ref().len();
         if buf_len < TagSize::<T>::USIZE {
-            return Err(err_msg!("invalid size for encrypted data"));
+            return Err(err_msg!(InvalidData, "Invalid size for encrypted data"));
         }
         let tag_start = buf_len - TagSize::<T>::USIZE;
         let mut tag = GenericArray::default();
@@ -185,7 +182,7 @@ impl<T: Chacha20Type> KeyAeadInPlace for Chacha20Key<T> {
         let chacha = T::Aead::new(self.0.as_ref());
         chacha
             .decrypt_in_place_detached(nonce, aad, &mut buffer.as_mut()[..tag_start], &tag)
-            .map_err(|e| err_msg!(Encryption, "{}", e))?;
+            .map_err(|_| err_msg!(Encryption, "AEAD decryption error"))?;
         buffer.buffer_resize(tag_start)?;
         Ok(())
     }
@@ -225,7 +222,7 @@ where
         let mut buf = Writer::from_slice(key.0.as_mut());
         lhs.key_exchange_buffer(rhs, &mut buf)?;
         if buf.position() != Self::KEY_LENGTH {
-            return Err(err_msg!("invalid length for key exchange output"));
+            return Err(err_msg!(Usage, "Invalid length for key exchange output"));
         }
         Ok(key)
     }

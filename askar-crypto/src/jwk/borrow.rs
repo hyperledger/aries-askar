@@ -14,9 +14,8 @@ pub enum Jwk<'a> {
 impl Jwk<'_> {
     pub fn to_parts(&self) -> Result<JwkParts<'_>, Error> {
         match self {
-            Self::Encoded(s) => Ok(
-                serde_json::from_str(s.as_ref()).map_err(err_map!("Error deserializing JWK"))?
-            ),
+            Self::Encoded(s) => Ok(serde_json::from_str(s.as_ref())
+                .map_err(err_map!(InvalidData, "Error deserializing JWK"))?),
             Self::Parts(p) => Ok(*p),
         }
     }

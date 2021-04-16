@@ -40,17 +40,20 @@ impl Argon2 {
         output: &mut [u8],
     ) -> Result<(), Error> {
         if salt.len() < SALT_LENGTH {
-            return Err(err_msg!("invalid salt for argon2i hash"));
+            return Err(err_msg!(Usage, "Invalid salt for argon2i hash"));
         }
         if output.len() > u32::MAX as usize {
-            return Err(err_msg!("output length exceeds max for argon2i hash"));
+            return Err(err_msg!(
+                Usage,
+                "Output length exceeds max for argon2i hash"
+            ));
         }
         let context =
             argon2::Argon2::new(None, params.time_cost, params.mem_cost, 1, params.version)
-                .map_err(|e| err_msg!("Error creating hasher: {}", e))?;
+                .map_err(|_| err_msg!(Unexpected, "Error creating hasher"))?;
         context
             .hash_password_into(params.alg, password, salt, &[], output)
-            .map_err(|e| err_msg!("Error deriving key: {}", e))
+            .map_err(|_| err_msg!(Unexpected, "Error deriving key"))
     }
 }
 

@@ -49,13 +49,13 @@ impl OptAttr<'_> {
         if let Some(s) = self.0 {
             let max_input = (output.len() * 4 + 2) / 3; // ceil(4*n/3)
             if s.len() > max_input {
-                Err(err_msg!("base64 length exceeds max"))
+                Err(err_msg!(InvalidData, "Base64 length exceeds max"))
             } else {
                 base64::decode_config_slice(s, base64::URL_SAFE_NO_PAD, output)
-                    .map_err(|e| err_msg!("base64 decode error: {}", e))
+                    .map_err(|_| err_msg!(InvalidData, "Base64 decode error"))
             }
         } else {
-            Err(err_msg!("empty attribute"))
+            Err(err_msg!(InvalidData, "Empty attribute"))
         }
     }
 }

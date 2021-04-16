@@ -61,7 +61,7 @@ pub fn crypto_box<B: ResizeBuffer>(
     let box_inst = SalsaBox::new(&recip_pk.public, &sender_sk);
     let tag = box_inst
         .encrypt_in_place_detached(nonce, &[], buffer.as_mut())
-        .map_err(|_| err_msg!(Encryption, "Error encrypting box"))?;
+        .map_err(|_| err_msg!(Encryption, "Crypto box AEAD encryption error"))?;
     buffer.write_slice(&tag[..])?;
     Ok(())
 }
@@ -76,7 +76,7 @@ pub fn crypto_box_open<B: ResizeBuffer>(
     let nonce = nonce_from(nonce)?;
     let buf_len = buffer.as_ref().len();
     if buf_len < TagSize::<SalsaBox>::USIZE {
-        return Err(err_msg!("invalid size for encrypted data"));
+        return Err(err_msg!(Encryption, "Invalid size for encrypted data"));
     }
     let tag_start = buf_len - TagSize::<SalsaBox>::USIZE;
     let mut tag = GenericArray::default();
@@ -86,7 +86,7 @@ pub fn crypto_box_open<B: ResizeBuffer>(
 
     box_inst
         .decrypt_in_place_detached(nonce, &[], &mut buffer.as_mut()[..tag_start], &tag)
-        .map_err(|_| err_msg!(Encryption, "Error decrypting box"))?;
+        .map_err(|_| err_msg!(Encryption, "Crypto box AEAD decryption error"))?;
     buffer.buffer_resize(tag_start)?;
     Ok(())
 }
