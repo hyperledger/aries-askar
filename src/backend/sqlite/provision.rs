@@ -194,7 +194,7 @@ async fn init_db(
     method: WrapKeyMethod,
     pass_key: PassKey<'_>,
 ) -> Result<KeyCache, Error> {
-    let (store_key, enc_store_key, wrap_key, wrap_key_ref) = unblock({
+    let (profile_key, enc_profile_key, wrap_key, wrap_key_ref) = unblock({
         let pass_key = pass_key.into_owned();
         move || init_keys(method, pass_key)
     })
@@ -220,7 +220,7 @@ async fn init_db(
             id INTEGER NOT NULL,
             name TEXT NOT NULL,
             reference TEXT NULL,
-            store_key BLOB NULL,
+            profile_key BLOB NULL,
             PRIMARY KEY(id)
         );
         CREATE UNIQUE INDEX ix_profile_name ON profiles (name);
@@ -253,7 +253,7 @@ async fn init_db(
         CREATE INDEX ix_items_tags_name_enc ON items_tags (name, SUBSTR(value, 1, 12)) WHERE plaintext=0;
         CREATE INDEX ix_items_tags_name_plain ON items_tags (name, value) WHERE plaintext=1;
 
-        INSERT INTO profiles (name, store_key) VALUES (?1, ?3);
+        INSERT INTO profiles (name, profile_key) VALUES (?1, ?3);
 
         COMMIT;
     "#,
@@ -261,7 +261,7 @@ async fn init_db(
     .persistent(false)
     .bind(profile_name)
     .bind(wrap_key_ref)
-    .bind(enc_store_key)
+    .bind(enc_profile_key)
     .execute(&mut conn)
     .await?;
 
@@ -272,7 +272,7 @@ async fn init_db(
         .bind(profile_name)
         .fetch_one(&mut conn)
         .await?;
-    key_cache.add_profile_mut(profile_name.to_string(), row.try_get(0)?, store_key);
+    key_cache.add_profile_mut(profile_name.to_string(), row.try_get(0)?, profile_key);
 
     Ok(key_cache)
 }
@@ -323,7 +323,7 @@ async fn open_db(
         let wrap_ref = WrapKeyReference::parse_uri(&wrap_key_ref)?;
         if let Some(method) = method {
             if !wrap_ref.compare_method(&method) {
-                return Err(err_msg!(Input, "Store key wrap method mismatch"));
+                return Err(err_msg!(Input, "Store wrap key method mismatch"));
             }
         }
         unblock({
@@ -336,13 +336,13 @@ async fn open_db(
     };
     let mut key_cache = KeyCache::new(wrap_key);
 
-    let row = sqlx::query("SELECT id, store_key FROM profiles WHERE name = ?1")
+    let row = sqlx::query("SELECT id, profile_key FROM profiles WHERE name = ?1")
         .bind(&profile)
         .fetch_one(&mut conn)
         .await?;
     let profile_id = row.try_get(0)?;
-    let store_key = key_cache.load_key(row.try_get(1)?).await?;
-    key_cache.add_profile_mut(profile.clone(), profile_id, store_key);
+    let profile_key = key_cache.load_key(row.try_get(1)?).await?;
+    key_cache.add_profile_mut(profile.clone(), profile_id, profile_key);
 
     Ok(Store::new(SqliteStore::new(
         conn_pool, profile, key_cache, path,

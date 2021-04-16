@@ -15,25 +15,30 @@ use crate::{
     storage::entry::{EncEntryTag, EntryTag},
 };
 
-pub type StoreKey = StoreKeyImpl<Chacha20Key<C20P>, super::hmac_key::HmacKey<U32, Sha256>>;
+pub type ProfileKey = ProfileKeyImpl<Chacha20Key<C20P>, super::hmac_key::HmacKey<U32, Sha256>>;
 
-/// A store key combining the keys required to encrypt
-/// and decrypt storage records
+/// A record combining the keys required to encrypt and decrypt storage entries
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(bound(
     deserialize = "Key: for<'a> Deserialize<'a>, HmacKey: for<'a> Deserialize<'a>",
     serialize = "Key: Serialize, HmacKey: Serialize"
 ))]
-pub struct StoreKeyImpl<Key, HmacKey> {
+pub struct ProfileKeyImpl<Key, HmacKey> {
+    #[serde(rename = "ick")]
     pub category_key: Key,
+    #[serde(rename = "ink")]
     pub name_key: Key,
+    #[serde(rename = "ihk")]
     pub item_hmac_key: HmacKey,
+    #[serde(rename = "tnk")]
     pub tag_name_key: Key,
+    #[serde(rename = "tvk")]
     pub tag_value_key: Key,
+    #[serde(rename = "thk")]
     pub tags_hmac_key: HmacKey,
 }
 
-impl<Key, HmacKey> StoreKeyImpl<Key, HmacKey>
+impl<Key, HmacKey> ProfileKeyImpl<Key, HmacKey>
 where
     Key: KeyGen,
     HmacKey: KeyGen,
@@ -50,7 +55,7 @@ where
     }
 }
 
-impl<Key, HmacKey> StoreKeyImpl<Key, HmacKey>
+impl<Key, HmacKey> ProfileKeyImpl<Key, HmacKey>
 where
     Key: Serialize + for<'de> Deserialize<'de>,
     HmacKey: Serialize + for<'de> Deserialize<'de>,
@@ -58,15 +63,15 @@ where
     pub fn to_bytes(&self) -> Result<SecretBytes, Error> {
         serde_cbor::to_vec(self)
             .map(SecretBytes::from)
-            .map_err(err_map!(Unexpected, "Error serializing store key"))
+            .map_err(err_map!(Unexpected, "Error serializing profile key"))
     }
 
     pub fn from_slice(input: &[u8]) -> Result<Self, Error> {
-        serde_cbor::from_slice(input).map_err(err_map!(Unsupported, "Invalid store key"))
+        serde_cbor::from_slice(input).map_err(err_map!(Unsupported, "Invalid profile key"))
     }
 }
 
-impl<Key, HmacKey> StoreKeyImpl<Key, HmacKey>
+impl<Key, HmacKey> ProfileKeyImpl<Key, HmacKey>
 where
     Key: KeyGen + KeyMeta + KeyAeadInPlace + KeyAeadMeta + KeySecretBytes,
     HmacKey: KeyGen + HmacOutput,
@@ -141,7 +146,7 @@ where
     }
 }
 
-impl<Key: PartialEq, HmacKey: PartialEq> PartialEq for StoreKeyImpl<Key, HmacKey> {
+impl<Key: PartialEq, HmacKey: PartialEq> PartialEq for ProfileKeyImpl<Key, HmacKey> {
     fn eq(&self, other: &Self) -> bool {
         self.category_key == other.category_key
             && self.name_key == other.name_key
@@ -151,9 +156,9 @@ impl<Key: PartialEq, HmacKey: PartialEq> PartialEq for StoreKeyImpl<Key, HmacKey
             && self.tags_hmac_key == other.tags_hmac_key
     }
 }
-impl<Key: PartialEq, HmacKey: PartialEq> Eq for StoreKeyImpl<Key, HmacKey> {}
+impl<Key: PartialEq, HmacKey: PartialEq> Eq for ProfileKeyImpl<Key, HmacKey> {}
 
-impl<Key, HmacKey> EntryEncryptor for StoreKeyImpl<Key, HmacKey>
+impl<Key, HmacKey> EntryEncryptor for ProfileKeyImpl<Key, HmacKey>
 where
     Key: KeyGen + KeyMeta + KeyAeadInPlace + KeyAeadMeta + KeySecretBytes,
     HmacKey: KeyGen + HmacOutput,
@@ -255,7 +260,7 @@ mod tests {
 
     #[test]
     fn encrypt_entry_round_trip() {
-        let key = StoreKey::new().unwrap();
+        let key = ProfileKey::new().unwrap();
         let test_record = Entry::new(
             "category",
             "name",
@@ -295,24 +300,27 @@ mod tests {
         assert_eq!(test_record, cmp_record);
     }
 
-    // #[test]
-    // fn store_key_searchable() {
-    //     const NONCE_SIZE: usize = 12;
-    //     let input = SecretBytes::from(&b"hello"[..]);
-    //     let key = EncKey::<ChaChaEncrypt>::random_key();
-    //     let hmac_key = EncKey::<ChaChaEncrypt>::random();
-    //     let enc1 = encrypt_searchable::<ChaChaEncrypt>(input.clone(), &key, &hmac_key).unwrap();
-    //     let enc2 = encrypt_searchable::<ChaChaEncrypt>(input.clone(), &key, &hmac_key).unwrap();
-    //     assert_eq!(&enc1[0..NONCE_SIZE], &enc2[0..NONCE_SIZE]);
-    //     let dec = ChaChaEncrypt::decrypt(enc1, &key).unwrap();
-    //     assert_eq!(dec, input);
-    // }
+    #[test]
+    fn check_encrypt_searchable() {
+        let input = SecretBytes::from(&b"hello"[..]);
+        let key = Chacha20Key::<C20P>::generate().unwrap();
+        let hmac_key = crate::protect::hmac_key::HmacKey::<U32, Sha256>::generate().unwrap();
+        let enc1 = ProfileKey::encrypt_searchable(input.clone(), &key, &hmac_key).unwrap();
+        let enc2 = ProfileKey::encrypt_searchable(input.clone(), &key, &hmac_key).unwrap();
+        let enc3 = ProfileKey::encrypt(input.clone(), &key).unwrap();
+        assert_eq!(&enc1, &enc2);
+        assert_ne!(&enc1, &enc3);
+        let dec = ProfileKey::decrypt(enc1, &key).unwrap();
+        assert_eq!(dec, input);
+    }
 
     #[test]
     fn serialize_round_trip() {
-        let key = StoreKey::new().unwrap();
+        let key = ProfileKey::new().unwrap();
         let key_cbor = serde_cbor::to_vec(&key).unwrap();
         let key_cmp = serde_cbor::from_slice(&key_cbor).unwrap();
+        println!("len: {}", key_cbor.len());
+        assert!(false);
         assert_eq!(key, key_cmp);
     }
 }

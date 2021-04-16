@@ -10,7 +10,7 @@ use sqlx::{
 use crate::{
     error::Error,
     future::BoxFuture,
-    protect::{EntryEncryptor, KeyCache, PassKey, ProfileId, StoreKey, WrapKey, WrapKeyMethod},
+    protect::{EntryEncryptor, KeyCache, PassKey, ProfileId, ProfileKey, WrapKey, WrapKeyMethod},
     storage::{
         entry::{EncEntryTag, Entry, EntryTag, TagFilter},
         wql::{
@@ -79,7 +79,7 @@ impl<DB: ExtDatabase> DbSession<DB> {
         }
     }
 
-    pub(crate) fn profile_and_key(&mut self) -> Option<(ProfileId, Arc<StoreKey>)> {
+    pub(crate) fn profile_and_key(&mut self) -> Option<(ProfileId, Arc<ProfileKey>)> {
         if let DbSessionKey::Active {
             profile_id,
             ref key,
@@ -171,7 +171,7 @@ impl<'q, DB: ExtDatabase> Drop for DbSession<DB> {
 }
 
 pub(crate) trait GetProfileKey<'a, DB: Database> {
-    type Fut: Future<Output = Result<(ProfileId, Arc<StoreKey>), Error>>;
+    type Fut: Future<Output = Result<(ProfileId, Arc<ProfileKey>), Error>>;
     fn call_once(
         self,
         conn: &'a mut PoolConnection<DB>,
@@ -183,7 +183,7 @@ pub(crate) trait GetProfileKey<'a, DB: Database> {
 impl<'a, DB: Database, F, Fut> GetProfileKey<'a, DB> for F
 where
     F: FnOnce(&'a mut PoolConnection<DB>, Arc<KeyCache>, String) -> Fut,
-    Fut: Future<Output = Result<(ProfileId, Arc<StoreKey>), Error>> + 'a,
+    Fut: Future<Output = Result<(ProfileId, Arc<ProfileKey>), Error>> + 'a,
 {
     type Fut = Fut;
     fn call_once(
@@ -200,7 +200,7 @@ where
 pub(crate) enum DbSessionKey {
     Active {
         profile_id: ProfileId,
-        key: Arc<StoreKey>,
+        key: Arc<ProfileKey>,
     },
     Pending {
         cache: Arc<KeyCache>,
@@ -501,7 +501,7 @@ pub(crate) fn decode_tags(tags: Vec<u8>) -> Result<Vec<EncEntryTag>, ()> {
 pub fn decrypt_scan_batch(
     category: String,
     enc_rows: Vec<EncScanEntry>,
-    key: &StoreKey,
+    key: &ProfileKey,
 ) -> Result<Vec<Entry>, Error> {
     let mut batch = Vec::with_capacity(enc_rows.len());
     for enc_entry in enc_rows {
@@ -513,7 +513,7 @@ pub fn decrypt_scan_batch(
 pub fn decrypt_scan_entry(
     category: String,
     enc_entry: EncScanEntry,
-    key: &StoreKey,
+    key: &ProfileKey,
 ) -> Result<Entry, Error> {
     let name = key.decrypt_entry_name(enc_entry.name)?;
     let value = key.decrypt_entry_value(category.as_str(), name.as_str(), enc_entry.value)?;
@@ -535,14 +535,14 @@ pub fn expiry_timestamp(expire_ms: i64) -> Result<Expiry, Error> {
 
 pub fn encode_tag_filter<Q: QueryPrepare>(
     tag_filter: Option<TagFilter>,
-    key: &StoreKey,
+    key: &ProfileKey,
     offset: usize,
 ) -> Result<Option<(String, Vec<Vec<u8>>)>, Error> {
     if let Some(tag_filter) = tag_filter {
         let tag_query = tag_query(tag_filter.query)?;
         let mut enc = TagSqlEncoder::new(
-            |name| Ok(key.encrypt_tag_name(StoreKey::prepare_input(name.as_bytes()))?),
-            |value| Ok(key.encrypt_tag_value(StoreKey::prepare_input(value.as_bytes()))?),
+            |name| Ok(key.encrypt_tag_name(ProfileKey::prepare_input(name.as_bytes()))?),
+            |value| Ok(key.encrypt_tag_value(ProfileKey::prepare_input(value.as_bytes()))?),
         );
         if let Some(filter) = enc.encode_query(&tag_query)? {
             let filter = replace_arg_placeholders::<Q>(&filter, (offset as i64) + 1);
@@ -563,17 +563,21 @@ pub fn prepare_tags(tags: &[EntryTag]) -> Result<Vec<EntryTag>, Error> {
         result.push(match tag {
             EntryTag::Plaintext(name, value) => EntryTag::Plaintext(
                 unsafe {
-                    String::from_utf8_unchecked(StoreKey::prepare_input(name.as_bytes()).into_vec())
+                    String::from_utf8_unchecked(
+                        ProfileKey::prepare_input(name.as_bytes()).into_vec(),
+                    )
                 },
                 value.clone(),
             ),
             EntryTag::Encrypted(name, value) => EntryTag::Encrypted(
                 unsafe {
-                    String::from_utf8_unchecked(StoreKey::prepare_input(name.as_bytes()).into_vec())
+                    String::from_utf8_unchecked(
+                        ProfileKey::prepare_input(name.as_bytes()).into_vec(),
+                    )
                 },
                 unsafe {
                     String::from_utf8_unchecked(
-                        StoreKey::prepare_input(value.as_bytes()).into_vec(),
+                        ProfileKey::prepare_input(value.as_bytes()).into_vec(),
                     )
                 },
             ),
@@ -608,15 +612,20 @@ where
 pub fn init_keys<'a>(
     method: WrapKeyMethod,
     pass_key: PassKey<'a>,
-) -> Result<(StoreKey, Vec<u8>, WrapKey, String), Error> {
+) -> Result<(ProfileKey, Vec<u8>, WrapKey, String), Error> {
     let (wrap_key, wrap_key_ref) = method.resolve(pass_key)?;
-    let store_key = StoreKey::new()?;
-    let enc_store_key = encode_store_key(&store_key, &wrap_key)?;
-    Ok((store_key, enc_store_key, wrap_key, wrap_key_ref.into_uri()))
+    let profile_key = ProfileKey::new()?;
+    let enc_profile_key = encode_profile_key(&profile_key, &wrap_key)?;
+    Ok((
+        profile_key,
+        enc_profile_key,
+        wrap_key,
+        wrap_key_ref.into_uri(),
+    ))
 }
 
-pub fn encode_store_key(store_key: &StoreKey, wrap_key: &WrapKey) -> Result<Vec<u8>, Error> {
-    wrap_key.wrap_data(store_key.to_bytes()?)
+pub fn encode_profile_key(profile_key: &ProfileKey, wrap_key: &WrapKey) -> Result<Vec<u8>, Error> {
+    wrap_key.wrap_data(profile_key.to_bytes()?)
 }
 
 #[inline]

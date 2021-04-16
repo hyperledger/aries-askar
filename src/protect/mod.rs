@@ -10,8 +10,8 @@ mod hmac_key;
 mod pass_key;
 pub use self::pass_key::PassKey;
 
-mod store_key;
-pub use self::store_key::StoreKey;
+mod profile_key;
+pub use self::profile_key::ProfileKey;
 
 mod wrap_key;
 pub use self::wrap_key::{generate_raw_wrap_key, WrapKey, WrapKeyMethod, WrapKeyReference};
@@ -27,7 +27,7 @@ pub type ProfileId = i64;
 
 #[derive(Debug)]
 pub struct KeyCache {
-    profile_info: Mutex<HashMap<String, (ProfileId, Arc<StoreKey>)>>,
+    profile_info: Mutex<HashMap<String, (ProfileId, Arc<ProfileKey>)>>,
     pub(crate) wrap_key: Arc<WrapKey>,
 }
 
@@ -39,30 +39,30 @@ impl KeyCache {
         }
     }
 
-    pub async fn load_key(&self, ciphertext: Vec<u8>) -> Result<StoreKey, Error> {
+    pub async fn load_key(&self, ciphertext: Vec<u8>) -> Result<ProfileKey, Error> {
         let wrap_key = self.wrap_key.clone();
         unblock(move || {
             let mut data = wrap_key
                 .unwrap_data(ciphertext)
-                .map_err(err_map!(Encryption, "Error decrypting store key"))?;
-            let key = StoreKey::from_slice(&data)?;
+                .map_err(err_map!(Encryption, "Error decrypting profile key"))?;
+            let key = ProfileKey::from_slice(&data)?;
             data.zeroize();
             Ok(key)
         })
         .await
     }
 
-    pub fn add_profile_mut(&mut self, ident: String, pid: ProfileId, key: StoreKey) {
+    pub fn add_profile_mut(&mut self, ident: String, pid: ProfileId, key: ProfileKey) {
         self.profile_info
             .get_mut()
             .insert(ident, (pid, Arc::new(key)));
     }
 
-    pub async fn add_profile(&self, ident: String, pid: ProfileId, key: Arc<StoreKey>) {
+    pub async fn add_profile(&self, ident: String, pid: ProfileId, key: Arc<ProfileKey>) {
         self.profile_info.lock().await.insert(ident, (pid, key));
     }
 
-    pub async fn get_profile(&self, name: &str) -> Option<(ProfileId, Arc<StoreKey>)> {
+    pub async fn get_profile(&self, name: &str) -> Option<(ProfileId, Arc<ProfileKey>)> {
         self.profile_info.lock().await.get(name).cloned()
     }
 }
