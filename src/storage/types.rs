@@ -6,7 +6,6 @@ use std::{
 };
 
 use futures_lite::stream::{Stream, StreamExt};
-use zeroize::Zeroizing;
 
 use super::{
     entry::{Entry, EntryKind, EntryOperation, EntryTag, TagFilter},
@@ -493,7 +492,7 @@ impl<Q: QueryBackend> Session<Q> {
 
         let mut params = KeyParams::from_slice(&row.value)?;
         params.metadata = metadata.map(str::to_string);
-        let value = Zeroizing::new(params.to_vec()?);
+        let value = params.to_bytes()?;
 
         self.0
             .update(

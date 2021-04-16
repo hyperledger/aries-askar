@@ -303,12 +303,12 @@ impl QueryBackend for DbSession<Sqlite> {
             {
                 let value = row.try_get(1)?;
                 let tags = row.try_get(2)?;
-                let (value, tags) = unblock(move || {
-                    let value = key.decrypt_entry_value(value)?;
+                let (category, name, value, tags) = unblock(move || {
+                    let value = key.decrypt_entry_value(category.as_str(), name.as_str(), value)?;
                     let enc_tags = decode_tags(tags)
                         .map_err(|_| err_msg!(Unexpected, "Error decoding entry tags"))?;
                     let tags = Some(key.decrypt_entry_tags(enc_tags)?);
-                    Result::<_, Error>::Ok((value, tags))
+                    Result::<_, Error>::Ok((category, name, value, tags))
                 })
                 .await?;
                 Ok(Some(Entry::new(category, name, value, tags)))
@@ -409,10 +409,15 @@ impl QueryBackend for DbSession<Sqlite> {
                 Box::pin(async move {
                     let (_, key) = acquire_key(&mut *self).await?;
                     let (enc_category, enc_name, enc_value, enc_tags) = unblock(move || {
+                        let enc_value = key.encrypt_entry_value(
+                            category.as_opt_str().unwrap(),
+                            name.as_opt_str().unwrap(),
+                            value,
+                        )?;
                         Result::<_, Error>::Ok((
                             key.encrypt_entry_category(category)?,
                             key.encrypt_entry_name(name)?,
-                            key.encrypt_entry_value(value)?,
+                            enc_value,
                             tags.transpose()?
                                 .map(|t| key.encrypt_entry_tags(t))
                                 .transpose()?,

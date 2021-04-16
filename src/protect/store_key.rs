@@ -27,7 +27,6 @@ pub type StoreKey = StoreKeyImpl<Chacha20Key<C20P>, super::hmac_key::HmacKey<U32
 pub struct StoreKeyImpl<Key, HmacKey> {
     pub category_key: Key,
     pub name_key: Key,
-    pub value_key: Key,
     pub item_hmac_key: HmacKey,
     pub tag_name_key: Key,
     pub tag_value_key: Key,
@@ -43,7 +42,6 @@ where
         Ok(Self {
             category_key: KeyGen::generate()?,
             name_key: KeyGen::generate()?,
-            value_key: KeyGen::generate()?,
             item_hmac_key: KeyGen::generate()?,
             tag_name_key: KeyGen::generate()?,
             tag_value_key: KeyGen::generate()?,
@@ -84,7 +82,7 @@ where
         hmac_key: &HmacKey,
     ) -> Result<Vec<u8>, Error> {
         let mut nonce = ArrayKey::<Key::NonceSize>::default();
-        hmac_key.hmac_to(buffer.as_ref(), nonce.as_mut())?;
+        hmac_key.hmac_to(&[buffer.as_ref()], nonce.as_mut())?;
         enc_key.encrypt_in_place(&mut buffer, nonce.as_ref(), &[])?;
         buffer.buffer_insert_slice(0, nonce.as_ref())?;
         Ok(buffer.into_vec())
@@ -109,6 +107,23 @@ where
         Ok(buffer)
     }
 
+    pub fn derive_value_key(
+        &self,
+        category: &str,
+        name: &str,
+        out: &mut [u8],
+    ) -> Result<(), Error> {
+        self.item_hmac_key.hmac_to(
+            &[
+                &(category.len() as u64).to_be_bytes(),
+                category.as_bytes(),
+                &(name.len() as u64).to_be_bytes(),
+                name.as_bytes(),
+            ],
+            out,
+        )
+    }
+
     pub fn encrypt_tag_name(&self, name: SecretBytes) -> Result<Vec<u8>, Error> {
         Self::encrypt_searchable(name, &self.tag_name_key, &self.tags_hmac_key)
     }
@@ -130,7 +145,6 @@ impl<Key: PartialEq, HmacKey: PartialEq> PartialEq for StoreKeyImpl<Key, HmacKey
     fn eq(&self, other: &Self) -> bool {
         self.category_key == other.category_key
             && self.name_key == other.name_key
-            && self.value_key == other.value_key
             && self.item_hmac_key == other.item_hmac_key
             && self.tag_name_key == other.tag_name_key
             && self.tag_value_key == other.tag_value_key
@@ -158,13 +172,16 @@ where
         Self::encrypt_searchable(name, &self.name_key, &self.item_hmac_key)
     }
 
-    fn encrypt_entry_value(&self, value: SecretBytes) -> Result<Vec<u8>, Error> {
-        let value_key = Key::generate()?;
-        let value = Self::encrypt(value, &value_key)?;
-        let key_input = value_key.with_secret_bytes(|sk| Self::prepare_input(sk.unwrap()));
-        let mut result = Self::encrypt(key_input, &self.value_key)?;
-        result.write_slice(value.as_ref())?;
-        Ok(result)
+    fn encrypt_entry_value(
+        &self,
+        category: &str,
+        name: &str,
+        value: SecretBytes,
+    ) -> Result<Vec<u8>, Error> {
+        let mut value_key = ArrayKey::<Key::KeySize>::default();
+        self.derive_value_key(category, name, value_key.as_mut())?;
+        let value_key = Key::from_secret_bytes(value_key.as_ref())?;
+        Self::encrypt(value, &value_key)
     }
 
     fn decrypt_entry_category(&self, enc_category: Vec<u8>) -> Result<String, Error> {
@@ -175,19 +192,16 @@ where
         decode_utf8(Self::decrypt(enc_name, &self.name_key)?.into_vec())
     }
 
-    fn decrypt_entry_value(&self, mut enc_value: Vec<u8>) -> Result<SecretBytes, Error> {
-        let enc_key_size = Self::encrypted_size(Key::KeySize::USIZE);
-        if enc_value.len() < enc_key_size + Self::encrypted_size(0) {
-            return Err(err_msg!(
-                Encryption,
-                "Buffer is too short to represent an encrypted value",
-            ));
-        }
-        let value = Vec::from(&enc_value[enc_key_size..]);
-        enc_value.buffer_resize(enc_key_size)?;
-        let value_key =
-            Key::from_secret_bytes(Self::decrypt(enc_value, &self.value_key)?.as_ref())?;
-        Self::decrypt(value, &value_key)
+    fn decrypt_entry_value(
+        &self,
+        category: &str,
+        name: &str,
+        enc_value: Vec<u8>,
+    ) -> Result<SecretBytes, Error> {
+        let mut value_key = ArrayKey::<Key::KeySize>::default();
+        self.derive_value_key(category, name, value_key.as_mut())?;
+        let value_key = Key::from_secret_bytes(value_key.as_ref())?;
+        Self::decrypt(enc_value, &value_key)
     }
 
     fn encrypt_entry_tags(&self, tags: Vec<EntryTag>) -> Result<Vec<EncEntryTag>, Error> {
@@ -258,7 +272,11 @@ mod tests {
             .encrypt_entry_name(test_record.name.clone().into())
             .unwrap();
         let enc_value = key
-            .encrypt_entry_value(test_record.value.clone().into())
+            .encrypt_entry_value(
+                &test_record.category,
+                &test_record.name,
+                test_record.value.clone().into(),
+            )
             .unwrap();
         let enc_tags = key
             .encrypt_entry_tags(test_record.tags.clone().unwrap())
@@ -270,7 +288,8 @@ mod tests {
         let cmp_record = Entry::new(
             key.decrypt_entry_category(enc_category).unwrap(),
             key.decrypt_entry_name(enc_name).unwrap(),
-            key.decrypt_entry_value(enc_value).unwrap(),
+            key.decrypt_entry_value(&test_record.category, &test_record.name, enc_value)
+                .unwrap(),
             Some(key.decrypt_entry_tags(enc_tags).unwrap()),
         );
         assert_eq!(test_record, cmp_record);

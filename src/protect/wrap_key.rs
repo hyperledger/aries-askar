@@ -276,13 +276,13 @@ mod tests {
     #[test]
     fn derived_key_unwrap_expected() {
         let input = b"test data";
-        let wrapped = vec![
-            194, 156, 102, 253, 229, 11, 48, 184, 160, 119, 218, 30, 169, 188, 244, 223, 235, 95,
-            171, 234, 18, 5, 9, 115, 174, 208, 232, 37, 31, 32, 250, 216, 32, 92, 253, 45, 236,
-        ];
+        let wrapped = Vec::from(hex!(
+            "c29c66fde50b30b8a077da1ea9bcf4dfeb5fabea12050973aed0e8251f20fad8205cfd2dec"
+        ));
         let pass = PassKey::from("pass");
-        let key_ref = WrapKeyReference::parse_uri("kdf:argon2i:13:mod?salt=MR6B1jrReV2JioaizEaRo6")
-            .expect("Error parsing derived key ref");
+        let key_ref =
+            WrapKeyReference::parse_uri("kdf:argon2i:13:mod?salt=a553cfb9c558b5c11c78efcfa06f3e29")
+                .expect("Error parsing derived key ref");
         let key = key_ref.resolve(pass).expect("Error deriving existing key");
         let unwrapped = key.unwrap_data(wrapped).expect("Error unwrapping data");
         assert_eq!(unwrapped, &input[..]);
@@ -290,12 +290,12 @@ mod tests {
 
     #[test]
     fn derived_key_check_bad_password() {
-        let wrapped = vec![
-            194, 156, 102, 253, 229, 11, 48, 184, 160, 119, 218, 30, 169, 188, 244, 223, 235, 95,
-            171, 234, 18, 5, 9, 115, 174, 208, 232, 37, 31, 32, 250, 216, 32, 92, 253, 45, 236,
-        ];
-        let key_ref = WrapKeyReference::parse_uri("kdf:argon2i:13:mod?salt=MR6B1jrReV2JioaizEaRo6")
-            .expect("Error parsing derived key ref");
+        let wrapped = Vec::from(hex!(
+            "c29c66fde50b30b8a077da1ea9bcf4dfeb5fabea12050973aed0e8251f20fad8205cfd2dec"
+        ));
+        let key_ref =
+            WrapKeyReference::parse_uri("kdf:argon2i:13:mod?salt=a553cfb9c558b5c11c78efcfa06f3e29")
+                .expect("Error parsing derived key ref");
         let check_bad_pass = key_ref
             .resolve("not my pass".into())
             .expect("Error deriving comparison key");

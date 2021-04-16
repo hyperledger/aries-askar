@@ -66,22 +66,25 @@ impl<L: ArrayLength<u8>, H> KeyGen for HmacKey<L, H> {
 }
 
 pub trait HmacOutput {
-    fn hmac_to(&self, message: &[u8], output: &mut [u8]) -> Result<(), Error>;
+    fn hmac_to(&self, messages: &[&[u8]], output: &mut [u8]) -> Result<(), Error>;
 }
 
-impl<L: ArrayLength<u8>, H> HmacOutput for HmacKey<L, H>
+impl<L, H> HmacOutput for HmacKey<L, H>
 where
+    L: ArrayLength<u8>,
     H: BlockInput + Default + Reset + Update + Clone + FixedOutput,
 {
-    fn hmac_to(&self, message: &[u8], output: &mut [u8]) -> Result<(), Error> {
+    fn hmac_to(&self, messages: &[&[u8]], output: &mut [u8]) -> Result<(), Error> {
         if output.len() > H::OutputSize::USIZE {
             return Err(err_msg!(Encryption, "invalid length for hmac output"));
         }
-        let mut nonce_hmac =
+        let mut hmac =
             Hmac::<H>::new_varkey(self.0.as_ref()).map_err(|e| err_msg!(Encryption, "{}", e))?;
-        nonce_hmac.update(&message);
-        let nonce_long = nonce_hmac.finalize().into_bytes();
-        output.copy_from_slice(&nonce_long[..output.len()]);
+        for msg in messages {
+            hmac.update(msg);
+        }
+        let hash = hmac.finalize().into_bytes();
+        output.copy_from_slice(&hash[..output.len()]);
         Ok(())
     }
 }
@@ -99,7 +102,7 @@ mod tests {
         ))
         .unwrap();
         let mut output = [0u8; 12];
-        key.hmac_to(b"test message", &mut output).unwrap();
+        key.hmac_to(&[b"test message"], &mut output).unwrap();
         assert_eq!(output, &hex!("4cecfbf6be721395529be686")[..]);
     }
 }

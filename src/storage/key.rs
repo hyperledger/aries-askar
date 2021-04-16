@@ -77,13 +77,14 @@ pub struct KeyParams {
 }
 
 impl KeyParams {
-    pub(crate) fn to_vec(&self) -> Result<Vec<u8>, Error> {
-        serde_json::to_vec(self)
+    pub(crate) fn to_bytes(&self) -> Result<SecretBytes, Error> {
+        serde_cbor::to_vec(self)
+            .map(SecretBytes::from)
             .map_err(|e| err_msg!(Unexpected, "Error serializing key params: {}", e))
     }
 
     pub(crate) fn from_slice(params: &[u8]) -> Result<KeyParams, Error> {
-        let result = serde_json::from_slice(params)
+        let result = serde_cbor::from_slice(params)
             .map_err(|e| err_msg!(Unexpected, "Error deserializing key params: {}", e));
         result
     }
@@ -138,7 +139,7 @@ mod tests {
             reference: None,
             data: Some(SecretBytes::from(vec![0, 0, 0, 0])),
         };
-        let enc_params = params.to_vec().unwrap();
+        let enc_params = params.to_bytes().unwrap();
         let p2 = KeyParams::from_slice(&enc_params).unwrap();
         assert_eq!(p2, params);
     }

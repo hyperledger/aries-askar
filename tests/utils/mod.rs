@@ -13,12 +13,10 @@ const ERR_REPLACE: &'static str = "Error replacing test row";
 const ERR_REMOVE_ALL: &'static str = "Error removing test rows";
 const ERR_SCAN: &'static str = "Error starting scan";
 const ERR_SCAN_NEXT: &'static str = "Error fetching scan rows";
-const ERR_CREATE_KEYPAIR: &'static str = "Error creating keypair";
-const ERR_FETCH_KEY: &'static str = "Error fetching key";
-const ERR_SIGN: &'static str = "Error signing message";
-const ERR_VERIFY: &'static str = "Error verifying signature";
-const ERR_PACK: &'static str = "Error packing message";
-const ERR_UNPACK: &'static str = "Error unpacking message";
+// const ERR_CREATE_KEYPAIR: &'static str = "Error creating keypair";
+// const ERR_FETCH_KEY: &'static str = "Error fetching key";
+// const ERR_SIGN: &'static str = "Error signing message";
+// const ERR_VERIFY: &'static str = "Error verifying signature";
 
 pub async fn db_create_remove_profile<DB: Backend>(db: &Store<DB>) {
     let profile = db.create_profile(None).await.expect(ERR_PROFILE);

@@ -516,7 +516,7 @@ pub fn decrypt_scan_entry(
     key: &StoreKey,
 ) -> Result<Entry, Error> {
     let name = key.decrypt_entry_name(enc_entry.name)?;
-    let value = key.decrypt_entry_value(enc_entry.value)?;
+    let value = key.decrypt_entry_value(category.as_str(), name.as_str(), enc_entry.value)?;
     let tags = if let Some(enc_tags) = enc_entry.tags {
         Some(key.decrypt_entry_tags(
             decode_tags(enc_tags).map_err(|_| err_msg!(Unexpected, "Error decoding tags"))?,
