@@ -14,9 +14,9 @@ keywords = ["hyperledger", "aries", "ssi", "verifiable", "credentials"]
 rustdoc-args = ["--cfg", "docsrs"]
 
 [features]
-default = []
-any = []
-std = []
+default = ["alloc"]
+alloc = []
+std = ["alloc"]
 
 [dev-dependencies]
 base64 = { version = "*", default-features = false, features = ["alloc"] }

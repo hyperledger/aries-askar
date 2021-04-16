@@ -1,3 +1,4 @@
+#[cfg(feature = "alloc")]
 use alloc::vec::Vec;
 use core::{iter, ops::Range};
 
@@ -6,7 +7,9 @@ use crate::error::Error;
 mod array;
 pub use self::array::ArrayKey;
 
+#[cfg(feature = "alloc")]
 mod secret;
+#[cfg(feature = "alloc")]
 pub use self::secret::SecretBytes;
 
 mod string;
@@ -54,6 +57,7 @@ pub trait ResizeBuffer: WriteBuffer + AsRef<[u8]> + AsMut<[u8]> {
     ) -> Result<(), Error>;
 }
 
+#[cfg(feature = "alloc")]
 impl WriteBuffer for Vec<u8> {
     fn write_with(
         &mut self,
@@ -70,6 +74,7 @@ impl WriteBuffer for Vec<u8> {
     }
 }
 
+#[cfg(feature = "alloc")]
 impl ResizeBuffer for Vec<u8> {
     fn buffer_resize(&mut self, len: usize) -> Result<(), Error> {
         self.resize(len, 0u8);

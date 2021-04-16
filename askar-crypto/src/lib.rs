@@ -2,7 +2,7 @@
 // #![deny(missing_debug_implementations)]
 // #![deny(missing_docs)]
 
-// #[cfg(feature="alloc")]
+#[cfg(feature = "alloc")]
 extern crate alloc;
 
 #[cfg(any(test, feature = "std"))]
