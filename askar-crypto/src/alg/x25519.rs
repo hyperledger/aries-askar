@@ -7,13 +7,13 @@ use x25519_dalek::{PublicKey, StaticSecret as SecretKey};
 use zeroize::Zeroizing;
 
 use crate::{
-    buffer::{ArrayKey, SecretBytes, WriteBuffer},
+    buffer::{ArrayKey, WriteBuffer},
     error::Error,
     generic_array::typenum::{U32, U64},
     jwk::{FromJwk, JwkEncoder, JwkParts, ToJwk},
     kdf::KeyExchange,
     random::fill_random,
-    repr::{KeyGen, KeyMeta, KeyPublicBytes, KeySecretBytes, KeypairMeta},
+    repr::{KeyGen, KeyMeta, KeyPublicBytes, KeySecretBytes, KeypairBytes, KeypairMeta},
 };
 
 pub const PUBLIC_KEY_LENGTH: usize = 32;
@@ -39,42 +39,12 @@ impl X25519KeyPair {
         }
     }
 
-    pub fn from_keypair_bytes(kp: &[u8]) -> Result<Self, Error> {
-        if kp.len() != KEYPAIR_LENGTH {
-            return Err(err_msg!("Invalid keypair bytes"));
-        }
-        let sk = SecretKey::from(
-            TryInto::<[u8; SECRET_KEY_LENGTH]>::try_into(&kp[..SECRET_KEY_LENGTH]).unwrap(),
-        );
-        let pk = PublicKey::from(
-            TryInto::<[u8; PUBLIC_KEY_LENGTH]>::try_into(&kp[SECRET_KEY_LENGTH..]).unwrap(),
-        );
-        // FIXME: derive pk from sk and check value?
-
-        Ok(Self {
-            secret: Some(sk),
-            public: pk,
-        })
-    }
-
     #[inline]
     pub(crate) fn from_secret_key(sk: SecretKey) -> Self {
         let public = PublicKey::from(&sk);
         Self {
             secret: Some(sk),
             public,
-        }
-    }
-
-    pub fn to_keypair_bytes(&self) -> Option<SecretBytes> {
-        if let Some(secret) = self.secret.as_ref() {
-            let output = SecretBytes::new_with(KEYPAIR_LENGTH, |buf| {
-                buf[..SECRET_KEY_LENGTH].copy_from_slice(&secret.to_bytes()[..]);
-                buf[SECRET_KEY_LENGTH..].copy_from_slice(self.public.as_bytes());
-            });
-            Some(output)
-        } else {
-            None
         }
     }
 }
@@ -95,15 +65,6 @@ impl Debug for X25519KeyPair {
     }
 }
 
-impl KeyMeta for X25519KeyPair {
-    type KeySize = U32;
-}
-
-impl KeypairMeta for X25519KeyPair {
-    type PublicKeySize = U32;
-    type KeypairSize = U64;
-}
-
 impl KeyGen for X25519KeyPair {
     fn generate() -> Result<Self, Error> {
         let mut sk = ArrayKey::<U32>::default();
@@ -114,6 +75,10 @@ impl KeyGen for X25519KeyPair {
         let pk = PublicKey::from(&sk);
         Ok(Self::new(Some(sk), pk))
     }
+}
+
+impl KeyMeta for X25519KeyPair {
+    type KeySize = U32;
 }
 
 impl KeySecretBytes for X25519KeyPair {
@@ -143,6 +108,43 @@ impl KeySecretBytes for X25519KeyPair {
         if let Some(sk) = self.secret.as_ref() {
             let b = Zeroizing::new(sk.to_bytes());
             f(Some(&b[..]))
+        } else {
+            f(None)
+        }
+    }
+}
+
+impl KeypairMeta for X25519KeyPair {
+    type PublicKeySize = U32;
+    type KeypairSize = U64;
+}
+
+impl KeypairBytes for X25519KeyPair {
+    fn from_keypair_bytes(kp: &[u8]) -> Result<Self, Error> {
+        if kp.len() != KEYPAIR_LENGTH {
+            return Err(err_msg!("Invalid keypair bytes"));
+        }
+        let sk = SecretKey::from(
+            TryInto::<[u8; SECRET_KEY_LENGTH]>::try_into(&kp[..SECRET_KEY_LENGTH]).unwrap(),
+        );
+        let pk = PublicKey::from(
+            TryInto::<[u8; PUBLIC_KEY_LENGTH]>::try_into(&kp[SECRET_KEY_LENGTH..]).unwrap(),
+        );
+        // FIXME: derive pk from sk and check value?
+
+        Ok(Self {
+            secret: Some(sk),
+            public: pk,
+        })
+    }
+
+    fn with_keypair_bytes<O>(&self, f: impl FnOnce(Option<&[u8]>) -> O) -> O {
+        if let Some(secret) = self.secret.as_ref() {
+            let mut buf = ArrayKey::<<Self as KeypairMeta>::KeypairSize>::default();
+            let b = Zeroizing::new(secret.to_bytes());
+            buf.as_mut()[..SECRET_KEY_LENGTH].copy_from_slice(&b[..]);
+            buf.as_mut()[SECRET_KEY_LENGTH..].copy_from_slice(self.public.as_bytes());
+            f(Some(buf.as_ref()))
         } else {
             f(None)
         }

@@ -8,16 +8,15 @@ use p256::{
     elliptic_curve::{ecdh::diffie_hellman, sec1::Coordinates, Curve},
     EncodedPoint, PublicKey, SecretKey,
 };
-use zeroize::Zeroizing;
 
 use crate::{
-    buffer::{ArrayKey, SecretBytes, WriteBuffer},
+    buffer::{ArrayKey, WriteBuffer},
     error::Error,
     generic_array::typenum::{U32, U33, U65},
     jwk::{FromJwk, JwkEncoder, JwkParts, ToJwk},
     kdf::KeyExchange,
     random::with_rng,
-    repr::{KeyGen, KeyMeta, KeyPublicBytes, KeySecretBytes, KeypairMeta},
+    repr::{KeyGen, KeyMeta, KeyPublicBytes, KeySecretBytes, KeypairBytes, KeypairMeta},
     sign::{KeySigVerify, KeySign, SignatureType},
 };
 
@@ -40,42 +39,12 @@ pub struct P256KeyPair {
 }
 
 impl P256KeyPair {
-    pub fn from_keypair_bytes(kp: &[u8]) -> Result<Self, Error> {
-        if kp.len() != KEYPAIR_LENGTH {
-            return Err(err_msg!("Invalid keypair bytes"));
-        }
-        let sk = SecretKey::from_bytes(&kp[..SECRET_KEY_LENGTH])
-            .map_err(|_| err_msg!("Invalid p-256 secret key bytes"))?;
-        let pk = EncodedPoint::from_bytes(&kp[SECRET_KEY_LENGTH..])
-            .and_then(|pt| pt.decode())
-            .map_err(|_| err_msg!("Invalid p-256 public key bytes"))?;
-        // FIXME: derive pk from sk and check value?
-
-        Ok(Self {
-            secret: Some(sk),
-            public: pk,
-        })
-    }
-
     #[inline]
     pub(crate) fn from_secret_key(sk: SecretKey) -> Self {
         let pk = sk.public_key();
         Self {
             secret: Some(sk),
             public: pk,
-        }
-    }
-
-    pub fn to_keypair_bytes(&self) -> Option<SecretBytes> {
-        if let Some(secret) = self.secret.as_ref() {
-            let encp = EncodedPoint::encode(self.public, true);
-            let output = SecretBytes::new_with(KEYPAIR_LENGTH, |buf| {
-                buf[..SECRET_KEY_LENGTH].copy_from_slice(&secret.to_bytes()[..]);
-                buf[SECRET_KEY_LENGTH..].copy_from_slice(encp.as_ref());
-            });
-            Some(output)
-        } else {
-            None
         }
     }
 
@@ -103,19 +72,13 @@ impl P256KeyPair {
     }
 }
 
-impl KeyMeta for P256KeyPair {
-    type KeySize = U32;
-}
-
-impl KeypairMeta for P256KeyPair {
-    type PublicKeySize = U33;
-    type KeypairSize = U65;
-}
-
 impl KeyGen for P256KeyPair {
     fn generate() -> Result<Self, Error> {
         Ok(Self::from_secret_key(with_rng(|r| SecretKey::random(r))))
     }
+}
+impl KeyMeta for P256KeyPair {
+    type KeySize = U32;
 }
 
 impl KeySecretBytes for P256KeyPair {
@@ -127,8 +90,45 @@ impl KeySecretBytes for P256KeyPair {
 
     fn with_secret_bytes<O>(&self, f: impl FnOnce(Option<&[u8]>) -> O) -> O {
         if let Some(sk) = self.secret.as_ref() {
-            let b = Zeroizing::new(<[u8; SECRET_KEY_LENGTH]>::from(sk.to_bytes()));
+            let b = p256::SecretBytes::from(sk.to_bytes());
             f(Some(&b[..]))
+        } else {
+            f(None)
+        }
+    }
+}
+
+impl KeypairMeta for P256KeyPair {
+    type PublicKeySize = U33;
+    type KeypairSize = U65;
+}
+
+impl KeypairBytes for P256KeyPair {
+    fn from_keypair_bytes(kp: &[u8]) -> Result<Self, Error> {
+        if kp.len() != KEYPAIR_LENGTH {
+            return Err(err_msg!("Invalid keypair bytes"));
+        }
+        let sk = SecretKey::from_bytes(&kp[..SECRET_KEY_LENGTH])
+            .map_err(|_| err_msg!("Invalid k-256 secret key bytes"))?;
+        let pk = EncodedPoint::from_bytes(&kp[SECRET_KEY_LENGTH..])
+            .and_then(|pt| pt.decode())
+            .map_err(|_| err_msg!("Invalid k-256 public key bytes"))?;
+        // FIXME: derive pk from sk and check value?
+
+        Ok(Self {
+            secret: Some(sk),
+            public: pk,
+        })
+    }
+
+    fn with_keypair_bytes<O>(&self, f: impl FnOnce(Option<&[u8]>) -> O) -> O {
+        if let Some(sk) = self.secret.as_ref() {
+            let mut buf = ArrayKey::<<Self as KeypairMeta>::KeypairSize>::default();
+            let sk_b = p256::SecretBytes::from(sk.to_bytes());
+            let pk_enc = EncodedPoint::encode(self.public, true);
+            buf.as_mut()[..SECRET_KEY_LENGTH].copy_from_slice(&sk_b[..]);
+            buf.as_mut()[SECRET_KEY_LENGTH..].copy_from_slice(pk_enc.as_ref());
+            f(Some(buf.as_ref()))
         } else {
             f(None)
         }
