@@ -253,12 +253,6 @@ async fn init_db(
         CREATE INDEX ix_items_tags_name_enc ON items_tags (name, SUBSTR(value, 1, 12)) WHERE plaintext=0;
         CREATE INDEX ix_items_tags_name_plain ON items_tags (name, value) WHERE plaintext=1;
 
-        CREATE TABLE items_locks (
-            id INTEGER NOT NULL,
-            expiry DATETIME NOT NULL,
-            PRIMARY KEY (id)
-        );
-
         INSERT INTO profiles (name, store_key) VALUES (?1, ?3);
 
         COMMIT;
