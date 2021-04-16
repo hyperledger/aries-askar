@@ -10,7 +10,7 @@ use sqlx::{
 use crate::{
     error::Error,
     future::BoxFuture,
-    protect::{EntryEncryptor, KeyCache, PassKey, ProfileId, ProfileKey, WrapKey, WrapKeyMethod},
+    protect::{EntryEncryptor, KeyCache, PassKey, ProfileId, ProfileKey, StoreKey, StoreKeyMethod},
     storage::{
         entry::{EncEntryTag, Entry, EntryTag, TagFilter},
         wql::{
@@ -610,22 +610,25 @@ where
 }
 
 pub fn init_keys<'a>(
-    method: WrapKeyMethod,
+    method: StoreKeyMethod,
     pass_key: PassKey<'a>,
-) -> Result<(ProfileKey, Vec<u8>, WrapKey, String), Error> {
-    let (wrap_key, wrap_key_ref) = method.resolve(pass_key)?;
+) -> Result<(ProfileKey, Vec<u8>, StoreKey, String), Error> {
+    let (store_key, store_key_ref) = method.resolve(pass_key)?;
     let profile_key = ProfileKey::new()?;
-    let enc_profile_key = encode_profile_key(&profile_key, &wrap_key)?;
+    let enc_profile_key = encode_profile_key(&profile_key, &store_key)?;
     Ok((
         profile_key,
         enc_profile_key,
-        wrap_key,
-        wrap_key_ref.into_uri(),
+        store_key,
+        store_key_ref.into_uri(),
     ))
 }
 
-pub fn encode_profile_key(profile_key: &ProfileKey, wrap_key: &WrapKey) -> Result<Vec<u8>, Error> {
-    wrap_key.wrap_data(profile_key.to_bytes()?)
+pub fn encode_profile_key(
+    profile_key: &ProfileKey,
+    store_key: &StoreKey,
+) -> Result<Vec<u8>, Error> {
+    store_key.wrap_data(profile_key.to_bytes()?)
 }
 
 #[inline]

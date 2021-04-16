@@ -1,6 +1,6 @@
 use crate::error::Error;
 use crate::future::BoxFuture;
-use crate::protect::{PassKey, WrapKeyMethod};
+use crate::protect::{PassKey, StoreKeyMethod};
 
 use crate::storage::{
     entry::{Entry, EntryKind, EntryOperation, EntryTag, TagFilter},
@@ -102,7 +102,7 @@ impl Backend for AnyBackend {
 
     fn rekey_backend(
         &mut self,
-        method: WrapKeyMethod,
+        method: StoreKeyMethod,
         pass_key: PassKey<'_>,
     ) -> BoxFuture<'_, Result<(), Error>> {
         with_backend!(self, store, store.rekey_backend(method, pass_key))
@@ -248,7 +248,7 @@ impl<'a> ManageBackend<'a> for &'a str {
 
     fn open_backend(
         self,
-        method: Option<WrapKeyMethod>,
+        method: Option<StoreKeyMethod>,
         pass_key: PassKey<'a>,
         profile: Option<&'a str>,
     ) -> BoxFuture<'a, Result<Self::Store, Error>> {
@@ -278,7 +278,7 @@ impl<'a> ManageBackend<'a> for &'a str {
 
     fn provision_backend(
         self,
-        method: WrapKeyMethod,
+        method: StoreKeyMethod,
         pass_key: PassKey<'a>,
         profile: Option<&'a str>,
         recreate: bool,

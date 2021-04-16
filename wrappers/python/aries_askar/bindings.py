@@ -447,13 +447,13 @@ def version() -> str:
 
 
 async def store_open(
-    uri: str, wrap_method: str = None, pass_key: str = None, profile: str = None
+    uri: str, key_method: str = None, pass_key: str = None, profile: str = None
 ) -> StoreHandle:
     """Open an existing Store and return the open handle."""
     return await do_call_async(
         "askar_store_open",
         encode_str(uri),
-        encode_str(wrap_method and wrap_method.lower()),
+        encode_str(key_method and key_method.lower()),
         encode_str(pass_key),
         encode_str(profile),
         return_type=StoreHandle,
@@ -462,7 +462,7 @@ async def store_open(
 
 async def store_provision(
     uri: str,
-    wrap_method: str = None,
+    key_method: str = None,
     pass_key: str = None,
     profile: str = None,
     recreate: bool = False,
@@ -471,7 +471,7 @@ async def store_provision(
     return await do_call_async(
         "askar_store_provision",
         encode_str(uri),
-        encode_str(wrap_method and wrap_method.lower()),
+        encode_str(key_method and key_method.lower()),
         encode_str(pass_key),
         encode_str(profile),
         c_int8(recreate),
@@ -517,14 +517,14 @@ async def store_remove_profile(handle: StoreHandle, name: str) -> bool:
 
 async def store_rekey(
     handle: StoreHandle,
-    wrap_method: str = None,
+    key_method: str = None,
     pass_key: str = None,
 ) -> StoreHandle:
-    """Replace the wrap key on a Store."""
+    """Replace the store key on a Store."""
     return await do_call_async(
         "askar_store_rekey",
         handle,
-        encode_str(wrap_method and wrap_method.lower()),
+        encode_str(key_method and key_method.lower()),
         encode_str(pass_key),
     )
 

@@ -15,42 +15,44 @@ pub const PREFIX_KDF: &'static str = "kdf";
 pub const PREFIX_RAW: &'static str = "raw";
 pub const PREFIX_NONE: &'static str = "none";
 
-pub type WrapKeyType = Chacha20Key<C20P>;
+pub type StoreKeyType = Chacha20Key<C20P>;
 
-type WrapKeyNonce = ArrayKey<<WrapKeyType as KeyAeadMeta>::NonceSize>;
+type StoreKeyNonce = ArrayKey<<StoreKeyType as KeyAeadMeta>::NonceSize>;
 
-/// Create a new raw wrap key for a store
-pub fn generate_raw_wrap_key(seed: Option<&[u8]>) -> Result<PassKey<'static>, Error> {
+/// Create a new raw (non-derived) store key
+pub fn generate_raw_store_key(seed: Option<&[u8]>) -> Result<PassKey<'static>, Error> {
     let key = if let Some(seed) = seed {
-        WrapKey::from(WrapKeyType::from_seed(seed)?)
+        StoreKey::from(StoreKeyType::from_seed(seed)?)
     } else {
-        WrapKey::from(WrapKeyType::generate()?)
+        StoreKey::from(StoreKeyType::generate()?)
     };
     Ok(key.to_passkey())
 }
 
-pub fn parse_raw_key(raw_key: &str) -> Result<WrapKey, Error> {
-    let mut key = ArrayKey::<<WrapKeyType as KeyMeta>::KeySize>::default();
+pub fn parse_raw_store_key(raw_key: &str) -> Result<StoreKey, Error> {
+    let mut key = ArrayKey::<<StoreKeyType as KeyMeta>::KeySize>::default();
     let key_len = bs58::decode(raw_key)
         .into(key.as_mut())
         .map_err(|_| err_msg!(Input, "Error parsing raw key as base58 value"))?;
     if key_len != key.len() {
         Err(err_msg!(Input, "Incorrect length for encoded raw key"))
     } else {
-        Ok(WrapKey::from(WrapKeyType::from_secret_bytes(key.as_ref())?))
+        Ok(StoreKey::from(StoreKeyType::from_secret_bytes(
+            key.as_ref(),
+        )?))
     }
 }
 
 #[derive(Clone, Debug)]
-pub struct WrapKey(pub Option<WrapKeyType>);
+pub struct StoreKey(pub Option<StoreKeyType>);
 
-impl WrapKey {
+impl StoreKey {
     pub const fn empty() -> Self {
         Self(None)
     }
 
     pub fn random() -> Result<Self, Error> {
-        Ok(Self(Some(WrapKeyType::generate()?)))
+        Ok(Self(Some(StoreKeyType::generate()?)))
     }
 
     pub fn is_empty(&self) -> bool {
@@ -60,7 +62,7 @@ impl WrapKey {
     pub fn wrap_data(&self, mut data: SecretBytes) -> Result<Vec<u8>, Error> {
         match &self.0 {
             Some(key) => {
-                let nonce = WrapKeyNonce::random();
+                let nonce = StoreKeyNonce::random();
                 key.encrypt_in_place(&mut data, nonce.as_ref(), &[])?;
                 data.buffer_insert_slice(0, nonce.as_ref())?;
                 Ok(data.into_vec())
@@ -72,9 +74,9 @@ impl WrapKey {
     pub fn unwrap_data(&self, ciphertext: Vec<u8>) -> Result<SecretBytes, Error> {
         match &self.0 {
             Some(key) => {
-                let nonce = WrapKeyNonce::from_slice(&ciphertext[..WrapKeyNonce::SIZE]);
+                let nonce = StoreKeyNonce::from_slice(&ciphertext[..StoreKeyNonce::SIZE]);
                 let mut buffer = SecretBytes::from(ciphertext);
-                buffer.buffer_remove(0..WrapKeyNonce::SIZE)?;
+                buffer.buffer_remove(0..StoreKeyNonce::SIZE)?;
                 key.decrypt_in_place(&mut buffer, nonce.as_ref(), &[])?;
                 Ok(buffer)
             }
@@ -91,15 +93,15 @@ impl WrapKey {
     }
 }
 
-impl From<WrapKeyType> for WrapKey {
-    fn from(data: WrapKeyType) -> Self {
+impl From<StoreKeyType> for StoreKey {
+    fn from(data: StoreKeyType) -> Self {
         Self(Some(data))
     }
 }
 
-/// Supported methods for generating or referencing a new wrap key
+/// Supported methods for generating or referencing a new store key
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub enum WrapKeyMethod {
+pub enum StoreKeyMethod {
     // CreateManagedKey(String),
     // ExistingManagedKey(String),
     /// Derive a new wrapping key using a key derivation function
@@ -110,7 +112,7 @@ pub enum WrapKeyMethod {
     Unprotected,
 }
 
-impl WrapKeyMethod {
+impl StoreKeyMethod {
     pub(crate) fn parse_uri(uri: &str) -> Result<Self, Error> {
         let mut prefix_and_detail = uri.splitn(2, ':');
         let prefix = prefix_and_detail.next().unwrap_or_default();
@@ -122,21 +124,21 @@ impl WrapKeyMethod {
                 None => Err(err_msg!(Unsupported, "Invalid key derivation method")),
             },
             PREFIX_NONE => Ok(Self::Unprotected),
-            _ => Err(err_msg!(Unsupported, "Invalid wrap key method")),
+            _ => Err(err_msg!(Unsupported, "Invalid store key method")),
         }
     }
 
     pub(crate) fn resolve(
         &self,
         pass_key: PassKey<'_>,
-    ) -> Result<(WrapKey, WrapKeyReference), Error> {
+    ) -> Result<(StoreKey, StoreKeyReference), Error> {
         match self {
             // Self::CreateManagedKey(_mgr_ref) => unimplemented!(),
             // Self::ExistingManagedKey(String) => unimplemented!(),
             Self::DeriveKey(method) => {
                 if !pass_key.is_none() {
                     let (key, detail) = method.derive_new_key(&*pass_key)?;
-                    let key_ref = WrapKeyReference::DeriveKey(*method, detail);
+                    let key_ref = StoreKeyReference::DeriveKey(*method, detail);
                     Ok((key, key_ref))
                 } else {
                     Err(err_msg!(Input, "Key derivation password not provided"))
@@ -144,32 +146,32 @@ impl WrapKeyMethod {
             }
             Self::RawKey => {
                 let key = if !pass_key.is_empty() {
-                    parse_raw_key(&*pass_key)?
+                    parse_raw_store_key(&*pass_key)?
                 } else {
-                    WrapKey::random()?
+                    StoreKey::random()?
                 };
-                Ok((key, WrapKeyReference::RawKey))
+                Ok((key, StoreKeyReference::RawKey))
             }
-            Self::Unprotected => Ok((WrapKey::empty(), WrapKeyReference::Unprotected)),
+            Self::Unprotected => Ok((StoreKey::empty(), StoreKeyReference::Unprotected)),
         }
     }
 }
 
-impl Default for WrapKeyMethod {
+impl Default for StoreKeyMethod {
     fn default() -> Self {
         Self::DeriveKey(KdfMethod::Argon2i(Default::default()))
     }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub enum WrapKeyReference {
+pub enum StoreKeyReference {
     // ManagedKey(String),
     DeriveKey(KdfMethod, String),
     RawKey,
     Unprotected,
 }
 
-impl WrapKeyReference {
+impl StoreKeyReference {
     pub fn parse_uri(uri: &str) -> Result<Self, Error> {
         let mut prefix_and_detail = uri.splitn(2, ':');
         let prefix = prefix_and_detail.next().unwrap_or_default();
@@ -185,20 +187,20 @@ impl WrapKeyReference {
             PREFIX_NONE => Ok(Self::Unprotected),
             _ => Err(err_msg!(
                 Unsupported,
-                "Invalid wrap key method for reference"
+                "Invalid store key method for reference"
             )),
         }
     }
 
-    pub fn compare_method(&self, method: &WrapKeyMethod) -> bool {
+    pub fn compare_method(&self, method: &StoreKeyMethod) -> bool {
         match self {
             // Self::ManagedKey(_keyref) => matches!(method, WrapKeyMethod::CreateManagedKey(..)),
             Self::DeriveKey(kdf_method, _detail) => match method {
-                WrapKeyMethod::DeriveKey(m) if m == kdf_method => true,
+                StoreKeyMethod::DeriveKey(m) if m == kdf_method => true,
                 _ => false,
             },
-            Self::RawKey => *method == WrapKeyMethod::RawKey,
-            Self::Unprotected => *method == WrapKeyMethod::Unprotected,
+            Self::RawKey => *method == StoreKeyMethod::RawKey,
+            Self::Unprotected => *method == StoreKeyMethod::Unprotected,
         }
     }
 
@@ -211,7 +213,7 @@ impl WrapKeyReference {
         }
     }
 
-    pub fn resolve(&self, pass_key: PassKey<'_>) -> Result<WrapKey, Error> {
+    pub fn resolve(&self, pass_key: PassKey<'_>) -> Result<StoreKey, Error> {
         match self {
             // Self::ManagedKey(_key_ref) => unimplemented!(),
             Self::DeriveKey(method, detail) => {
@@ -223,12 +225,12 @@ impl WrapKeyReference {
             }
             Self::RawKey => {
                 if !pass_key.is_empty() {
-                    parse_raw_key(&*pass_key)
+                    parse_raw_store_key(&*pass_key)
                 } else {
                     Err(err_msg!(Input, "Encoded raw key not provided"))
                 }
             }
-            Self::Unprotected => Ok(WrapKey::empty()),
+            Self::Unprotected => Ok(StoreKey::empty()),
         }
     }
 }
@@ -240,12 +242,12 @@ mod tests {
 
     #[test]
     fn protection_method_parse() {
-        let parse = WrapKeyMethod::parse_uri;
-        assert_eq!(parse("none"), Ok(WrapKeyMethod::Unprotected));
-        assert_eq!(parse("raw"), Ok(WrapKeyMethod::RawKey));
+        let parse = StoreKeyMethod::parse_uri;
+        assert_eq!(parse("none"), Ok(StoreKeyMethod::Unprotected));
+        assert_eq!(parse("raw"), Ok(StoreKeyMethod::RawKey));
         assert_eq!(
             parse("kdf:argon2i"),
-            Ok(WrapKeyMethod::DeriveKey(KdfMethod::Argon2i(
+            Ok(StoreKeyMethod::DeriveKey(KdfMethod::Argon2i(
                 Default::default()
             )))
         );
@@ -259,7 +261,7 @@ mod tests {
     fn derived_key_wrap() {
         let input = b"test data";
         let pass = PassKey::from("pass");
-        let (key, key_ref) = WrapKeyMethod::DeriveKey(KdfMethod::Argon2i(Default::default()))
+        let (key, key_ref) = StoreKeyMethod::DeriveKey(KdfMethod::Argon2i(Default::default()))
             .resolve(pass.as_ref())
             .expect("Error deriving new key");
         assert!(!key.is_empty());
@@ -280,9 +282,10 @@ mod tests {
             "c29c66fde50b30b8a077da1ea9bcf4dfeb5fabea12050973aed0e8251f20fad8205cfd2dec"
         ));
         let pass = PassKey::from("pass");
-        let key_ref =
-            WrapKeyReference::parse_uri("kdf:argon2i:13:mod?salt=a553cfb9c558b5c11c78efcfa06f3e29")
-                .expect("Error parsing derived key ref");
+        let key_ref = StoreKeyReference::parse_uri(
+            "kdf:argon2i:13:mod?salt=a553cfb9c558b5c11c78efcfa06f3e29",
+        )
+        .expect("Error parsing derived key ref");
         let key = key_ref.resolve(pass).expect("Error deriving existing key");
         let unwrapped = key.unwrap_data(wrapped).expect("Error unwrapping data");
         assert_eq!(unwrapped, &input[..]);
@@ -293,9 +296,10 @@ mod tests {
         let wrapped = Vec::from(hex!(
             "c29c66fde50b30b8a077da1ea9bcf4dfeb5fabea12050973aed0e8251f20fad8205cfd2dec"
         ));
-        let key_ref =
-            WrapKeyReference::parse_uri("kdf:argon2i:13:mod?salt=a553cfb9c558b5c11c78efcfa06f3e29")
-                .expect("Error parsing derived key ref");
+        let key_ref = StoreKeyReference::parse_uri(
+            "kdf:argon2i:13:mod?salt=a553cfb9c558b5c11c78efcfa06f3e29",
+        )
+        .expect("Error parsing derived key ref");
         let check_bad_pass = key_ref
             .resolve("not my pass".into())
             .expect("Error deriving comparison key");
@@ -306,9 +310,9 @@ mod tests {
     #[test]
     fn raw_key_wrap() {
         let input = b"test data";
-        let raw_key = generate_raw_wrap_key(None).unwrap();
+        let raw_key = generate_raw_store_key(None).unwrap();
 
-        let (key, key_ref) = WrapKeyMethod::RawKey
+        let (key, key_ref) = StoreKeyMethod::RawKey
             .resolve(raw_key.as_ref())
             .expect("Error resolving raw key");
         assert_eq!(key.is_empty(), false);
@@ -319,7 +323,7 @@ mod tests {
 
         // round trip the key reference
         let key_uri = key_ref.into_uri();
-        let key_ref = WrapKeyReference::parse_uri(&key_uri).expect("Error parsing raw key URI");
+        let key_ref = StoreKeyReference::parse_uri(&key_uri).expect("Error parsing raw key URI");
         let key = key_ref.resolve(raw_key).expect("Error resolving raw key");
 
         let unwrapped = key.unwrap_data(wrapped).expect("Error unwrapping data");
@@ -335,7 +339,7 @@ mod tests {
     #[test]
     fn unprotected_wrap() {
         let input = b"test data";
-        let (key, key_ref) = WrapKeyMethod::Unprotected
+        let (key, key_ref) = StoreKeyMethod::Unprotected
             .resolve(None.into())
             .expect("Error resolving unprotected");
         assert_eq!(key.is_empty(), true);
@@ -347,7 +351,7 @@ mod tests {
         // round trip the key reference
         let key_uri = key_ref.into_uri();
         let key_ref =
-            WrapKeyReference::parse_uri(&key_uri).expect("Error parsing unprotected key ref");
+            StoreKeyReference::parse_uri(&key_uri).expect("Error parsing unprotected key ref");
         let key = key_ref
             .resolve(None.into())
             .expect("Error resolving unprotected key ref");

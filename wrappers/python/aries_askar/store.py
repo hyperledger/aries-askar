@@ -108,7 +108,7 @@ class Store:
     async def provision(
         cls,
         uri: str,
-        wrap_method: str = None,
+        key_method: str = None,
         pass_key: str = None,
         *,
         profile: str = None,
@@ -116,7 +116,7 @@ class Store:
     ) -> "Store":
         return Store(
             await bindings.store_provision(
-                uri, wrap_method, pass_key, profile, recreate
+                uri, key_method, pass_key, profile, recreate
             ),
             uri,
         )
@@ -125,14 +125,12 @@ class Store:
     async def open(
         cls,
         uri: str,
-        wrap_method: str = None,
+        key_method: str = None,
         pass_key: str = None,
         *,
         profile: str = None,
     ) -> "Store":
-        return Store(
-            await bindings.store_open(uri, wrap_method, pass_key, profile), uri
-        )
+        return Store(await bindings.store_open(uri, key_method, pass_key, profile), uri)
 
     @classmethod
     async def remove(cls, uri: str) -> bool:
@@ -157,10 +155,10 @@ class Store:
 
     async def rekey(
         self,
-        wrap_method: str = None,
+        key_method: str = None,
         pass_key: str = None,
     ):
-        await bindings.store_rekey(self._handle, wrap_method, pass_key)
+        await bindings.store_rekey(self._handle, key_method, pass_key)
 
     def scan(
         self,

@@ -5,7 +5,7 @@ use crate::{
         repr::{KeyMeta, KeySecretBytes},
     },
     error::Error,
-    protect::wrap_key::{WrapKey, WrapKeyType},
+    protect::store_key::{StoreKey, StoreKeyType},
 };
 
 pub use crate::crypto::kdf::argon2::SaltSize;
@@ -53,9 +53,11 @@ impl Level {
         }
     }
 
-    pub fn derive_key(&self, password: &[u8], salt: &[u8]) -> Result<WrapKey, Error> {
-        let mut key = ArrayKey::<<WrapKeyType as KeyMeta>::KeySize>::default();
+    pub fn derive_key(&self, password: &[u8], salt: &[u8]) -> Result<StoreKey, Error> {
+        let mut key = ArrayKey::<<StoreKeyType as KeyMeta>::KeySize>::default();
         Argon2::derive_key(password, salt, *self.params(), key.as_mut())?;
-        Ok(WrapKey::from(WrapKeyType::from_secret_bytes(key.as_ref())?))
+        Ok(StoreKey::from(StoreKeyType::from_secret_bytes(
+            key.as_ref(),
+        )?))
     }
 }

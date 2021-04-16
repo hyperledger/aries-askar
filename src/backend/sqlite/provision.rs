@@ -13,7 +13,7 @@ use crate::{
     backend::db_utils::{init_keys, random_profile_name},
     error::Error,
     future::{unblock, BoxFuture},
-    protect::{KeyCache, PassKey, WrapKeyMethod, WrapKeyReference},
+    protect::{KeyCache, PassKey, StoreKeyMethod, StoreKeyReference},
     storage::options::{IntoOptions, Options},
     storage::types::{ManageBackend, Store},
 };
@@ -69,7 +69,7 @@ impl SqliteStoreOptions {
     /// Provision a new Sqlite store from these configuration options
     pub async fn provision(
         self,
-        method: WrapKeyMethod,
+        method: StoreKeyMethod,
         pass_key: PassKey<'_>,
         profile: Option<&'_ str>,
         recreate: bool,
@@ -115,7 +115,7 @@ impl SqliteStoreOptions {
     /// Open an existing Sqlite store from this set of configuration options
     pub async fn open(
         self,
-        method: Option<WrapKeyMethod>,
+        method: Option<StoreKeyMethod>,
         pass_key: PassKey<'_>,
         profile: Option<&'_ str>,
     ) -> Result<Store<SqliteStore>, Error> {
@@ -166,7 +166,7 @@ impl<'a> ManageBackend<'a> for SqliteStoreOptions {
 
     fn open_backend(
         self,
-        method: Option<WrapKeyMethod>,
+        method: Option<StoreKeyMethod>,
         pass_key: PassKey<'a>,
         profile: Option<&'a str>,
     ) -> BoxFuture<'a, Result<Store<SqliteStore>, Error>> {
@@ -175,7 +175,7 @@ impl<'a> ManageBackend<'a> for SqliteStoreOptions {
 
     fn provision_backend(
         self,
-        method: WrapKeyMethod,
+        method: StoreKeyMethod,
         pass_key: PassKey<'a>,
         profile: Option<&'a str>,
         recreate: bool,
@@ -191,10 +191,10 @@ impl<'a> ManageBackend<'a> for SqliteStoreOptions {
 async fn init_db(
     conn_pool: &SqlitePool,
     profile_name: &str,
-    method: WrapKeyMethod,
+    method: StoreKeyMethod,
     pass_key: PassKey<'_>,
 ) -> Result<KeyCache, Error> {
-    let (profile_key, enc_profile_key, wrap_key, wrap_key_ref) = unblock({
+    let (profile_key, enc_profile_key, store_key, store_key_ref) = unblock({
         let pass_key = pass_key.into_owned();
         move || init_keys(method, pass_key)
     })
@@ -213,8 +213,8 @@ async fn init_db(
         );
         INSERT INTO config (name, value) VALUES
             ("default_profile", ?1),
-            ("version", "1"),
-            ("wrap_key", ?2);
+            ("key", ?2),
+            ("version", "1");
 
         CREATE TABLE profiles (
             id INTEGER NOT NULL,
@@ -260,12 +260,12 @@ async fn init_db(
     )
     .persistent(false)
     .bind(profile_name)
-    .bind(wrap_key_ref)
+    .bind(store_key_ref)
     .bind(enc_profile_key)
     .execute(&mut conn)
     .await?;
 
-    let mut key_cache = KeyCache::new(wrap_key);
+    let mut key_cache = KeyCache::new(store_key);
 
     let row = sqlx::query("SELECT id FROM profiles WHERE name = ?1")
         .persistent(false)
@@ -279,7 +279,7 @@ async fn init_db(
 
 async fn open_db(
     conn_pool: SqlitePool,
-    method: Option<WrapKeyMethod>,
+    method: Option<StoreKeyMethod>,
     pass_key: PassKey<'_>,
     profile: Option<&str>,
     path: String,
@@ -287,11 +287,11 @@ async fn open_db(
     let mut conn = conn_pool.acquire().await?;
     let mut ver_ok = false;
     let mut default_profile: Option<String> = None;
-    let mut wrap_key_ref: Option<String> = None;
+    let mut store_key_ref: Option<String> = None;
 
     let config = sqlx::query(
         r#"SELECT name, value FROM config
-        WHERE name IN ("default_profile", "version", "wrap_key")"#,
+        WHERE name IN ("default_profile", "key", "version")"#,
     )
     .fetch_all(&mut conn)
     .await?;
@@ -300,14 +300,14 @@ async fn open_db(
             "default_profile" => {
                 default_profile.replace(row.try_get(1)?);
             }
+            "key" => {
+                store_key_ref.replace(row.try_get(1)?);
+            }
             "version" => {
                 if row.try_get::<&str, _>(1)? != "1" {
                     return Err(err_msg!(Unsupported, "Unsupported store version"));
                 }
                 ver_ok = true;
-            }
-            "wrap_key" => {
-                wrap_key_ref.replace(row.try_get(1)?);
             }
             _ => (),
         }
@@ -319,11 +319,11 @@ async fn open_db(
         .map(str::to_string)
         .or(default_profile)
         .ok_or_else(|| err_msg!(Unsupported, "Default store profile not found"))?;
-    let wrap_key = if let Some(wrap_key_ref) = wrap_key_ref {
-        let wrap_ref = WrapKeyReference::parse_uri(&wrap_key_ref)?;
+    let store_key = if let Some(store_key_ref) = store_key_ref {
+        let wrap_ref = StoreKeyReference::parse_uri(&store_key_ref)?;
         if let Some(method) = method {
             if !wrap_ref.compare_method(&method) {
-                return Err(err_msg!(Input, "Store wrap key method mismatch"));
+                return Err(err_msg!(Input, "Store key method mismatch"));
             }
         }
         unblock({
@@ -332,9 +332,9 @@ async fn open_db(
         })
         .await?
     } else {
-        return Err(err_msg!(Unsupported, "Store wrap key not found"));
+        return Err(err_msg!(Unsupported, "Store key not found"));
     };
-    let mut key_cache = KeyCache::new(wrap_key);
+    let mut key_cache = KeyCache::new(store_key);
 
     let row = sqlx::query("SELECT id, profile_key FROM profiles WHERE name = ?1")
         .bind(&profile)

@@ -14,7 +14,7 @@ use super::{
 use crate::{
     error::Error,
     future::BoxFuture,
-    protect::{PassKey, WrapKeyMethod},
+    protect::{PassKey, StoreKeyMethod},
 };
 
 /// Represents a generic backend implementation
@@ -48,7 +48,7 @@ pub trait Backend: Send + Sync {
     /// Replace the wrapping key of the store
     fn rekey_backend(
         &mut self,
-        method: WrapKeyMethod,
+        method: StoreKeyMethod,
         key: PassKey<'_>,
     ) -> BoxFuture<'_, Result<(), Error>>;
 
@@ -64,7 +64,7 @@ pub trait ManageBackend<'a> {
     /// Open an existing store
     fn open_backend(
         self,
-        method: Option<WrapKeyMethod>,
+        method: Option<StoreKeyMethod>,
         pass_key: PassKey<'a>,
         profile: Option<&'a str>,
     ) -> BoxFuture<'a, Result<Self::Store, Error>>;
@@ -72,7 +72,7 @@ pub trait ManageBackend<'a> {
     /// Provision a new store
     fn provision_backend(
         self,
-        method: WrapKeyMethod,
+        method: StoreKeyMethod,
         pass_key: PassKey<'a>,
         profile: Option<&'a str>,
         recreate: bool,
@@ -164,7 +164,7 @@ impl<B: Backend> Store<B> {
     /// Replace the wrapping key on a store
     pub async fn rekey(
         &mut self,
-        method: WrapKeyMethod,
+        method: StoreKeyMethod,
         pass_key: PassKey<'_>,
     ) -> Result<(), Error> {
         Ok(self.0.rekey_backend(method, pass_key).await?)

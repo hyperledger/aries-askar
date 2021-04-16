@@ -29,7 +29,7 @@ async def basic_test():
     if ENCRYPT:
         key = await generate_raw_key(b"00000000000000000000000000000My1")
         key_method = "raw"
-        log("Generated raw wallet key:", key)
+        log("Generated raw store key:", key)
     else:
         key = None
         key_method = "none"

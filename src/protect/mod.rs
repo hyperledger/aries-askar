@@ -13,8 +13,8 @@ pub use self::pass_key::PassKey;
 mod profile_key;
 pub use self::profile_key::ProfileKey;
 
-mod wrap_key;
-pub use self::wrap_key::{generate_raw_wrap_key, WrapKey, WrapKeyMethod, WrapKeyReference};
+mod store_key;
+pub use self::store_key::{generate_raw_store_key, StoreKey, StoreKeyMethod, StoreKeyReference};
 
 use crate::{
     crypto::buffer::SecretBytes,
@@ -28,21 +28,21 @@ pub type ProfileId = i64;
 #[derive(Debug)]
 pub struct KeyCache {
     profile_info: Mutex<HashMap<String, (ProfileId, Arc<ProfileKey>)>>,
-    pub(crate) wrap_key: Arc<WrapKey>,
+    pub(crate) store_key: Arc<StoreKey>,
 }
 
 impl KeyCache {
-    pub fn new(wrap_key: impl Into<Arc<WrapKey>>) -> Self {
+    pub fn new(store_key: impl Into<Arc<StoreKey>>) -> Self {
         Self {
             profile_info: Mutex::new(HashMap::new()),
-            wrap_key: wrap_key.into(),
+            store_key: store_key.into(),
         }
     }
 
     pub async fn load_key(&self, ciphertext: Vec<u8>) -> Result<ProfileKey, Error> {
-        let wrap_key = self.wrap_key.clone();
+        let store_key = self.store_key.clone();
         unblock(move || {
-            let mut data = wrap_key
+            let mut data = store_key
                 .unwrap_data(ciphertext)
                 .map_err(err_map!(Encryption, "Error decrypting profile key"))?;
             let key = ProfileKey::from_slice(&data)?;

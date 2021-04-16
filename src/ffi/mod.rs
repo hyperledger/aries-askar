@@ -23,7 +23,7 @@ mod store;
 use self::error::{set_last_error, ErrorCode};
 use crate::error::Error;
 use crate::future::{spawn_ok, unblock};
-use crate::protect::generate_raw_wrap_key;
+use crate::protect::generate_raw_store_key;
 
 pub type CallbackId = i64;
 
@@ -82,7 +82,7 @@ pub extern "C" fn askar_generate_raw_key(
             }
         );
         spawn_ok(async move {
-            let result = unblock(move || generate_raw_wrap_key(
+            let result = unblock(move || generate_raw_store_key(
                 seed.as_ref().map(|s| s.as_slice())
             ).map(|p| p.to_string())).await;
             cb.resolve(result);

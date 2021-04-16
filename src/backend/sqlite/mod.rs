@@ -22,7 +22,7 @@ use crate::{
     },
     error::Error,
     future::{unblock, BoxFuture},
-    protect::{EntryEncryptor, KeyCache, PassKey, ProfileId, ProfileKey, WrapKeyMethod},
+    protect::{EntryEncryptor, KeyCache, PassKey, ProfileId, ProfileKey, StoreKeyMethod},
     storage::entry::{EncEntryTag, Entry, EntryKind, EntryOperation, EntryTag, TagFilter},
     storage::types::{Backend, QueryBackend, Scan},
 };
@@ -134,13 +134,13 @@ impl Backend for SqliteStore {
 
     fn rekey_backend(
         &mut self,
-        method: WrapKeyMethod,
+        method: StoreKeyMethod,
         pass_key: PassKey<'_>,
     ) -> BoxFuture<'_, Result<(), Error>> {
         let pass_key = pass_key.into_owned();
         Box::pin(async move {
-            let (wrap_key, wrap_key_ref) = unblock(move || method.resolve(pass_key)).await?;
-            let wrap_key = Arc::new(wrap_key);
+            let (store_key, store_key_ref) = unblock(move || method.resolve(pass_key)).await?;
+            let store_key = Arc::new(store_key);
             let mut txn = self.conn_pool.begin().await?;
             let mut rows = sqlx::query("SELECT id, profile_key FROM profiles").fetch(&mut txn);
             let mut upd_keys = BTreeMap::<ProfileId, Vec<u8>>::new();
@@ -150,8 +150,8 @@ impl Backend for SqliteStore {
                 let enc_key = row.try_get(1)?;
                 let profile_key = self.key_cache.load_key(enc_key).await?;
                 let upd_key = unblock({
-                    let wrap_key = wrap_key.clone();
-                    move || encode_profile_key(&profile_key, &wrap_key)
+                    let store_key = store_key.clone();
+                    move || encode_profile_key(&profile_key, &store_key)
                 })
                 .await?;
                 upd_keys.insert(pid, upd_key);
@@ -169,17 +169,17 @@ impl Backend for SqliteStore {
                     return Err(err_msg!(Backend, "Error updating profile key"));
                 }
             }
-            if sqlx::query("UPDATE config SET value=?1 WHERE name='wrap_key'")
-                .bind(wrap_key_ref.into_uri())
+            if sqlx::query("UPDATE config SET value=?1 WHERE name='key'")
+                .bind(store_key_ref.into_uri())
                 .execute(&mut txn)
                 .await?
                 .rows_affected()
                 != 1
             {
-                return Err(err_msg!(Backend, "Error updating wrap key"));
+                return Err(err_msg!(Backend, "Error updating store key"));
             }
             txn.commit().await?;
-            self.key_cache = Arc::new(KeyCache::new(wrap_key));
+            self.key_cache = Arc::new(KeyCache::new(store_key));
             Ok(())
         })
     }
@@ -634,14 +634,14 @@ mod tests {
     use super::*;
     use crate::backend::db_utils::replace_arg_placeholders;
     use crate::future::block_on;
-    use crate::protect::{generate_raw_wrap_key, WrapKeyMethod};
+    use crate::protect::{generate_raw_store_key, StoreKeyMethod};
 
     #[test]
     fn sqlite_check_expiry_timestamp() {
         block_on(async {
-            let key = generate_raw_wrap_key(None)?;
+            let key = generate_raw_store_key(None)?;
             let db = SqliteStoreOptions::in_memory()
-                .provision(WrapKeyMethod::RawKey, key, None, false)
+                .provision(StoreKeyMethod::RawKey, key, None, false)
                 .await?;
             let ts = expiry_timestamp(1000).unwrap();
             let check = sqlx::query("SELECT datetime('now'), ?1, ?1 > datetime('now')")

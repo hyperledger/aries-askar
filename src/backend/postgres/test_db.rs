@@ -12,7 +12,7 @@ use crate::{
     backend::db_utils::{init_keys, random_profile_name},
     error::Error,
     future::{block_on, unblock},
-    protect::{generate_raw_wrap_key, KeyCache, WrapKeyMethod},
+    protect::{generate_raw_store_key, KeyCache, StoreKeyMethod},
     storage::types::Store,
 };
 
@@ -32,9 +32,9 @@ impl TestDB {
             _ => panic!("'POSTGRES_URL' must be defined"),
         };
 
-        let key = generate_raw_wrap_key(None)?;
-        let (profile_key, enc_profile_key, wrap_key, wrap_key_ref) =
-            unblock(|| init_keys(WrapKeyMethod::RawKey, key)).await?;
+        let key = generate_raw_store_key(None)?;
+        let (profile_key, enc_profile_key, store_key, store_key_ref) =
+            unblock(|| init_keys(StoreKeyMethod::RawKey, key)).await?;
         let default_profile = random_profile_name();
 
         let opts = PostgresStoreOptions::new(path.as_str())?;
@@ -63,9 +63,10 @@ impl TestDB {
         reset_db(&mut *init_txn).await?;
 
         // create tables and add default profile
-        let profile_id = init_db(init_txn, &default_profile, wrap_key_ref, enc_profile_key).await?;
+        let profile_id =
+            init_db(init_txn, &default_profile, store_key_ref, enc_profile_key).await?;
 
-        let mut key_cache = KeyCache::new(wrap_key);
+        let mut key_cache = KeyCache::new(store_key);
         key_cache.add_profile_mut(default_profile.clone(), profile_id, profile_key);
         let inst = Store::new(PostgresStore::new(
             conn_pool,

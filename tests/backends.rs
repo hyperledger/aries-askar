@@ -182,7 +182,7 @@ macro_rules! backend_tests {
 #[cfg(feature = "sqlite")]
 mod sqlite {
     use aries_askar::backend::sqlite::{SqliteStore, SqliteStoreOptions};
-    use aries_askar::{generate_raw_wrap_key, ManageBackend, Store, WrapKeyMethod};
+    use aries_askar::{generate_raw_store_key, ManageBackend, Store, StoreKeyMethod};
     use std::path::Path;
 
     #[test]
@@ -195,7 +195,7 @@ mod sqlite {
             "Oops, should be a unique filename"
         );
 
-        let key = generate_raw_wrap_key(None).expect("Error creating raw key");
+        let key = generate_raw_store_key(None).expect("Error creating raw key");
         block_on(async move {
             assert_eq!(
                 SqliteStoreOptions::new(fname.as_str())
@@ -208,14 +208,14 @@ mod sqlite {
 
             let store = SqliteStoreOptions::new(fname.as_str())
                 .expect("Error initializing sqlite store options")
-                .provision_backend(WrapKeyMethod::RawKey, key.as_ref(), None, false)
+                .provision_backend(StoreKeyMethod::RawKey, key.as_ref(), None, false)
                 .await
                 .expect("Error provisioning sqlite store");
             assert_eq!(Path::new(&fname).exists(), true);
 
             let store2 = SqliteStoreOptions::new(fname.as_str())
                 .expect("Error initializing sqlite store options")
-                .open_backend(Some(WrapKeyMethod::RawKey), key.as_ref(), None)
+                .open_backend(Some(StoreKeyMethod::RawKey), key.as_ref(), None)
                 .await
                 .expect("Error opening sqlite store");
             store2.close().await.expect("Error closing sqlite store");
@@ -239,25 +239,25 @@ mod sqlite {
     fn rekey_db() {
         env_logger::builder().is_test(true).try_init().unwrap_or(());
         let fname = format!("sqlite-test-{}.db", uuid::Uuid::new_v4().to_string());
-        let key1 = generate_raw_wrap_key(None).expect("Error creating raw key");
-        let key2 = generate_raw_wrap_key(None).expect("Error creating raw key");
+        let key1 = generate_raw_store_key(None).expect("Error creating raw key");
+        let key2 = generate_raw_store_key(None).expect("Error creating raw key");
         assert_ne!(key1, key2);
 
         block_on(async move {
             let mut store = SqliteStoreOptions::new(fname.as_str())
                 .expect("Error initializing sqlite store options")
-                .provision_backend(WrapKeyMethod::RawKey, key1.as_ref(), None, false)
+                .provision_backend(StoreKeyMethod::RawKey, key1.as_ref(), None, false)
                 .await
                 .expect("Error provisioning sqlite store");
 
             store
-                .rekey(WrapKeyMethod::RawKey, key2.as_ref())
+                .rekey(StoreKeyMethod::RawKey, key2.as_ref())
                 .await
                 .expect("Error rekeying database");
 
             SqliteStoreOptions::new(fname.as_str())
                 .expect("Error initializing sqlite store options")
-                .open_backend(Some(WrapKeyMethod::RawKey), key2.as_ref(), None)
+                .open_backend(Some(StoreKeyMethod::RawKey), key2.as_ref(), None)
                 .await
                 .expect("Error opening rekeyed store")
                 .close()
@@ -276,9 +276,9 @@ mod sqlite {
 
     async fn init_db() -> Store<SqliteStore> {
         env_logger::builder().is_test(true).try_init().unwrap_or(());
-        let key = generate_raw_wrap_key(None).expect("Error creating raw key");
+        let key = generate_raw_store_key(None).expect("Error creating raw key");
         SqliteStoreOptions::in_memory()
-            .provision(WrapKeyMethod::RawKey, key, None, false)
+            .provision(StoreKeyMethod::RawKey, key, None, false)
             .await
             .expect("Error provisioning sqlite store")
     }
@@ -287,12 +287,12 @@ mod sqlite {
 
     #[test]
     fn provision_from_str() {
-        let key = generate_raw_wrap_key(None).expect("Error creating raw key");
+        let key = generate_raw_store_key(None).expect("Error creating raw key");
 
         block_on(async {
             let db_url = "sqlite://:memory:";
             let _db = db_url
-                .provision_backend(WrapKeyMethod::RawKey, key.as_ref(), None, false)
+                .provision_backend(StoreKeyMethod::RawKey, key.as_ref(), None, false)
                 .await
                 .expect("Error provisioning store");
         });
@@ -300,7 +300,7 @@ mod sqlite {
         block_on(async {
             let db_url = "not-sqlite://test-db";
             let _db = db_url
-                .provision_backend(WrapKeyMethod::RawKey, key.as_ref(), None, false)
+                .provision_backend(StoreKeyMethod::RawKey, key.as_ref(), None, false)
                 .await
                 .expect_err("Expected provision failure");
         });

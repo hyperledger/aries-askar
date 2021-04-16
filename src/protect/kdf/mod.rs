@@ -1,4 +1,4 @@
-use super::wrap_key::{WrapKey, PREFIX_KDF};
+use super::store_key::{StoreKey, PREFIX_KDF};
 use crate::{
     crypto::{
         buffer::{ArrayKey, HexRepr},
@@ -62,7 +62,7 @@ impl KdfMethod {
         }
     }
 
-    pub fn derive_new_key(&self, password: &str) -> Result<(WrapKey, String), Error> {
+    pub fn derive_new_key(&self, password: &str) -> Result<(StoreKey, String), Error> {
         match self {
             Self::Argon2i(level) => {
                 let salt = level.generate_salt();
@@ -73,7 +73,7 @@ impl KdfMethod {
         }
     }
 
-    pub fn derive_key(&self, password: &str, detail: &str) -> Result<WrapKey, Error> {
+    pub fn derive_key(&self, password: &str, detail: &str) -> Result<StoreKey, Error> {
         match self {
             Self::Argon2i(level) => {
                 let salt = parse_salt::<Argon2Salt>(detail)?;

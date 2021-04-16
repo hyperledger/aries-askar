@@ -41,7 +41,7 @@ extern crate serde_json;
 mod ffi;
 
 mod protect;
-pub use protect::{generate_raw_wrap_key, PassKey, WrapKeyMethod};
+pub use protect::{generate_raw_store_key, PassKey, StoreKeyMethod};
 
 mod storage;
 pub use storage::{

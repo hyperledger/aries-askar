@@ -22,7 +22,7 @@ use crate::{
     backend::any::{AnySession, AnyStore},
     error::Error,
     future::spawn_ok,
-    protect::{PassKey, WrapKeyMethod},
+    protect::{PassKey, StoreKeyMethod},
     storage::{
         entry::{Entry, EntryOperation, EntryTagSet, TagFilter},
         key::{KeyCategory, KeyEntry},
@@ -273,7 +273,7 @@ impl FfiEntry {
 #[no_mangle]
 pub extern "C" fn askar_store_provision(
     spec_uri: FfiStr<'_>,
-    wrap_key_method: FfiStr<'_>,
+    key_method: FfiStr<'_>,
     pass_key: FfiStr<'_>,
     profile: FfiStr<'_>,
     recreate: i8,
@@ -284,9 +284,9 @@ pub extern "C" fn askar_store_provision(
         trace!("Provision store");
         let cb = cb.ok_or_else(|| err_msg!("No callback provided"))?;
         let spec_uri = spec_uri.into_opt_string().ok_or_else(|| err_msg!("No provision spec URI provided"))?;
-        let wrap_key_method = match wrap_key_method.as_opt_str() {
-            Some(method) => WrapKeyMethod::parse_uri(method)?,
-            None => WrapKeyMethod::default()
+        let key_method = match key_method.as_opt_str() {
+            Some(method) => StoreKeyMethod::parse_uri(method)?,
+            None => StoreKeyMethod::default()
         };
         let pass_key = PassKey::from(pass_key.as_opt_str()).into_owned();
         let profile = profile.into_opt_string();
@@ -302,7 +302,7 @@ pub extern "C" fn askar_store_provision(
         spawn_ok(async move {
             let result = async {
                 let store = spec_uri.provision_backend(
-                    wrap_key_method,
+                    key_method,
                     pass_key,
                     profile.as_ref().map(String::as_str),
                     recreate != 0
@@ -318,7 +318,7 @@ pub extern "C" fn askar_store_provision(
 #[no_mangle]
 pub extern "C" fn askar_store_open(
     spec_uri: FfiStr<'_>,
-    wrap_key_method: FfiStr<'_>,
+    key_method: FfiStr<'_>,
     pass_key: FfiStr<'_>,
     profile: FfiStr<'_>,
     cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, handle: StoreHandle)>,
@@ -328,8 +328,8 @@ pub extern "C" fn askar_store_open(
         trace!("Open store");
         let cb = cb.ok_or_else(|| err_msg!("No callback provided"))?;
         let spec_uri = spec_uri.into_opt_string().ok_or_else(|| err_msg!("No store URI provided"))?;
-        let wrap_key_method = match wrap_key_method.as_opt_str() {
-            Some(method) => Some(WrapKeyMethod::parse_uri(method)?),
+        let key_method = match key_method.as_opt_str() {
+            Some(method) => Some(StoreKeyMethod::parse_uri(method)?),
             None => None
         };
         let pass_key = PassKey::from(pass_key.as_opt_str()).into_owned();
@@ -346,7 +346,7 @@ pub extern "C" fn askar_store_open(
         spawn_ok(async move {
             let result = async {
                 let store = spec_uri.open_backend(
-                    wrap_key_method,
+                    key_method,
                     pass_key,
                     profile.as_ref().map(String::as_str)
                 ).await?;
@@ -471,7 +471,7 @@ pub extern "C" fn askar_store_remove_profile(
 #[no_mangle]
 pub extern "C" fn askar_store_rekey(
     handle: StoreHandle,
-    wrap_key_method: FfiStr<'_>,
+    key_method: FfiStr<'_>,
     pass_key: FfiStr<'_>,
     cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode)>,
     cb_id: CallbackId,
@@ -479,9 +479,9 @@ pub extern "C" fn askar_store_rekey(
     catch_err! {
         trace!("Re-key store");
         let cb = cb.ok_or_else(|| err_msg!("No callback provided"))?;
-        let wrap_key_method = match wrap_key_method.as_opt_str() {
-            Some(method) => WrapKeyMethod::parse_uri(method)?,
-            None => WrapKeyMethod::default()
+        let key_method = match key_method.as_opt_str() {
+            Some(method) => StoreKeyMethod::parse_uri(method)?,
+            None => StoreKeyMethod::default()
         };
         let pass_key = PassKey::from(pass_key.as_opt_str()).into_owned();
         let cb = EnsureCallback::new(move |result|
@@ -495,7 +495,7 @@ pub extern "C" fn askar_store_rekey(
                 let store = handle.remove().await?;
                 match Arc::try_unwrap(store) {
                     Ok(mut store) => {
-                        store.rekey(wrap_key_method, pass_key.as_ref()).await?;
+                        store.rekey(key_method, pass_key.as_ref()).await?;
                         handle.replace(Arc::new(store)).await;
                         Ok(())
                     }

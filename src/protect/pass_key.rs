@@ -7,7 +7,7 @@ use std::{
     ops::Deref,
 };
 
-/// A possibly-empty password or key used to derive a store wrap key
+/// A possibly-empty password or key used to derive a store key
 #[derive(Clone)]
 pub struct PassKey<'a>(Option<Cow<'a, str>>);
 
