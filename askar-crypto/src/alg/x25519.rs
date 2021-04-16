@@ -3,7 +3,6 @@ use core::{
     fmt::{self, Debug, Formatter},
 };
 
-use rand::rngs::OsRng;
 use x25519_dalek::{PublicKey, StaticSecret as SecretKey};
 use zeroize::Zeroizing;
 
@@ -13,6 +12,7 @@ use crate::{
     generic_array::typenum::{U32, U64},
     jwk::{FromJwk, JwkEncoder, JwkParts, ToJwk},
     kdf::KeyExchange,
+    random::fill_random,
     repr::{KeyGen, KeyMeta, KeyPublicBytes, KeySecretBytes, KeypairMeta},
 };
 
@@ -106,7 +106,11 @@ impl KeypairMeta for X25519KeyPair {
 
 impl KeyGen for X25519KeyPair {
     fn generate() -> Result<Self, Error> {
-        let sk = SecretKey::new(OsRng);
+        let mut sk = ArrayKey::<U32>::default();
+        fill_random(sk.as_mut());
+        let sk = SecretKey::from(
+            TryInto::<[u8; SECRET_KEY_LENGTH]>::try_into(&sk.as_ref()[..]).unwrap(),
+        );
         let pk = PublicKey::from(&sk);
         Ok(Self::new(Some(sk), pk))
     }

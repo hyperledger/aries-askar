@@ -5,7 +5,6 @@ use core::{
 
 use curve25519_dalek::edwards::CompressedEdwardsY;
 use ed25519_dalek::{ExpandedSecretKey, PublicKey, SecretKey, Signature};
-use rand::rngs::OsRng;
 use sha2::{self, Digest};
 use x25519_dalek::{PublicKey as XPublicKey, StaticSecret as XSecretKey};
 
@@ -15,6 +14,7 @@ use crate::{
     error::Error,
     generic_array::typenum::{U32, U64},
     jwk::{FromJwk, JwkEncoder, JwkParts, ToJwk},
+    random::fill_random,
     repr::{KeyGen, KeyMeta, KeyPublicBytes, KeySecretBytes, KeypairMeta},
     sign::{KeySigVerify, KeySign, SignatureType},
 };
@@ -42,8 +42,8 @@ impl Ed25519KeyPair {
         if kp.len() != KEYPAIR_LENGTH {
             return Err(err_msg!("Invalid keypair bytes"));
         }
-        let sk = SecretKey::from_bytes(&kp[..SECRET_KEY_LENGTH])
-            .map_err(|_| err_msg!("Invalid ed25519 secret key bytes"))?;
+        // NB: this is infallible if the slice is the right length
+        let sk = SecretKey::from_bytes(&kp[..SECRET_KEY_LENGTH]).unwrap();
         let pk = PublicKey::from_bytes(&kp[SECRET_KEY_LENGTH..])
             .map_err(|_| err_msg!("Invalid ed25519 public key bytes"))?;
         // FIXME: derive pk from sk and check value?
@@ -143,7 +143,12 @@ impl Debug for Ed25519KeyPair {
 
 impl KeyGen for Ed25519KeyPair {
     fn generate() -> Result<Self, Error> {
-        Ok(Self::from_secret_key(SecretKey::generate(&mut OsRng)))
+        let mut sk = ArrayKey::<U32>::default();
+        fill_random(sk.as_mut());
+        // NB: from_bytes is infallible if the slice is the right length
+        Ok(Self::from_secret_key(
+            SecretKey::from_bytes(sk.as_ref()).unwrap(),
+        ))
     }
 }
 
