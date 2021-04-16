@@ -20,10 +20,10 @@ from ctypes import (
     c_ubyte,
 )
 from ctypes.util import find_library
-from typing import Optional, Sequence, Tuple, Union
+from typing import Optional, Union
 
 from .error import StoreError, StoreErrorCode
-from .types import Entry, EntryOperation, KeyAlg
+from .types import Entry, EntryOperation
 
 
 CALLBACKS = {}
@@ -430,42 +430,12 @@ def get_current_error(expect: bool = False) -> Optional[StoreError]:
     return StoreError(StoreErrorCode.WRAPPER, "Unknown error")
 
 
-async def derive_verkey(key_alg: KeyAlg, seed: Union[str, bytes]) -> str:
-    """Derive a verification key from a seed."""
-    return str(
-        await do_call_async(
-            "askar_derive_verkey",
-            encode_str(key_alg.value),
-            encode_bytes(seed),
-            return_type=StrBuffer,
-        )
-    )
-
-
 async def generate_raw_key(seed: Union[str, bytes] = None) -> str:
     """Generate a new raw store wrapping key."""
     return str(
         await do_call_async(
             "askar_generate_raw_key", encode_bytes(seed), return_type=StrBuffer
         )
-    )
-
-
-async def verify_signature(
-    signer_vk: str,
-    message: Union[str, bytes],
-    signature: Union[str, bytes],
-) -> bool:
-    """Verify a message signature."""
-    return (
-        await do_call_async(
-            "askar_verify_signature",
-            encode_str(signer_vk),
-            encode_bytes(message),
-            encode_bytes(signature),
-            return_type=c_int8,
-        )
-        != 0
     )
 
 
@@ -682,26 +652,6 @@ async def session_update(
     )
 
 
-async def session_create_keypair(
-    handle: SessionHandle,
-    alg: str,
-    metadata: str = None,
-    tags: dict = None,
-    seed: Union[str, bytes] = None,
-) -> str:
-    return str(
-        await do_call_async(
-            "askar_session_create_keypair",
-            handle,
-            encode_str(alg),
-            encode_str(metadata),
-            encode_str(None if tags is None else json.dumps(tags)),
-            encode_bytes(seed),
-            return_type=StrBuffer,
-        )
-    )
-
-
 async def session_fetch_keypair(
     handle: SessionHandle, ident: str, for_update: bool = False
 ) -> Optional[EntrySetHandle]:
@@ -726,50 +676,6 @@ async def session_update_keypair(
         encode_str(metadata),
         encode_str(None if tags is None else json.dumps(tags)),
     )
-
-
-async def session_sign_message(
-    handle: SessionHandle,
-    key_ident: str,
-    message: Union[str, bytes],
-) -> ByteBuffer:
-    return await do_call_async(
-        "askar_session_sign_message",
-        handle,
-        encode_str(key_ident),
-        encode_bytes(message),
-        return_type=ByteBuffer,
-    )
-
-
-async def session_pack_message(
-    handle: SessionHandle,
-    recipient_vks: Sequence[str],
-    from_key_ident: Optional[str],
-    message: Union[str, bytes],
-) -> ByteBuffer:
-    recipient_vks = encode_str(",".join(recipient_vks))
-    from_key_ident = encode_str(from_key_ident)
-    message = encode_bytes(message)
-    return await do_call_async(
-        "askar_session_pack_message",
-        handle,
-        recipient_vks,
-        from_key_ident,
-        message,
-        return_type=ByteBuffer,
-    )
-
-
-async def session_unpack_message(
-    handle: SessionHandle,
-    message: Union[str, bytes],
-) -> Tuple[ByteBuffer, str, Optional[str]]:
-    message = encode_bytes(message)
-    result = await do_call_async(
-        "askar_session_unpack_message", handle, message, return_type=lib_unpack_result
-    )
-    return (result.unpacked, str(result.recipient), result.sender.opt_str())
 
 
 async def scan_start(

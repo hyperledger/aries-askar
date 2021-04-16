@@ -4,12 +4,10 @@ import os
 import sys
 
 from aries_askar.bindings import (
-    derive_verkey,
     generate_raw_key,
-    verify_signature,
     version,
 )
-from aries_askar import KeyAlg, Store
+from aries_askar import Store
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "").upper() or None)
 
@@ -35,10 +33,6 @@ async def basic_test():
     else:
         key = None
         key_method = "none"
-
-    # Derive a verkey
-    verkey = await derive_verkey(KeyAlg.ED25519, b"testseedtestseedtestseedtestseed")
-    log("Derive verkey:", verkey)
 
     # Provision the store
     store = await Store.provision(REPO_URI, key_method, key, recreate=True)
@@ -77,33 +71,25 @@ async def basic_test():
 
     # test key operations in a new session
     async with store as session:
-        # Create a new keypair
-        key_ident = await session.create_keypair(KeyAlg.ED25519, metadata="metadata")
-        log("Created key:", key_ident)
+        # # Create a new keypair
+        # key_ident = await session.create_keypair(KeyAlg.ED25519, metadata="metadata")
+        # log("Created key:", key_ident)
 
-        # Update keypair
-        await session.update_keypair(key_ident, metadata="updated metadata")
-        log("Updated key")
+        # # Update keypair
+        # await session.update_keypair(key_ident, metadata="updated metadata")
+        # log("Updated key")
 
-        # Fetch keypair
-        key = await session.fetch_keypair(key_ident)
-        log("Fetch key:", key, "\nKey params:", key.params)
+        # # Fetch keypair
+        # key = await session.fetch_keypair(key_ident)
+        # log("Fetch key:", key, "\nKey params:", key.params)
 
-        # Sign a message
-        signature = await session.sign_message(key_ident, b"my message")
-        log("Signature:", signature)
+        # # Sign a message
+        # signature = await session.sign_message(key_ident, b"my message")
+        # log("Signature:", signature)
 
-        # Verify signature
-        verify = await verify_signature(key_ident, b"my message", signature)
-        log("Verify signature:", verify)
-
-        # Pack message
-        packed = await session.pack_message([key_ident], key_ident, b"my message")
-        log("Packed message:", packed)
-
-        # Unpack message
-        unpacked = await session.unpack_message(packed)
-        log("Unpacked message:", unpacked)
+        # # Verify signature
+        # verify = await verify_signature(key_ident, b"my message", signature)
+        # log("Verify signature:", verify)
 
         # Remove rows by category and (optional) tag filter
         log(
