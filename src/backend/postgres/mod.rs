@@ -16,17 +16,17 @@ use sqlx::{
 };
 
 use crate::{
+    backend::db_utils::{
+        decode_tags, decrypt_scan_batch, encode_profile_key, encode_tag_filter, expiry_timestamp,
+        extend_query, prepare_tags, random_profile_name, replace_arg_placeholders, DbSession,
+        DbSessionActive, DbSessionRef, EncScanEntry, ExtDatabase, QueryParams, QueryPrepare,
+        PAGE_SIZE,
+    },
     error::Error,
     future::{unblock, BoxFuture},
-    keys::{store::StoreKey, wrap::WrapKeyMethod, EntryEncryptor, KeyCache, PassKey},
+    protect::{EntryEncryptor, KeyCache, PassKey, ProfileId, ProfileKey, WrapKeyMethod},
     storage::{
-        db_utils::{
-            decode_tags, decrypt_scan_batch, encode_store_key, encode_tag_filter, expiry_timestamp,
-            extend_query, prepare_tags, random_profile_name, replace_arg_placeholders, DbSession,
-            DbSessionActive, DbSessionRef, EncScanEntry, ExtDatabase, QueryParams, QueryPrepare,
-            PAGE_SIZE,
-        },
-        entry::{EncEntryTag, Entry, EntryKind, EntryOperation, EntryTag, ProfileId, TagFilter},
+        entry::{EncEntryTag, Entry, EntryKind, EntryOperation, EntryTag, TagFilter},
         types::{Backend, QueryBackend, Scan},
     },
 };
@@ -68,7 +68,7 @@ const TAG_INSERT_QUERY: &'static str = "INSERT INTO items_tags
 mod provision;
 pub use provision::PostgresStoreOptions;
 
-#[cfg(feature = "pg_test")]
+#[cfg(any(test, feature = "pg_test"))]
 pub mod test_db;
 
 /// A PostgreSQL database store
@@ -104,15 +104,15 @@ impl Backend for PostgresStore {
     fn create_profile(&self, name: Option<String>) -> BoxFuture<'_, Result<String, Error>> {
         let name = name.unwrap_or_else(random_profile_name);
         Box::pin(async move {
-            let key = StoreKey::new()?;
-            let enc_key = key.to_string()?;
+            let key = ProfileKey::new()?;
+            let enc_key = key.to_bytes()?;
             let mut conn = self.conn_pool.acquire().await?;
             if let Some(pid) = sqlx::query_scalar(
-                "INSERT INTO profiles (name, store_key) VALUES ($1, $2) 
+                "INSERT INTO profiles (name, profile_key) VALUES ($1, $2) 
                 ON CONFLICT DO NOTHING RETURNING id",
             )
             .bind(&name)
-            .bind(enc_key.as_bytes())
+            .bind(enc_key.as_ref())
             .fetch_optional(&mut conn)
             .await?
             {
@@ -152,23 +152,23 @@ impl Backend for PostgresStore {
             let (wrap_key, wrap_key_ref) = unblock(move || method.resolve(pass_key)).await?;
             let wrap_key = Arc::new(wrap_key);
             let mut txn = self.conn_pool.begin().await?;
-            let mut rows = sqlx::query("SELECT id, store_key FROM profiles").fetch(&mut txn);
+            let mut rows = sqlx::query("SELECT id, profile_key FROM profiles").fetch(&mut txn);
             let mut upd_keys = BTreeMap::<ProfileId, Vec<u8>>::new();
             while let Some(row) = rows.next().await {
                 let row = row?;
                 let pid = row.try_get(0)?;
                 let enc_key = row.try_get(1)?;
-                let store_key = self.key_cache.load_key(enc_key).await?;
+                let profile_key = self.key_cache.load_key(enc_key).await?;
                 let upd_key = unblock({
                     let wrap_key = wrap_key.clone();
-                    move || encode_store_key(&store_key, &wrap_key)
+                    move || encode_profile_key(&profile_key, &wrap_key)
                 })
                 .await?;
                 upd_keys.insert(pid, upd_key);
             }
             drop(rows);
             for (pid, key) in upd_keys {
-                if sqlx::query("UPDATE profiles SET store_key=$1 WHERE id=$2")
+                if sqlx::query("UPDATE profiles SET profile_key=$1 WHERE id=$2")
                     .bind(key)
                     .bind(pid)
                     .execute(&mut txn)
@@ -176,7 +176,7 @@ impl Backend for PostgresStore {
                     .rows_affected()
                     != 1
                 {
-                    return Err(err_msg!(Backend, "Error updating profile store key"));
+                    return Err(err_msg!(Backend, "Error updating profile key"));
                 }
             }
             if sqlx::query("UPDATE config SET value=$1 WHERE name='wrap_key'")
@@ -261,7 +261,7 @@ impl QueryBackend for DbSession<Postgres> {
         category: &'q str,
         tag_filter: Option<TagFilter>,
     ) -> BoxFuture<'q, Result<i64, Error>> {
-        let category = StoreKey::prepare_input(category.as_bytes());
+        let category = ProfileKey::prepare_input(category.as_bytes());
 
         Box::pin(async move {
             let (profile_id, key) = acquire_key(&mut *self).await?;
@@ -271,7 +271,7 @@ impl QueryBackend for DbSession<Postgres> {
             let (enc_category, tag_filter) = unblock({
                 let params_len = params.len() + 1; // plus category
                 move || {
-                    Result::Ok((
+                    Result::<_, Error>::Ok((
                         key.encrypt_entry_category(category)?,
                         encode_tag_filter::<PostgresStore>(tag_filter, &key, params_len)?,
                     ))
@@ -303,10 +303,10 @@ impl QueryBackend for DbSession<Postgres> {
             let (profile_id, key) = acquire_key(&mut *self).await?;
             let (enc_category, enc_name) = unblock({
                 let key = key.clone();
-                let category = StoreKey::prepare_input(category.as_bytes());
-                let name = StoreKey::prepare_input(name.as_bytes());
+                let category = ProfileKey::prepare_input(category.as_bytes());
+                let name = ProfileKey::prepare_input(name.as_bytes());
                 move || {
-                    Result::Ok((
+                    Result::<_, Error>::Ok((
                         key.encrypt_entry_category(category)?,
                         key.encrypt_entry_name(name)?,
                     ))
@@ -328,8 +328,8 @@ impl QueryBackend for DbSession<Postgres> {
             {
                 let value = row.try_get(1)?;
                 let tags = row.try_get::<Option<String>, _>(2)?.map(String::into_bytes);
-                let (value, tags) = unblock(move || {
-                    let value = key.decrypt_entry_value(value)?;
+                let (category, name, value, tags) = unblock(move || {
+                    let value = key.decrypt_entry_value(category.as_ref(), name.as_ref(), value)?;
                     let tags = if let Some(enc_tags) = tags {
                         Some(
                             key.decrypt_entry_tags(
@@ -340,7 +340,7 @@ impl QueryBackend for DbSession<Postgres> {
                     } else {
                         None
                     };
-                    Result::Ok((value, tags))
+                    Result::<_, Error>::Ok((category, name, value, tags))
                 })
                 .await?;
                 Ok(Some(Entry::new(category, name, value, tags)))
@@ -393,7 +393,7 @@ impl QueryBackend for DbSession<Postgres> {
         category: &'q str,
         tag_filter: Option<TagFilter>,
     ) -> BoxFuture<'q, Result<i64, Error>> {
-        let category = StoreKey::prepare_input(category.as_bytes());
+        let category = ProfileKey::prepare_input(category.as_bytes());
 
         Box::pin(async move {
             let (profile_id, key) = acquire_key(&mut *self).await?;
@@ -403,7 +403,7 @@ impl QueryBackend for DbSession<Postgres> {
             let (enc_category, tag_filter) = unblock({
                 let params_len = params.len() + 1; // plus category
                 move || {
-                    Result::Ok((
+                    Result::<_, Error>::Ok((
                         key.encrypt_entry_category(category)?,
                         encode_tag_filter::<PostgresStore>(tag_filter, &key, params_len)?,
                     ))
@@ -438,21 +438,25 @@ impl QueryBackend for DbSession<Postgres> {
         tags: Option<&'q [EntryTag]>,
         expiry_ms: Option<i64>,
     ) -> BoxFuture<'q, Result<(), Error>> {
-        let category = StoreKey::prepare_input(category.as_bytes());
-        let name = StoreKey::prepare_input(name.as_bytes());
+        let category = ProfileKey::prepare_input(category.as_bytes());
+        let name = ProfileKey::prepare_input(name.as_bytes());
 
         match operation {
             EntryOperation::Insert => {
-                let value = StoreKey::prepare_input(value.unwrap());
+                let value = ProfileKey::prepare_input(value.unwrap());
                 let tags = tags.map(prepare_tags);
                 Box::pin(async move {
                     let (_, key) = acquire_key(&mut *self).await?;
                     let (enc_category, enc_name, enc_value, enc_tags) = unblock(move || {
-                        Result::Ok((
+                        let enc_value =
+                            key.encrypt_entry_value(category.as_ref(), name.as_ref(), value)?;
+                        Result::<_, Error>::Ok((
                             key.encrypt_entry_category(category)?,
                             key.encrypt_entry_name(name)?,
-                            key.encrypt_entry_value(value)?,
-                            tags.map(|t| key.encrypt_entry_tags(t)).transpose()?,
+                            enc_value,
+                            tags.transpose()?
+                                .map(|t| key.encrypt_entry_tags(t))
+                                .transpose()?,
                         ))
                     })
                     .await?;
@@ -473,16 +477,20 @@ impl QueryBackend for DbSession<Postgres> {
                 })
             }
             EntryOperation::Replace => {
-                let value = StoreKey::prepare_input(value.unwrap());
+                let value = ProfileKey::prepare_input(value.unwrap());
                 let tags = tags.map(prepare_tags);
                 Box::pin(async move {
                     let (_, key) = acquire_key(&mut *self).await?;
                     let (enc_category, enc_name, enc_value, enc_tags) = unblock(move || {
-                        Result::Ok((
+                        let enc_value =
+                            key.encrypt_entry_value(category.as_ref(), name.as_ref(), value)?;
+                        Result::<_, Error>::Ok((
                             key.encrypt_entry_category(category)?,
                             key.encrypt_entry_name(name)?,
-                            key.encrypt_entry_value(value)?,
-                            tags.map(|t| key.encrypt_entry_tags(t)).transpose()?,
+                            enc_value,
+                            tags.transpose()?
+                                .map(|t| key.encrypt_entry_tags(t))
+                                .transpose()?,
                         ))
                     })
                     .await?;
@@ -508,7 +516,7 @@ impl QueryBackend for DbSession<Postgres> {
             EntryOperation::Remove => Box::pin(async move {
                 let (_, key) = acquire_key(&mut *self).await?;
                 let (enc_category, enc_name) = unblock(move || {
-                    Result::Ok((
+                    Result::<_, Error>::Ok((
                         key.encrypt_entry_category(category)?,
                         key.encrypt_entry_name(name)?,
                     ))
@@ -556,7 +564,7 @@ impl QueryPrepare for PostgresStore {
 
 async fn acquire_key(
     session: &mut DbSession<Postgres>,
-) -> Result<(ProfileId, Arc<StoreKey>), Error> {
+) -> Result<(ProfileId, Arc<ProfileKey>), Error> {
     if let Some(ret) = session.profile_and_key() {
         Ok(ret)
     } else {
@@ -575,11 +583,11 @@ async fn resolve_profile_key(
     conn: &mut PoolConnection<Postgres>,
     cache: Arc<KeyCache>,
     profile: String,
-) -> Result<(ProfileId, Arc<StoreKey>), Error> {
+) -> Result<(ProfileId, Arc<ProfileKey>), Error> {
     if let Some((pid, key)) = cache.get_profile(profile.as_str()).await {
         Ok((pid, key))
     } else {
-        if let Some(row) = sqlx::query("SELECT id, store_key FROM profiles WHERE name=?1")
+        if let Some(row) = sqlx::query("SELECT id, profile_key FROM profiles WHERE name=?1")
             .bind(profile.as_str())
             .fetch_optional(conn)
             .await?
@@ -653,7 +661,7 @@ async fn perform_remove<'q>(
 fn perform_scan<'q>(
     mut active: DbSessionRef<'q, Postgres>,
     profile_id: ProfileId,
-    key: Arc<StoreKey>,
+    key: Arc<ProfileKey>,
     kind: EntryKind,
     category: String,
     tag_filter: Option<TagFilter>,
@@ -667,10 +675,10 @@ fn perform_scan<'q>(
         params.push(kind as i16);
         let (enc_category, tag_filter) = unblock({
             let key = key.clone();
-            let category = StoreKey::prepare_input(category.as_bytes());
+            let category = ProfileKey::prepare_input(category.as_bytes());
             let params_len = params.len() + 1; // plus category
             move || {
-                Result::Ok((
+                Result::<_, Error>::Ok((
                     key.encrypt_entry_category(category)?,
                     encode_tag_filter::<PostgresStore>(tag_filter, &key, params_len)?
                 ))
@@ -706,7 +714,7 @@ fn perform_scan<'q>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db_utils::replace_arg_placeholders;
+    use crate::backend::db_utils::replace_arg_placeholders;
 
     #[test]
     fn postgres_simple_and_convert_args_works() {

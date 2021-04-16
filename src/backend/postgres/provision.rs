@@ -7,16 +7,16 @@ use sqlx::{
     ConnectOptions, Connection, Error as SqlxError, Executor, Row, Transaction,
 };
 
-use crate::db_utils::{init_keys, random_profile_name};
-use crate::error::Result;
-use crate::future::{unblock, BoxFuture};
-use crate::keys::{
-    wrap::{WrapKeyMethod, WrapKeyReference},
-    KeyCache, PassKey,
+use crate::{
+    backend::db_utils::{init_keys, random_profile_name},
+    error::Error,
+    future::{unblock, BoxFuture},
+    protect::{KeyCache, PassKey, ProfileId, WrapKeyMethod, WrapKeyReference},
+    storage::{
+        options::IntoOptions,
+        types::{ManageBackend, Store},
+    },
 };
-use crate::options::IntoOptions;
-use crate::store::{ManageBackend, Store};
-use crate::types::ProfileId;
 
 use super::PostgresStore;
 
@@ -40,7 +40,7 @@ pub struct PostgresStoreOptions {
 
 impl PostgresStoreOptions {
     /// Initialize `PostgresStoreOptions` from a generic set of options
-    pub fn new<'a, O>(options: O) -> Result<Self>
+    pub fn new<'a, O>(options: O) -> Result<Self, Error>
     where
         O: IntoOptions<'a>,
     {
@@ -110,7 +110,7 @@ impl PostgresStoreOptions {
         })
     }
 
-    async fn pool(&self) -> std::result::Result<PgPool, SqlxError> {
+    async fn pool(&self) -> Result<PgPool, SqlxError> {
         #[allow(unused_mut)]
         let mut conn_opts = PgConnectOptions::from_str(self.uri.as_str())?;
         #[cfg(feature = "log")]
@@ -128,7 +128,7 @@ impl PostgresStoreOptions {
             .await
     }
 
-    pub(crate) async fn create_db_pool(&self) -> Result<PgPool> {
+    pub(crate) async fn create_db_pool(&self) -> Result<PgPool, Error> {
         // try connecting normally in case the database exists
         match self.pool().await {
             Ok(pool) => Ok(pool),
@@ -173,7 +173,7 @@ impl PostgresStoreOptions {
         pass_key: PassKey<'_>,
         profile: Option<&str>,
         recreate: bool,
-    ) -> Result<Store<PostgresStore>> {
+    ) -> Result<Store<PostgresStore>, Error> {
         let conn_pool = self.create_db_pool().await?;
         let mut txn = conn_pool.begin().await?;
 
@@ -203,7 +203,7 @@ impl PostgresStoreOptions {
             // no 'config' table, assume empty database
         }
 
-        let (store_key, enc_store_key, wrap_key, wrap_key_ref) = unblock({
+        let (profile_key, enc_profile_key, wrap_key, wrap_key_ref) = unblock({
             let pass_key = pass_key.into_owned();
             move || init_keys(method, pass_key)
         })
@@ -211,9 +211,9 @@ impl PostgresStoreOptions {
         let default_profile = profile
             .map(str::to_string)
             .unwrap_or_else(random_profile_name);
-        let profile_id = init_db(txn, &default_profile, wrap_key_ref, enc_store_key).await?;
+        let profile_id = init_db(txn, &default_profile, wrap_key_ref, enc_profile_key).await?;
         let mut key_cache = KeyCache::new(wrap_key);
-        key_cache.add_profile_mut(default_profile.clone(), profile_id, store_key);
+        key_cache.add_profile_mut(default_profile.clone(), profile_id, profile_key);
 
         Ok(Store::new(PostgresStore::new(
             conn_pool,
@@ -230,7 +230,7 @@ impl PostgresStoreOptions {
         method: Option<WrapKeyMethod>,
         pass_key: PassKey<'_>,
         profile: Option<&str>,
-    ) -> Result<Store<PostgresStore>> {
+    ) -> Result<Store<PostgresStore>, Error> {
         let pool = match self.pool().await {
             Ok(p) => Ok(p),
             Err(SqlxError::Database(db_err)) if db_err.code() == Some(Cow::Borrowed("3D000")) => {
@@ -244,7 +244,7 @@ impl PostgresStoreOptions {
     }
 
     /// Remove an existing Postgres store defined by these configuration options
-    pub async fn remove(self) -> Result<bool> {
+    pub async fn remove(self) -> Result<bool, Error> {
         let mut admin_conn = PgConnection::connect(self.admin_uri.as_ref()).await?;
         // any character except NUL is allowed in an identifier.
         // double quotes must be escaped, but we just disallow those
@@ -272,7 +272,7 @@ impl<'a> ManageBackend<'a> for PostgresStoreOptions {
         method: Option<WrapKeyMethod>,
         pass_key: PassKey<'_>,
         profile: Option<&'a str>,
-    ) -> BoxFuture<'a, Result<Store<PostgresStore>>> {
+    ) -> BoxFuture<'a, Result<Store<PostgresStore>, Error>> {
         let pass_key = pass_key.into_owned();
         Box::pin(self.open(method, pass_key, profile))
     }
@@ -283,12 +283,12 @@ impl<'a> ManageBackend<'a> for PostgresStoreOptions {
         pass_key: PassKey<'_>,
         profile: Option<&'a str>,
         recreate: bool,
-    ) -> BoxFuture<'a, Result<Store<PostgresStore>>> {
+    ) -> BoxFuture<'a, Result<Store<PostgresStore>, Error>> {
         let pass_key = pass_key.into_owned();
         Box::pin(self.provision(method, pass_key, profile, recreate))
     }
 
-    fn remove_backend(self) -> BoxFuture<'a, Result<bool>> {
+    fn remove_backend(self) -> BoxFuture<'a, Result<bool, Error>> {
         Box::pin(self.remove())
     }
 }
@@ -297,8 +297,8 @@ pub(crate) async fn init_db<'t>(
     mut txn: Transaction<'t, Postgres>,
     profile_name: &str,
     wrap_key_ref: String,
-    enc_store_key: Vec<u8>,
-) -> Result<ProfileId> {
+    enc_profile_key: Vec<u8>,
+) -> Result<ProfileId, Error> {
     txn.execute(
         "
         CREATE TABLE config (
@@ -311,7 +311,7 @@ pub(crate) async fn init_db<'t>(
             id BIGSERIAL,
             name TEXT NOT NULL,
             reference TEXT NULL,
-            store_key BYTEA NULL,
+            profile_key BYTEA NULL,
             PRIMARY KEY(id)
         );
         CREATE UNIQUE INDEX ix_profile_name ON profiles(name);
@@ -360,9 +360,9 @@ pub(crate) async fn init_db<'t>(
     .await?;
 
     let profile_id =
-        sqlx::query_scalar("INSERT INTO profiles (name, store_key) VALUES ($1, $2) RETURNING id")
+        sqlx::query_scalar("INSERT INTO profiles (name, profile_key) VALUES ($1, $2) RETURNING id")
             .bind(profile_name)
-            .bind(enc_store_key)
+            .bind(enc_profile_key)
             .fetch_one(&mut txn)
             .await?;
 
@@ -371,12 +371,12 @@ pub(crate) async fn init_db<'t>(
     Ok(profile_id)
 }
 
-pub(crate) async fn reset_db(conn: &mut PgConnection) -> Result<()> {
+pub(crate) async fn reset_db(conn: &mut PgConnection) -> Result<(), Error> {
     conn.execute(
         "
         DROP TABLE IF EXISTS
           config, profiles,
-          store_keys, keys,
+          profile_keys, keys,
           items, items_tags;
         ",
     )
@@ -391,7 +391,7 @@ pub(crate) async fn open_db(
     profile: Option<&str>,
     host: String,
     name: String,
-) -> Result<Store<PostgresStore>> {
+) -> Result<Store<PostgresStore>, Error> {
     let mut conn = conn_pool.acquire().await?;
     let mut ver_ok = false;
     let mut default_profile: Option<String> = None;
@@ -431,7 +431,7 @@ pub(crate) async fn open_db(
         let wrap_ref = WrapKeyReference::parse_uri(&wrap_key_ref)?;
         if let Some(method) = method {
             if !wrap_ref.compare_method(&method) {
-                return Err(err_msg!(Input, "Store key wrap method mismatch"));
+                return Err(err_msg!(Input, "Store wrap key method mismatch"));
             }
         }
         unblock({
@@ -444,13 +444,13 @@ pub(crate) async fn open_db(
     };
     let mut key_cache = KeyCache::new(wrap_key);
 
-    let row = sqlx::query("SELECT id, store_key FROM profiles WHERE name = $1")
+    let row = sqlx::query("SELECT id, profile_key FROM profiles WHERE name = $1")
         .bind(&profile)
         .fetch_one(&mut conn)
         .await?;
     let profile_id = row.try_get(0)?;
-    let store_key = key_cache.load_key(row.try_get(1)?).await?;
-    key_cache.add_profile_mut(profile.clone(), profile_id, store_key);
+    let profile_key = key_cache.load_key(row.try_get(1)?).await?;
+    key_cache.add_profile_mut(profile.clone(), profile_id, profile_key);
 
     Ok(Store::new(PostgresStore::new(
         conn_pool, profile, key_cache, host, name,

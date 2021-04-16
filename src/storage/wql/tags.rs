@@ -1,9 +1,9 @@
 use super::{AbstractQuery, Query};
-use crate::error::Result;
+use crate::error::Error;
 
 pub type TagQuery = AbstractQuery<TagName, String>;
 
-pub fn tag_query(query: Query) -> Result<TagQuery> {
+pub fn tag_query(query: Query) -> Result<TagQuery, Error> {
     let result = query
         .map_names(&mut |k| {
             if k.starts_with("~") {
@@ -17,7 +17,7 @@ pub fn tag_query(query: Query) -> Result<TagQuery> {
     Ok(result)
 }
 
-pub fn validate_tag_query(_query: &TagQuery) -> Result<()> {
+pub fn validate_tag_query(_query: &TagQuery) -> Result<(), Error> {
     // FIXME only equality comparison supported for encrypted keys
     Ok(())
 }
@@ -47,16 +47,16 @@ pub trait TagQueryEncoder {
     type Arg;
     type Clause;
 
-    fn encode_query(&mut self, query: &TagQuery) -> Result<Option<Self::Clause>>
+    fn encode_query(&mut self, query: &TagQuery) -> Result<Option<Self::Clause>, Error>
     where
         Self: Sized,
     {
         encode_tag_query(query, self, false)
     }
 
-    fn encode_name(&mut self, name: &TagName) -> Result<Self::Arg>;
+    fn encode_name(&mut self, name: &TagName) -> Result<Self::Arg, Error>;
 
-    fn encode_value(&mut self, value: &String, is_plaintext: bool) -> Result<Self::Arg>;
+    fn encode_value(&mut self, value: &String, is_plaintext: bool) -> Result<Self::Arg, Error>;
 
     fn encode_op_clause(
         &mut self,
@@ -64,7 +64,7 @@ pub trait TagQueryEncoder {
         enc_name: Self::Arg,
         enc_value: Self::Arg,
         is_plaintext: bool,
-    ) -> Result<Option<Self::Clause>>;
+    ) -> Result<Option<Self::Clause>, Error>;
 
     fn encode_in_clause(
         &mut self,
@@ -72,20 +72,20 @@ pub trait TagQueryEncoder {
         enc_values: Vec<Self::Arg>,
         is_plaintext: bool,
         negate: bool,
-    ) -> Result<Option<Self::Clause>>;
+    ) -> Result<Option<Self::Clause>, Error>;
 
     fn encode_exist_clause(
         &mut self,
         enc_name: Self::Arg,
         is_plaintext: bool,
         negate: bool,
-    ) -> Result<Option<Self::Clause>>;
+    ) -> Result<Option<Self::Clause>, Error>;
 
     fn encode_conj_clause(
         &mut self,
         op: ConjunctionOp,
         clauses: Vec<Self::Clause>,
-    ) -> Result<Option<Self::Clause>>;
+    ) -> Result<Option<Self::Clause>, Error>;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -160,7 +160,7 @@ impl ConjunctionOp {
     }
 }
 
-fn encode_tag_query<V, E>(query: &TagQuery, enc: &mut E, negate: bool) -> Result<Option<V>>
+fn encode_tag_query<V, E>(query: &TagQuery, enc: &mut E, negate: bool) -> Result<Option<V>, Error>
 where
     E: TagQueryEncoder<Clause = V>,
 {
@@ -202,7 +202,7 @@ fn encode_tag_op<V, E>(
     value: &String,
     enc: &mut E,
     negate: bool,
-) -> Result<Option<V>>
+) -> Result<Option<V>, Error>
 where
     E: TagQueryEncoder<Clause = V>,
 {
@@ -222,7 +222,7 @@ fn encode_tag_in<V, E>(
     values: &Vec<String>,
     enc: &mut E,
     negate: bool,
-) -> Result<Option<V>>
+) -> Result<Option<V>, Error>
 where
     E: TagQueryEncoder<Clause = V>,
 {
@@ -234,12 +234,12 @@ where
     let enc_values = values
         .into_iter()
         .map(|val| enc.encode_value(val, is_plaintext))
-        .collect::<Result<Vec<_>>>()?;
+        .collect::<Result<Vec<_>, Error>>()?;
 
     enc.encode_in_clause(enc_name, enc_values, is_plaintext, negate)
 }
 
-fn encode_tag_exist<V, E>(names: &[TagName], enc: &mut E, negate: bool) -> Result<Option<V>>
+fn encode_tag_exist<V, E>(names: &[TagName], enc: &mut E, negate: bool) -> Result<Option<V>, Error>
 where
     E: TagQueryEncoder<Clause = V>,
 {
@@ -270,7 +270,7 @@ fn encode_tag_conj<V, E>(
     subqueries: &Vec<TagQuery>,
     enc: &mut E,
     negate: bool,
-) -> Result<Option<V>>
+) -> Result<Option<V>, Error>
 where
     E: TagQueryEncoder<Clause = V>,
 {
@@ -278,7 +278,7 @@ where
     let clauses = subqueries
         .into_iter()
         .flat_map(|q| encode_tag_query(q, enc, negate).transpose())
-        .collect::<Result<Vec<_>>>()?;
+        .collect::<Result<Vec<_>, Error>>()?;
 
     enc.encode_conj_clause(op, clauses)
 }
@@ -295,11 +295,11 @@ mod tests {
         type Arg = String;
         type Clause = String;
 
-        fn encode_name(&mut self, name: &TagName) -> Result<String> {
+        fn encode_name(&mut self, name: &TagName) -> Result<String, Error> {
             Ok(name.to_string())
         }
 
-        fn encode_value(&mut self, value: &String, _is_plaintext: bool) -> Result<String> {
+        fn encode_value(&mut self, value: &String, _is_plaintext: bool) -> Result<String, Error> {
             Ok(value.clone())
         }
 
@@ -309,7 +309,7 @@ mod tests {
             name: Self::Arg,
             value: Self::Arg,
             _is_plaintext: bool,
-        ) -> Result<Option<Self::Clause>> {
+        ) -> Result<Option<Self::Clause>, Error> {
             Ok(Some(format!("{} {} {}", name, op.as_sql_str(), value)))
         }
 
@@ -318,7 +318,7 @@ mod tests {
             name: Self::Arg,
             _is_plaintext: bool,
             negate: bool,
-        ) -> Result<Option<Self::Clause>> {
+        ) -> Result<Option<Self::Clause>, Error> {
             let op = if negate { "NOT EXIST" } else { "EXIST" };
             Ok(Some(format!("{}({})", op, name)))
         }
@@ -329,7 +329,7 @@ mod tests {
             values: Vec<Self::Arg>,
             _is_plaintext: bool,
             negate: bool,
-        ) -> Result<Option<Self::Clause>> {
+        ) -> Result<Option<Self::Clause>, Error> {
             let op = if negate { "NOT IN" } else { "IN" };
             let value = values
                 .iter()
@@ -343,7 +343,7 @@ mod tests {
             &mut self,
             op: ConjunctionOp,
             clauses: Vec<Self::Clause>,
-        ) -> Result<Option<Self::Clause>> {
+        ) -> Result<Option<Self::Clause>, Error> {
             let mut r = String::new();
             r.push_str("(");
             r.extend(

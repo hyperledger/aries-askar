@@ -6,7 +6,7 @@
 pub mod any;
 
 #[cfg(any(feature = "postgres", feature = "sqlite"))]
-mod db_utils;
+pub(crate) mod db_utils;
 
 #[cfg(feature = "postgres")]
 #[cfg_attr(docsrs, doc(cfg(feature = "postgres")))]

@@ -76,8 +76,8 @@ pub(crate) trait EntryEncryptor {
     fn encrypt_entry_name(&self, name: SecretBytes) -> Result<Vec<u8>, Error>;
     fn encrypt_entry_value(
         &self,
-        category: &str,
-        name: &str,
+        category: &[u8],
+        name: &[u8],
         value: SecretBytes,
     ) -> Result<Vec<u8>, Error>;
     fn encrypt_entry_tags(&self, tags: Vec<EntryTag>) -> Result<Vec<EncEntryTag>, Error>;
@@ -86,8 +86,8 @@ pub(crate) trait EntryEncryptor {
     fn decrypt_entry_name(&self, enc_name: Vec<u8>) -> Result<String, Error>;
     fn decrypt_entry_value(
         &self,
-        category: &str,
-        name: &str,
+        category: &[u8],
+        name: &[u8],
         enc_value: Vec<u8>,
     ) -> Result<SecretBytes, Error>;
     fn decrypt_entry_tags(&self, enc_tags: Vec<EncEntryTag>) -> Result<Vec<EntryTag>, Error>;
@@ -104,8 +104,8 @@ impl EntryEncryptor for NullEncryptor {
     }
     fn encrypt_entry_value(
         &self,
-        _category: &str,
-        _name: &str,
+        _category: &[u8],
+        _name: &[u8],
         value: SecretBytes,
     ) -> Result<Vec<u8>, Error> {
         Ok(value.into_vec())
@@ -136,8 +136,8 @@ impl EntryEncryptor for NullEncryptor {
     }
     fn decrypt_entry_value(
         &self,
-        _category: &str,
-        _name: &str,
+        _category: &[u8],
+        _name: &[u8],
         enc_value: Vec<u8>,
     ) -> Result<SecretBytes, Error> {
         Ok(enc_value.into())

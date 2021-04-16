@@ -20,7 +20,7 @@ use zeroize::Zeroize;
 use super::{error::set_last_error, CallbackId, EnsureCallback, ErrorCode};
 use crate::{
     backend::any::{AnySession, AnyStore},
-    error::Result as KvResult,
+    error::Error,
     future::spawn_ok,
     protect::{PassKey, WrapKeyMethod},
     storage::{
@@ -49,7 +49,7 @@ impl StoreHandle {
         handle
     }
 
-    pub async fn load(&self) -> KvResult<Arc<AnyStore>> {
+    pub async fn load(&self) -> Result<Arc<AnyStore>, Error> {
         FFI_STORES
             .lock()
             .await
@@ -58,7 +58,7 @@ impl StoreHandle {
             .ok_or_else(|| err_msg!("Invalid store handle"))
     }
 
-    pub async fn remove(&self) -> KvResult<Arc<AnyStore>> {
+    pub async fn remove(&self) -> Result<Arc<AnyStore>, Error> {
         FFI_STORES
             .lock()
             .await
@@ -79,7 +79,7 @@ impl SessionHandle {
         handle
     }
 
-    pub async fn load(&self) -> KvResult<MutexGuardArc<AnySession>> {
+    pub async fn load(&self) -> Result<MutexGuardArc<AnySession>, Error> {
         Ok(Mutex::lock_arc(
             FFI_SESSIONS
                 .lock()
@@ -90,7 +90,7 @@ impl SessionHandle {
         .await)
     }
 
-    pub async fn remove(&self) -> KvResult<Arc<Mutex<AnySession>>> {
+    pub async fn remove(&self) -> Result<Arc<Mutex<AnySession>>, Error> {
         FFI_SESSIONS
             .lock()
             .await
@@ -107,7 +107,7 @@ impl ScanHandle {
         handle
     }
 
-    pub async fn borrow(&self) -> KvResult<Scan<'static, Entry>> {
+    pub async fn borrow(&self) -> Result<Scan<'static, Entry>, Error> {
         FFI_SCANS
             .lock()
             .await
@@ -117,7 +117,7 @@ impl ScanHandle {
             .ok_or_else(|| err_msg!(Busy, "Scan handle in use"))
     }
 
-    pub async fn release(&self, value: Scan<'static, Entry>) -> KvResult<()> {
+    pub async fn release(&self, value: Scan<'static, Entry>) -> Result<(), Error> {
         FFI_SCANS
             .lock()
             .await
@@ -127,7 +127,7 @@ impl ScanHandle {
         Ok(())
     }
 
-    pub async fn remove(&self) -> KvResult<Scan<'static, Entry>> {
+    pub async fn remove(&self) -> Result<Scan<'static, Entry>, Error> {
         FFI_SCANS
             .lock()
             .await
@@ -368,7 +368,7 @@ pub extern "C" fn askar_store_remove(
         trace!("Remove store");
         let cb = cb.ok_or_else(|| err_msg!("No callback provided"))?;
         let spec_uri = spec_uri.into_opt_string().ok_or_else(|| err_msg!("No store URI provided"))?;
-        let cb = EnsureCallback::new(move |result: KvResult<bool>|
+        let cb = EnsureCallback::new(move |result: Result<bool,Error>|
             match result {
                 Ok(removed) => cb(cb_id, ErrorCode::Success, removed as i8),
                 Err(err) => cb(cb_id, set_last_error(Some(err)), 0),
@@ -562,7 +562,7 @@ pub extern "C" fn askar_scan_start(
         let profile = profile.into_opt_string();
         let category = category.into_opt_string().ok_or_else(|| err_msg!("Category not provided"))?;
         let tag_filter = tag_filter.as_opt_str().map(TagFilter::from_str).transpose()?;
-        let cb = EnsureCallback::new(move |result: KvResult<ScanHandle>|
+        let cb = EnsureCallback::new(move |result: Result<ScanHandle,Error>|
             match result {
                 Ok(scan_handle) => {
                     info!("Started scan {} on store {}", scan_handle, handle);
@@ -592,7 +592,7 @@ pub extern "C" fn askar_scan_next(
     catch_err! {
         trace!("Scan store next");
         let cb = cb.ok_or_else(|| err_msg!("No callback provided"))?;
-        let cb = EnsureCallback::new(move |result: KvResult<Option<Vec<Entry>>>|
+        let cb = EnsureCallback::new(move |result: Result<Option<Vec<Entry>>,Error>|
             match result {
                 Ok(Some(entries)) => {
                     let results = EntrySetHandle::create(FfiEntrySet::from(entries));
@@ -665,7 +665,7 @@ pub extern "C" fn askar_session_start(
         trace!("Session start");
         let profile = profile.into_opt_string();
         let cb = cb.ok_or_else(|| err_msg!("No callback provided"))?;
-        let cb = EnsureCallback::new(move |result: KvResult<SessionHandle>|
+        let cb = EnsureCallback::new(move |result: Result<SessionHandle,Error>|
             match result {
                 Ok(sess_handle) => {
                     info!("Started session {} on store {} (txn: {})", sess_handle, handle, as_transaction != 0);
@@ -703,7 +703,7 @@ pub extern "C" fn askar_session_count(
         let cb = cb.ok_or_else(|| err_msg!("No callback provided"))?;
         let category = category.into_opt_string().ok_or_else(|| err_msg!("Category not provided"))?;
         let tag_filter = tag_filter.as_opt_str().map(TagFilter::from_str).transpose()?;
-        let cb = EnsureCallback::new(move |result: KvResult<i64>|
+        let cb = EnsureCallback::new(move |result: Result<i64,Error>|
             match result {
                 Ok(count) => cb(cb_id, ErrorCode::Success, count),
                 Err(err) => cb(cb_id, set_last_error(Some(err)), 0),
@@ -734,7 +734,7 @@ pub extern "C" fn askar_session_fetch(
         let cb = cb.ok_or_else(|| err_msg!("No callback provided"))?;
         let category = category.into_opt_string().ok_or_else(|| err_msg!("Category not provided"))?;
         let name = name.into_opt_string().ok_or_else(|| err_msg!("Name not provided"))?;
-        let cb = EnsureCallback::new(move |result: KvResult<Option<Entry>>|
+        let cb = EnsureCallback::new(move |result: Result<Option<Entry>,Error>|
             match result {
                 Ok(Some(entry)) => {
                     let results = Box::into_raw(Box::new(FfiEntrySet::from(entry)));
@@ -1018,7 +1018,7 @@ pub extern "C" fn askar_session_close(
     }
 }
 
-fn export_key_entry(key_entry: KeyEntry) -> KvResult<Entry> {
+fn export_key_entry(key_entry: KeyEntry) -> Result<Entry, Error> {
     let KeyEntry {
         category,
         ident,

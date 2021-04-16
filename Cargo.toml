@@ -24,8 +24,8 @@ no-default-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [features]
-default = ["all", "ffi", "logger"]
-all = ["any", "sqlite"]  # "postgres"
+default = ["all_backends", "ffi", "logger"]
+all_backends = ["any", "postgres", "sqlite"]
 any = []
 ffi = ["any", "ffi-support", "logger"]
 indy_compat = ["sqlx", "sqlx/sqlite"]

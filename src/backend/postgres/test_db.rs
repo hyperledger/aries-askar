@@ -1,3 +1,5 @@
+//! Store wrapper for running tests against a postgres database
+
 use sqlx::{
     postgres::{PgConnection, Postgres},
     Connection, Database, TransactionManager,
@@ -6,30 +8,32 @@ use std::time::Duration;
 
 use super::provision::{init_db, reset_db, PostgresStoreOptions};
 use super::PostgresStore;
-use crate::db_utils::{init_keys, random_profile_name};
-use crate::error::Result;
-use crate::future::{block_on, unblock};
-use crate::keys::{
-    wrap::{generate_raw_wrap_key, WrapKeyMethod},
-    KeyCache,
+use crate::{
+    backend::db_utils::{init_keys, random_profile_name},
+    error::Error,
+    future::{block_on, unblock},
+    protect::{generate_raw_wrap_key, KeyCache, WrapKeyMethod},
+    storage::types::Store,
 };
-use crate::store::Store;
 
+#[derive(Debug)]
+/// Postgres test database wrapper instance
 pub struct TestDB {
     inst: Option<Store<PostgresStore>>,
     lock_txn: Option<PgConnection>,
 }
 
 impl TestDB {
-    #[allow(unused)]
-    pub async fn provision() -> Result<TestDB> {
+    /// Provision a new instance of the test database.
+    /// This method blocks until the database lock can be acquired.
+    pub async fn provision() -> Result<TestDB, Error> {
         let path = match std::env::var("POSTGRES_URL") {
             Ok(p) if !p.is_empty() => p,
             _ => panic!("'POSTGRES_URL' must be defined"),
         };
 
         let key = generate_raw_wrap_key(None)?;
-        let (store_key, enc_store_key, wrap_key, wrap_key_ref) =
+        let (profile_key, enc_profile_key, wrap_key, wrap_key_ref) =
             unblock(|| init_keys(WrapKeyMethod::RawKey, key)).await?;
         let default_profile = random_profile_name();
 
@@ -59,10 +63,10 @@ impl TestDB {
         reset_db(&mut *init_txn).await?;
 
         // create tables and add default profile
-        let profile_id = init_db(init_txn, &default_profile, wrap_key_ref, enc_store_key).await?;
+        let profile_id = init_db(init_txn, &default_profile, wrap_key_ref, enc_profile_key).await?;
 
         let mut key_cache = KeyCache::new(wrap_key);
-        key_cache.add_profile_mut(default_profile.clone(), profile_id, store_key);
+        key_cache.add_profile_mut(default_profile.clone(), profile_id, profile_key);
         let inst = Store::new(PostgresStore::new(
             conn_pool,
             default_profile,

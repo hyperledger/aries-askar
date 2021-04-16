@@ -309,7 +309,7 @@ mod sqlite {
 
 #[cfg(feature = "pg_test")]
 mod postgres {
-    use aries_askar::postgres::test_db::TestDB;
+    use aries_askar::backend::postgres::test_db::TestDB;
 
     async fn init_db() -> TestDB {
         env_logger::builder().is_test(true).try_init().unwrap_or(());

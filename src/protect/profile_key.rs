@@ -114,16 +114,16 @@ where
 
     pub fn derive_value_key(
         &self,
-        category: &str,
-        name: &str,
+        category: &[u8],
+        name: &[u8],
         out: &mut [u8],
     ) -> Result<(), Error> {
         self.item_hmac_key.hmac_to(
             &[
-                &(category.len() as u64).to_be_bytes(),
-                category.as_bytes(),
-                &(name.len() as u64).to_be_bytes(),
-                name.as_bytes(),
+                &(category.len() as u32).to_be_bytes(),
+                category,
+                &(name.len() as u32).to_be_bytes(),
+                name,
             ],
             out,
         )
@@ -179,8 +179,8 @@ where
 
     fn encrypt_entry_value(
         &self,
-        category: &str,
-        name: &str,
+        category: &[u8],
+        name: &[u8],
         value: SecretBytes,
     ) -> Result<Vec<u8>, Error> {
         let mut value_key = ArrayKey::<Key::KeySize>::default();
@@ -199,8 +199,8 @@ where
 
     fn decrypt_entry_value(
         &self,
-        category: &str,
-        name: &str,
+        category: &[u8],
+        name: &[u8],
         enc_value: Vec<u8>,
     ) -> Result<SecretBytes, Error> {
         let mut value_key = ArrayKey::<Key::KeySize>::default();
@@ -278,8 +278,8 @@ mod tests {
             .unwrap();
         let enc_value = key
             .encrypt_entry_value(
-                &test_record.category,
-                &test_record.name,
+                test_record.category.as_bytes(),
+                test_record.name.as_bytes(),
                 test_record.value.clone().into(),
             )
             .unwrap();
@@ -293,8 +293,12 @@ mod tests {
         let cmp_record = Entry::new(
             key.decrypt_entry_category(enc_category).unwrap(),
             key.decrypt_entry_name(enc_name).unwrap(),
-            key.decrypt_entry_value(&test_record.category, &test_record.name, enc_value)
-                .unwrap(),
+            key.decrypt_entry_value(
+                test_record.category.as_bytes(),
+                test_record.name.as_bytes(),
+                enc_value,
+            )
+            .unwrap(),
             Some(key.decrypt_entry_tags(enc_tags).unwrap()),
         );
         assert_eq!(test_record, cmp_record);
@@ -319,8 +323,6 @@ mod tests {
         let key = ProfileKey::new().unwrap();
         let key_cbor = serde_cbor::to_vec(&key).unwrap();
         let key_cmp = serde_cbor::from_slice(&key_cbor).unwrap();
-        println!("len: {}", key_cbor.len());
-        assert!(false);
         assert_eq!(key, key_cmp);
     }
 }

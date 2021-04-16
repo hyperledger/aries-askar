@@ -3,7 +3,7 @@ use std::marker::PhantomData;
 use itertools::Itertools;
 
 use super::tags::{CompareOp, ConjunctionOp, TagName, TagQueryEncoder};
-use crate::error::Result;
+use crate::error::Error;
 
 pub struct TagSqlEncoder<'e, EN, EV> {
     pub enc_name: EN,
@@ -14,8 +14,8 @@ pub struct TagSqlEncoder<'e, EN, EV> {
 
 impl<'e, EN, EV> TagSqlEncoder<'e, EN, EV>
 where
-    EN: Fn(&str) -> Result<Vec<u8>> + 'e,
-    EV: Fn(&str) -> Result<Vec<u8>> + 'e,
+    EN: Fn(&str) -> Result<Vec<u8>, Error> + 'e,
+    EV: Fn(&str) -> Result<Vec<u8>, Error> + 'e,
 {
     pub fn new(enc_name: EN, enc_value: EV) -> Self {
         Self {
@@ -29,19 +29,19 @@ where
 
 impl<'e, EN, EV> TagQueryEncoder for TagSqlEncoder<'e, EN, EV>
 where
-    EN: Fn(&str) -> Result<Vec<u8>> + 'e,
-    EV: Fn(&str) -> Result<Vec<u8>> + 'e,
+    EN: Fn(&str) -> Result<Vec<u8>, Error> + 'e,
+    EV: Fn(&str) -> Result<Vec<u8>, Error> + 'e,
 {
     type Arg = Vec<u8>;
     type Clause = String;
 
-    fn encode_name(&mut self, name: &TagName) -> Result<Self::Arg> {
+    fn encode_name(&mut self, name: &TagName) -> Result<Self::Arg, Error> {
         Ok(match name {
             TagName::Encrypted(name) | TagName::Plaintext(name) => (&self.enc_name)(name)?,
         })
     }
 
-    fn encode_value(&mut self, value: &String, is_plaintext: bool) -> Result<Self::Arg> {
+    fn encode_value(&mut self, value: &String, is_plaintext: bool) -> Result<Self::Arg, Error> {
         Ok(if is_plaintext {
             value.as_bytes().to_vec()
         } else {
@@ -55,7 +55,7 @@ where
         enc_name: Self::Arg,
         enc_value: Self::Arg,
         is_plaintext: bool,
-    ) -> Result<Option<Self::Clause>> {
+    ) -> Result<Option<Self::Clause>, Error> {
         let idx = self.arguments.len();
         let (op_prefix, match_prefix) = match (is_plaintext, op.as_sql_str_for_prefix()) {
             (false, Some(pfx_op)) if enc_value.len() > 12 => {
@@ -93,7 +93,7 @@ where
         enc_values: Vec<Self::Arg>,
         is_plaintext: bool,
         negate: bool,
-    ) -> Result<Option<Self::Clause>> {
+    ) -> Result<Option<Self::Clause>, Error> {
         let args_in = std::iter::repeat("$$")
             .take(enc_values.len())
             .intersperse(", ")
@@ -114,7 +114,7 @@ where
         enc_name: Self::Arg,
         is_plaintext: bool,
         negate: bool,
-    ) -> Result<Option<Self::Clause>> {
+    ) -> Result<Option<Self::Clause>, Error> {
         let query = format!(
             "i.id {} (SELECT item_id FROM items_tags WHERE name = $$ AND plaintext = {})",
             if negate { "NOT IN" } else { "IN" },
@@ -128,7 +128,7 @@ where
         &mut self,
         op: ConjunctionOp,
         clauses: Vec<Self::Clause>,
-    ) -> Result<Option<Self::Clause>> {
+    ) -> Result<Option<Self::Clause>, Error> {
         let qc = clauses.len();
         if qc == 0 {
             if op == ConjunctionOp::Or {

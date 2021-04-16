@@ -103,7 +103,7 @@ impl Backend for SqliteStore {
             let done =
                 sqlx::query("INSERT OR IGNORE INTO profiles (name, profile_key) VALUES (?1, ?2)")
                     .bind(&name)
-                    .bind(enc_key.into_vec())
+                    .bind(enc_key.as_ref())
                     .execute(&mut conn)
                     .await?;
             if done.rows_affected() == 0 {
@@ -304,7 +304,7 @@ impl QueryBackend for DbSession<Sqlite> {
                 let value = row.try_get(1)?;
                 let tags = row.try_get(2)?;
                 let (category, name, value, tags) = unblock(move || {
-                    let value = key.decrypt_entry_value(category.as_str(), name.as_str(), value)?;
+                    let value = key.decrypt_entry_value(category.as_ref(), name.as_ref(), value)?;
                     let enc_tags = decode_tags(tags)
                         .map_err(|_| err_msg!(Unexpected, "Error decoding entry tags"))?;
                     let tags = Some(key.decrypt_entry_tags(enc_tags)?);
@@ -409,11 +409,8 @@ impl QueryBackend for DbSession<Sqlite> {
                 Box::pin(async move {
                     let (_, key) = acquire_key(&mut *self).await?;
                     let (enc_category, enc_name, enc_value, enc_tags) = unblock(move || {
-                        let enc_value = key.encrypt_entry_value(
-                            category.as_opt_str().unwrap(),
-                            name.as_opt_str().unwrap(),
-                            value,
-                        )?;
+                        let enc_value =
+                            key.encrypt_entry_value(category.as_ref(), name.as_ref(), value)?;
                         Result::<_, Error>::Ok((
                             key.encrypt_entry_category(category)?,
                             key.encrypt_entry_name(name)?,
