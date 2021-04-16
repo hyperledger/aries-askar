@@ -36,8 +36,6 @@ pub mod jwk;
 
 pub mod kdf;
 
-pub mod pack;
-
 pub mod random;
 
 pub mod sign;
