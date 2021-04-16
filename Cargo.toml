@@ -74,7 +74,7 @@ default-features = false
 features = ["serde_support", "wql"]
 
 [dependencies.sqlx]
-version = "0.5.2"
+version = "=0.5.1"
 default-features = false
 features = ["chrono", "runtime-async-std-rustls"]
 optional = true
