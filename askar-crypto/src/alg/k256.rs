@@ -191,9 +191,9 @@ impl KeySigVerify for K256KeyPair {
 }
 
 impl ToJwk for K256KeyPair {
-    fn to_jwk_buffer<B: WriteBuffer>(&self, buffer: &mut JwkEncoder<B>) -> Result<(), Error> {
-        let encp = EncodedPoint::encode(self.public, false);
-        let (x, y) = match encp.coordinates() {
+    fn to_jwk_encoder<B: WriteBuffer>(&self, enc: &mut JwkEncoder<B>) -> Result<(), Error> {
+        let pk_enc = EncodedPoint::encode(self.public, false);
+        let (x, y) = match pk_enc.coordinates() {
             Coordinates::Identity => {
                 return Err(err_msg!(
                     Unsupported,
@@ -204,20 +204,19 @@ impl ToJwk for K256KeyPair {
             Coordinates::Compressed { .. } => unreachable!(),
         };
 
-        buffer.add_str("kty", JWK_KEY_TYPE)?;
-        buffer.add_str("crv", JWK_CURVE)?;
-        buffer.add_as_base64("x", &x[..])?;
-        buffer.add_as_base64("y", &y[..])?;
-        if buffer.is_secret() {
+        enc.add_str("crv", JWK_CURVE)?;
+        enc.add_str("kty", JWK_KEY_TYPE)?;
+        enc.add_as_base64("x", &x[..])?;
+        enc.add_as_base64("y", &y[..])?;
+        if enc.is_secret() {
             self.with_secret_bytes(|buf| {
                 if let Some(sk) = buf {
-                    buffer.add_as_base64("d", sk)
+                    enc.add_as_base64("d", sk)
                 } else {
                     Ok(())
                 }
             })?;
         }
-        // buffer.add_str("use", "enc")?;
         Ok(())
     }
 }

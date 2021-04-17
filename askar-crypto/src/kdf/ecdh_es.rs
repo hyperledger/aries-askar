@@ -62,7 +62,7 @@ impl<Key: KeyExchange> EcdhEs<Key> {
     {
         let ephem_key = Key::generate()?;
         let mut encoder = JwkEncoder::new(jwk_output, JwkEncoderMode::PublicKey)?;
-        ephem_key.to_jwk_buffer(&mut encoder)?;
+        ephem_key.to_jwk_encoder(&mut encoder)?;
 
         Self::derive_key_config(&ephem_key, recip_key, alg, apu, apv, key_output)?;
 
@@ -82,19 +82,19 @@ mod tests {
     // https://tools.ietf.org/html/rfc8037#appendix-A.6
     fn expected_es_direct_output() {
         use crate::alg::x25519::X25519KeyPair;
-        use crate::jwk::{FromJwk, Jwk};
+        use crate::jwk::FromJwk;
 
-        let bob_pk = X25519KeyPair::from_jwk(Jwk::from(
+        let bob_pk = X25519KeyPair::from_jwk(
             r#"{"kty":"OKP","crv":"X25519","kid":"Bob",
             "x":"3p7bfXt9wbTTW2HC7OQ1Nz-DQ8hbeGdNrfx-FG-IK08"}"#,
-        ))
+        )
         .unwrap();
-        let ephem_sk = X25519KeyPair::from_jwk(Jwk::from(
+        let ephem_sk = X25519KeyPair::from_jwk(
             r#"{"kty":"OKP","crv":"X25519",
             "d":"dwdtCnMYpX08FsFyUbJmRd9ML4frwJkqsXf7pR25LCo",
             "x":"hSDwCYkwp1R0i33ctD73Wg2_Og0mOBr066SpjqqbTmo"}
          "#,
-        ))
+        )
         .unwrap();
 
         let xk = ephem_sk.key_exchange_bytes(&bob_pk).unwrap();

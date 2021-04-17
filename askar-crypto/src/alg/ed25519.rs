@@ -231,20 +231,19 @@ impl KeySigVerify for Ed25519KeyPair {
 }
 
 impl ToJwk for Ed25519KeyPair {
-    fn to_jwk_buffer<B: WriteBuffer>(&self, buffer: &mut JwkEncoder<B>) -> Result<(), Error> {
-        buffer.add_str("kty", JWK_KEY_TYPE)?;
-        buffer.add_str("crv", JWK_CURVE)?;
-        self.with_public_bytes(|buf| buffer.add_as_base64("x", buf))?;
-        if buffer.is_secret() {
+    fn to_jwk_encoder<B: WriteBuffer>(&self, enc: &mut JwkEncoder<B>) -> Result<(), Error> {
+        enc.add_str("crv", JWK_CURVE)?;
+        enc.add_str("kty", JWK_KEY_TYPE)?;
+        self.with_public_bytes(|buf| enc.add_as_base64("x", buf))?;
+        if enc.is_secret() {
             self.with_secret_bytes(|buf| {
                 if let Some(sk) = buf {
-                    buffer.add_as_base64("d", sk)
+                    enc.add_as_base64("d", sk)
                 } else {
                     Ok(())
                 }
             })?;
         }
-        buffer.add_str("use", "sig")?;
         Ok(())
     }
 }
@@ -334,7 +333,7 @@ mod tests {
             .to_jwk_public()
             .expect("Error converting public key to JWK");
         let jwk = jwk.to_parts().expect("Error parsing JWK output");
-        assert_eq!(jwk.kty, "OKP");
+        assert_eq!(jwk.kty, JWK_KEY_TYPE);
         assert_eq!(jwk.crv, JWK_CURVE);
         assert_eq!(jwk.x, "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo");
         let pk_load = Ed25519KeyPair::from_jwk_parts(jwk).unwrap();

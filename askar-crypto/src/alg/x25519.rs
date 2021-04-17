@@ -168,20 +168,19 @@ impl KeyPublicBytes for X25519KeyPair {
 }
 
 impl ToJwk for X25519KeyPair {
-    fn to_jwk_buffer<B: WriteBuffer>(&self, buffer: &mut JwkEncoder<B>) -> Result<(), Error> {
-        buffer.add_str("kty", JWK_KEY_TYPE)?;
-        buffer.add_str("crv", JWK_CURVE)?;
-        self.with_public_bytes(|buf| buffer.add_as_base64("x", buf))?;
-        if buffer.is_secret() {
+    fn to_jwk_encoder<B: WriteBuffer>(&self, enc: &mut JwkEncoder<B>) -> Result<(), Error> {
+        enc.add_str("crv", JWK_CURVE)?;
+        enc.add_str("kty", JWK_KEY_TYPE)?;
+        self.with_public_bytes(|buf| enc.add_as_base64("x", buf))?;
+        if enc.is_secret() {
             self.with_secret_bytes(|buf| {
                 if let Some(sk) = buf {
-                    buffer.add_as_base64("d", sk)
+                    enc.add_as_base64("d", sk)
                 } else {
                     Ok(())
                 }
             })?;
         }
-        buffer.add_str("use", "enc")?;
         Ok(())
     }
 }
@@ -259,7 +258,7 @@ mod tests {
             .to_jwk_secret()
             .expect("Error converting private key to JWK");
         let jwk = jwk.to_parts().expect("Error parsing JWK output");
-        assert_eq!(jwk.kty, "OKP");
+        assert_eq!(jwk.kty, JWK_KEY_TYPE);
         assert_eq!(jwk.crv, JWK_CURVE);
         assert_eq!(jwk.x, "tGskN_ae61DP4DLY31_fjkbvnKqf-ze7kA6Cj2vyQxU");
         assert_eq!(jwk.d, test_pvt_b64);

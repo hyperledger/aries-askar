@@ -65,7 +65,7 @@ impl<Key: KeyExchange> Ecdh1PU<Key> {
     {
         let ephem_key = Key::generate()?;
         let mut encoder = JwkEncoder::new(jwk_output, JwkEncoderMode::PublicKey)?;
-        ephem_key.to_jwk_buffer(&mut encoder)?;
+        ephem_key.to_jwk_encoder(&mut encoder)?;
 
         Self::derive_key_config(&ephem_key, send_key, recip_key, alg, apu, apv, key_output)?;
 
@@ -84,31 +84,31 @@ mod tests {
     // from RFC: https://tools.ietf.org/html/draft-madden-jose-ecdh-1pu-03#appendix-A
     fn expected_1pu_direct_output() {
         use crate::alg::p256::P256KeyPair;
-        use crate::jwk::{FromJwk, Jwk};
+        use crate::jwk::FromJwk;
 
-        let alice_sk = P256KeyPair::from_jwk(Jwk::from(
+        let alice_sk = P256KeyPair::from_jwk(
             r#"{"kty":"EC",
             "crv":"P-256",
             "x":"WKn-ZIGevcwGIyyrzFoZNBdaq9_TsqzGl96oc0CWuis",
             "y":"y77t-RvAHRKTsSGdIYUfweuOvwrvDD-Q3Hv5J0fSKbE",
             "d":"Hndv7ZZjs_ke8o9zXYo3iq-Yr8SewI5vrqd0pAvEPqg"}"#,
-        ))
+        )
         .unwrap();
-        let bob_sk = P256KeyPair::from_jwk(Jwk::from(
+        let bob_sk = P256KeyPair::from_jwk(
             r#"{"kty":"EC",
             "crv":"P-256",
             "x":"weNJy2HscCSM6AEDTDg04biOvhFhyyWvOHQfeF_PxMQ",
             "y":"e8lnCO-AlStT-NJVX-crhB7QRYhiix03illJOVAOyck",
             "d":"VEmDZpDXXK8p8N0Cndsxs924q6nS1RXFASRl6BfUqdw"}"#,
-        ))
+        )
         .unwrap();
-        let ephem_sk = P256KeyPair::from_jwk(Jwk::from(
+        let ephem_sk = P256KeyPair::from_jwk(
             r#"{"kty":"EC",
             "crv":"P-256",
             "x":"gI0GAILBdu7T53akrFmMyGcsF3n5dO7MmwNBHKW5SV0",
             "y":"SLW_xSffzlPWrHEVI30DHM_4egVwt3NQqeUD7nMFpps",
             "d":"0_NxaRPUMQoAJt50Gz8YiTr8gRTwyEaCumd-MToTmIo"}"#,
-        ))
+        )
         .unwrap();
 
         let mut key_output = [0u8; 32];

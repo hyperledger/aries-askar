@@ -9,6 +9,9 @@ use crate::error::Error;
 mod array;
 pub use self::array::ArrayKey;
 
+mod hash;
+pub use self::hash::HashBuffer;
+
 #[cfg(feature = "alloc")]
 mod secret;
 #[cfg(feature = "alloc")]

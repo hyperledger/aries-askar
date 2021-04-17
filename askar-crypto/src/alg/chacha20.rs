@@ -197,14 +197,15 @@ impl<T: Chacha20Type> KeyAeadInPlace for Chacha20Key<T> {
 }
 
 impl<T: Chacha20Type> ToJwk for Chacha20Key<T> {
-    fn to_jwk_buffer<B: WriteBuffer>(&self, buffer: &mut JwkEncoder<B>) -> Result<(), Error> {
-        buffer.add_str("kty", JWK_KEY_TYPE)?;
-        if !buffer.is_secret() {
+    fn to_jwk_encoder<B: WriteBuffer>(&self, enc: &mut JwkEncoder<B>) -> Result<(), Error> {
+        if enc.is_public() {
             return Err(err_msg!(Unsupported, "Cannot export as a public key"));
         }
-        buffer.add_str("alg", T::JWK_ALG)?;
-        buffer.add_as_base64("k", self.0.as_ref())?;
-        buffer.add_str("use", "enc")?;
+        if !enc.is_thumbprint() {
+            enc.add_str("alg", T::JWK_ALG)?;
+        }
+        enc.add_as_base64("k", self.0.as_ref())?;
+        enc.add_str("kty", JWK_KEY_TYPE)?;
         Ok(())
     }
 }
