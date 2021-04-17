@@ -8,7 +8,7 @@ use ed25519_dalek::{ExpandedSecretKey, PublicKey, SecretKey, Signature};
 use sha2::{self, Digest};
 use x25519_dalek::{PublicKey as XPublicKey, StaticSecret as XSecretKey};
 
-use super::x25519::X25519KeyPair;
+use super::{x25519::X25519KeyPair, KeyAlg};
 use crate::{
     buffer::{ArrayKey, WriteBuffer},
     error::Error,
@@ -125,6 +125,7 @@ impl KeyGen for Ed25519KeyPair {
 }
 
 impl KeyMeta for Ed25519KeyPair {
+    const ALG: KeyAlg = KeyAlg::Ed25519;
     type KeySize = U32;
 }
 
@@ -193,17 +194,17 @@ impl KeyPublicBytes for Ed25519KeyPair {
 }
 
 impl KeySign for Ed25519KeyPair {
-    fn key_sign_buffer<B: WriteBuffer>(
+    fn write_signature(
         &self,
-        data: &[u8],
+        message: &[u8],
         sig_type: Option<SignatureType>,
-        out: &mut B,
+        out: &mut dyn WriteBuffer,
     ) -> Result<(), Error> {
         match sig_type {
             None | Some(SignatureType::EdDSA) => {
                 if let Some(signer) = self.to_signing_key() {
-                    let sig = signer.sign(data);
-                    out.write_slice(&sig[..])?;
+                    let sig = signer.sign(message);
+                    out.buffer_write(&sig[..])?;
                     Ok(())
                 } else {
                     Err(err_msg!(MissingSecretKey))
@@ -216,7 +217,7 @@ impl KeySign for Ed25519KeyPair {
 }
 
 impl KeySigVerify for Ed25519KeyPair {
-    fn key_verify(
+    fn verify_signature(
         &self,
         message: &[u8],
         signature: &[u8],
@@ -231,7 +232,7 @@ impl KeySigVerify for Ed25519KeyPair {
 }
 
 impl ToJwk for Ed25519KeyPair {
-    fn to_jwk_encoder<B: WriteBuffer>(&self, enc: &mut JwkEncoder<B>) -> Result<(), Error> {
+    fn to_jwk_encoder(&self, enc: &mut JwkEncoder<'_>) -> Result<(), Error> {
         enc.add_str("crv", JWK_CURVE)?;
         enc.add_str("kty", JWK_KEY_TYPE)?;
         self.with_public_bytes(|buf| enc.add_as_base64("x", buf))?;

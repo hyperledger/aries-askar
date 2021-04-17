@@ -20,17 +20,13 @@ pub use self::error::{Error, ErrorKind};
 // re-export
 pub use aead::generic_array;
 
-#[cfg(feature = "any")]
-pub mod any;
-#[cfg(feature = "any")]
-pub use self::any::{AnyPrivateKey, AnyPublicKey};
-
 pub mod alg;
 pub use self::alg::KeyAlg;
 
 pub mod buffer;
 
 pub mod encrypt;
+pub use self::encrypt::{KeyAeadInPlace, KeyAeadMeta};
 
 pub mod jwk;
 
@@ -42,4 +38,6 @@ pub mod sign;
 pub use self::sign::{KeySigVerify, KeySign, SignatureType};
 
 pub mod repr;
-pub use self::repr::{KeyGen, KeyGenInPlace, KeySecretBytes};
+pub use self::repr::{
+    KeyGen, KeyGenInPlace, KeyMeta, KeyPublicBytes, KeySecretBytes, KeypairBytes, KeypairMeta,
+};

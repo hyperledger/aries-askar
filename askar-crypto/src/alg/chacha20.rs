@@ -5,12 +5,12 @@ use chacha20poly1305::{ChaCha20Poly1305, XChaCha20Poly1305};
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
-use crate::generic_array::{typenum::Unsigned, GenericArray};
-
+use super::{Chacha20Types, KeyAlg};
 use crate::{
-    buffer::{ArrayKey, ResizeBuffer, WriteBuffer, Writer},
+    buffer::{ArrayKey, ResizeBuffer, Writer},
     encrypt::{KeyAeadInPlace, KeyAeadMeta},
     error::Error,
+    generic_array::{typenum::Unsigned, GenericArray},
     jwk::{JwkEncoder, ToJwk},
     kdf::{FromKeyExchange, KeyExchange},
     random::fill_random_deterministic,
@@ -22,6 +22,7 @@ pub static JWK_KEY_TYPE: &'static str = "oct";
 pub trait Chacha20Type {
     type Aead: NewAead + Aead + AeadInPlace;
 
+    const ALG_TYPE: Chacha20Types;
     const JWK_ALG: &'static str;
 }
 
@@ -30,6 +31,7 @@ pub struct C20P;
 impl Chacha20Type for C20P {
     type Aead = ChaCha20Poly1305;
 
+    const ALG_TYPE: Chacha20Types = Chacha20Types::C20P;
     const JWK_ALG: &'static str = "C20P";
 }
 
@@ -38,6 +40,7 @@ pub struct XC20P;
 impl Chacha20Type for XC20P {
     type Aead = XChaCha20Poly1305;
 
+    const ALG_TYPE: Chacha20Types = Chacha20Types::XC20P;
     const JWK_ALG: &'static str = "XC20P";
 }
 
@@ -101,6 +104,8 @@ impl<T: Chacha20Type> PartialEq for Chacha20Key<T> {
 impl<T: Chacha20Type> Eq for Chacha20Key<T> {}
 
 impl<T: Chacha20Type> KeyMeta for Chacha20Key<T> {
+    const ALG: KeyAlg = KeyAlg::Chacha20(T::ALG_TYPE);
+
     type KeySize = <T::Aead as NewAead>::KeySize;
 }
 
@@ -157,7 +162,7 @@ impl<T: Chacha20Type> KeyAeadInPlace for Chacha20Key<T> {
         let tag = chacha
             .encrypt_in_place_detached(nonce, aad, buffer.as_mut())
             .map_err(|_| err_msg!(Encryption, "AEAD encryption error"))?;
-        buffer.write_slice(&tag[..])?;
+        buffer.buffer_write(&tag[..])?;
         Ok(())
     }
 
@@ -197,7 +202,7 @@ impl<T: Chacha20Type> KeyAeadInPlace for Chacha20Key<T> {
 }
 
 impl<T: Chacha20Type> ToJwk for Chacha20Key<T> {
-    fn to_jwk_encoder<B: WriteBuffer>(&self, enc: &mut JwkEncoder<B>) -> Result<(), Error> {
+    fn to_jwk_encoder(&self, enc: &mut JwkEncoder<'_>) -> Result<(), Error> {
         if enc.is_public() {
             return Err(err_msg!(Unsupported, "Cannot export as a public key"));
         }

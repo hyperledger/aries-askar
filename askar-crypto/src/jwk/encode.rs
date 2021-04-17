@@ -1,23 +1,11 @@
-use crate::{buffer::WriteBuffer, error::Error};
+use core::fmt::Write;
+
+use crate::{
+    buffer::{WriteBuffer, Writer},
+    error::Error,
+};
 
 use super::ops::KeyOpsSet;
-
-struct JwkBuffer<'s, B>(&'s mut B);
-
-impl<B: WriteBuffer> bs58::encode::EncodeTarget for JwkBuffer<'_, B> {
-    fn encode_with(
-        &mut self,
-        max_len: usize,
-        f: impl FnOnce(&mut [u8]) -> Result<usize, bs58::encode::Error>,
-    ) -> Result<usize, bs58::encode::Error> {
-        self.0
-            .write_with(max_len, |buf| {
-                // this cannot fail - there is enough space allocated
-                Ok(f(buf).unwrap())
-            })
-            .map_err(|_| bs58::encode::Error::BufferTooSmall)
-    }
-}
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum JwkEncoderMode {
@@ -26,53 +14,56 @@ pub enum JwkEncoderMode {
     Thumbprint,
 }
 
-pub struct JwkEncoder<'b, B: WriteBuffer> {
-    buffer: &'b mut B,
+pub struct JwkEncoder<'b> {
+    buffer: &'b mut dyn WriteBuffer,
     empty: bool,
     mode: JwkEncoderMode,
 }
 
-impl<'b, B: WriteBuffer> JwkEncoder<'b, B> {
-    pub fn new(buffer: &'b mut B, mode: JwkEncoderMode) -> Result<Self, Error> {
+impl<'b> JwkEncoder<'b> {
+    pub fn new<B: WriteBuffer>(buffer: &'b mut B, mode: JwkEncoderMode) -> Result<Self, Error> {
         Ok(Self {
             buffer,
             empty: true,
             mode,
         })
     }
+}
 
+impl JwkEncoder<'_> {
     fn start_attr(&mut self, key: &str) -> Result<(), Error> {
         let buffer = &mut *self.buffer;
         if self.empty {
-            buffer.write_slice(b"{\"")?;
+            buffer.buffer_write(b"{\"")?;
             self.empty = false;
         } else {
-            buffer.write_slice(b",\"")?;
+            buffer.buffer_write(b",\"")?;
         }
-        buffer.write_slice(key.as_bytes())?;
-        buffer.write_slice(b"\":")?;
+        buffer.buffer_write(key.as_bytes())?;
+        buffer.buffer_write(b"\":")?;
         Ok(())
     }
 
     pub fn add_str(&mut self, key: &str, value: &str) -> Result<(), Error> {
         self.start_attr(key)?;
         let buffer = &mut *self.buffer;
-        buffer.write_slice(b"\"")?;
-        buffer.write_slice(value.as_bytes())?;
-        buffer.write_slice(b"\"")?;
+        buffer.buffer_write(b"\"")?;
+        buffer.buffer_write(value.as_bytes())?;
+        buffer.buffer_write(b"\"")?;
         Ok(())
     }
 
     pub fn add_as_base64(&mut self, key: &str, value: &[u8]) -> Result<(), Error> {
         self.start_attr(key)?;
         let buffer = &mut *self.buffer;
-        let enc_size = ((value.len() << 2) + 2) / 3;
-        buffer.write_slice(b"\"")?;
-        buffer.write_with(enc_size, |mbuf| {
-            let len = base64::encode_config_slice(value, base64::URL_SAFE_NO_PAD, mbuf);
-            Ok(len)
-        })?;
-        buffer.write_slice(b"\"")?;
+        buffer.buffer_write(b"\"")?;
+        write!(
+            Writer::from_buffer(&mut *buffer),
+            "{}",
+            base64::display::Base64Display::with_config(value, base64::URL_SAFE_NO_PAD)
+        )
+        .map_err(|_| err_msg!(Unexpected, "Error writing to JWK buffer"))?;
+        buffer.buffer_write(b"\"")?;
         Ok(())
     }
 
@@ -81,14 +72,14 @@ impl<'b, B: WriteBuffer> JwkEncoder<'b, B> {
         let buffer = &mut *self.buffer;
         for (idx, op) in ops.into().into_iter().enumerate() {
             if idx > 0 {
-                buffer.write_slice(b",\"")?;
+                buffer.buffer_write(b",\"")?;
             } else {
-                buffer.write_slice(b"\"")?;
+                buffer.buffer_write(b"\"")?;
             }
-            buffer.write_slice(op.as_str().as_bytes())?;
-            buffer.write_slice(b"\"")?;
+            buffer.buffer_write(op.as_str().as_bytes())?;
+            buffer.buffer_write(b"\"")?;
         }
-        buffer.write_slice(b"]")?;
+        buffer.buffer_write(b"]")?;
         Ok(())
     }
 
@@ -110,7 +101,7 @@ impl<'b, B: WriteBuffer> JwkEncoder<'b, B> {
 
     pub fn finalize(self) -> Result<(), Error> {
         if !self.empty {
-            self.buffer.write_slice(b"}")?;
+            self.buffer.buffer_write(b"}")?;
         }
         Ok(())
     }

@@ -1,7 +1,7 @@
 use alloc::{string::String, vec::Vec};
 use core::{
     fmt::{self, Debug, Formatter},
-    iter, mem,
+    mem,
     ops::{Deref, Range},
 };
 
@@ -75,6 +75,21 @@ impl SecretBytes {
 
     pub(crate) fn as_vec_mut(&mut self) -> &mut Vec<u8> {
         &mut self.0
+    }
+
+    pub(crate) fn splice(
+        &mut self,
+        range: Range<usize>,
+        iter: impl Iterator<Item = u8> + ExactSizeIterator,
+    ) -> Result<(), Error> {
+        assert!(range.end >= range.start);
+        let rem_len = range.len();
+        let ins_len = iter.len();
+        if ins_len > rem_len {
+            self.reserve(ins_len - rem_len);
+        }
+        self.0.splice(range, iter);
+        Ok(())
     }
 }
 
@@ -153,42 +168,28 @@ impl PartialEq<Vec<u8>> for SecretBytes {
 }
 
 impl WriteBuffer for SecretBytes {
-    fn write_with(
-        &mut self,
-        max_len: usize,
-        f: impl FnOnce(&mut [u8]) -> Result<usize, Error>,
-    ) -> Result<usize, Error> {
-        let len = self.0.len();
-        let new_len = len + max_len;
+    fn buffer_write(&mut self, data: &[u8]) -> Result<(), Error> {
+        let pos = self.0.len();
+        let new_len = pos + data.len();
         self.buffer_resize(new_len)?;
-        let written = f(&mut self.0[len..new_len])?;
-        if written < max_len {
-            self.0.truncate(len + written);
-        }
-        Ok(written)
+        self.0[pos..new_len].copy_from_slice(data);
+        Ok(())
     }
 }
 
 impl ResizeBuffer for SecretBytes {
-    fn buffer_resize(&mut self, len: usize) -> Result<(), Error> {
-        self.ensure_capacity(len);
-        self.0.resize(len, 0u8);
+    fn buffer_insert(&mut self, pos: usize, data: &[u8]) -> Result<(), Error> {
+        self.splice(pos..pos, data.into_iter().cloned())
+    }
+
+    fn buffer_remove(&mut self, range: Range<usize>) -> Result<(), Error> {
+        self.0.drain(range);
         Ok(())
     }
 
-    fn buffer_splice_with(
-        &mut self,
-        range: Range<usize>,
-        len: usize,
-        f: impl FnOnce(&mut [u8]) -> Result<(), Error>,
-    ) -> Result<(), Error> {
-        let rem_len = range.len();
-        if len > rem_len {
-            self.reserve(len - rem_len);
-        }
-        let start = range.start;
-        self.0.splice(range, iter::repeat(0u8).take(len));
-        f(&mut self.0[start..(start + len)])?;
+    fn buffer_resize(&mut self, len: usize) -> Result<(), Error> {
+        self.ensure_capacity(len);
+        self.0.resize(len, 0u8);
         Ok(())
     }
 }
@@ -230,47 +231,8 @@ impl<'de> de::Visitor<'de> for SecVisitor {
 
 #[cfg(test)]
 mod tests {
+    use super::super::tests::{test_resize_buffer, test_write_buffer};
     use super::*;
-
-    pub(crate) fn test_write_buffer<B: WriteBuffer + AsRef<[u8]>>(mut w: B) {
-        w.write_with(5, |buf| {
-            buf.copy_from_slice(b"hello");
-            Ok(2)
-        })
-        .unwrap();
-        w.write_slice(b"y").unwrap();
-        assert_eq!(&w.as_ref()[..], b"hey");
-    }
-
-    pub(crate) fn test_resize_buffer<B: ResizeBuffer>(mut w: B) {
-        w.write_slice(b"hello").unwrap();
-        w.buffer_splice_with(1..3, 5, |ext| {
-            ext.copy_from_slice(b"sugar");
-            Ok(())
-        })
-        .unwrap();
-        assert_eq!(&w.as_ref()[..], b"hsugarlo");
-        w.buffer_splice_with(1..6, 2, |ext| {
-            ext.copy_from_slice(b"el");
-            Ok(())
-        })
-        .unwrap();
-        assert_eq!(&w.as_ref()[..], b"hello");
-        w.buffer_resize(7).unwrap();
-        assert_eq!(&w.as_ref()[..], b"hello\0\0");
-        w.buffer_resize(5).unwrap();
-        assert_eq!(&w.as_ref()[..], b"hello");
-    }
-
-    #[test]
-    fn write_buffer_vec() {
-        test_write_buffer(Vec::new());
-    }
-
-    #[test]
-    fn resize_buffer_vec() {
-        test_resize_buffer(Vec::new());
-    }
 
     #[test]
     fn write_buffer_secret() {

@@ -60,12 +60,6 @@ impl OptAttr<'_> {
     }
 }
 
-impl AsRef<[u8]> for OptAttr<'_> {
-    fn as_ref(&self) -> &[u8] {
-        self.0.unwrap_or_default().as_bytes()
-    }
-}
-
 impl Debug for OptAttr<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self.0 {

@@ -1,6 +1,6 @@
 #[cfg(feature = "alloc")]
 use crate::buffer::SecretBytes;
-use crate::{buffer::WriteBuffer, error::Error, generic_array::ArrayLength};
+use crate::{alg::KeyAlg, buffer::WriteBuffer, error::Error, generic_array::ArrayLength};
 
 /// Generate a new random key.
 pub trait KeyGen: Sized {
@@ -24,7 +24,7 @@ pub trait KeySecretBytes {
     fn to_secret_bytes_buffer<B: WriteBuffer>(&self, out: &mut B) -> Result<(), Error> {
         self.with_secret_bytes(|buf| {
             if let Some(buf) = buf {
-                out.write_slice(buf)
+                out.buffer_write(buf)
             } else {
                 Err(err_msg!(MissingSecretKey))
             }
@@ -48,7 +48,7 @@ pub trait KeyPublicBytes {
     fn with_public_bytes<O>(&self, f: impl FnOnce(&[u8]) -> O) -> O;
 
     fn to_public_bytes_buffer<B: WriteBuffer>(&self, out: &mut B) -> Result<(), Error> {
-        self.with_public_bytes(|buf| out.write_slice(buf))
+        self.with_public_bytes(|buf| out.buffer_write(buf))
     }
 
     #[cfg(feature = "alloc")]
@@ -70,7 +70,7 @@ pub trait KeypairBytes {
     fn to_keypair_bytes_buffer<B: WriteBuffer>(&self, out: &mut B) -> Result<(), Error> {
         self.with_keypair_bytes(|buf| {
             if let Some(buf) = buf {
-                out.write_slice(buf)
+                out.buffer_write(buf)
             } else {
                 Err(err_msg!(MissingSecretKey))
             }
@@ -87,6 +87,8 @@ pub trait KeypairBytes {
 
 /// For concrete secret key types
 pub trait KeyMeta {
+    const ALG: KeyAlg;
+
     type KeySize: ArrayLength<u8>;
 }
 

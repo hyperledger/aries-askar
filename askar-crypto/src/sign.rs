@@ -3,25 +3,29 @@ use crate::buffer::SecretBytes;
 use crate::{alg::BlsGroups, buffer::WriteBuffer, error::Error};
 
 pub trait KeySign: KeySigVerify {
-    fn key_sign_buffer<B: WriteBuffer>(
+    fn write_signature(
         &self,
-        data: &[u8],
+        message: &[u8],
         sig_type: Option<SignatureType>,
-        out: &mut B,
+        out: &mut dyn WriteBuffer,
     ) -> Result<(), Error>;
 
     #[cfg(feature = "alloc")]
-    fn key_sign(&self, data: &[u8], sig_type: Option<SignatureType>) -> Result<SecretBytes, Error> {
+    fn create_signature(
+        &self,
+        message: &[u8],
+        sig_type: Option<SignatureType>,
+    ) -> Result<SecretBytes, Error> {
         let mut buf = SecretBytes::with_capacity(128);
-        self.key_sign_buffer(data, sig_type, &mut buf)?;
+        self.write_signature(message, sig_type, &mut buf)?;
         Ok(buf)
     }
 }
 
 pub trait KeySigVerify {
-    fn key_verify(
+    fn verify_signature(
         &self,
-        data: &[u8],
+        message: &[u8],
         signature: &[u8],
         sig_type: Option<SignatureType>,
     ) -> Result<bool, Error>;

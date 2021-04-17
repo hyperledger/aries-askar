@@ -6,6 +6,7 @@ use core::{
 use x25519_dalek::{PublicKey, StaticSecret as SecretKey};
 use zeroize::Zeroizing;
 
+use super::KeyAlg;
 use crate::{
     buffer::{ArrayKey, WriteBuffer},
     error::Error,
@@ -78,6 +79,7 @@ impl KeyGen for X25519KeyPair {
 }
 
 impl KeyMeta for X25519KeyPair {
+    const ALG: KeyAlg = KeyAlg::X25519;
     type KeySize = U32;
 }
 
@@ -168,7 +170,7 @@ impl KeyPublicBytes for X25519KeyPair {
 }
 
 impl ToJwk for X25519KeyPair {
-    fn to_jwk_encoder<B: WriteBuffer>(&self, enc: &mut JwkEncoder<B>) -> Result<(), Error> {
+    fn to_jwk_encoder(&self, enc: &mut JwkEncoder<'_>) -> Result<(), Error> {
         enc.add_str("crv", JWK_CURVE)?;
         enc.add_str("kty", JWK_KEY_TYPE)?;
         self.with_public_bytes(|buf| enc.add_as_base64("x", buf))?;
@@ -218,7 +220,7 @@ impl KeyExchange for X25519KeyPair {
         match self.secret.as_ref() {
             Some(sk) => {
                 let xk = sk.diffie_hellman(&other.public);
-                out.write_slice(xk.as_bytes())?;
+                out.buffer_write(xk.as_bytes())?;
                 Ok(())
             }
             None => Err(err_msg!(MissingSecretKey)),

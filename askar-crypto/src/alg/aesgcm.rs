@@ -5,15 +5,12 @@ use aes_gcm::{Aes128Gcm, Aes256Gcm};
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
+use super::{AesTypes, KeyAlg};
 use crate::{
-    buffer::Writer,
-    generic_array::{typenum::Unsigned, GenericArray},
-};
-
-use crate::{
-    buffer::{ArrayKey, ResizeBuffer, WriteBuffer},
+    buffer::{ArrayKey, ResizeBuffer, Writer},
     encrypt::{KeyAeadInPlace, KeyAeadMeta},
     error::Error,
+    generic_array::{typenum::Unsigned, GenericArray},
     jwk::{JwkEncoder, ToJwk},
     kdf::{FromKeyExchange, KeyExchange},
     repr::{KeyGen, KeyMeta, KeySecretBytes},
@@ -24,6 +21,7 @@ pub static JWK_KEY_TYPE: &'static str = "oct";
 pub trait AesGcmType {
     type Aead: NewAead + Aead + AeadInPlace;
 
+    const ALG_TYPE: AesTypes;
     const JWK_ALG: &'static str;
 }
 
@@ -32,6 +30,7 @@ pub struct A128;
 impl AesGcmType for A128 {
     type Aead = Aes128Gcm;
 
+    const ALG_TYPE: AesTypes = AesTypes::A128GCM;
     const JWK_ALG: &'static str = "A128GCM";
 }
 
@@ -40,6 +39,7 @@ pub struct A256;
 impl AesGcmType for A256 {
     type Aead = Aes256Gcm;
 
+    const ALG_TYPE: AesTypes = AesTypes::A256GCM;
     const JWK_ALG: &'static str = "A256GCM";
 }
 
@@ -95,6 +95,8 @@ impl<T: AesGcmType> PartialEq for AesGcmKey<T> {
 impl<T: AesGcmType> Eq for AesGcmKey<T> {}
 
 impl<T: AesGcmType> KeyMeta for AesGcmKey<T> {
+    const ALG: KeyAlg = KeyAlg::Aes(T::ALG_TYPE);
+
     type KeySize = <T::Aead as NewAead>::KeySize;
 }
 
@@ -138,7 +140,7 @@ impl<T: AesGcmType> KeyAeadInPlace for AesGcmKey<T> {
         let tag = chacha
             .encrypt_in_place_detached(nonce, aad, buffer.as_mut())
             .map_err(|_| err_msg!(Encryption, "AEAD encryption error"))?;
-        buffer.write_slice(&tag[..])?;
+        buffer.buffer_write(&tag[..])?;
         Ok(())
     }
 
@@ -178,7 +180,7 @@ impl<T: AesGcmType> KeyAeadInPlace for AesGcmKey<T> {
 }
 
 impl<T: AesGcmType> ToJwk for AesGcmKey<T> {
-    fn to_jwk_encoder<B: WriteBuffer>(&self, enc: &mut JwkEncoder<B>) -> Result<(), Error> {
+    fn to_jwk_encoder(&self, enc: &mut JwkEncoder<'_>) -> Result<(), Error> {
         if enc.is_public() {
             return Err(err_msg!(Unsupported, "Cannot export as a public key"));
         }

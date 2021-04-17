@@ -9,6 +9,7 @@ use p256::{
     EncodedPoint, PublicKey, SecretKey,
 };
 
+use super::{EcCurves, KeyAlg};
 use crate::{
     buffer::{ArrayKey, WriteBuffer},
     error::Error,
@@ -78,6 +79,7 @@ impl KeyGen for P256KeyPair {
     }
 }
 impl KeyMeta for P256KeyPair {
+    const ALG: KeyAlg = KeyAlg::EcCurve(EcCurves::Secp256r1);
     type KeySize = U32;
 }
 
@@ -153,16 +155,16 @@ impl KeyPublicBytes for P256KeyPair {
 }
 
 impl KeySign for P256KeyPair {
-    fn key_sign_buffer<B: WriteBuffer>(
+    fn write_signature(
         &self,
         message: &[u8],
         sig_type: Option<SignatureType>,
-        out: &mut B,
+        out: &mut dyn WriteBuffer,
     ) -> Result<(), Error> {
         match sig_type {
             None | Some(SignatureType::ES256K) => {
                 if let Some(sig) = self.sign(message) {
-                    out.write_slice(&sig[..])?;
+                    out.buffer_write(&sig[..])?;
                     Ok(())
                 } else {
                     Err(err_msg!(Unsupported, "Undefined secret key"))
@@ -175,7 +177,7 @@ impl KeySign for P256KeyPair {
 }
 
 impl KeySigVerify for P256KeyPair {
-    fn key_verify(
+    fn verify_signature(
         &self,
         message: &[u8],
         signature: &[u8],
@@ -190,7 +192,7 @@ impl KeySigVerify for P256KeyPair {
 }
 
 impl ToJwk for P256KeyPair {
-    fn to_jwk_encoder<B: WriteBuffer>(&self, enc: &mut JwkEncoder<B>) -> Result<(), Error> {
+    fn to_jwk_encoder(&self, enc: &mut JwkEncoder<'_>) -> Result<(), Error> {
         let pk_enc = EncodedPoint::encode(self.public, false);
         let (x, y) = match pk_enc.coordinates() {
             Coordinates::Identity => {
@@ -255,7 +257,7 @@ impl KeyExchange for P256KeyPair {
         match self.secret.as_ref() {
             Some(sk) => {
                 let xk = diffie_hellman(sk.secret_scalar(), other.public.as_affine());
-                out.write_slice(xk.as_bytes())?;
+                out.buffer_write(xk.as_bytes())?;
                 Ok(())
             }
             None => Err(err_msg!(MissingSecretKey)),

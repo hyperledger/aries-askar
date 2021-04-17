@@ -4,7 +4,7 @@ use alloc::{borrow::Cow, string::String, vec::Vec};
 use sha2::Sha256;
 
 use crate::{
-    buffer::{HashBuffer, WriteBuffer},
+    buffer::{HashBuffer, ResizeBuffer},
     error::Error,
 };
 
@@ -23,28 +23,12 @@ mod parts;
 pub use self::parts::JwkParts;
 
 pub trait ToJwk {
-    fn to_jwk_encoder<B: WriteBuffer>(&self, enc: &mut JwkEncoder<B>) -> Result<(), Error>;
-
-    fn to_jwk_thumbprint_buffer<B: WriteBuffer>(&self, output: &mut B) -> Result<(), Error> {
-        let mut hasher = HashBuffer::<Sha256>::new();
-        let mut buf = JwkEncoder::new(&mut hasher, JwkEncoderMode::Thumbprint)?;
-        self.to_jwk_encoder(&mut buf)?;
-        buf.finalize()?;
-        let hash = hasher.finalize();
-        output.write_with(43, |buf| {
-            Ok(base64::encode_config_slice(
-                &hash,
-                base64::URL_SAFE_NO_PAD,
-                buf,
-            ))
-        })?;
-        Ok(())
-    }
+    fn to_jwk_encoder(&self, enc: &mut JwkEncoder<'_>) -> Result<(), Error>;
 
     #[cfg(feature = "alloc")]
     fn to_jwk_thumbprint(&self) -> Result<String, Error> {
         let mut v = Vec::with_capacity(43);
-        self.to_jwk_thumbprint_buffer(&mut v)?;
+        jwk_thumbprint_buffer(self, &mut v)?;
         Ok(String::from_utf8(v).unwrap())
     }
 
@@ -65,6 +49,19 @@ pub trait ToJwk {
         buf.finalize()?;
         Ok(Jwk::Encoded(Cow::Owned(String::from_utf8(v).unwrap())))
     }
+}
+
+pub fn jwk_thumbprint_buffer<K: ToJwk + ?Sized>(
+    key: &K,
+    output: &mut dyn ResizeBuffer,
+) -> Result<(), Error> {
+    let mut hasher = HashBuffer::<Sha256>::new();
+    let mut buf = JwkEncoder::new(&mut hasher, JwkEncoderMode::Thumbprint)?;
+    key.to_jwk_encoder(&mut buf)?;
+    buf.finalize()?;
+    let hash = hasher.finalize();
+    base64::encode_config_slice(&hash, base64::URL_SAFE_NO_PAD, output.buffer_extend(43)?);
+    Ok(())
 }
 
 pub trait FromJwk: Sized {

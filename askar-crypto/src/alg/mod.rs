@@ -7,6 +7,11 @@ use zeroize::Zeroize;
 
 use crate::error::Error;
 
+#[cfg(any(test, feature = "any_key"))]
+mod any;
+#[cfg(any(test, feature = "any_key"))]
+pub use any::AnyKey;
+
 // pub mod bls;
 
 pub mod aesgcm;
@@ -24,9 +29,9 @@ pub mod p256;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Zeroize)]
 pub enum KeyAlg {
     /// AES
-    Aes(AesSizes),
+    Aes(AesTypes),
     /// (X)ChaCha20-Poly1305
-    Chacha20(Chacha20Sizes),
+    Chacha20(Chacha20Types),
     /// Curve25519 signing key
     Ed25519,
     /// Curve25519 diffie-hellman key exchange key
@@ -41,11 +46,10 @@ impl KeyAlg {
     /// Get a reference to a string representing the `KeyAlg`
     pub fn as_str(&self) -> &str {
         match self {
-            Self::Aes(AesSizes::A128GCM) => "a128gcm",
-            Self::Aes(AesSizes::A192GCM) => "a192gcm",
-            Self::Aes(AesSizes::A256GCM) => "a256gcm",
-            Self::Chacha20(Chacha20Sizes::C20P) => "c20p",
-            Self::Chacha20(Chacha20Sizes::XC20P) => "xc20p",
+            Self::Aes(AesTypes::A128GCM) => "a128gcm",
+            Self::Aes(AesTypes::A256GCM) => "a256gcm",
+            Self::Chacha20(Chacha20Types::C20P) => "c20p",
+            Self::Chacha20(Chacha20Types::XC20P) => "xc20p",
             Self::Ed25519 => "ed25519",
             Self::X25519 => "x25519",
             Self::EcCurve(EcCurves::Secp256k1) => "k256",
@@ -65,13 +69,12 @@ impl FromStr for KeyAlg {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Ok(match s {
-            "aes128gcm" => Self::Aes(AesSizes::A128GCM),
-            "aes192gcm" => Self::Aes(AesSizes::A192GCM),
-            "aes256gcm" => Self::Aes(AesSizes::A256GCM),
-            "chacha20poly1305" => Self::Chacha20(Chacha20Sizes::C20P),
-            "xchacha20poly1305" => Self::Chacha20(Chacha20Sizes::XC20P),
-            "c20p" => Self::Chacha20(Chacha20Sizes::C20P),
-            "xc20p" => Self::Chacha20(Chacha20Sizes::XC20P),
+            "aes128gcm" => Self::Aes(AesTypes::A128GCM),
+            "aes256gcm" => Self::Aes(AesTypes::A256GCM),
+            "chacha20poly1305" => Self::Chacha20(Chacha20Types::C20P),
+            "xchacha20poly1305" => Self::Chacha20(Chacha20Types::XC20P),
+            "c20p" => Self::Chacha20(Chacha20Types::C20P),
+            "xc20p" => Self::Chacha20(Chacha20Types::XC20P),
             "ed25519" => Self::Ed25519,
             "x25519" => Self::X25519,
             "k256" => Self::EcCurve(EcCurves::Secp256k1),
@@ -99,18 +102,16 @@ pub enum BlsGroups {
 
 /// Supported algorithms for AES
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Zeroize)]
-pub enum AesSizes {
+pub enum AesTypes {
     /// AES 128-bit GCM
     A128GCM,
-    /// AES 192-bit GCM
-    A192GCM,
     /// AES 256-bit GCM
     A256GCM,
 }
 
 /// Supported algorithms for (X)ChaCha20-Poly1305
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Zeroize)]
-pub enum Chacha20Sizes {
+pub enum Chacha20Types {
     /// ChaCha20-Poly1305
     C20P,
     /// XChaCha20-Poly1305

@@ -62,7 +62,7 @@ pub fn crypto_box<B: ResizeBuffer>(
     let tag = box_inst
         .encrypt_in_place_detached(nonce, &[], buffer.as_mut())
         .map_err(|_| err_msg!(Encryption, "Crypto box AEAD encryption error"))?;
-    buffer.write_slice(&tag[..])?;
+    buffer.buffer_write(&tag[..])?;
     Ok(())
 }
 
@@ -97,8 +97,8 @@ pub fn crypto_box_seal(recip_pk: &X25519KeyPair, message: &[u8]) -> Result<Secre
     let ephem_pk_bytes = ephem_kp.public.as_bytes();
     let buf_len = CBOX_KEY_SIZE + message.len() + TagSize::<SalsaBox>::USIZE;
     let mut buffer = SecretBytes::with_capacity(buf_len);
-    buffer.write_slice(ephem_pk_bytes)?;
-    buffer.write_slice(message)?;
+    buffer.buffer_write(ephem_pk_bytes)?;
+    buffer.buffer_write(message)?;
     let mut writer = Writer::from_vec_skip(buffer.as_vec_mut(), CBOX_KEY_SIZE);
     let nonce = crypto_box_nonce(ephem_pk_bytes, recip_pk.public.as_bytes())?.to_vec();
     crypto_box(recip_pk, &ephem_kp, &mut writer, &nonce[..])?;

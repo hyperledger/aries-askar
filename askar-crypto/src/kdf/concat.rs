@@ -88,28 +88,10 @@ impl<H: Digest> ConcatKDFHash<H> {
     }
 }
 
-const HASH_BUFFER_SIZE: usize = 128;
-
 impl<D: Digest> WriteBuffer for ConcatKDFHash<D> {
-    fn write_slice(&mut self, data: &[u8]) -> Result<(), Error> {
+    fn buffer_write(&mut self, data: &[u8]) -> Result<(), Error> {
         self.hasher.update(data);
         Ok(())
-    }
-
-    fn write_with(
-        &mut self,
-        max_len: usize,
-        f: impl FnOnce(&mut [u8]) -> Result<usize, Error>,
-    ) -> Result<usize, Error> {
-        // this could use a Vec to support larger inputs
-        // but for current purposes a small fixed buffer is fine
-        if max_len > HASH_BUFFER_SIZE {
-            return Err(err_msg!(Usage, "Exceeded hash buffer size"));
-        }
-        let mut buf = [0u8; HASH_BUFFER_SIZE];
-        let written = f(&mut buf[..max_len])?;
-        self.write_slice(&buf[..written])?;
-        Ok(written)
     }
 }
 
