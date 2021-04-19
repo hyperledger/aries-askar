@@ -40,12 +40,13 @@ extern crate serde_json;
 #[cfg(feature = "ffi")]
 mod ffi;
 
+mod key;
+
 mod protect;
 pub use protect::{generate_raw_store_key, PassKey, StoreKeyMethod};
 
 mod storage;
 pub use storage::{
     entry::{Entry, EntryTag, TagFilter},
-    key::KeyAlg,
     types::{Backend, ManageBackend, Store},
 };

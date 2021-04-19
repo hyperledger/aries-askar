@@ -89,14 +89,14 @@ where
         let mut nonce = ArrayKey::<Key::NonceSize>::default();
         hmac_key.hmac_to(&[buffer.as_ref()], nonce.as_mut())?;
         enc_key.encrypt_in_place(&mut buffer, nonce.as_ref(), &[])?;
-        buffer.buffer_insert_slice(0, nonce.as_ref())?;
+        buffer.buffer_insert(0, nonce.as_ref())?;
         Ok(buffer.into_vec())
     }
 
     pub fn encrypt(mut buffer: SecretBytes, enc_key: &Key) -> Result<Vec<u8>, Error> {
         let nonce = ArrayKey::<Key::NonceSize>::random();
         enc_key.encrypt_in_place(&mut buffer, nonce.as_ref(), &[])?;
-        buffer.buffer_insert_slice(0, nonce.as_ref())?;
+        buffer.buffer_insert(0, nonce.as_ref())?;
         Ok(buffer.into_vec())
     }
 
@@ -165,7 +165,7 @@ where
 {
     fn prepare_input(input: &[u8]) -> SecretBytes {
         let mut buf = SecretBytes::with_capacity(Self::encrypted_size(input.len()));
-        buf.write_slice(input).unwrap();
+        buf.buffer_write(input).unwrap();
         buf
     }
 
@@ -265,10 +265,10 @@ mod tests {
             "category",
             "name",
             "value",
-            Some(vec![
+            vec![
                 EntryTag::Plaintext("plain".to_string(), "tag".to_string()),
                 EntryTag::Encrypted("enctag".to_string(), "envtagval".to_string()),
-            ]),
+            ],
         );
         let enc_category = key
             .encrypt_entry_category(test_record.category.clone().into())
@@ -283,9 +283,7 @@ mod tests {
                 test_record.value.clone().into(),
             )
             .unwrap();
-        let enc_tags = key
-            .encrypt_entry_tags(test_record.tags.clone().unwrap())
-            .unwrap();
+        let enc_tags = key.encrypt_entry_tags(test_record.tags.clone()).unwrap();
         assert_ne!(test_record.category.as_bytes(), &enc_category[..]);
         assert_ne!(test_record.name.as_bytes(), &enc_name[..]);
         assert_ne!(test_record.value, enc_value);
@@ -299,7 +297,7 @@ mod tests {
                 enc_value,
             )
             .unwrap(),
-            Some(key.decrypt_entry_tags(enc_tags).unwrap()),
+            key.decrypt_entry_tags(enc_tags).unwrap(),
         );
         assert_eq!(test_record, cmp_record);
     }

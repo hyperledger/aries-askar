@@ -64,7 +64,7 @@ impl StoreKey {
             Some(key) => {
                 let nonce = StoreKeyNonce::random();
                 key.encrypt_in_place(&mut data, nonce.as_ref(), &[])?;
-                data.buffer_insert_slice(0, nonce.as_ref())?;
+                data.buffer_insert(0, nonce.as_ref())?;
                 Ok(data.into_vec())
             }
             None => Ok(data.into_vec()),

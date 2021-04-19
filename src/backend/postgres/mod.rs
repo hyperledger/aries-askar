@@ -331,14 +331,12 @@ impl QueryBackend for DbSession<Postgres> {
                 let (category, name, value, tags) = unblock(move || {
                     let value = key.decrypt_entry_value(category.as_ref(), name.as_ref(), value)?;
                     let tags = if let Some(enc_tags) = tags {
-                        Some(
-                            key.decrypt_entry_tags(
-                                decode_tags(enc_tags)
-                                    .map_err(|_| err_msg!(Unexpected, "Error decoding tags"))?,
-                            )?,
-                        )
+                        key.decrypt_entry_tags(
+                            decode_tags(enc_tags)
+                                .map_err(|_| err_msg!(Unexpected, "Error decoding tags"))?,
+                        )?
                     } else {
-                        None
+                        Vec::new()
                     };
                     Result::<_, Error>::Ok((category, name, value, tags))
                 })
@@ -694,8 +692,9 @@ fn perform_scan<'q>(
         let mut acquired = acquire_session(&mut *active).await?;
         let mut rows = sqlx::query_with(query.as_str(), params).fetch(acquired.connection_mut());
         while let Some(row) = rows.try_next().await? {
+            let tags = row.try_get::<Option<String>, _>(3)?.map(String::into_bytes).unwrap_or_default();
             batch.push(EncScanEntry {
-                name: row.try_get(1)?, value: row.try_get(2)?, tags: row.try_get::<Option<String>, _>(3)?.map(String::into_bytes)
+                name: row.try_get(1)?, value: row.try_get(2)?, tags
             });
             if batch.len() == PAGE_SIZE {
                 yield batch.split_off(0);

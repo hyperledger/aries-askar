@@ -11,13 +11,13 @@ use zeroize::Zeroize;
 use super::wql;
 use crate::{crypto::buffer::SecretBytes, error::Error};
 
-pub(crate) fn sorted_tags(tags: &Vec<EntryTag>) -> Option<Vec<&EntryTag>> {
+pub(crate) fn sorted_tags(tags: &Vec<EntryTag>) -> Vec<&EntryTag> {
     if tags.len() > 0 {
         let mut tags = tags.iter().collect::<Vec<&EntryTag>>();
         tags.sort();
-        Some(tags)
+        tags
     } else {
-        None
+        Vec::new()
     }
 }
 
@@ -34,7 +34,7 @@ pub struct Entry {
     pub value: SecretBytes,
 
     /// Tags associated with the entry record
-    pub tags: Option<Vec<EntryTag>>,
+    pub tags: Vec<EntryTag>,
 }
 
 impl Entry {
@@ -44,7 +44,7 @@ impl Entry {
         category: C,
         name: N,
         value: V,
-        tags: Option<Vec<EntryTag>>,
+        tags: Vec<EntryTag>,
     ) -> Self {
         Self {
             category: category.into(),
@@ -54,8 +54,8 @@ impl Entry {
         }
     }
 
-    pub(crate) fn sorted_tags(&self) -> Option<Vec<&EntryTag>> {
-        self.tags.as_ref().and_then(sorted_tags)
+    pub(crate) fn sorted_tags(&self) -> Vec<&EntryTag> {
+        sorted_tags(&self.tags)
     }
 }
 
@@ -70,7 +70,7 @@ impl PartialEq for Entry {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum EntryKind {
-    Key = 1,
+    Kms = 1,
     Item = 2,
 }
 
@@ -102,10 +102,37 @@ impl EntryTag {
         }
     }
 
+    pub(crate) fn map_ref(&self, f: impl FnOnce(&str, &str) -> (String, String)) -> Self {
+        match self {
+            Self::Encrypted(name, val) => {
+                let (name, val) = f(name.as_str(), val.as_str());
+                Self::Encrypted(name, val)
+            }
+            Self::Plaintext(name, val) => {
+                let (name, val) = f(name.as_str(), val.as_str());
+                Self::Plaintext(name, val)
+            }
+        }
+    }
+
+    /// Setter for the tag name
+    pub(crate) fn update_name(&mut self, f: impl FnOnce(&mut String)) {
+        match self {
+            Self::Encrypted(name, _) | Self::Plaintext(name, _) => f(name),
+        }
+    }
+
     /// Accessor for the tag value
     pub fn value(&self) -> &str {
         match self {
             Self::Encrypted(_, val) | Self::Plaintext(_, val) => val,
+        }
+    }
+
+    /// Unwrap the tag value
+    pub(crate) fn into_value(self) -> String {
+        match self {
+            Self::Encrypted(_, value) | Self::Plaintext(_, value) => value,
         }
     }
 }

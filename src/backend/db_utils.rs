@@ -338,7 +338,7 @@ where
 pub struct EncScanEntry {
     pub name: Vec<u8>,
     pub value: Vec<u8>,
-    pub tags: Option<Vec<u8>>,
+    pub tags: Vec<u8>,
 }
 
 pub struct QueryParams<'q, DB: Database> {
@@ -517,13 +517,9 @@ pub fn decrypt_scan_entry(
 ) -> Result<Entry, Error> {
     let name = key.decrypt_entry_name(enc_entry.name)?;
     let value = key.decrypt_entry_value(category.as_bytes(), name.as_bytes(), enc_entry.value)?;
-    let tags = if let Some(enc_tags) = enc_entry.tags {
-        Some(key.decrypt_entry_tags(
-            decode_tags(enc_tags).map_err(|_| err_msg!(Unexpected, "Error decoding tags"))?,
-        )?)
-    } else {
-        None
-    };
+    let tags = key.decrypt_entry_tags(
+        decode_tags(enc_entry.tags).map_err(|_| err_msg!(Unexpected, "Error decoding tags"))?,
+    )?;
     Ok(Entry::new(category.to_string(), name, value, tags))
 }
 

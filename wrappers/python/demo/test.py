@@ -2,6 +2,7 @@ import asyncio
 import logging
 import os
 import sys
+from aries_askar import bindings
 
 from aries_askar.bindings import (
     generate_raw_key,
@@ -27,7 +28,7 @@ def log(*args):
 
 async def basic_test():
     if ENCRYPT:
-        key = await generate_raw_key(b"00000000000000000000000000000My1")
+        key = generate_raw_key(b"00000000000000000000000000000My1")
         key_method = "raw"
         log("Generated raw store key:", key)
     else:
@@ -69,6 +70,11 @@ async def basic_test():
     async for row in store.scan("category", {"~plaintag": "a", "enctag": "b"}):
         log("Scan result:", row)
 
+    key = bindings.key_generate("ed25519")
+    log("Created key:", key)
+    jwk = bindings.key_get_jwk_public(key)
+    log("JWK:", jwk)
+
     # test key operations in a new session
     async with store as session:
         # # Create a new keypair
@@ -104,7 +110,7 @@ async def basic_test():
     log("Created profile:", profile)
     log("Removed profile:", await store.remove_profile(profile))
 
-    key2 = await generate_raw_key(b"00000000000000000000000000000My2")
+    key2 = generate_raw_key(b"00000000000000000000000000000My2")
     await store.rekey("raw", key2)
     log("Re-keyed store")
 

@@ -307,7 +307,7 @@ impl QueryBackend for DbSession<Sqlite> {
                     let value = key.decrypt_entry_value(category.as_ref(), name.as_ref(), value)?;
                     let enc_tags = decode_tags(tags)
                         .map_err(|_| err_msg!(Unexpected, "Error decoding entry tags"))?;
-                    let tags = Some(key.decrypt_entry_tags(enc_tags)?);
+                    let tags = key.decrypt_entry_tags(enc_tags)?;
                     Result::<_, Error>::Ok((category, name, value, tags))
                 })
                 .await?;

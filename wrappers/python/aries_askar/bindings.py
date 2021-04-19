@@ -16,6 +16,7 @@ from ctypes import (
     c_int8,
     c_int32,
     c_int64,
+    c_size_t,
     c_void_p,
     c_ubyte,
 )
@@ -38,7 +39,7 @@ LOG_LEVELS = {
 MODULE_NAME = __name__.split(".")[0]
 
 
-class StoreHandle(c_int64):
+class StoreHandle(c_size_t):
     """Index of an active Store instance."""
 
     def __repr__(self) -> str:
@@ -57,7 +58,7 @@ class StoreHandle(c_int64):
             do_call("askar_store_close", self, c_void_p())
 
 
-class SessionHandle(c_int64):
+class SessionHandle(c_size_t):
     """Index of an active Session/Transaction instance."""
 
     def __repr__(self) -> str:
@@ -80,7 +81,7 @@ class SessionHandle(c_int64):
             do_call("askar_session_close", self, c_int8(0), c_void_p())
 
 
-class ScanHandle(c_int64):
+class ScanHandle(c_size_t):
     """Index of an active Store scan instance."""
 
     def __repr__(self) -> str:
@@ -93,8 +94,8 @@ class ScanHandle(c_int64):
             get_library().askar_scan_free(self)
 
 
-class EntrySetHandle(c_int64):
-    """Index of an active EntrySet instance."""
+class EntrySetHandle(c_size_t):
+    """Pointer to an active EntrySet instance."""
 
     def __repr__(self) -> str:
         """Format entry set handle as a string."""
@@ -430,13 +431,11 @@ def get_current_error(expect: bool = False) -> Optional[StoreError]:
     return StoreError(StoreErrorCode.WRAPPER, "Unknown error")
 
 
-async def generate_raw_key(seed: Union[str, bytes] = None) -> str:
+def generate_raw_key(seed: Union[str, bytes] = None) -> str:
     """Generate a new raw store wrapping key."""
-    return str(
-        await do_call_async(
-            "askar_generate_raw_key", encode_bytes(seed), return_type=StrBuffer
-        )
-    )
+    key = StrBuffer()
+    do_call("askar_store_generate_raw_key", encode_bytes(seed), byref(key))
+    return str(key)
 
 
 def version() -> str:
@@ -714,3 +713,40 @@ def entry_set_next(handle: EntrySetHandle) -> Optional[Entry]:
     if found:
         return ffi_entry.decode(handle)
     return None
+
+
+class LocalKeyHandle(c_size_t):
+    """Pointer to an active LocalKey instance."""
+
+    def __repr__(self) -> str:
+        """Format key handle as a string."""
+        return f"{self.__class__.__name__}({self.value})"
+
+    def __del__(self):
+        """Free the key when there are no more references."""
+        if self:
+            get_library().askar_key_free(self)
+
+
+def key_generate(alg: str, ephemeral: bool = False) -> LocalKeyHandle:
+    handle = LocalKeyHandle()
+    do_call("askar_key_generate", encode_str(alg), c_int8(ephemeral), byref(handle))
+    return handle
+
+
+def key_from_jwk(jwk: str) -> LocalKeyHandle:
+    handle = LocalKeyHandle()
+    do_call("askar_key_from_jwk", encode_str(jwk), byref(handle))
+    return handle
+
+
+def key_get_algorithm(handle: LocalKeyHandle) -> str:
+    alg = StrBuffer()
+    do_call("askar_key_get_algorithm", handle, byref(alg))
+    return str(alg)
+
+
+def key_get_jwk_public(handle: LocalKeyHandle) -> str:
+    alg = StrBuffer()
+    do_call("askar_key_get_jwk_public", handle, byref(alg))
+    return str(alg)

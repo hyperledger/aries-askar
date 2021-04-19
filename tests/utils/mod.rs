@@ -45,10 +45,10 @@ pub async fn db_insert_fetch<DB: Backend>(db: &Store<DB>) {
         "category",
         "name",
         "value",
-        Some(vec![
+        vec![
             EntryTag::Encrypted("t1".to_string(), "v1".to_string()),
             EntryTag::Plaintext("t2".to_string(), "v2".to_string()),
-        ]),
+        ],
     );
 
     let mut conn = db.session(None).await.expect(ERR_SESSION);
@@ -57,7 +57,7 @@ pub async fn db_insert_fetch<DB: Backend>(db: &Store<DB>) {
         &test_row.category,
         &test_row.name,
         &test_row.value,
-        test_row.tags.as_ref().map(|t| t.as_slice()),
+        Some(test_row.tags.as_slice()),
         None,
     )
     .await
@@ -79,7 +79,7 @@ pub async fn db_insert_fetch<DB: Backend>(db: &Store<DB>) {
 }
 
 pub async fn db_insert_duplicate<DB: Backend>(db: &Store<DB>) {
-    let test_row = Entry::new("category", "name", "value", None);
+    let test_row = Entry::new("category", "name", "value", Vec::new());
 
     let mut conn = db.session(None).await.expect(ERR_SESSION);
 
@@ -87,7 +87,7 @@ pub async fn db_insert_duplicate<DB: Backend>(db: &Store<DB>) {
         &test_row.category,
         &test_row.name,
         &test_row.value,
-        test_row.tags.as_ref().map(|t| t.as_slice()),
+        Some(test_row.tags.as_slice()),
         None,
     )
     .await
@@ -98,7 +98,7 @@ pub async fn db_insert_duplicate<DB: Backend>(db: &Store<DB>) {
             &test_row.category,
             &test_row.name,
             &test_row.value,
-            test_row.tags.as_ref().map(|t| t.as_slice()),
+            Some(test_row.tags.as_slice()),
             None,
         )
         .await
@@ -107,7 +107,7 @@ pub async fn db_insert_duplicate<DB: Backend>(db: &Store<DB>) {
 }
 
 pub async fn db_insert_remove<DB: Backend>(db: &Store<DB>) {
-    let test_row = Entry::new("category", "name", "value", None);
+    let test_row = Entry::new("category", "name", "value", Vec::new());
 
     let mut conn = db.session(None).await.expect(ERR_SESSION);
 
@@ -115,7 +115,7 @@ pub async fn db_insert_remove<DB: Backend>(db: &Store<DB>) {
         &test_row.category,
         &test_row.name,
         &test_row.value,
-        test_row.tags.as_ref().map(|t| t.as_slice()),
+        Some(test_row.tags.as_slice()),
         None,
     )
     .await
@@ -134,7 +134,7 @@ pub async fn db_remove_missing<DB: Backend>(db: &Store<DB>) {
 }
 
 pub async fn db_replace_fetch<DB: Backend>(db: &Store<DB>) {
-    let test_row = Entry::new("category", "name", "value", None);
+    let test_row = Entry::new("category", "name", "value", Vec::new());
 
     let mut conn = db.session(None).await.expect(ERR_SESSION);
 
@@ -142,7 +142,7 @@ pub async fn db_replace_fetch<DB: Backend>(db: &Store<DB>) {
         &test_row.category,
         &test_row.name,
         &test_row.value,
-        test_row.tags.as_ref().map(|t| t.as_slice()),
+        Some(test_row.tags.as_slice()),
         None,
     )
     .await
@@ -154,7 +154,7 @@ pub async fn db_replace_fetch<DB: Backend>(db: &Store<DB>) {
         &replace_row.category,
         &replace_row.name,
         &replace_row.value,
-        replace_row.tags.as_ref().map(|t| t.as_slice()),
+        Some(replace_row.tags.as_slice()),
         None,
     )
     .await
@@ -169,7 +169,7 @@ pub async fn db_replace_fetch<DB: Backend>(db: &Store<DB>) {
 }
 
 pub async fn db_replace_missing<DB: Backend>(db: &Store<DB>) {
-    let test_row = Entry::new("category", "name", "value", None);
+    let test_row = Entry::new("category", "name", "value", Vec::new());
 
     let mut conn = db.session(None).await.expect(ERR_SESSION);
 
@@ -178,7 +178,7 @@ pub async fn db_replace_missing<DB: Backend>(db: &Store<DB>) {
             &test_row.category,
             &test_row.name,
             &test_row.value,
-            test_row.tags.as_ref().map(|t| t.as_slice()),
+            Some(test_row.tags.as_slice()),
             None,
         )
         .await
@@ -188,7 +188,7 @@ pub async fn db_replace_missing<DB: Backend>(db: &Store<DB>) {
 
 pub async fn db_count<DB: Backend>(db: &Store<DB>) {
     let category = "category".to_string();
-    let test_rows = vec![Entry::new(&category, "name", "value", None)];
+    let test_rows = vec![Entry::new(&category, "name", "value", Vec::new())];
 
     let mut conn = db.session(None).await.expect(ERR_SESSION);
 
@@ -197,7 +197,7 @@ pub async fn db_count<DB: Backend>(db: &Store<DB>) {
             &upd.category,
             &upd.name,
             &upd.value,
-            upd.tags.as_ref().map(|t| t.as_slice()),
+            Some(upd.tags.as_slice()),
             None,
         )
         .await
@@ -218,10 +218,10 @@ pub async fn db_count_exist<DB: Backend>(db: &Store<DB>) {
         "category",
         "name",
         "value",
-        Some(vec![
+        vec![
             EntryTag::Encrypted("enc".to_string(), "v1".to_string()),
             EntryTag::Plaintext("plain".to_string(), "v2".to_string()),
-        ]),
+        ],
     );
 
     let mut conn = db.session(None).await.expect(ERR_SESSION);
@@ -230,7 +230,7 @@ pub async fn db_count_exist<DB: Backend>(db: &Store<DB>) {
         &test_row.category,
         &test_row.name,
         &test_row.value,
-        test_row.tags.as_ref().map(|t| t.as_slice()),
+        Some(test_row.tags.as_slice()),
         None,
     )
     .await
@@ -358,10 +358,10 @@ pub async fn db_scan<DB: Backend>(db: &Store<DB>) {
         &category,
         "name",
         "value",
-        Some(vec![
+        vec![
             EntryTag::Encrypted("t1".to_string(), "v1".to_string()),
             EntryTag::Plaintext("t2".to_string(), "v2".to_string()),
-        ]),
+        ],
     )];
 
     let mut conn = db.session(None).await.expect(ERR_SESSION);
@@ -371,7 +371,7 @@ pub async fn db_scan<DB: Backend>(db: &Store<DB>) {
             &upd.category,
             &upd.name,
             &upd.value,
-            upd.tags.as_ref().map(|t| t.as_slice()),
+            Some(upd.tags.as_slice()),
             None,
         )
         .await
@@ -406,28 +406,28 @@ pub async fn db_remove_all<DB: Backend>(db: &Store<DB>) {
             "category",
             "item1",
             "value",
-            Some(vec![
+            vec![
                 EntryTag::Encrypted("t1".to_string(), "del".to_string()),
                 EntryTag::Plaintext("t2".to_string(), "del".to_string()),
-            ]),
+            ],
         ),
         Entry::new(
             "category",
             "item2",
             "value",
-            Some(vec![
+            vec![
                 EntryTag::Encrypted("t1".to_string(), "del".to_string()),
                 EntryTag::Plaintext("t2".to_string(), "del".to_string()),
-            ]),
+            ],
         ),
         Entry::new(
             "category",
             "item3",
             "value",
-            Some(vec![
+            vec![
                 EntryTag::Encrypted("t1".to_string(), "keep".to_string()),
                 EntryTag::Plaintext("t2".to_string(), "keep".to_string()),
-            ]),
+            ],
         ),
     ];
 
@@ -438,7 +438,7 @@ pub async fn db_remove_all<DB: Backend>(db: &Store<DB>) {
             &test_row.category,
             &test_row.name,
             &test_row.value,
-            test_row.tags.as_ref().map(|t| t.as_slice()),
+            Some(test_row.tags.as_slice()),
             None,
         )
         .await
@@ -571,7 +571,7 @@ pub async fn db_remove_all<DB: Backend>(db: &Store<DB>) {
 // }
 
 pub async fn db_txn_rollback<DB: Backend>(db: &Store<DB>) {
-    let test_row = Entry::new("category", "name", "value", None);
+    let test_row = Entry::new("category", "name", "value", Vec::new());
 
     let mut conn = db.transaction(None).await.expect(ERR_TRANSACTION);
 
@@ -579,7 +579,7 @@ pub async fn db_txn_rollback<DB: Backend>(db: &Store<DB>) {
         &test_row.category,
         &test_row.name,
         &test_row.value,
-        test_row.tags.as_ref().map(|t| t.as_slice()),
+        Some(test_row.tags.as_slice()),
         None,
     )
     .await
@@ -599,7 +599,7 @@ pub async fn db_txn_rollback<DB: Backend>(db: &Store<DB>) {
 }
 
 pub async fn db_txn_drop<DB: Backend>(db: &Store<DB>) {
-    let test_row = Entry::new("category", "name", "value", None);
+    let test_row = Entry::new("category", "name", "value", Vec::new());
 
     let mut conn = db
         .transaction(None)
@@ -610,7 +610,7 @@ pub async fn db_txn_drop<DB: Backend>(db: &Store<DB>) {
         &test_row.category,
         &test_row.name,
         &test_row.value,
-        test_row.tags.as_ref().map(|t| t.as_slice()),
+        Some(test_row.tags.as_slice()),
         None,
     )
     .await
@@ -629,7 +629,7 @@ pub async fn db_txn_drop<DB: Backend>(db: &Store<DB>) {
 
 // test that session does NOT have transaction rollback behaviour
 pub async fn db_session_drop<DB: Backend>(db: &Store<DB>) {
-    let test_row = Entry::new("category", "name", "value", None);
+    let test_row = Entry::new("category", "name", "value", Vec::new());
 
     let mut conn = db.session(None).await.expect(ERR_SESSION);
 
@@ -637,7 +637,7 @@ pub async fn db_session_drop<DB: Backend>(db: &Store<DB>) {
         &test_row.category,
         &test_row.name,
         &test_row.value,
-        test_row.tags.as_ref().map(|t| t.as_slice()),
+        Some(test_row.tags.as_slice()),
         None,
     )
     .await
@@ -655,7 +655,7 @@ pub async fn db_session_drop<DB: Backend>(db: &Store<DB>) {
 }
 
 pub async fn db_txn_commit<DB: Backend>(db: &Store<DB>) {
-    let test_row = Entry::new("category", "name", "value", None);
+    let test_row = Entry::new("category", "name", "value", Vec::new());
 
     let mut conn = db.transaction(None).await.expect(ERR_TRANSACTION);
 
@@ -663,7 +663,7 @@ pub async fn db_txn_commit<DB: Backend>(db: &Store<DB>) {
         &test_row.category,
         &test_row.name,
         &test_row.value,
-        test_row.tags.as_ref().map(|t| t.as_slice()),
+        Some(test_row.tags.as_slice()),
         None,
     )
     .await
@@ -681,7 +681,7 @@ pub async fn db_txn_commit<DB: Backend>(db: &Store<DB>) {
 }
 
 pub async fn db_txn_fetch_for_update<DB: Backend>(db: &Store<DB>) {
-    let test_row = Entry::new("category", "name", "value", None);
+    let test_row = Entry::new("category", "name", "value", Vec::new());
 
     let mut conn = db.transaction(None).await.expect(ERR_TRANSACTION);
 
@@ -689,7 +689,7 @@ pub async fn db_txn_fetch_for_update<DB: Backend>(db: &Store<DB>) {
         &test_row.category,
         &test_row.name,
         &test_row.value,
-        test_row.tags.as_ref().map(|t| t.as_slice()),
+        Some(test_row.tags.as_slice()),
         None,
     )
     .await

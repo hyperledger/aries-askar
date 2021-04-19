@@ -1,19 +1,18 @@
 use std::{
-    fmt::{self, Debug, Formatter},
+    fmt::{self, Debug, Display, Formatter},
     pin::Pin,
     str::FromStr,
     sync::Arc,
 };
 
 use futures_lite::stream::{Stream, StreamExt};
+use zeroize::Zeroize;
 
-use super::{
-    entry::{Entry, EntryKind, EntryOperation, EntryTag, TagFilter},
-    key::{KeyCategory, KeyEntry, KeyParams},
-};
+use super::entry::{Entry, EntryKind, EntryOperation, EntryTag, TagFilter};
 use crate::{
     error::Error,
     future::BoxFuture,
+    key::{KeyEntry, KeyParams, LocalKey},
     protect::{PassKey, StoreKeyMethod},
 };
 
@@ -380,57 +379,49 @@ impl<Q: QueryBackend> Session<Q> {
             .await?)
     }
 
-    // /// Create a new keypair in the store
-    // pub async fn create_keypair(
-    //     &mut self,
-    //     alg: KeyAlg,
-    //     metadata: Option<&str>,
-    //     seed: Option<&[u8]>,
-    //     tags: Option<&[EntryTag]>,
-    //     // backend
-    // ) -> Result<KeyEntry, Error> {
-    //     match alg {
-    //         KeyAlg::Ed25519 => (),
-    //         _ => return Err(err_msg!(Unsupported, "Unsupported key algorithm")),
-    //     }
-
-    //     let keypair = match seed {
-    //         None => Ed25519KeyPair::generate(),
-    //         Some(s) => Ed25519KeyPair::from_seed(s),
-    //     }
-    //     .map_err(err_map!(Unexpected, "Error generating keypair"))?;
-    //     let pk = keypair.public_key();
-
-    //     let category = KeyCategory::PrivateKey;
-    //     let ident = pk.to_string();
-
-    //     let params = KeyParams {
-    //         alg,
-    //         metadata: metadata.map(str::to_string),
-    //         reference: None,
-    //         data: Some(keypair.to_bytes()),
-    //     };
-    //     let value = Zeroizing::new(params.to_vec()?);
-
-    //     self.0
-    //         .update(
-    //             EntryKind::Key,
-    //             EntryOperation::Insert,
-    //             category.as_str(),
-    //             &ident,
-    //             Some(value.as_slice()),
-    //             tags.clone(),
-    //             None,
-    //         )
-    //         .await?;
-
-    //     Ok(KeyEntry {
-    //         category,
-    //         ident,
-    //         params,
-    //         tags: tags.map(|t| t.to_vec()),
-    //     })
-    // }
+    /// Insert a local key instance into the store
+    pub async fn insert_key(
+        &mut self,
+        name: &str,
+        key: &LocalKey,
+        metadata: Option<&str>,
+        tags: Option<&[EntryTag]>,
+        expiry_ms: Option<i64>,
+    ) -> Result<(), Error> {
+        let data = key.encode()?;
+        let params = KeyParams {
+            metadata: metadata.map(str::to_string),
+            reference: None,
+            data: Some(data),
+        };
+        let value = params.to_bytes()?;
+        let mut ins_tags = Vec::with_capacity(10);
+        let alg = key.algorithm();
+        if !alg.is_empty() {
+            ins_tags.push(EntryTag::Encrypted("alg".to_string(), alg.to_string()));
+        }
+        let thumb = key.to_jwk_thumbprint()?;
+        if !thumb.is_empty() {
+            ins_tags.push(EntryTag::Encrypted("thumb".to_string(), thumb));
+        }
+        if let Some(tags) = tags {
+            for t in tags {
+                ins_tags.push(t.map_ref(|k, v| (format!("user:{}", k), v.to_string())));
+            }
+        }
+        self.0
+            .update(
+                EntryKind::Kms,
+                EntryOperation::Insert,
+                KmsCategory::CryptoKey.as_str(),
+                name,
+                Some(value.as_ref()),
+                Some(ins_tags.as_slice()),
+                expiry_ms,
+            )
+            .await?;
+        Ok(())
+    }
 
     /// Fetch an existing key from the store
     ///
@@ -438,23 +429,21 @@ impl<Q: QueryBackend> Session<Q> {
     /// associated record, if supported by the store backend
     pub async fn fetch_key(
         &mut self,
-        category: KeyCategory,
-        ident: &str,
+        name: &str,
         for_update: bool,
     ) -> Result<Option<KeyEntry>, Error> {
         Ok(
             if let Some(row) = self
                 .0
-                .fetch(EntryKind::Key, category.as_str(), &ident, for_update)
+                .fetch(
+                    EntryKind::Kms,
+                    KmsCategory::CryptoKey.as_str(),
+                    name,
+                    for_update,
+                )
                 .await?
             {
-                let params = KeyParams::from_slice(&row.value)?;
-                Some(KeyEntry {
-                    category: KeyCategory::from_str(&row.category).unwrap(),
-                    ident: row.name.clone(),
-                    params,
-                    tags: row.tags.clone(),
-                })
+                Some(KeyEntry::from_entry(row)?)
             } else {
                 None
             },
@@ -462,13 +451,13 @@ impl<Q: QueryBackend> Session<Q> {
     }
 
     /// Remove an existing key from the store
-    pub async fn remove_key(&mut self, category: KeyCategory, ident: &str) -> Result<(), Error> {
+    pub async fn remove_key(&mut self, name: &str) -> Result<(), Error> {
         self.0
             .update(
-                EntryKind::Key,
+                EntryKind::Kms,
                 EntryOperation::Remove,
-                category.as_str(),
-                &ident,
+                KmsCategory::CryptoKey.as_str(),
+                name,
                 None,
                 None,
                 None,
@@ -477,16 +466,16 @@ impl<Q: QueryBackend> Session<Q> {
     }
 
     /// Replace the metadata and tags on an existing key in the store
-    pub async fn update_key(
+    pub async fn replace_key(
         &mut self,
-        category: KeyCategory,
-        ident: &str,
+        name: &str,
         metadata: Option<&str>,
         tags: Option<&[EntryTag]>,
+        expiry_ms: Option<i64>,
     ) -> Result<(), Error> {
         let row = self
             .0
-            .fetch(EntryKind::Key, category.as_str(), &ident, true)
+            .fetch(EntryKind::Kms, KmsCategory::CryptoKey.as_str(), name, true)
             .await?
             .ok_or_else(|| err_msg!(NotFound, "Key entry not found"))?;
 
@@ -494,15 +483,27 @@ impl<Q: QueryBackend> Session<Q> {
         params.metadata = metadata.map(str::to_string);
         let value = params.to_bytes()?;
 
+        let mut upd_tags = Vec::with_capacity(10);
+        if let Some(tags) = tags {
+            for t in tags {
+                upd_tags.push(t.map_ref(|k, v| (format!("user:{}", k), v.to_string())));
+            }
+        }
+        for t in row.tags {
+            if !t.name().starts_with("user:") {
+                upd_tags.push(t);
+            }
+        }
+
         self.0
             .update(
-                EntryKind::Key,
+                EntryKind::Kms,
                 EntryOperation::Replace,
-                category.as_str(),
-                &ident,
-                Some(&value),
+                KmsCategory::CryptoKey.as_str(),
+                name,
+                Some(value.as_ref()),
                 tags,
-                None,
+                expiry_ms,
             )
             .await?;
 
@@ -560,5 +561,50 @@ impl<S> Debug for Scan<'_, S> {
         f.debug_struct("Scan")
             .field("page_size", &self.page_size)
             .finish()
+    }
+}
+
+/// Supported categories of KMS entries
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Zeroize)]
+pub(crate) enum KmsCategory {
+    /// A user managed key
+    CryptoKey,
+    // may want to manage certificates, passwords, etc
+}
+
+impl KmsCategory {
+    /// Get a reference to a string representing the `KmsCategory`
+    pub fn as_str(&self) -> &str {
+        match self {
+            Self::CryptoKey => "cryptokey",
+        }
+    }
+
+    /// Convert the `KmsCategory` into an owned string
+    pub fn to_string(&self) -> String {
+        self.as_str().to_string()
+    }
+}
+
+impl AsRef<str> for KmsCategory {
+    fn as_ref(&self) -> &str {
+        self.as_str()
+    }
+}
+
+impl FromStr for KmsCategory {
+    type Err = Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(match s {
+            "cryptokey" => Self::CryptoKey,
+            _ => return Err(err_msg!("Unknown KMS category: {}", s)),
+        })
+    }
+}
+
+impl Display for KmsCategory {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
     }
 }
