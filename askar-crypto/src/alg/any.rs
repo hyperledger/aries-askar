@@ -15,6 +15,7 @@ use crate::{
     buffer::WriteBuffer,
     error::Error,
     jwk::{FromJwk, JwkEncoder, JwkParts, ToJwk},
+    kdf::{FromKeyExchange, KeyExchange},
     repr::{KeyGen, KeyPublicBytes, KeySecretBytes},
     sign::{KeySigVerify, KeySign, SignatureType},
 };
@@ -58,6 +59,11 @@ pub trait AnyKeyCreate: Sized {
     fn from_secret_bytes(alg: KeyAlg, secret: &[u8]) -> Result<Self, Error>;
 
     fn from_key<K: HasKeyAlg + Send + Sync + 'static>(key: K) -> Self;
+
+    fn from_key_exchange<Sk, Pk>(alg: KeyAlg, secret: &Sk, public: &Pk) -> Result<Self, Error>
+    where
+        Sk: KeyExchange<Pk> + ?Sized,
+        Pk: ?Sized;
 }
 
 impl AnyKeyCreate for Box<AnyKey> {
@@ -77,6 +83,14 @@ impl AnyKeyCreate for Box<AnyKey> {
     fn from_key<K: HasKeyAlg + Send + Sync + 'static>(key: K) -> Self {
         Box::new(KeyT(key))
     }
+
+    fn from_key_exchange<Sk, Pk>(alg: KeyAlg, secret: &Sk, public: &Pk) -> Result<Self, Error>
+    where
+        Sk: KeyExchange<Pk> + ?Sized,
+        Pk: ?Sized,
+    {
+        from_key_exchange_any(alg, secret, public)
+    }
 }
 
 impl AnyKeyCreate for Arc<AnyKey> {
@@ -95,6 +109,14 @@ impl AnyKeyCreate for Arc<AnyKey> {
     #[inline(always)]
     fn from_key<K: HasKeyAlg + Send + Sync + 'static>(key: K) -> Self {
         Arc::new(KeyT(key))
+    }
+
+    fn from_key_exchange<Sk, Pk>(alg: KeyAlg, secret: &Sk, public: &Pk) -> Result<Self, Error>
+    where
+        Sk: KeyExchange<Pk> + ?Sized,
+        Pk: ?Sized,
+    {
+        from_key_exchange_any(alg, secret, public)
     }
 }
 
@@ -171,6 +193,59 @@ fn from_secret_any<R: AllocKey>(alg: KeyAlg, secret: &[u8]) -> Result<R, Error> 
                 Unsupported,
                 "Unsupported algorithm for key import"
             ))
+        }
+    }
+}
+
+#[inline]
+fn from_key_exchange_any<R, Sk, Pk>(alg: KeyAlg, secret: &Sk, public: &Pk) -> Result<R, Error>
+where
+    R: AllocKey,
+    Sk: KeyExchange<Pk> + ?Sized,
+    Pk: ?Sized,
+{
+    match alg {
+        KeyAlg::Aes(AesTypes::A128GCM) => {
+            AesGcmKey::<A128>::from_key_exchange(secret, public).map(R::alloc_key)
+        }
+        KeyAlg::Aes(AesTypes::A256GCM) => {
+            AesGcmKey::<A256>::from_key_exchange(secret, public).map(R::alloc_key)
+        }
+        KeyAlg::Chacha20(Chacha20Types::C20P) => {
+            Chacha20Key::<C20P>::from_key_exchange(secret, public).map(R::alloc_key)
+        }
+        KeyAlg::Chacha20(Chacha20Types::XC20P) => {
+            Chacha20Key::<XC20P>::from_key_exchange(secret, public).map(R::alloc_key)
+        }
+        #[allow(unreachable_patterns)]
+        _ => {
+            return Err(err_msg!(
+                Unsupported,
+                "Unsupported algorithm for key import"
+            ))
+        }
+    }
+}
+
+impl KeyExchange for AnyKey {
+    fn key_exchange_buffer<B: WriteBuffer>(
+        &self,
+        other: &AnyKey,
+        out: &mut B,
+    ) -> Result<(), Error> {
+        match self.key_type_id() {
+            s if s != other.key_type_id() => Err(err_msg!(Unsupported, "Unsupported key exchange")),
+            s if s == TypeId::of::<X25519KeyPair>() => Ok(self
+                .assume::<X25519KeyPair>()
+                .key_exchange_buffer(other.assume::<X25519KeyPair>(), out)?),
+            s if s == TypeId::of::<K256KeyPair>() => Ok(self
+                .assume::<K256KeyPair>()
+                .key_exchange_buffer(other.assume::<K256KeyPair>(), out)?),
+            s if s == TypeId::of::<P256KeyPair>() => Ok(self
+                .assume::<P256KeyPair>()
+                .key_exchange_buffer(other.assume::<P256KeyPair>(), out)?),
+            #[allow(unreachable_patterns)]
+            _ => return Err(err_msg!(Unsupported, "Unsupported key exchange")),
         }
     }
 }
@@ -316,5 +391,18 @@ mod tests {
         assert_eq!(key.algorithm(), KeyAlg::Ed25519);
         assert_eq!(key.key_type_id(), TypeId::of::<Ed25519KeyPair>());
         let _ = key.to_jwk_public().unwrap();
+    }
+
+    #[test]
+    fn key_exchange_any() {
+        let alice = Box::<AnyKey>::generate(KeyAlg::X25519).unwrap();
+        let bob = Box::<AnyKey>::generate(KeyAlg::X25519).unwrap();
+        let exch_a = alice.key_exchange_bytes(&bob).unwrap();
+        let exch_b = bob.key_exchange_bytes(&alice).unwrap();
+        assert_eq!(exch_a, exch_b);
+
+        let _aes_key =
+            Box::<AnyKey>::from_key_exchange(KeyAlg::Aes(AesTypes::A256GCM), &*alice, &*bob)
+                .unwrap();
     }
 }

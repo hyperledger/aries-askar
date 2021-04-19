@@ -222,7 +222,8 @@ impl<T: Chacha20Type> ToJwk for Chacha20Key<T> {
 // for direct key agreement (not used currently)
 impl<Lhs, Rhs, T> FromKeyExchange<Lhs, Rhs> for Chacha20Key<T>
 where
-    Lhs: KeyExchange<Rhs>,
+    Lhs: KeyExchange<Rhs> + ?Sized,
+    Rhs: ?Sized,
     T: Chacha20Type,
 {
     fn from_key_exchange(lhs: &Lhs, rhs: &Rhs) -> Result<Self, Error> {

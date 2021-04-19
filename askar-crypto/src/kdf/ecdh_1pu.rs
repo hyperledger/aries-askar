@@ -14,9 +14,9 @@ use crate::{
     repr::KeyGen,
 };
 
-pub struct Ecdh1PU<Key>(PhantomData<Key>);
+pub struct Ecdh1PU<Key: ?Sized>(PhantomData<Key>);
 
-impl<Key: KeyExchange> Ecdh1PU<Key> {
+impl<Key: KeyExchange + ?Sized> Ecdh1PU<Key> {
     fn derive_key_config(
         ephem_key: &Key,
         send_key: &Key,

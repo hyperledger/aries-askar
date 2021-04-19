@@ -10,7 +10,7 @@ pub mod ecdh_1pu;
 
 pub mod ecdh_es;
 
-pub trait KeyExchange<Rhs = Self> {
+pub trait KeyExchange<Rhs: ?Sized = Self> {
     fn key_exchange_buffer<B: WriteBuffer>(&self, other: &Rhs, out: &mut B) -> Result<(), Error>;
 
     #[cfg(feature = "alloc")]
@@ -21,6 +21,6 @@ pub trait KeyExchange<Rhs = Self> {
     }
 }
 
-pub trait FromKeyExchange<Lhs, Rhs>: Sized {
+pub trait FromKeyExchange<Lhs: ?Sized, Rhs: ?Sized>: Sized {
     fn from_key_exchange(lhs: &Lhs, rhs: &Rhs) -> Result<Self, Error>;
 }

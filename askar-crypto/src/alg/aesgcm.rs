@@ -200,7 +200,8 @@ impl<T: AesGcmType> ToJwk for AesGcmKey<T> {
 // for direct key agreement (not used currently)
 impl<Lhs, Rhs, T> FromKeyExchange<Lhs, Rhs> for AesGcmKey<T>
 where
-    Lhs: KeyExchange<Rhs>,
+    Lhs: KeyExchange<Rhs> + ?Sized,
+    Rhs: ?Sized,
     T: AesGcmType,
 {
     fn from_key_exchange(lhs: &Lhs, rhs: &Rhs) -> Result<Self, Error> {
