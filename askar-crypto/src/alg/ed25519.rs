@@ -8,7 +8,7 @@ use ed25519_dalek::{ExpandedSecretKey, PublicKey, SecretKey, Signature};
 use sha2::{self, Digest};
 use x25519_dalek::{PublicKey as XPublicKey, StaticSecret as XSecretKey};
 
-use super::{x25519::X25519KeyPair, KeyAlg};
+use super::{x25519::X25519KeyPair, HasKeyAlg, KeyAlg};
 use crate::{
     buffer::{ArrayKey, WriteBuffer},
     error::Error,
@@ -124,8 +124,13 @@ impl KeyGen for Ed25519KeyPair {
     }
 }
 
+impl HasKeyAlg for Ed25519KeyPair {
+    fn algorithm(&self) -> KeyAlg {
+        KeyAlg::Ed25519
+    }
+}
+
 impl KeyMeta for Ed25519KeyPair {
-    const ALG: KeyAlg = KeyAlg::Ed25519;
     type KeySize = U32;
 }
 
@@ -333,7 +338,7 @@ mod tests {
         let jwk = kp
             .to_jwk_public()
             .expect("Error converting public key to JWK");
-        let jwk = jwk.to_parts().expect("Error parsing JWK output");
+        let jwk = JwkParts::from_str(&jwk).expect("Error parsing JWK output");
         assert_eq!(jwk.kty, JWK_KEY_TYPE);
         assert_eq!(jwk.crv, JWK_CURVE);
         assert_eq!(jwk.x, "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo");
@@ -343,7 +348,7 @@ mod tests {
         let jwk = kp
             .to_jwk_secret()
             .expect("Error converting private key to JWK");
-        let jwk = jwk.to_parts().expect("Error parsing JWK output");
+        let jwk = JwkParts::from_slice(&jwk).expect("Error parsing JWK output");
         assert_eq!(jwk.kty, "OKP");
         assert_eq!(jwk.crv, JWK_CURVE);
         assert_eq!(jwk.x, test_pub_b64);

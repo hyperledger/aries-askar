@@ -33,7 +33,7 @@ fn criterion_benchmark(c: &mut Criterion) {
             b.iter(|| {
                 let key = Chacha20Key::<C20P>::from_secret_bytes(&key[..]).unwrap();
                 let mut buffer = SecretBytes::with_capacity(255);
-                buffer.write_slice(black_box(&message[..])).unwrap();
+                buffer.buffer_write(black_box(&message[..])).unwrap();
                 let nonce = Chacha20Key::<C20P>::random_nonce();
                 key.encrypt_in_place(&mut buffer, &nonce, &[]).unwrap();
             })

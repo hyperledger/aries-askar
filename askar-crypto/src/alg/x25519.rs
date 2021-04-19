@@ -6,7 +6,7 @@ use core::{
 use x25519_dalek::{PublicKey, StaticSecret as SecretKey};
 use zeroize::Zeroizing;
 
-use super::KeyAlg;
+use super::{HasKeyAlg, KeyAlg};
 use crate::{
     buffer::{ArrayKey, WriteBuffer},
     error::Error,
@@ -66,6 +66,16 @@ impl Debug for X25519KeyPair {
     }
 }
 
+impl HasKeyAlg for X25519KeyPair {
+    fn algorithm(&self) -> KeyAlg {
+        KeyAlg::X25519
+    }
+}
+
+impl KeyMeta for X25519KeyPair {
+    type KeySize = U32;
+}
+
 impl KeyGen for X25519KeyPair {
     fn generate() -> Result<Self, Error> {
         let mut sk = ArrayKey::<U32>::default();
@@ -76,11 +86,6 @@ impl KeyGen for X25519KeyPair {
         let pk = PublicKey::from(&sk);
         Ok(Self::new(Some(sk), pk))
     }
-}
-
-impl KeyMeta for X25519KeyPair {
-    const ALG: KeyAlg = KeyAlg::X25519;
-    type KeySize = U32;
 }
 
 impl KeySecretBytes for X25519KeyPair {
@@ -248,7 +253,7 @@ mod tests {
         let jwk = kp
             .to_jwk_public()
             .expect("Error converting public key to JWK");
-        let jwk = jwk.to_parts().expect("Error parsing JWK output");
+        let jwk = JwkParts::from_str(&jwk).expect("Error parsing JWK output");
         assert_eq!(jwk.kty, "OKP");
         assert_eq!(jwk.crv, JWK_CURVE);
         assert_eq!(jwk.x, "tGskN_ae61DP4DLY31_fjkbvnKqf-ze7kA6Cj2vyQxU");
@@ -259,7 +264,7 @@ mod tests {
         let jwk = kp
             .to_jwk_secret()
             .expect("Error converting private key to JWK");
-        let jwk = jwk.to_parts().expect("Error parsing JWK output");
+        let jwk = JwkParts::from_slice(&jwk).expect("Error parsing JWK output");
         assert_eq!(jwk.kty, JWK_KEY_TYPE);
         assert_eq!(jwk.crv, JWK_CURVE);
         assert_eq!(jwk.x, "tGskN_ae61DP4DLY31_fjkbvnKqf-ze7kA6Cj2vyQxU");

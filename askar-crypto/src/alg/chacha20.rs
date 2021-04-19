@@ -5,7 +5,7 @@ use chacha20poly1305::{ChaCha20Poly1305, XChaCha20Poly1305};
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
-use super::{Chacha20Types, KeyAlg};
+use super::{Chacha20Types, HasKeyAlg, KeyAlg};
 use crate::{
     buffer::{ArrayKey, ResizeBuffer, Writer},
     encrypt::{KeyAeadInPlace, KeyAeadMeta},
@@ -19,7 +19,7 @@ use crate::{
 
 pub static JWK_KEY_TYPE: &'static str = "oct";
 
-pub trait Chacha20Type {
+pub trait Chacha20Type: 'static {
     type Aead: NewAead + Aead + AeadInPlace;
 
     const ALG_TYPE: Chacha20Types;
@@ -103,9 +103,13 @@ impl<T: Chacha20Type> PartialEq for Chacha20Key<T> {
 
 impl<T: Chacha20Type> Eq for Chacha20Key<T> {}
 
-impl<T: Chacha20Type> KeyMeta for Chacha20Key<T> {
-    const ALG: KeyAlg = KeyAlg::Chacha20(T::ALG_TYPE);
+impl<T: Chacha20Type> HasKeyAlg for Chacha20Key<T> {
+    fn algorithm(&self) -> KeyAlg {
+        KeyAlg::Chacha20(T::ALG_TYPE)
+    }
+}
 
+impl<T: Chacha20Type> KeyMeta for Chacha20Key<T> {
     type KeySize = <T::Aead as NewAead>::KeySize;
 }
 

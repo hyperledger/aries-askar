@@ -9,7 +9,7 @@ use k256::{
     EncodedPoint, PublicKey, SecretKey,
 };
 
-use super::{EcCurves, KeyAlg};
+use super::{EcCurves, HasKeyAlg, KeyAlg};
 use crate::{
     buffer::{ArrayKey, WriteBuffer},
     error::Error,
@@ -73,15 +73,20 @@ impl K256KeyPair {
     }
 }
 
-impl KeyGen for K256KeyPair {
-    fn generate() -> Result<Self, Error> {
-        Ok(Self::from_secret_key(with_rng(|r| SecretKey::random(r))))
+impl HasKeyAlg for K256KeyPair {
+    fn algorithm(&self) -> KeyAlg {
+        KeyAlg::EcCurve(EcCurves::Secp256k1)
     }
 }
 
 impl KeyMeta for K256KeyPair {
-    const ALG: KeyAlg = KeyAlg::EcCurve(EcCurves::Secp256k1);
     type KeySize = U32;
+}
+
+impl KeyGen for K256KeyPair {
+    fn generate() -> Result<Self, Error> {
+        Ok(Self::from_secret_key(with_rng(|r| SecretKey::random(r))))
+    }
 }
 
 impl KeySecretBytes for K256KeyPair {
@@ -290,7 +295,7 @@ mod tests {
         let sk = K256KeyPair::from_secret_bytes(&test_pvt).expect("Error creating signing key");
 
         let jwk = sk.to_jwk_public().expect("Error converting key to JWK");
-        let jwk = jwk.to_parts().expect("Error parsing JWK");
+        let jwk = JwkParts::from_str(&jwk).expect("Error parsing JWK");
         assert_eq!(jwk.kty, "EC");
         assert_eq!(jwk.crv, JWK_CURVE);
         assert_eq!(jwk.x, test_pub_b64.0);
@@ -300,7 +305,7 @@ mod tests {
         assert_eq!(sk.to_public_bytes(), pk_load.to_public_bytes());
 
         let jwk = sk.to_jwk_secret().expect("Error converting key to JWK");
-        let jwk = jwk.to_parts().expect("Error parsing JWK");
+        let jwk = JwkParts::from_slice(&jwk).expect("Error parsing JWK");
         assert_eq!(jwk.kty, "EC");
         assert_eq!(jwk.crv, JWK_CURVE);
         assert_eq!(jwk.x, test_pub_b64.0);

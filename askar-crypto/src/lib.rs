@@ -21,7 +21,6 @@ pub use self::error::{Error, ErrorKind};
 pub use aead::generic_array;
 
 pub mod alg;
-pub use self::alg::KeyAlg;
 
 pub mod buffer;
 

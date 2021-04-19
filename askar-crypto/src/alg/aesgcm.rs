@@ -5,7 +5,7 @@ use aes_gcm::{Aes128Gcm, Aes256Gcm};
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
-use super::{AesTypes, KeyAlg};
+use super::{AesTypes, HasKeyAlg, KeyAlg};
 use crate::{
     buffer::{ArrayKey, ResizeBuffer, Writer},
     encrypt::{KeyAeadInPlace, KeyAeadMeta},
@@ -18,7 +18,7 @@ use crate::{
 
 pub static JWK_KEY_TYPE: &'static str = "oct";
 
-pub trait AesGcmType {
+pub trait AesGcmType: 'static {
     type Aead: NewAead + Aead + AeadInPlace;
 
     const ALG_TYPE: AesTypes;
@@ -94,9 +94,13 @@ impl<T: AesGcmType> PartialEq for AesGcmKey<T> {
 
 impl<T: AesGcmType> Eq for AesGcmKey<T> {}
 
-impl<T: AesGcmType> KeyMeta for AesGcmKey<T> {
-    const ALG: KeyAlg = KeyAlg::Aes(T::ALG_TYPE);
+impl<T: AesGcmType> HasKeyAlg for AesGcmKey<T> {
+    fn algorithm(&self) -> KeyAlg {
+        KeyAlg::Aes(T::ALG_TYPE)
+    }
+}
 
+impl<T: AesGcmType> KeyMeta for AesGcmKey<T> {
     type KeySize = <T::Aead as NewAead>::KeySize;
 }
 

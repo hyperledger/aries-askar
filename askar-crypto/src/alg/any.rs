@@ -1,9 +1,8 @@
-#[cfg(not(any(test, feature = "std")))]
-use alloc::boxed::Box;
-#[cfg(any(test, feature = "std"))]
-use std::boxed::Box;
-
-use core::any::Any;
+use alloc::{boxed::Box, sync::Arc};
+use core::{
+    any::{Any, TypeId},
+    fmt::Debug,
+};
 
 use super::aesgcm::{AesGcmKey, A128, A256};
 use super::chacha20::{Chacha20Key, C20P, XC20P};
@@ -11,115 +10,229 @@ use super::ed25519::{self, Ed25519KeyPair};
 use super::k256::{self, K256KeyPair};
 use super::p256::{self, P256KeyPair};
 use super::x25519::{self, X25519KeyPair};
-use super::{AesTypes, Chacha20Types, EcCurves, KeyAlg};
+use super::{AesTypes, Chacha20Types, EcCurves, HasKeyAlg, KeyAlg};
 use crate::{
     buffer::WriteBuffer,
     error::Error,
     jwk::{FromJwk, JwkEncoder, JwkParts, ToJwk},
-    repr::KeyMeta,
+    repr::{KeyGen, KeyPublicBytes, KeySecretBytes},
     sign::{KeySigVerify, KeySign, SignatureType},
 };
 
-type BoxKey = Box<dyn Any + Send + 'static>;
-
 #[derive(Debug)]
-pub struct AnyKey {
-    pub(crate) alg: KeyAlg,
-    pub(crate) inst: BoxKey,
-}
+pub struct KeyT<T: KeyAsAny + Send + Sync + ?Sized>(T);
+
+pub type AnyKey = KeyT<dyn KeyAsAny + Send + Sync>;
 
 impl AnyKey {
-    pub fn key_alg(&self) -> KeyAlg {
-        self.alg
+    pub fn algorithm(&self) -> KeyAlg {
+        self.0.algorithm()
     }
 
-    pub fn downcast<T: 'static>(self) -> Result<Box<T>, Self> {
-        match BoxKey::downcast(self.inst) {
-            Ok(key) => Ok(key),
-            Err(inst) => Err(Self {
-                alg: self.alg,
-                inst,
-            }),
+    fn assume<K: KeyAsAny>(&self) -> &K {
+        self.downcast_ref().expect("Error assuming key type")
+    }
+
+    #[inline]
+    pub fn downcast_ref<K: KeyAsAny>(&self) -> Option<&K> {
+        self.0.as_any().downcast_ref()
+    }
+
+    #[inline]
+    fn key_type_id(&self) -> TypeId {
+        self.0.as_any().type_id()
+    }
+}
+
+// key instances are immutable
+#[cfg(feature = "std")]
+impl std::panic::UnwindSafe for AnyKey {}
+#[cfg(feature = "std")]
+impl std::panic::RefUnwindSafe for AnyKey {}
+
+pub trait AnyKeyCreate: Sized {
+    fn generate(alg: KeyAlg) -> Result<Self, Error>;
+
+    fn from_public_bytes(alg: KeyAlg, public: &[u8]) -> Result<Self, Error>;
+
+    fn from_secret_bytes(alg: KeyAlg, secret: &[u8]) -> Result<Self, Error>;
+
+    fn from_key<K: HasKeyAlg + Send + Sync + 'static>(key: K) -> Self;
+}
+
+impl AnyKeyCreate for Box<AnyKey> {
+    fn generate(alg: KeyAlg) -> Result<Self, Error> {
+        generate_any(alg)
+    }
+
+    fn from_public_bytes(alg: KeyAlg, public: &[u8]) -> Result<Self, Error> {
+        from_public_any(alg, public)
+    }
+
+    fn from_secret_bytes(alg: KeyAlg, secret: &[u8]) -> Result<Self, Error> {
+        from_secret_any(alg, secret)
+    }
+
+    #[inline(always)]
+    fn from_key<K: HasKeyAlg + Send + Sync + 'static>(key: K) -> Self {
+        Box::new(KeyT(key))
+    }
+}
+
+impl AnyKeyCreate for Arc<AnyKey> {
+    fn generate(alg: KeyAlg) -> Result<Self, Error> {
+        generate_any(alg)
+    }
+
+    fn from_public_bytes(alg: KeyAlg, public: &[u8]) -> Result<Self, Error> {
+        from_public_any(alg, public)
+    }
+
+    fn from_secret_bytes(alg: KeyAlg, secret: &[u8]) -> Result<Self, Error> {
+        from_secret_any(alg, secret)
+    }
+
+    #[inline(always)]
+    fn from_key<K: HasKeyAlg + Send + Sync + 'static>(key: K) -> Self {
+        Arc::new(KeyT(key))
+    }
+}
+
+#[inline]
+fn generate_any<R: AllocKey>(alg: KeyAlg) -> Result<R, Error> {
+    match alg {
+        KeyAlg::Aes(AesTypes::A128GCM) => AesGcmKey::<A128>::generate().map(R::alloc_key),
+        KeyAlg::Aes(AesTypes::A256GCM) => AesGcmKey::<A256>::generate().map(R::alloc_key),
+        KeyAlg::Chacha20(Chacha20Types::C20P) => Chacha20Key::<C20P>::generate().map(R::alloc_key),
+        KeyAlg::Chacha20(Chacha20Types::XC20P) => {
+            Chacha20Key::<XC20P>::generate().map(R::alloc_key)
         }
-    }
-
-    pub fn downcast_ref<T: 'static>(&self) -> Option<&T> {
-        self.inst.downcast_ref()
-    }
-
-    pub fn from_key<K>(key: K) -> Self
-    where
-        K: KeyMeta + Send + 'static,
-    {
-        Self {
-            alg: K::ALG,
-            inst: Box::new(key) as BoxKey,
-        }
-    }
-
-    pub fn from_boxed_key<K>(key: Box<K>) -> Self
-    where
-        K: KeyMeta + Send + 'static,
-    {
-        Self {
-            alg: K::ALG,
-            inst: Box::new(key) as BoxKey,
+        KeyAlg::Ed25519 => Ed25519KeyPair::generate().map(R::alloc_key),
+        KeyAlg::X25519 => X25519KeyPair::generate().map(R::alloc_key),
+        KeyAlg::EcCurve(EcCurves::Secp256k1) => K256KeyPair::generate().map(R::alloc_key),
+        KeyAlg::EcCurve(EcCurves::Secp256r1) => P256KeyPair::generate().map(R::alloc_key),
+        #[allow(unreachable_patterns)]
+        _ => {
+            return Err(err_msg!(
+                Unsupported,
+                "Unsupported algorithm for key generation"
+            ))
         }
     }
 }
 
-fn assume<'r, T: 'static>(inst: &'r (dyn Any + Send + 'static)) -> &'r T {
-    if let Some(t) = inst.downcast_ref::<T>() {
-        t
-    } else {
-        panic!("Invalid any key state");
+#[inline]
+fn from_public_any<R: AllocKey>(alg: KeyAlg, public: &[u8]) -> Result<R, Error> {
+    match alg {
+        KeyAlg::Ed25519 => Ed25519KeyPair::from_public_bytes(public).map(R::alloc_key),
+        KeyAlg::X25519 => X25519KeyPair::from_public_bytes(public).map(R::alloc_key),
+        KeyAlg::EcCurve(EcCurves::Secp256k1) => {
+            K256KeyPair::from_public_bytes(public).map(R::alloc_key)
+        }
+        KeyAlg::EcCurve(EcCurves::Secp256r1) => {
+            P256KeyPair::from_public_bytes(public).map(R::alloc_key)
+        }
+        #[allow(unreachable_patterns)]
+        _ => {
+            return Err(err_msg!(
+                Unsupported,
+                "Unsupported algorithm for key import"
+            ))
+        }
     }
 }
 
-impl FromJwk for AnyKey {
+#[inline]
+fn from_secret_any<R: AllocKey>(alg: KeyAlg, secret: &[u8]) -> Result<R, Error> {
+    match alg {
+        KeyAlg::Aes(AesTypes::A128GCM) => {
+            AesGcmKey::<A128>::from_secret_bytes(secret).map(R::alloc_key)
+        }
+        KeyAlg::Aes(AesTypes::A256GCM) => {
+            AesGcmKey::<A256>::from_secret_bytes(secret).map(R::alloc_key)
+        }
+        KeyAlg::Chacha20(Chacha20Types::C20P) => {
+            Chacha20Key::<C20P>::from_secret_bytes(secret).map(R::alloc_key)
+        }
+        KeyAlg::Chacha20(Chacha20Types::XC20P) => {
+            Chacha20Key::<XC20P>::from_secret_bytes(secret).map(R::alloc_key)
+        }
+        KeyAlg::Ed25519 => Ed25519KeyPair::from_secret_bytes(secret).map(R::alloc_key),
+        KeyAlg::X25519 => X25519KeyPair::from_secret_bytes(secret).map(R::alloc_key),
+        KeyAlg::EcCurve(EcCurves::Secp256k1) => {
+            K256KeyPair::from_secret_bytes(secret).map(R::alloc_key)
+        }
+        KeyAlg::EcCurve(EcCurves::Secp256r1) => {
+            P256KeyPair::from_secret_bytes(secret).map(R::alloc_key)
+        }
+        #[allow(unreachable_patterns)]
+        _ => {
+            return Err(err_msg!(
+                Unsupported,
+                "Unsupported algorithm for key import"
+            ))
+        }
+    }
+}
+
+impl FromJwk for Box<AnyKey> {
     fn from_jwk_parts(jwk: JwkParts<'_>) -> Result<Self, Error> {
-        let (alg, inst) = match (jwk.kty, jwk.crv.as_ref()) {
-            ("EC", c) if c == k256::JWK_CURVE => (
-                KeyAlg::EcCurve(EcCurves::Secp256k1),
-                Box::new(K256KeyPair::from_jwk_parts(jwk)?) as BoxKey,
-            ),
-            ("EC", c) if c == p256::JWK_CURVE => (
-                KeyAlg::EcCurve(EcCurves::Secp256r1),
-                Box::new(P256KeyPair::from_jwk_parts(jwk)?) as BoxKey,
-            ),
-            ("OKP", c) if c == ed25519::JWK_CURVE => (
-                KeyAlg::Ed25519,
-                Box::new(Ed25519KeyPair::from_jwk_parts(jwk)?) as BoxKey,
-            ),
-            ("OKP", c) if c == x25519::JWK_CURVE => (
-                KeyAlg::X25519,
-                Box::new(X25519KeyPair::from_jwk_parts(jwk)?) as BoxKey,
-            ),
-            // "oct"
-            _ => return Err(err_msg!(Unsupported, "Unsupported JWK for key import")),
-        };
-        Ok(Self { alg, inst })
+        from_jwk_any(jwk)
     }
 }
 
-impl ToJwk for AnyKey {
-    fn to_jwk_encoder(&self, enc: &mut JwkEncoder<'_>) -> Result<(), Error> {
-        let key: &dyn ToJwk = match self.alg {
-            KeyAlg::Aes(AesTypes::A128GCM) => assume::<AesGcmKey<A128>>(&self.inst),
-            KeyAlg::Aes(AesTypes::A256GCM) => assume::<AesGcmKey<A256>>(&self.inst),
-            KeyAlg::Chacha20(Chacha20Types::C20P) => assume::<Chacha20Key<C20P>>(&self.inst),
-            KeyAlg::Chacha20(Chacha20Types::XC20P) => assume::<Chacha20Key<XC20P>>(&self.inst),
-            KeyAlg::Ed25519 => assume::<Ed25519KeyPair>(&self.inst),
-            KeyAlg::X25519 => assume::<X25519KeyPair>(&self.inst),
-            KeyAlg::EcCurve(EcCurves::Secp256k1) => assume::<K256KeyPair>(&self.inst),
-            KeyAlg::EcCurve(EcCurves::Secp256r1) => assume::<P256KeyPair>(&self.inst),
+impl FromJwk for Arc<AnyKey> {
+    fn from_jwk_parts(jwk: JwkParts<'_>) -> Result<Self, Error> {
+        from_jwk_any(jwk)
+    }
+}
+
+#[inline]
+fn from_jwk_any<R: AllocKey>(jwk: JwkParts<'_>) -> Result<R, Error> {
+    match (jwk.kty, jwk.crv.as_ref()) {
+        ("OKP", c) if c == ed25519::JWK_CURVE => {
+            Ed25519KeyPair::from_jwk_parts(jwk).map(R::alloc_key)
+        }
+        ("OKP", c) if c == x25519::JWK_CURVE => {
+            X25519KeyPair::from_jwk_parts(jwk).map(R::alloc_key)
+        }
+        ("EC", c) if c == k256::JWK_CURVE => K256KeyPair::from_jwk_parts(jwk).map(R::alloc_key),
+        ("EC", c) if c == p256::JWK_CURVE => P256KeyPair::from_jwk_parts(jwk).map(R::alloc_key),
+        // "oct"
+        _ => Err(err_msg!(Unsupported, "Unsupported JWK for key import")),
+    }
+}
+
+macro_rules! match_key_types {
+    ($slf:expr, $( $t:ty ),+; $errmsg:expr) => {
+        match $slf.key_type_id() {
+            $(
+                t if t == TypeId::of::<$t>() => $slf.assume::<$t>(),
+            )+
             #[allow(unreachable_patterns)]
             _ => {
                 return Err(err_msg!(
                     Unsupported,
-                    "JWK export is not supported for this key type"
+                    $errmsg
                 ))
             }
+        }
+    };
+}
+
+impl ToJwk for AnyKey {
+    fn to_jwk_encoder(&self, enc: &mut JwkEncoder<'_>) -> Result<(), Error> {
+        let key: &dyn ToJwk = match_key_types! {
+            self,
+            AesGcmKey<A128>,
+            AesGcmKey<A256>,
+            Chacha20Key<C20P>,
+            Chacha20Key<XC20P>,
+            Ed25519KeyPair,
+            X25519KeyPair,
+            K256KeyPair,
+            P256KeyPair;
+            "JWK export is not supported for this key type"
         };
         key.to_jwk_encoder(enc)
     }
@@ -132,16 +245,12 @@ impl KeySign for AnyKey {
         sig_type: Option<SignatureType>,
         out: &mut dyn WriteBuffer,
     ) -> Result<(), Error> {
-        let key: &dyn KeySign = match self.alg {
-            KeyAlg::Ed25519 => assume::<Ed25519KeyPair>(&self.inst),
-            KeyAlg::EcCurve(EcCurves::Secp256k1) => assume::<K256KeyPair>(&self.inst),
-            KeyAlg::EcCurve(EcCurves::Secp256r1) => assume::<P256KeyPair>(&self.inst),
-            _ => {
-                return Err(err_msg!(
-                    Unsupported,
-                    "Signing is not supported for this key type"
-                ))
-            }
+        let key: &dyn KeySign = match_key_types! {
+            self,
+            Ed25519KeyPair,
+            K256KeyPair,
+            P256KeyPair;
+            "Signing is not supported for this key type"
         };
         key.write_signature(message, sig_type, out)
     }
@@ -154,17 +263,58 @@ impl KeySigVerify for AnyKey {
         signature: &[u8],
         sig_type: Option<SignatureType>,
     ) -> Result<bool, Error> {
-        let key: &dyn KeySigVerify = match self.alg {
-            KeyAlg::Ed25519 => assume::<Ed25519KeyPair>(&self.inst),
-            KeyAlg::EcCurve(EcCurves::Secp256k1) => assume::<K256KeyPair>(&self.inst),
-            KeyAlg::EcCurve(EcCurves::Secp256r1) => assume::<P256KeyPair>(&self.inst),
-            _ => {
-                return Err(err_msg!(
-                    Unsupported,
-                    "Signature verification not supported for this key type"
-                ))
-            }
+        let key: &dyn KeySigVerify = match_key_types! {
+            self,
+            Ed25519KeyPair,
+            K256KeyPair,
+            P256KeyPair;
+            "Signature verification is not supported for this key type"
         };
         key.verify_signature(message, signature, sig_type)
+    }
+}
+
+// may want to implement in-place initialization to avoid copies
+trait AllocKey {
+    fn alloc_key<K: KeyAsAny + Send + Sync>(key: K) -> Self;
+}
+
+impl AllocKey for Arc<AnyKey> {
+    #[inline(always)]
+    fn alloc_key<K: KeyAsAny + Send + Sync>(key: K) -> Self {
+        Self::from_key(key)
+    }
+}
+
+impl AllocKey for Box<AnyKey> {
+    #[inline(always)]
+    fn alloc_key<K: KeyAsAny + Send + Sync>(key: K) -> Self {
+        Self::from_key(key)
+    }
+}
+
+pub trait KeyAsAny: HasKeyAlg + 'static {
+    fn as_any(&self) -> &dyn Any;
+}
+
+// implement for all concrete key types
+impl<K: HasKeyAlg + Sized + 'static> KeyAsAny for K {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // FIXME - add a custom key type to test the wrapper
+
+    #[test]
+    fn ed25519_as_any() {
+        let key = Box::<AnyKey>::generate(KeyAlg::Ed25519).unwrap();
+        assert_eq!(key.algorithm(), KeyAlg::Ed25519);
+        assert_eq!(key.key_type_id(), TypeId::of::<Ed25519KeyPair>());
+        let _ = key.to_jwk_public().unwrap();
     }
 }

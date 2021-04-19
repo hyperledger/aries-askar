@@ -1,17 +1,14 @@
 #[cfg(feature = "alloc")]
-use alloc::{borrow::Cow, string::String, vec::Vec};
+use alloc::{string::String, vec::Vec};
 
 use sha2::Sha256;
 
+#[cfg(feature = "alloc")]
+use crate::buffer::SecretBytes;
 use crate::{
     buffer::{HashBuffer, ResizeBuffer},
     error::Error,
 };
-
-#[cfg(feature = "alloc")]
-mod borrow;
-#[cfg(feature = "alloc")]
-pub use self::borrow::Jwk;
 
 mod encode;
 pub use self::encode::{JwkEncoder, JwkEncoderMode};
@@ -33,21 +30,21 @@ pub trait ToJwk {
     }
 
     #[cfg(feature = "alloc")]
-    fn to_jwk_public(&self) -> Result<Jwk<'static>, Error> {
+    fn to_jwk_public(&self) -> Result<String, Error> {
         let mut v = Vec::with_capacity(128);
         let mut buf = JwkEncoder::new(&mut v, JwkEncoderMode::PublicKey)?;
         self.to_jwk_encoder(&mut buf)?;
         buf.finalize()?;
-        Ok(Jwk::Encoded(Cow::Owned(String::from_utf8(v).unwrap())))
+        Ok(String::from_utf8(v).unwrap())
     }
 
     #[cfg(feature = "alloc")]
-    fn to_jwk_secret(&self) -> Result<Jwk<'static>, Error> {
-        let mut v = Vec::with_capacity(128);
+    fn to_jwk_secret(&self) -> Result<SecretBytes, Error> {
+        let mut v = SecretBytes::with_capacity(128);
         let mut buf = JwkEncoder::new(&mut v, JwkEncoderMode::SecretKey)?;
         self.to_jwk_encoder(&mut buf)?;
         buf.finalize()?;
-        Ok(Jwk::Encoded(Cow::Owned(String::from_utf8(v).unwrap())))
+        Ok(v)
     }
 }
 
@@ -66,9 +63,11 @@ pub fn jwk_thumbprint_buffer<K: ToJwk + ?Sized>(
 
 pub trait FromJwk: Sized {
     fn from_jwk(jwk: &str) -> Result<Self, Error> {
-        let parts =
-            serde_json::from_str(jwk).map_err(err_map!(InvalidData, "Error parsing JWK"))?;
-        Self::from_jwk_parts(parts)
+        JwkParts::from_str(jwk).and_then(Self::from_jwk_parts)
+    }
+
+    fn from_jwk_slice(jwk: &[u8]) -> Result<Self, Error> {
+        JwkParts::from_slice(jwk).and_then(Self::from_jwk_parts)
     }
 
     fn from_jwk_parts(jwk: JwkParts<'_>) -> Result<Self, Error>;

@@ -28,6 +28,16 @@ pub struct JwkParts<'a> {
     pub key_ops: Option<KeyOpsSet>,
 }
 
+impl<'de> JwkParts<'de> {
+    pub fn from_str(jwk: &'de str) -> Result<Self, Error> {
+        serde_json::from_str(jwk).map_err(err_map!(InvalidData, "Error parsing JWK"))
+    }
+
+    pub fn from_slice(jwk: &'de [u8]) -> Result<Self, Error> {
+        serde_json::from_slice(jwk).map_err(err_map!(InvalidData, "Error parsing JWK"))
+    }
+}
+
 #[derive(Copy, Clone, Default, PartialEq, Eq)]
 #[repr(transparent)]
 pub struct OptAttr<'a>(Option<&'a str>);

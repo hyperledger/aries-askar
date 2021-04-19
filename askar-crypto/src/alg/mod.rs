@@ -1,5 +1,5 @@
 use core::{
-    fmt::{self, Display, Formatter},
+    fmt::{self, Debug, Display, Formatter},
     str::FromStr,
 };
 
@@ -10,7 +10,7 @@ use crate::error::Error;
 #[cfg(any(test, feature = "any_key"))]
 mod any;
 #[cfg(any(test, feature = "any_key"))]
-pub use any::AnyKey;
+pub use any::{AnyKey, AnyKeyCreate};
 
 // pub mod bls;
 
@@ -44,7 +44,7 @@ pub enum KeyAlg {
 
 impl KeyAlg {
     /// Get a reference to a string representing the `KeyAlg`
-    pub fn as_str(&self) -> &str {
+    pub fn as_str(&self) -> &'static str {
         match self {
             Self::Aes(AesTypes::A128GCM) => "a128gcm",
             Self::Aes(AesTypes::A256GCM) => "a256gcm",
@@ -125,4 +125,8 @@ pub enum EcCurves {
     Secp256r1,
     /// Koblitz 256 curve
     Secp256k1,
+}
+
+pub trait HasKeyAlg: Debug {
+    fn algorithm(&self) -> KeyAlg;
 }

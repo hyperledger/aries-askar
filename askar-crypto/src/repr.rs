@@ -1,6 +1,6 @@
 #[cfg(feature = "alloc")]
 use crate::buffer::SecretBytes;
-use crate::{alg::KeyAlg, buffer::WriteBuffer, error::Error, generic_array::ArrayLength};
+use crate::{buffer::WriteBuffer, error::Error, generic_array::ArrayLength};
 
 /// Generate a new random key.
 pub trait KeyGen: Sized {
@@ -10,7 +10,7 @@ pub trait KeyGen: Sized {
 /// Allows a key to be created uninitialized and populated later,
 /// for instance when nested inside another struct.
 pub trait KeyGenInPlace {
-    fn generate_in_place(&mut self) -> Result<(), Error>;
+    unsafe fn generate_in_place(this: *mut Self) -> Result<(), Error>;
 }
 
 /// Convert between key instance and key secret bytes.
@@ -87,8 +87,6 @@ pub trait KeypairBytes {
 
 /// For concrete secret key types
 pub trait KeyMeta {
-    const ALG: KeyAlg;
-
     type KeySize: ArrayLength<u8>;
 }
 
