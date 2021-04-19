@@ -2,7 +2,7 @@ use std::os::raw::c_char;
 
 use ffi_support::{rust_string_to_c, ByteBuffer, FfiStr};
 
-use super::{handle::ArcHandle, ErrorCode};
+use super::{handle::ArcHandle, secret::SecretBuffer, ErrorCode};
 use crate::key::LocalKey;
 
 pub type LocalKeyHandle = ArcHandle<LocalKey>;
@@ -93,7 +93,6 @@ pub extern "C" fn askar_key_get_jwk_public(
 ) -> ErrorCode {
     catch_err! {
         trace!("Get key JWK public: {}", handle);
-        handle.validate()?;
         check_useful_c_ptr!(out);
         let key = handle.load()?;
         let jwk = key.to_jwk_public()?;
@@ -102,18 +101,70 @@ pub extern "C" fn askar_key_get_jwk_public(
     }
 }
 
-// #[no_mangle]
-// pub extern "C" fn askar_key_get_jwk_secret(
-//     handle: LocalKeyHandle,
-//     out: *mut FfiSecret,
-// ) -> ErrorCode {
-//     catch_err! {
-//         trace!("Get key JWK secret: {}", handle);
-//         handle.validate()?;
-//         check_useful_c_ptr!(out);
-//         let key = handle.load()?;
-//         let jwk = key.to_jwk_secret()?;
-//         unsafe { *out = FfiSecret::from(jwk) };
-//         Ok(ErrorCode::Success)
-//     }
-// }
+#[no_mangle]
+pub extern "C" fn askar_key_get_jwk_secret(
+    handle: LocalKeyHandle,
+    out: *mut SecretBuffer,
+) -> ErrorCode {
+    catch_err! {
+        trace!("Get key JWK secret: {}", handle);
+        check_useful_c_ptr!(out);
+        let key = handle.load()?;
+        let jwk = key.to_jwk_secret()?;
+        unsafe { *out = SecretBuffer::from_secret(jwk) };
+        Ok(ErrorCode::Success)
+    }
+}
+
+// key_aead_get_params (nonce len, tag len)
+
+#[no_mangle]
+pub extern "C" fn askar_key_aead_random_nonce(
+    handle: LocalKeyHandle,
+    out: *mut SecretBuffer,
+) -> ErrorCode {
+    catch_err! {
+        trace!("AEAD create nonce: {}", handle);
+        check_useful_c_ptr!(out);
+        let key = handle.load()?;
+        let nonce = key.aead_random_nonce()?;
+        unsafe { *out = SecretBuffer::from_secret(nonce) };
+        Ok(ErrorCode::Success)
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn askar_key_aead_encrypt(
+    handle: LocalKeyHandle,
+    input: ByteBuffer,
+    nonce: ByteBuffer,
+    aad: ByteBuffer,
+    out: *mut SecretBuffer,
+) -> ErrorCode {
+    catch_err! {
+        trace!("AEAD encrypt: {}", handle);
+        check_useful_c_ptr!(out);
+        let key = handle.load()?;
+        let enc = key.aead_encrypt(input.as_slice(), nonce.as_slice(), aad.as_slice())?;
+        unsafe { *out = SecretBuffer::from_secret(enc) };
+        Ok(ErrorCode::Success)
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn askar_key_aead_decrypt(
+    handle: LocalKeyHandle,
+    input: ByteBuffer,
+    nonce: ByteBuffer,
+    aad: ByteBuffer,
+    out: *mut SecretBuffer,
+) -> ErrorCode {
+    catch_err! {
+        trace!("AEAD decrypt: {}", handle);
+        check_useful_c_ptr!(out);
+        let key = handle.load()?;
+        let dec = key.aead_decrypt(input.as_slice(), nonce.as_slice(), aad.as_slice())?;
+        unsafe { *out = SecretBuffer::from_secret(dec) };
+        Ok(ErrorCode::Success)
+    }
+}

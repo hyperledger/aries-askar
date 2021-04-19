@@ -195,14 +195,6 @@ class StrBuffer(c_char_p):
         get_library().askar_string_free(self)
 
 
-class lib_unpack_result(Structure):
-    _fields_ = [
-        ("unpacked", ByteBuffer),
-        ("recipient", StrBuffer),
-        ("sender", StrBuffer),
-    ]
-
-
 def get_library() -> CDLL:
     """Return the CDLL instance, loading it if necessary."""
     global LIB
@@ -389,7 +381,11 @@ def encode_str(arg: Optional[Union[str, bytes]]) -> c_char_p:
     return c_char_p(arg)
 
 
-def encode_bytes(arg: Optional[Union[str, bytes]]) -> FfiByteBuffer:
+def encode_bytes(
+    arg: Optional[Union[str, bytes, ByteBuffer, FfiByteBuffer]]
+) -> Union[FfiByteBuffer, ByteBuffer]:
+    if isinstance(arg, ByteBuffer) or isinstance(arg, FfiByteBuffer):
+        return arg
     buf = FfiByteBuffer()
     if isinstance(arg, memoryview):
         buf.len = arg.nbytes
@@ -747,6 +743,54 @@ def key_get_algorithm(handle: LocalKeyHandle) -> str:
 
 
 def key_get_jwk_public(handle: LocalKeyHandle) -> str:
-    alg = StrBuffer()
-    do_call("askar_key_get_jwk_public", handle, byref(alg))
-    return str(alg)
+    jwk = StrBuffer()
+    do_call("askar_key_get_jwk_public", handle, byref(jwk))
+    return str(jwk)
+
+
+def key_get_jwk_secret(handle: LocalKeyHandle) -> ByteBuffer:
+    sec = ByteBuffer()
+    do_call("askar_key_get_jwk_public", handle, byref(sec))
+    return sec
+
+
+def key_aead_random_nonce(handle: LocalKeyHandle) -> ByteBuffer:
+    nonce = ByteBuffer()
+    do_call("askar_key_aead_random_nonce", handle, byref(nonce))
+    return nonce
+
+
+def key_aead_encrypt(
+    handle: LocalKeyHandle,
+    input: Union[bytes, str, ByteBuffer],
+    nonce: Union[bytes, ByteBuffer],
+    aad: Union[bytes, ByteBuffer] = None,
+) -> ByteBuffer:
+    enc = ByteBuffer()
+    do_call(
+        "askar_key_aead_encrypt",
+        handle,
+        encode_bytes(input),
+        encode_bytes(nonce),
+        encode_bytes(aad),
+        byref(enc),
+    )
+    return enc
+
+
+def key_aead_decrypt(
+    handle: LocalKeyHandle,
+    input: Union[bytes, ByteBuffer],
+    nonce: Union[bytes, ByteBuffer],
+    aad: Union[bytes, ByteBuffer] = None,
+) -> ByteBuffer:
+    dec = ByteBuffer()
+    do_call(
+        "askar_key_aead_decrypt",
+        handle,
+        encode_bytes(input),
+        encode_bytes(nonce),
+        encode_bytes(aad),
+        byref(dec),
+    )
+    return dec

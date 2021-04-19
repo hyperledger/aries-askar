@@ -1,4 +1,4 @@
-use alloc::{string::String, vec::Vec};
+use alloc::{boxed::Box, string::String, vec::Vec};
 use core::{
     fmt::{self, Debug, Formatter},
     mem,
@@ -12,7 +12,7 @@ use super::{string::MaybeStr, ResizeBuffer, WriteBuffer};
 use crate::error::Error;
 
 /// A heap-allocated, zeroized byte buffer
-#[derive(Clone, Hash, PartialEq, Eq, PartialOrd, Ord, Zeroize)]
+#[derive(Clone, Default, Hash, PartialEq, Eq, PartialOrd, Ord, Zeroize)]
 pub struct SecretBytes(Vec<u8>);
 
 impl SecretBytes {
@@ -60,13 +60,33 @@ impl SecretBytes {
     }
 
     #[inline]
+    pub fn extend_from_slice(&mut self, data: &[u8]) {
+        self.reserve(data.len());
+        self.0.extend_from_slice(data);
+    }
+
+    #[inline]
     pub fn reserve(&mut self, extra: usize) {
         self.ensure_capacity(self.len() + extra)
     }
 
+    pub fn into_boxed_slice(mut self) -> Box<[u8]> {
+        let len = self.0.len();
+        if self.0.capacity() > len {
+            // copy to a smaller buffer (capacity is not tracked for boxed slice)
+            // and proceed with the normal zeroize on drop
+            let mut v = Vec::with_capacity(len);
+            v.append(&mut self.0);
+            v.into_boxed_slice()
+        } else {
+            // no realloc and copy needed
+            self.into_vec().into_boxed_slice()
+        }
+    }
+
     #[inline]
     pub fn into_vec(mut self) -> Vec<u8> {
-        // FIXME zeroize extra capacity?
+        // FIXME zeroize extra capacity in case it was used previously?
         let mut v = Vec::new(); // note: no heap allocation for empty vec
         mem::swap(&mut v, &mut self.0);
         mem::forget(self);
@@ -149,6 +169,12 @@ impl From<String> for SecretBytes {
     }
 }
 
+impl From<Box<[u8]>> for SecretBytes {
+    fn from(inner: Box<[u8]>) -> Self {
+        Self(inner.into())
+    }
+}
+
 impl From<Vec<u8>> for SecretBytes {
     fn from(inner: Vec<u8>) -> Self {
         Self(inner)
@@ -169,10 +195,7 @@ impl PartialEq<Vec<u8>> for SecretBytes {
 
 impl WriteBuffer for SecretBytes {
     fn buffer_write(&mut self, data: &[u8]) -> Result<(), Error> {
-        let pos = self.0.len();
-        let new_len = pos + data.len();
-        self.buffer_resize(new_len)?;
-        self.0[pos..new_len].copy_from_slice(data);
+        self.extend_from_slice(data);
         Ok(())
     }
 }

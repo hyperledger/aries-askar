@@ -72,8 +72,20 @@ async def basic_test():
 
     key = bindings.key_generate("ed25519")
     log("Created key:", key)
+
+    log("Key algorithm:", bindings.key_get_algorithm(key))
+
     jwk = bindings.key_get_jwk_public(key)
     log("JWK:", jwk)
+
+    key = bindings.key_generate("aes256gcm")
+    log("Key algorithm:", bindings.key_get_algorithm(key))
+
+    data = b"test message"
+    nonce = bindings.key_aead_random_nonce(key)
+    enc = bindings.key_aead_encrypt(key, data, nonce, b"aad")
+    dec = bindings.key_aead_decrypt(key, enc, nonce, b"aad")
+    assert data == bytes(dec)
 
     # test key operations in a new session
     async with store as session:

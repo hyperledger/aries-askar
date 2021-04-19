@@ -12,7 +12,8 @@ use super::p256::{self, P256KeyPair};
 use super::x25519::{self, X25519KeyPair};
 use super::{AesTypes, Chacha20Types, EcCurves, HasKeyAlg, KeyAlg};
 use crate::{
-    buffer::WriteBuffer,
+    buffer::{ResizeBuffer, WriteBuffer},
+    encrypt::{KeyAeadInPlace, KeyAeadParams},
     error::Error,
     jwk::{FromJwk, JwkEncoder, JwkParts, ToJwk},
     kdf::{FromKeyExchange, KeyExchange},
@@ -295,6 +296,47 @@ macro_rules! match_key_types {
     };
 }
 
+impl AnyKey {
+    fn key_as_aead(&self) -> Result<&dyn KeyAeadInPlace, Error> {
+        Ok(match_key_types! {
+            self,
+            AesGcmKey<A128>,
+            AesGcmKey<A256>,
+            Chacha20Key<C20P>,
+            Chacha20Key<XC20P>;
+            "AEAD is not supported for this key type"
+        })
+    }
+}
+
+impl KeyAeadInPlace for AnyKey {
+    fn encrypt_in_place(
+        &self,
+        buffer: &mut dyn ResizeBuffer,
+        nonce: &[u8],
+        aad: &[u8],
+    ) -> Result<(), Error> {
+        self.key_as_aead()?.encrypt_in_place(buffer, nonce, aad)
+    }
+
+    fn decrypt_in_place(
+        &self,
+        buffer: &mut dyn ResizeBuffer,
+        nonce: &[u8],
+        aad: &[u8],
+    ) -> Result<(), Error> {
+        self.key_as_aead()?.decrypt_in_place(buffer, nonce, aad)
+    }
+
+    fn aead_params(&self) -> KeyAeadParams {
+        if let Ok(key) = self.key_as_aead() {
+            key.aead_params()
+        } else {
+            KeyAeadParams::default()
+        }
+    }
+}
+
 impl ToJwk for AnyKey {
     fn to_jwk_encoder(&self, enc: &mut JwkEncoder<'_>) -> Result<(), Error> {
         let key: &dyn ToJwk = match_key_types! {
@@ -383,7 +425,7 @@ impl<K: HasKeyAlg + Sized + 'static> KeyAsAny for K {
 mod tests {
     use super::*;
 
-    // FIXME - add a custom key type to test the wrapper
+    // FIXME - add a custom key type for testing, to allow feature independence
 
     #[test]
     fn ed25519_as_any() {
@@ -404,5 +446,19 @@ mod tests {
         let _aes_key =
             Box::<AnyKey>::from_key_exchange(KeyAlg::Aes(AesTypes::A256GCM), &*alice, &*bob)
                 .unwrap();
+    }
+
+    #[test]
+    fn key_encrypt_any() {
+        use crate::buffer::SecretBytes;
+        let message = b"test message";
+        let mut data = SecretBytes::from(&message[..]);
+
+        let key = Box::<AnyKey>::generate(KeyAlg::Chacha20(Chacha20Types::XC20P)).unwrap();
+        let nonce = [0u8; 24]; // size varies by algorithm
+        key.encrypt_in_place(&mut data, &nonce, &[]).unwrap();
+        assert_ne!(data, &message[..]);
+        key.decrypt_in_place(&mut data, &nonce, &[]).unwrap();
+        assert_eq!(data, &message[..]);
     }
 }

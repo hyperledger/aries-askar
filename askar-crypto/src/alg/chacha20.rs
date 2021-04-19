@@ -8,7 +8,7 @@ use zeroize::Zeroize;
 use super::{Chacha20Types, HasKeyAlg, KeyAlg};
 use crate::{
     buffer::{ArrayKey, ResizeBuffer, Writer},
-    encrypt::{KeyAeadInPlace, KeyAeadMeta},
+    encrypt::{KeyAeadInPlace, KeyAeadMeta, KeyAeadParams},
     error::Error,
     generic_array::{typenum::Unsigned, GenericArray},
     jwk::{JwkEncoder, ToJwk},
@@ -152,9 +152,9 @@ impl<T: Chacha20Type> KeyAeadMeta for Chacha20Key<T> {
 
 impl<T: Chacha20Type> KeyAeadInPlace for Chacha20Key<T> {
     /// Encrypt a secret value in place, appending the verification tag
-    fn encrypt_in_place<B: ResizeBuffer>(
+    fn encrypt_in_place(
         &self,
-        buffer: &mut B,
+        buffer: &mut dyn ResizeBuffer,
         nonce: &[u8],
         aad: &[u8],
     ) -> Result<(), Error> {
@@ -171,9 +171,9 @@ impl<T: Chacha20Type> KeyAeadInPlace for Chacha20Key<T> {
     }
 
     /// Decrypt an encrypted (verification tag appended) value in place
-    fn decrypt_in_place<B: ResizeBuffer>(
+    fn decrypt_in_place(
         &self,
-        buffer: &mut B,
+        buffer: &mut dyn ResizeBuffer,
         nonce: &[u8],
         aad: &[u8],
     ) -> Result<(), Error> {
@@ -196,12 +196,11 @@ impl<T: Chacha20Type> KeyAeadInPlace for Chacha20Key<T> {
         Ok(())
     }
 
-    fn nonce_length() -> usize {
-        NonceSize::<T>::USIZE
-    }
-
-    fn tag_length() -> usize {
-        TagSize::<T>::USIZE
+    fn aead_params(&self) -> KeyAeadParams {
+        KeyAeadParams {
+            nonce_length: NonceSize::<T>::USIZE,
+            tag_length: TagSize::<T>::USIZE,
+        }
     }
 }
 

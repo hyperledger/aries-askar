@@ -11,26 +11,23 @@ pub mod nacl_box;
 /// Trait for key types which perform AEAD encryption
 pub trait KeyAeadInPlace {
     /// Encrypt a secret value in place, appending the verification tag
-    fn encrypt_in_place<B: ResizeBuffer>(
+    fn encrypt_in_place(
         &self,
-        buffer: &mut B,
+        buffer: &mut dyn ResizeBuffer,
         nonce: &[u8],
         aad: &[u8],
     ) -> Result<(), Error>;
 
     /// Decrypt an encrypted (verification tag appended) value in place
-    fn decrypt_in_place<B: ResizeBuffer>(
+    fn decrypt_in_place(
         &self,
-        buffer: &mut B,
+        buffer: &mut dyn ResizeBuffer,
         nonce: &[u8],
         aad: &[u8],
     ) -> Result<(), Error>;
 
-    /// Get the required nonce length for encryption
-    fn nonce_length() -> usize;
-
-    /// Get the length of the verification tag
-    fn tag_length() -> usize;
+    /// Get the nonce and tag length for encryption
+    fn aead_params(&self) -> KeyAeadParams;
 }
 
 /// For concrete key types with fixed nonce and tag sizes
@@ -43,4 +40,10 @@ pub trait KeyAeadMeta {
         fill_random(nonce.as_mut_slice());
         nonce
     }
+}
+
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+pub struct KeyAeadParams {
+    pub nonce_length: usize,
+    pub tag_length: usize,
 }

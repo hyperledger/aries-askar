@@ -101,7 +101,7 @@ where
     }
 
     pub fn decrypt(ciphertext: Vec<u8>, enc_key: &Key) -> Result<SecretBytes, Error> {
-        let nonce_len = Key::nonce_length();
+        let nonce_len = Key::NonceSize::USIZE;
         if ciphertext.len() < nonce_len {
             return Err(err_msg!(Encryption, "invalid encrypted value"));
         }

@@ -4,7 +4,9 @@ use crate::{
     crypto::{
         alg::{AnyKey, AnyKeyCreate, KeyAlg},
         buffer::SecretBytes,
+        encrypt::KeyAeadInPlace,
         jwk::{FromJwk, ToJwk},
+        random::fill_random,
     },
     error::Error,
     storage::entry::{Entry, EntryTag},
@@ -100,6 +102,38 @@ impl LocalKey {
     pub fn to_jwk_thumbprint(&self) -> Result<String, Error> {
         // FIXME add special case for BLS G1+G2 (two prints)
         Ok(self.inner.to_jwk_thumbprint()?)
+    }
+
+    pub fn aead_random_nonce(&self) -> Result<Vec<u8>, Error> {
+        let nonce_len = self.inner.aead_params().nonce_length;
+        if nonce_len == 0 {
+            return Err(err_msg!(
+                Unsupported,
+                "Key type does not support AEAD encryption"
+            ));
+        }
+        let buf = SecretBytes::new_with(nonce_len, fill_random);
+        Ok(buf.into_vec())
+    }
+
+    pub fn aead_encrypt(&self, message: &[u8], nonce: &[u8], aad: &[u8]) -> Result<Vec<u8>, Error> {
+        let params = self.inner.aead_params();
+        let enc_size = message.len() + params.nonce_length + params.tag_length;
+        let mut buf = SecretBytes::with_capacity(enc_size);
+        buf.extend_from_slice(message);
+        self.inner.encrypt_in_place(&mut buf, nonce, aad)?;
+        Ok(buf.into_vec())
+    }
+
+    pub fn aead_decrypt(
+        &self,
+        message: &[u8],
+        nonce: &[u8],
+        aad: &[u8],
+    ) -> Result<SecretBytes, Error> {
+        let mut buf = SecretBytes::from_slice(message);
+        self.inner.decrypt_in_place(&mut buf, nonce, aad)?;
+        Ok(buf)
     }
 }
 
