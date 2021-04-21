@@ -8,14 +8,14 @@ use sqlx::{
 };
 
 use crate::{
-    backend::db_utils::{init_keys, random_profile_name},
+    backend::{
+        db_utils::{init_keys, random_profile_name},
+        types::ManageBackend,
+    },
     error::Error,
     future::{unblock, BoxFuture},
     protect::{KeyCache, PassKey, ProfileId, StoreKeyMethod, StoreKeyReference},
-    storage::{
-        options::IntoOptions,
-        types::{ManageBackend, Store},
-    },
+    storage::{options::IntoOptions, store::Store},
 };
 
 use super::PostgresStore;

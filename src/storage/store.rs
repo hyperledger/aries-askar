@@ -1,138 +1,19 @@
 use std::{
     fmt::{self, Debug, Display, Formatter},
-    pin::Pin,
     str::FromStr,
     sync::Arc,
 };
 
-use futures_lite::stream::{Stream, StreamExt};
+use futures_lite::stream::StreamExt;
 use zeroize::Zeroize;
 
-use super::entry::{Entry, EntryKind, EntryOperation, EntryTag, TagFilter};
+use super::entry::{Entry, EntryKind, EntryOperation, EntryTag, Scan, TagFilter};
 use crate::{
+    backend::{Backend, QueryBackend},
     error::Error,
-    future::BoxFuture,
     keys::{KeyEntry, KeyParams, LocalKey},
     protect::{PassKey, StoreKeyMethod},
 };
-
-/// Represents a generic backend implementation
-pub trait Backend: Send + Sync {
-    /// The type of session managed by this backend
-    type Session: QueryBackend;
-
-    /// Create a new profile
-    fn create_profile(&self, name: Option<String>) -> BoxFuture<'_, Result<String, Error>>;
-
-    /// Get the name of the active profile
-    fn get_profile_name(&self) -> &str;
-
-    /// Remove an existing profile
-    fn remove_profile(&self, name: String) -> BoxFuture<'_, Result<bool, Error>>;
-
-    /// Create a [`Scan`] against the store
-    fn scan(
-        &self,
-        profile: Option<String>,
-        kind: EntryKind,
-        category: String,
-        tag_filter: Option<TagFilter>,
-        offset: Option<i64>,
-        limit: Option<i64>,
-    ) -> BoxFuture<'_, Result<Scan<'static, Entry>, Error>>;
-
-    /// Create a new session against the store
-    fn session(&self, profile: Option<String>, transaction: bool) -> Result<Self::Session, Error>;
-
-    /// Replace the wrapping key of the store
-    fn rekey_backend(
-        &mut self,
-        method: StoreKeyMethod,
-        key: PassKey<'_>,
-    ) -> BoxFuture<'_, Result<(), Error>>;
-
-    /// Close the store instance
-    fn close(&self) -> BoxFuture<'_, Result<(), Error>>;
-}
-
-/// Create, open, or remove a generic backend implementation
-pub trait ManageBackend<'a> {
-    /// The type of store being managed
-    type Store;
-
-    /// Open an existing store
-    fn open_backend(
-        self,
-        method: Option<StoreKeyMethod>,
-        pass_key: PassKey<'a>,
-        profile: Option<&'a str>,
-    ) -> BoxFuture<'a, Result<Self::Store, Error>>;
-
-    /// Provision a new store
-    fn provision_backend(
-        self,
-        method: StoreKeyMethod,
-        pass_key: PassKey<'a>,
-        profile: Option<&'a str>,
-        recreate: bool,
-    ) -> BoxFuture<'a, Result<Self::Store, Error>>;
-
-    /// Remove an existing store
-    fn remove_backend(self) -> BoxFuture<'a, Result<bool, Error>>;
-}
-
-/// Query from a generic backend implementation
-pub trait QueryBackend: Send {
-    /// Count the number of matching records in the store
-    fn count<'q>(
-        &'q mut self,
-        kind: EntryKind,
-        category: &'q str,
-        tag_filter: Option<TagFilter>,
-    ) -> BoxFuture<'q, Result<i64, Error>>;
-
-    /// Fetch a single record from the store by category and name
-    fn fetch<'q>(
-        &'q mut self,
-        kind: EntryKind,
-        category: &'q str,
-        name: &'q str,
-        for_update: bool,
-    ) -> BoxFuture<'q, Result<Option<Entry>, Error>>;
-
-    /// Fetch all matching records from the store
-    fn fetch_all<'q>(
-        &'q mut self,
-        kind: EntryKind,
-        category: &'q str,
-        tag_filter: Option<TagFilter>,
-        limit: Option<i64>,
-        for_update: bool,
-    ) -> BoxFuture<'q, Result<Vec<Entry>, Error>>;
-
-    /// Remove all matching records from the store
-    fn remove_all<'q>(
-        &'q mut self,
-        kind: EntryKind,
-        category: &'q str,
-        tag_filter: Option<TagFilter>,
-    ) -> BoxFuture<'q, Result<i64, Error>>;
-
-    /// Insert or replace a record in the store
-    fn update<'q>(
-        &'q mut self,
-        kind: EntryKind,
-        operation: EntryOperation,
-        category: &'q str,
-        name: &'q str,
-        value: Option<&'q [u8]>,
-        tags: Option<&'q [EntryTag]>,
-        expiry_ms: Option<i64>,
-    ) -> BoxFuture<'q, Result<(), Error>>;
-
-    /// Close the current store session
-    fn close(self, commit: bool) -> BoxFuture<'static, Result<(), Error>>;
-}
 
 #[derive(Debug)]
 /// An instance of an opened store
@@ -518,49 +399,6 @@ impl<Q: QueryBackend> Session<Q> {
     /// Roll back the pending transaction
     pub async fn rollback(self) -> Result<(), Error> {
         Ok(self.0.close(false).await?)
-    }
-}
-
-/// An active record scan of a store backend
-pub struct Scan<'s, T> {
-    stream: Option<Pin<Box<dyn Stream<Item = Result<Vec<T>, Error>> + Send + 's>>>,
-    page_size: usize,
-}
-
-impl<'s, T> Scan<'s, T> {
-    pub(crate) fn new<S>(stream: S, page_size: usize) -> Self
-    where
-        S: Stream<Item = Result<Vec<T>, Error>> + Send + 's,
-    {
-        Self {
-            stream: Some(stream.boxed()),
-            page_size,
-        }
-    }
-
-    /// Fetch the next set of result rows
-    pub async fn fetch_next(&mut self) -> Result<Option<Vec<T>>, Error> {
-        if let Some(mut s) = self.stream.take() {
-            match s.try_next().await? {
-                Some(val) => {
-                    if val.len() == self.page_size {
-                        self.stream.replace(s);
-                    }
-                    Ok(Some(val))
-                }
-                None => Ok(None),
-            }
-        } else {
-            Ok(None)
-        }
-    }
-}
-
-impl<S> Debug for Scan<'_, S> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Scan")
-            .field("page_size", &self.page_size)
-            .finish()
     }
 }
 

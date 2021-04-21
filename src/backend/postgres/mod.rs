@@ -16,19 +16,19 @@ use sqlx::{
 };
 
 use crate::{
-    backend::db_utils::{
-        decode_tags, decrypt_scan_batch, encode_profile_key, encode_tag_filter, expiry_timestamp,
-        extend_query, prepare_tags, random_profile_name, replace_arg_placeholders, DbSession,
-        DbSessionActive, DbSessionRef, EncScanEntry, ExtDatabase, QueryParams, QueryPrepare,
-        PAGE_SIZE,
+    backend::{
+        db_utils::{
+            decode_tags, decrypt_scan_batch, encode_profile_key, encode_tag_filter,
+            expiry_timestamp, extend_query, prepare_tags, random_profile_name,
+            replace_arg_placeholders, DbSession, DbSessionActive, DbSessionRef, EncScanEntry,
+            ExtDatabase, QueryParams, QueryPrepare, PAGE_SIZE,
+        },
+        types::{Backend, QueryBackend},
     },
     error::Error,
     future::{unblock, BoxFuture},
     protect::{EntryEncryptor, KeyCache, PassKey, ProfileId, ProfileKey, StoreKeyMethod},
-    storage::{
-        entry::{EncEntryTag, Entry, EntryKind, EntryOperation, EntryTag, TagFilter},
-        types::{Backend, QueryBackend, Scan},
-    },
+    storage::entry::{EncEntryTag, Entry, EntryKind, EntryOperation, EntryTag, Scan, TagFilter},
 };
 
 const COUNT_QUERY: &'static str = "SELECT COUNT(*) FROM items i

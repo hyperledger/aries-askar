@@ -10,12 +10,15 @@ use sqlx::{
 
 use super::SqliteStore;
 use crate::{
-    backend::db_utils::{init_keys, random_profile_name},
+    backend::{
+        db_utils::{init_keys, random_profile_name},
+        types::ManageBackend,
+    },
     error::Error,
     future::{unblock, BoxFuture},
     protect::{KeyCache, PassKey, StoreKeyMethod, StoreKeyReference},
     storage::options::{IntoOptions, Options},
-    storage::types::{ManageBackend, Store},
+    storage::store::Store,
 };
 
 /// Configuration options for Sqlite stores

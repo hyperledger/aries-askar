@@ -1,11 +1,13 @@
-use crate::error::Error;
-use crate::future::BoxFuture;
-use crate::protect::{PassKey, StoreKeyMethod};
-
-use crate::storage::{
-    entry::{Entry, EntryKind, EntryOperation, EntryTag, TagFilter},
-    options::IntoOptions,
-    types::{Backend, ManageBackend, QueryBackend, Scan, Session, Store},
+use super::{Backend, ManageBackend, QueryBackend};
+use crate::{
+    error::Error,
+    future::BoxFuture,
+    protect::{PassKey, StoreKeyMethod},
+    storage::{
+        entry::{Entry, EntryKind, EntryOperation, EntryTag, Scan, TagFilter},
+        options::IntoOptions,
+        store::{Session, Store},
+    },
 };
 
 #[cfg(feature = "postgres")]

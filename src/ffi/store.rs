@@ -17,15 +17,14 @@ use zeroize::Zeroize;
 
 use super::{error::set_last_error, handle::ArcHandle, CallbackId, EnsureCallback, ErrorCode};
 use crate::{
-    backend::any::{AnySession, AnyStore},
+    backend::{
+        any::{AnySession, AnyStore},
+        ManageBackend,
+    },
     error::Error,
     future::spawn_ok,
     protect::{generate_raw_store_key, PassKey, StoreKeyMethod},
-    storage::{
-        entry::{Entry, EntryOperation, EntryTagSet, TagFilter},
-        // key::{KeyCategory, KeyEntry},
-        types::{ManageBackend, Scan},
-    },
+    storage::entry::{Entry, EntryOperation, EntryTagSet, Scan, TagFilter},
 };
 
 new_sequence_handle!(StoreHandle, FFI_STORE_COUNTER);

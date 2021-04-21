@@ -1,6 +1,10 @@
-use std::fmt::{self, Debug, Formatter};
-use std::str::FromStr;
+use std::{
+    fmt::{self, Debug, Formatter},
+    pin::Pin,
+    str::FromStr,
+};
 
+use futures_lite::stream::{Stream, StreamExt};
 use serde::{
     de::{Error as SerdeError, MapAccess, SeqAccess, Visitor},
     ser::SerializeMap,
@@ -447,6 +451,49 @@ impl FromStr for TagFilter {
     fn from_str(query: &str) -> Result<Self, Error> {
         let query = serde_json::from_str(query).map_err(err_map!("Error parsing tag query"))?;
         Ok(Self { query })
+    }
+}
+
+/// An active record scan of a store backend
+pub struct Scan<'s, T> {
+    stream: Option<Pin<Box<dyn Stream<Item = Result<Vec<T>, Error>> + Send + 's>>>,
+    page_size: usize,
+}
+
+impl<'s, T> Scan<'s, T> {
+    pub(crate) fn new<S>(stream: S, page_size: usize) -> Self
+    where
+        S: Stream<Item = Result<Vec<T>, Error>> + Send + 's,
+    {
+        Self {
+            stream: Some(stream.boxed()),
+            page_size,
+        }
+    }
+
+    /// Fetch the next set of result rows
+    pub async fn fetch_next(&mut self) -> Result<Option<Vec<T>>, Error> {
+        if let Some(mut s) = self.stream.take() {
+            match s.try_next().await? {
+                Some(val) => {
+                    if val.len() == self.page_size {
+                        self.stream.replace(s);
+                    }
+                    Ok(Some(val))
+                }
+                None => Ok(None),
+            }
+        } else {
+            Ok(None)
+        }
+    }
+}
+
+impl<S> Debug for Scan<'_, S> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Scan")
+            .field("page_size", &self.page_size)
+            .finish()
     }
 }
 

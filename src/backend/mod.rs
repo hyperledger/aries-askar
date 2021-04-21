@@ -17,3 +17,6 @@ pub mod postgres;
 #[cfg_attr(docsrs, doc(cfg(feature = "sqlite")))]
 /// Sqlite database support
 pub mod sqlite;
+
+mod types;
+pub use self::types::{Backend, ManageBackend, QueryBackend};

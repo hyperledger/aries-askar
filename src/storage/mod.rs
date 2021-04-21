@@ -2,6 +2,6 @@ pub mod entry;
 
 pub(crate) mod options;
 
-pub mod types;
+pub mod store;
 
 pub(crate) mod wql;

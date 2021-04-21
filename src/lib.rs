@@ -22,6 +22,16 @@ extern crate log;
 extern crate serde;
 
 pub mod backend;
+pub use self::backend::{Backend, ManageBackend};
+
+#[cfg(feature = "any")]
+pub use self::backend::any;
+
+#[cfg(feature = "postgres")]
+pub use self::backend::postgres;
+
+#[cfg(feature = "sqlite")]
+pub use self::backend::sqlite;
 
 pub use askar_crypto as crypto;
 
@@ -49,5 +59,5 @@ pub use protect::{generate_raw_store_key, PassKey, StoreKeyMethod};
 mod storage;
 pub use storage::{
     entry::{Entry, EntryTag, TagFilter},
-    types::{Backend, ManageBackend, Store},
+    store::Store,
 };
