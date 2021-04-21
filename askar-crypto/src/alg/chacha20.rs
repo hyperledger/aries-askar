@@ -12,7 +12,7 @@ use crate::{
     error::Error,
     generic_array::{typenum::Unsigned, GenericArray},
     jwk::{JwkEncoder, ToJwk},
-    kdf::{FromKeyExchange, KeyExchange},
+    kdf::{FromKeyDerivation, FromKeyExchange, KeyDerivation, KeyExchange},
     random::fill_random_deterministic,
     repr::{KeyGen, KeyMeta, KeySecretBytes},
 };
@@ -121,7 +121,7 @@ impl<T: Chacha20Type> KeyGen for Chacha20Key<T> {
 
 impl<T: Chacha20Type> KeySecretBytes for Chacha20Key<T> {
     fn from_secret_bytes(key: &[u8]) -> Result<Self, Error> {
-        if key.len() != <T::Aead as NewAead>::KeySize::USIZE {
+        if key.len() != KeyType::<T>::SIZE {
             return Err(err_msg!(InvalidKeyData));
         }
         Ok(Self(KeyType::<T>::from_slice(key)))
@@ -132,18 +132,16 @@ impl<T: Chacha20Type> KeySecretBytes for Chacha20Key<T> {
     }
 }
 
-// impl<T: Chacha20Type> KeySecretBytes for Box<Chacha20Key<T>> {
-//     fn from_key_secret_bytes(key: &[u8]) -> Result<Self, Error> {
-//         if key.len() != <T::Aead as NewAead>::KeySize::USIZE {
-//             return Err(err_msg!("Invalid length for chacha20 key"));
-//         }
-//         Ok(init_boxed(|buf| buf.copy_from_slice(key)))
-//     }
-
-//     fn to_key_secret_buffer<B: WriteBuffer>(&self, out: &mut B) -> Result<(), Error> {
-//         out.write_slice(&self.0[..])
-//     }
-// }
+impl<T: Chacha20Type> FromKeyDerivation for Chacha20Key<T> {
+    fn from_key_derivation<D: KeyDerivation>(mut derive: D) -> Result<Self, Error>
+    where
+        Self: Sized,
+    {
+        let mut key = KeyType::<T>::default();
+        derive.derive_key_bytes(key.as_mut())?;
+        Ok(Self(key))
+    }
+}
 
 impl<T: Chacha20Type> KeyAeadMeta for Chacha20Key<T> {
     type NonceSize = NonceSize<T>;

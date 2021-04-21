@@ -1,12 +1,16 @@
-use std::str::FromStr;
-
+pub use crate::crypto::{
+    alg::KeyAlg,
+    buffer::{SecretBytes, WriteBuffer},
+    kdf::{ecdh_1pu::Ecdh1PU, ecdh_es::EcdhEs, KeyDerivation, KeyExchange},
+};
 use crate::{
     crypto::{
-        alg::{AnyKey, AnyKeyCreate, KeyAlg},
-        buffer::SecretBytes,
+        alg::{AnyKey, AnyKeyCreate},
         encrypt::KeyAeadInPlace,
         jwk::{FromJwk, ToJwk},
         random::fill_random,
+        sign::{KeySigVerify, KeySign},
+        Error as CryptoError,
     },
     error::Error,
     storage::entry::{Entry, EntryTag},
@@ -51,8 +55,7 @@ pub struct LocalKey {
 
 impl LocalKey {
     /// Create a new random key or keypair
-    pub fn generate(alg: &str, ephemeral: bool) -> Result<Self, Error> {
-        let alg = KeyAlg::from_str(alg)?;
+    pub fn generate(alg: KeyAlg, ephemeral: bool) -> Result<Self, Error> {
         let inner = Box::<AnyKey>::generate(alg)?;
         Ok(Self { inner, ephemeral })
     }
@@ -65,8 +68,7 @@ impl LocalKey {
         })
     }
 
-    pub fn from_public_bytes(alg: &str, public: &[u8]) -> Result<Self, Error> {
-        let alg = KeyAlg::from_str(alg)?;
+    pub fn from_public_bytes(alg: KeyAlg, public: &[u8]) -> Result<Self, Error> {
         let inner = Box::<AnyKey>::from_public_bytes(alg, public)?;
         Ok(Self {
             inner,
@@ -74,9 +76,16 @@ impl LocalKey {
         })
     }
 
-    pub fn from_secret_bytes(alg: &str, secret: &[u8]) -> Result<Self, Error> {
-        let alg = KeyAlg::from_str(alg)?;
+    pub fn from_secret_bytes(alg: KeyAlg, secret: &[u8]) -> Result<Self, Error> {
         let inner = Box::<AnyKey>::from_secret_bytes(alg, secret)?;
+        Ok(Self {
+            inner,
+            ephemeral: false,
+        })
+    }
+
+    pub fn from_key_derivation(alg: KeyAlg, derive: impl KeyDerivation) -> Result<Self, Error> {
+        let inner = Box::<AnyKey>::from_key_derivation(alg, derive)?;
         Ok(Self {
             inner,
             ephemeral: false,
@@ -127,13 +136,38 @@ impl LocalKey {
 
     pub fn aead_decrypt(
         &self,
-        message: &[u8],
+        ciphertext: &[u8],
         nonce: &[u8],
         aad: &[u8],
     ) -> Result<SecretBytes, Error> {
-        let mut buf = SecretBytes::from_slice(message);
+        let mut buf = SecretBytes::from_slice(ciphertext);
         self.inner.decrypt_in_place(&mut buf, nonce, aad)?;
         Ok(buf)
+    }
+
+    pub fn sign_message(&self, message: &[u8], sig_type: Option<&str>) -> Result<Vec<u8>, Error> {
+        let mut sig = Vec::new();
+        self.inner.write_signature(message, None, &mut sig)?;
+        Ok(sig)
+    }
+
+    pub fn verify_signature(
+        &self,
+        message: &[u8],
+        signature: &[u8],
+        sig_type: Option<&str>,
+    ) -> Result<bool, Error> {
+        Ok(self.inner.verify_signature(message, signature, None)?)
+    }
+}
+
+impl KeyExchange for LocalKey {
+    fn key_exchange_buffer(
+        &self,
+        other: &LocalKey,
+        out: &mut dyn WriteBuffer,
+    ) -> Result<(), CryptoError> {
+        self.inner.key_exchange_buffer(&other.inner, out)
     }
 }
 

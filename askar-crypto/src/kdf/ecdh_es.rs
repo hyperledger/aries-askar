@@ -1,30 +1,43 @@
-use core::marker::PhantomData;
-
 use sha2::Sha256;
 use zeroize::Zeroize;
 
 use super::{
     concat::{ConcatKDFHash, ConcatKDFParams},
-    KeyExchange,
+    KeyDerivation, KeyExchange,
 };
-use crate::{
-    buffer::WriteBuffer,
-    error::Error,
-    jwk::{JwkEncoder, JwkEncoderMode, ToJwk},
-    repr::KeyGen,
-};
+use crate::error::Error;
 
-pub struct EcdhEs<Key: ?Sized>(PhantomData<Key>);
+pub struct EcdhEs<'d, Key>
+where
+    Key: KeyExchange + ?Sized,
+{
+    ephem_key: &'d Key,
+    recip_key: &'d Key,
+    alg: &'d [u8],
+    apu: &'d [u8],
+    apv: &'d [u8],
+}
 
-impl<Key: KeyExchange + ?Sized> EcdhEs<Key> {
-    fn derive_key_config(
-        ephem_key: &Key,
-        recip_key: &Key,
-        alg: &[u8],
-        apu: &[u8],
-        apv: &[u8],
-        key_output: &mut [u8],
-    ) -> Result<(), Error> {
+impl<'d, Key: KeyExchange + ?Sized> EcdhEs<'d, Key> {
+    pub fn new(
+        ephem_key: &'d Key,
+        recip_key: &'d Key,
+        alg: &'d [u8],
+        apu: &'d [u8],
+        apv: &'d [u8],
+    ) -> Self {
+        Self {
+            ephem_key,
+            recip_key,
+            alg,
+            apu,
+            apv,
+        }
+    }
+}
+
+impl<Key: KeyExchange + ?Sized> KeyDerivation for EcdhEs<'_, Key> {
+    fn derive_key_bytes(&mut self, key_output: &mut [u8]) -> Result<(), Error> {
         let output_len = key_output.len();
         // one-pass KDF only produces 256 bits of output
         assert!(output_len <= 32);
@@ -32,12 +45,13 @@ impl<Key: KeyExchange + ?Sized> EcdhEs<Key> {
         kdf.start_pass();
 
         // hash Z directly into the KDF
-        ephem_key.key_exchange_buffer(recip_key, &mut kdf)?;
+        self.ephem_key
+            .key_exchange_buffer(self.recip_key, &mut kdf)?;
 
         kdf.hash_params(ConcatKDFParams {
-            alg,
-            apu,
-            apv,
+            alg: self.alg,
+            apu: self.apu,
+            apv: self.apv,
             pub_info: &(256u32).to_be_bytes(), // output length in bits
             prv_info: &[],
         });
@@ -45,29 +59,6 @@ impl<Key: KeyExchange + ?Sized> EcdhEs<Key> {
         let mut key = kdf.finish_pass();
         key_output.copy_from_slice(&key[..output_len]);
         key.zeroize();
-
-        Ok(())
-    }
-
-    pub fn derive_key<B: WriteBuffer>(
-        recip_key: &Key,
-        alg: &[u8],
-        apu: &[u8],
-        apv: &[u8],
-        key_output: &mut [u8],
-        jwk_output: &mut B,
-    ) -> Result<(), Error>
-    where
-        Key: KeyGen + ToJwk,
-    {
-        let ephem_key = Key::generate()?;
-        let mut encoder = JwkEncoder::new(jwk_output, JwkEncoderMode::PublicKey)?;
-        ephem_key.to_jwk_encoder(&mut encoder)?;
-
-        Self::derive_key_config(&ephem_key, recip_key, alg, apu, apv, key_output)?;
-
-        // SECURITY: keys must zeroize themselves on drop
-        drop(ephem_key);
 
         Ok(())
     }
@@ -105,15 +96,9 @@ mod tests {
 
         let mut key_output = [0u8; 32];
 
-        EcdhEs::derive_key_config(
-            &ephem_sk,
-            &bob_pk,
-            b"A256GCM",
-            b"Alice",
-            b"Bob",
-            &mut key_output,
-        )
-        .unwrap();
+        EcdhEs::new(&ephem_sk, &bob_pk, b"A256GCM", b"Alice", b"Bob")
+            .derive_key_bytes(&mut key_output)
+            .unwrap();
 
         assert_eq!(
             key_output,

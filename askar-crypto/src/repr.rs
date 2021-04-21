@@ -3,14 +3,10 @@ use crate::buffer::SecretBytes;
 use crate::{buffer::WriteBuffer, error::Error, generic_array::ArrayLength};
 
 /// Generate a new random key.
-pub trait KeyGen: Sized {
-    fn generate() -> Result<Self, Error>;
-}
-
-/// Allows a key to be created uninitialized and populated later,
-/// for instance when nested inside another struct.
-pub trait KeyGenInPlace {
-    unsafe fn generate_in_place(this: *mut Self) -> Result<(), Error>;
+pub trait KeyGen {
+    fn generate() -> Result<Self, Error>
+    where
+        Self: Sized;
 }
 
 /// Convert between key instance and key secret bytes.

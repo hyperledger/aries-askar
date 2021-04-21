@@ -221,7 +221,7 @@ impl FromJwk for X25519KeyPair {
 }
 
 impl KeyExchange for X25519KeyPair {
-    fn key_exchange_buffer<B: WriteBuffer>(&self, other: &Self, out: &mut B) -> Result<(), Error> {
+    fn key_exchange_buffer(&self, other: &Self, out: &mut dyn WriteBuffer) -> Result<(), Error> {
         match self.secret.as_ref() {
             Some(sk) => {
                 let xk = sk.diffie_hellman(&other.public);

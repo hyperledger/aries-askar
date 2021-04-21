@@ -259,7 +259,7 @@ impl FromJwk for P256KeyPair {
 }
 
 impl KeyExchange for P256KeyPair {
-    fn key_exchange_buffer<B: WriteBuffer>(&self, other: &Self, out: &mut B) -> Result<(), Error> {
+    fn key_exchange_buffer(&self, other: &Self, out: &mut dyn WriteBuffer) -> Result<(), Error> {
         match self.secret.as_ref() {
             Some(sk) => {
                 let xk = diffie_hellman(sk.secret_scalar(), other.public.as_affine());

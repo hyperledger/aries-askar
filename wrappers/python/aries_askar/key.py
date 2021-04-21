@@ -1,0 +1,90 @@
+"""Handling of Key instances."""
+
+from typing import Union
+
+from . import bindings
+
+from .types import KeyAlg
+
+
+class Key:
+    """An active key or keypair instance."""
+
+    def __init__(self, handle: bindings.LocalKeyHandle):
+        """Initialize the Key instance."""
+        self._handle = handle
+
+    @property
+    def handle(self) -> bindings.LocalKeyHandle:
+        """Accessor for the key handle."""
+        return self._handle
+
+    @property
+    def algorithm(self) -> str:
+        return bindings.key_get_algorithm(self._handle)
+
+    @property
+    def ephemeral(self) -> "Key":
+        return bindings.key_get_ephemeral(self._handle)
+
+    @classmethod
+    def generate(cls, alg: Union[str, KeyAlg], *, ephemeral: bool = False) -> "Key":
+        return Key(bindings.key_generate(alg, ephemeral))
+
+    def get_jwk_public(self) -> str:
+        return bindings.key_get_jwk_public(self._handle)
+
+    def get_jwk_secret(self) -> str:
+        return bindings.key_get_jwk_secret(self._handle)
+
+    def get_jwk_thumbprint(self) -> str:
+        return bindings.key_get_jwk_thumbprint(self._handle)
+
+    def aead_random_nonce(self) -> bytes:
+        return bytes(bindings.key_aead_random_nonce(self._handle))
+
+    def aead_encrypt(
+        self, message: Union[str, bytes], nonce: bytes, aad: bytes = None
+    ) -> bytes:
+        return bytes(bindings.key_aead_encrypt(self._handle, message, nonce, aad))
+
+    def aead_decrypt(self, message: bytes, nonce: bytes, aad: bytes = None) -> bytes:
+        return bytes(bindings.key_aead_decrypt(self._handle, message, nonce, aad))
+
+    def sign_message(self, message: Union[str, bytes], sig_type: str = None) -> bytes:
+        return bytes(bindings.key_sign_message(self._handle, message, sig_type))
+
+    def verify_signature(
+        self, message: Union[str, bytes], signature: bytes, sig_type: str = None
+    ) -> bool:
+        return bindings.key_verify_signature(self._handle, message, signature, sig_type)
+
+    def __repr__(self) -> str:
+        return f"<Key(handle={self._handle}, alg={self.algorithm}, ephemeral={self.ephemeral})>"
+
+
+def derive_key_ecdh_1pu(
+    alg: str,
+    ephem_key: Key,
+    sender_key: Key,
+    recip_key: Key,
+    apu: Union[bytes, str],
+    apv: Union[bytes, str],
+) -> Key:
+    return Key(
+        bindings.key_derive_ecdh_1pu(
+            alg, ephem_key._handle, sender_key._handle, recip_key._handle, apu, apv
+        )
+    )
+
+
+def derive_key_ecdh_es(
+    alg: str,
+    ephem_key: Key,
+    recip_key: Key,
+    apu: Union[bytes, str],
+    apv: Union[bytes, str],
+) -> Key:
+    return Key(
+        bindings.key_derive_ecdh_es(alg, ephem_key._handle, recip_key._handle, apu, apv)
+    )

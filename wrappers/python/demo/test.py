@@ -2,13 +2,12 @@ import asyncio
 import logging
 import os
 import sys
-from aries_askar import bindings
 
 from aries_askar.bindings import (
     generate_raw_key,
     version,
 )
-from aries_askar import Store
+from aries_askar import KeyAlg, Key, Store, derive_key_ecdh_es, derive_key_ecdh_1pu
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "").upper() or None)
 
@@ -26,7 +25,44 @@ def log(*args):
     print(*args, "\n")
 
 
-async def basic_test():
+def keys_test():
+
+    key = Key.generate(KeyAlg.ED25519)
+    log("Created key:", key)
+    message = b"test message"
+    sig = key.sign_message(message)
+    log("Signature:", sig)
+    verify = key.verify_signature(message, sig)
+    log("Verify:", verify)
+
+    log("Key algorithm:", key.algorithm)
+
+    jwk = key.get_jwk_public()
+    log("JWK:", jwk)
+
+    key = Key.generate(KeyAlg.AES128GCM)
+    log("Key algorithm:", key.algorithm)
+
+    data = b"test message"
+    nonce = key.aead_random_nonce()
+    enc = key.aead_encrypt(data, nonce, b"aad")
+    dec = key.aead_decrypt(enc, nonce, b"aad")
+    assert data == bytes(dec)
+
+    ephem = Key.generate(KeyAlg.P256, ephemeral=True)
+    alice = Key.generate(KeyAlg.P256)
+    bob = Key.generate(KeyAlg.P256)
+    derived = derive_key_ecdh_1pu("A256GCM", ephem, alice, bob, "Alice", "Bob")
+    log("Derived:", derived.get_jwk_thumbprint())
+    # derived = bindings.key_derive_ecdh_1pu("a256gcm", ephem, alice, bob, "Alice", "Bob")
+    # log("Derived:", bindings.key_get_jwk_thumbprint(derived))
+    # derived = bindings.key_derive_ecdh_es("a256gcm", ephem, bob, "Alice", "Bob")
+    # log("Derived:", bindings.key_get_jwk_thumbprint(derived))
+    derived = derive_key_ecdh_es("A256GCM", ephem, bob, "Alice", "Bob")
+    log("Derived:", derived.get_jwk_thumbprint())
+
+
+async def store_test():
     if ENCRYPT:
         key = generate_raw_key(b"00000000000000000000000000000My1")
         key_method = "raw"
@@ -69,23 +105,6 @@ async def basic_test():
     # Scan entries by category and (optional) tag filter)
     async for row in store.scan("category", {"~plaintag": "a", "enctag": "b"}):
         log("Scan result:", row)
-
-    key = bindings.key_generate("ed25519")
-    log("Created key:", key)
-
-    log("Key algorithm:", bindings.key_get_algorithm(key))
-
-    jwk = bindings.key_get_jwk_public(key)
-    log("JWK:", jwk)
-
-    key = bindings.key_generate("aes256gcm")
-    log("Key algorithm:", bindings.key_get_algorithm(key))
-
-    data = b"test message"
-    nonce = bindings.key_aead_random_nonce(key)
-    enc = bindings.key_aead_encrypt(key, data, nonce, b"aad")
-    dec = bindings.key_aead_decrypt(key, enc, nonce, b"aad")
-    assert data == bytes(dec)
 
     # test key operations in a new session
     async with store as session:
@@ -132,6 +151,7 @@ async def basic_test():
 if __name__ == "__main__":
     log("aries-askar version:", version())
 
-    asyncio.get_event_loop().run_until_complete(basic_test())
+    keys_test()
+    asyncio.get_event_loop().run_until_complete(store_test())
 
     log("done")

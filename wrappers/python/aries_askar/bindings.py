@@ -24,7 +24,7 @@ from ctypes.util import find_library
 from typing import Optional, Union
 
 from .error import StoreError, StoreErrorCode
-from .types import Entry, EntryOperation
+from .types import Entry, EntryOperation, KeyAlg
 
 
 CALLBACKS = {}
@@ -724,8 +724,10 @@ class LocalKeyHandle(c_size_t):
             get_library().askar_key_free(self)
 
 
-def key_generate(alg: str, ephemeral: bool = False) -> LocalKeyHandle:
+def key_generate(alg: Union[str, KeyAlg], ephemeral: bool = False) -> LocalKeyHandle:
     handle = LocalKeyHandle()
+    if isinstance(alg, KeyAlg):
+        alg = alg.value
     do_call("askar_key_generate", encode_str(alg), c_int8(ephemeral), byref(handle))
     return handle
 
@@ -742,6 +744,12 @@ def key_get_algorithm(handle: LocalKeyHandle) -> str:
     return str(alg)
 
 
+def key_get_ephemeral(handle: LocalKeyHandle) -> bool:
+    eph = c_int8()
+    do_call("askar_key_get_ephemeral", handle, byref(eph))
+    return bool(eph)
+
+
 def key_get_jwk_public(handle: LocalKeyHandle) -> str:
     jwk = StrBuffer()
     do_call("askar_key_get_jwk_public", handle, byref(jwk))
@@ -752,6 +760,12 @@ def key_get_jwk_secret(handle: LocalKeyHandle) -> ByteBuffer:
     sec = ByteBuffer()
     do_call("askar_key_get_jwk_public", handle, byref(sec))
     return sec
+
+
+def key_get_jwk_thumbprint(handle: LocalKeyHandle) -> str:
+    thumb = StrBuffer()
+    do_call("askar_key_get_jwk_thumbprint", handle, byref(thumb))
+    return str(thumb)
 
 
 def key_aead_random_nonce(handle: LocalKeyHandle) -> ByteBuffer:
@@ -794,3 +808,83 @@ def key_aead_decrypt(
         byref(dec),
     )
     return dec
+
+
+def key_sign_message(
+    handle: LocalKeyHandle,
+    message: Union[bytes, str, ByteBuffer],
+    sig_type: str = None,
+) -> ByteBuffer:
+    sig = ByteBuffer()
+    do_call(
+        "askar_key_sign_message",
+        handle,
+        encode_bytes(message),
+        encode_str(sig_type),
+        byref(sig),
+    )
+    return sig
+
+
+def key_verify_signature(
+    handle: LocalKeyHandle,
+    message: Union[bytes, str, ByteBuffer],
+    signature: Union[bytes, ByteBuffer],
+    sig_type: str = None,
+) -> bool:
+    verify = c_int8()
+    do_call(
+        "askar_key_verify_signature",
+        handle,
+        encode_bytes(message),
+        encode_bytes(signature),
+        encode_str(sig_type),
+        byref(verify),
+    )
+    return bool(verify)
+
+
+def key_derive_ecdh_es(
+    alg: Union[str, KeyAlg],
+    ephem_key: LocalKeyHandle,
+    recip_key: LocalKeyHandle,
+    apu: Union[bytes, str, ByteBuffer],
+    apv: Union[bytes, str, ByteBuffer],
+) -> LocalKeyHandle:
+    key = LocalKeyHandle()
+    if isinstance(alg, KeyAlg):
+        alg = alg.value
+    do_call(
+        "askar_key_derive_ecdh_es",
+        encode_str(alg),
+        ephem_key,
+        recip_key,
+        encode_bytes(apu),
+        encode_bytes(apv),
+        byref(key),
+    )
+    return key
+
+
+def key_derive_ecdh_1pu(
+    alg: Union[str, KeyAlg],
+    ephem_key: LocalKeyHandle,
+    sender_key: LocalKeyHandle,
+    recip_key: LocalKeyHandle,
+    apu: Union[bytes, str, ByteBuffer],
+    apv: Union[bytes, str, ByteBuffer],
+) -> LocalKeyHandle:
+    key = LocalKeyHandle()
+    if isinstance(alg, KeyAlg):
+        alg = alg.value
+    do_call(
+        "askar_key_derive_ecdh_1pu",
+        encode_str(alg),
+        ephem_key,
+        sender_key,
+        recip_key,
+        encode_bytes(apu),
+        encode_bytes(apv),
+        byref(key),
+    )
+    return key

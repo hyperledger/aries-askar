@@ -1,10 +1,10 @@
 import json as _json
 
 from enum import Enum
-from typing import Mapping
+from typing import Mapping, Union
 
 
-def _make_binary(value: [str, bytes]) -> bytes:
+def _make_binary(value: Union[str, bytes]) -> bytes:
     if isinstance(value, str):
         return value.encode("utf-8")
     else:
@@ -16,7 +16,7 @@ class Entry:
         self,
         category: str,
         name: str,
-        value: [str, bytes],
+        value: Union[str, bytes],
         tags: Mapping[str, str] = None,
     ) -> "Entry":
         self.category = category
@@ -77,7 +77,14 @@ class KeyEntry:
 
 
 class KeyAlg(Enum):
+    AES128GCM = "a128gcm"
+    AES256GCM = "a256gcm"
+    C20P = "c20p"
+    XC20P = "xc20p"
     ED25519 = "ed25519"
+    X25519 = "x25519"
+    K256 = "k256"
+    P256 = "p256"
 
 
 class EntryOperation(Enum):

@@ -12,7 +12,7 @@ use crate::{
     error::Error,
     generic_array::{typenum::Unsigned, GenericArray},
     jwk::{JwkEncoder, ToJwk},
-    kdf::{FromKeyExchange, KeyExchange},
+    kdf::{FromKeyDerivation, FromKeyExchange, KeyDerivation, KeyExchange},
     repr::{KeyGen, KeyMeta, KeySecretBytes},
 };
 
@@ -120,6 +120,17 @@ impl<T: AesGcmType> KeySecretBytes for AesGcmKey<T> {
 
     fn with_secret_bytes<O>(&self, f: impl FnOnce(Option<&[u8]>) -> O) -> O {
         f(Some(self.0.as_ref()))
+    }
+}
+
+impl<T: AesGcmType> FromKeyDerivation for AesGcmKey<T> {
+    fn from_key_derivation<D: KeyDerivation>(mut derive: D) -> Result<Self, Error>
+    where
+        Self: Sized,
+    {
+        let mut key = KeyType::<T>::default();
+        derive.derive_key_bytes(key.as_mut())?;
+        Ok(Self(key))
     }
 }
 

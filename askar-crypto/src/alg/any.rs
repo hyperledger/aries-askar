@@ -16,7 +16,7 @@ use crate::{
     encrypt::{KeyAeadInPlace, KeyAeadParams},
     error::Error,
     jwk::{FromJwk, JwkEncoder, JwkParts, ToJwk},
-    kdf::{FromKeyExchange, KeyExchange},
+    kdf::{FromKeyDerivation, FromKeyExchange, KeyDerivation, KeyExchange},
     repr::{KeyGen, KeyPublicBytes, KeySecretBytes},
     sign::{KeySigVerify, KeySign, SignatureType},
 };
@@ -65,6 +65,8 @@ pub trait AnyKeyCreate: Sized {
     where
         Sk: KeyExchange<Pk> + ?Sized,
         Pk: ?Sized;
+
+    fn from_key_derivation(alg: KeyAlg, derive: impl KeyDerivation) -> Result<Self, Error>;
 }
 
 impl AnyKeyCreate for Box<AnyKey> {
@@ -92,6 +94,10 @@ impl AnyKeyCreate for Box<AnyKey> {
     {
         from_key_exchange_any(alg, secret, public)
     }
+
+    fn from_key_derivation(alg: KeyAlg, derive: impl KeyDerivation) -> Result<Self, Error> {
+        from_key_derivation_any(alg, derive)
+    }
 }
 
 impl AnyKeyCreate for Arc<AnyKey> {
@@ -118,6 +124,10 @@ impl AnyKeyCreate for Arc<AnyKey> {
         Pk: ?Sized,
     {
         from_key_exchange_any(alg, secret, public)
+    }
+
+    fn from_key_derivation(alg: KeyAlg, derive: impl KeyDerivation) -> Result<Self, Error> {
+        from_key_derivation_any(alg, derive)
     }
 }
 
@@ -228,12 +238,36 @@ where
     }
 }
 
+#[inline]
+fn from_key_derivation_any<R: AllocKey>(
+    alg: KeyAlg,
+    derive: impl KeyDerivation,
+) -> Result<R, Error> {
+    match alg {
+        KeyAlg::Aes(AesTypes::A128GCM) => {
+            AesGcmKey::<A128>::from_key_derivation(derive).map(R::alloc_key)
+        }
+        KeyAlg::Aes(AesTypes::A256GCM) => {
+            AesGcmKey::<A256>::from_key_derivation(derive).map(R::alloc_key)
+        }
+        KeyAlg::Chacha20(Chacha20Types::C20P) => {
+            Chacha20Key::<C20P>::from_key_derivation(derive).map(R::alloc_key)
+        }
+        KeyAlg::Chacha20(Chacha20Types::XC20P) => {
+            Chacha20Key::<XC20P>::from_key_derivation(derive).map(R::alloc_key)
+        }
+        #[allow(unreachable_patterns)]
+        _ => {
+            return Err(err_msg!(
+                Unsupported,
+                "Unsupported algorithm for key import"
+            ))
+        }
+    }
+}
+
 impl KeyExchange for AnyKey {
-    fn key_exchange_buffer<B: WriteBuffer>(
-        &self,
-        other: &AnyKey,
-        out: &mut B,
-    ) -> Result<(), Error> {
+    fn key_exchange_buffer(&self, other: &AnyKey, out: &mut dyn WriteBuffer) -> Result<(), Error> {
         match self.key_type_id() {
             s if s != other.key_type_id() => Err(err_msg!(Unsupported, "Unsupported key exchange")),
             s if s == TypeId::of::<X25519KeyPair>() => Ok(self

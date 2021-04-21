@@ -37,6 +37,4 @@ pub mod sign;
 pub use self::sign::{KeySigVerify, KeySign, SignatureType};
 
 pub mod repr;
-pub use self::repr::{
-    KeyGen, KeyGenInPlace, KeyMeta, KeyPublicBytes, KeySecretBytes, KeypairBytes, KeypairMeta,
-};
+pub use self::repr::{KeyGen, KeyMeta, KeyPublicBytes, KeySecretBytes, KeypairBytes, KeypairMeta};
