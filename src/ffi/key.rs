@@ -3,7 +3,7 @@ use std::{os::raw::c_char, str::FromStr};
 use ffi_support::{rust_string_to_c, ByteBuffer, FfiStr};
 
 use super::{handle::ArcHandle, secret::SecretBuffer, ErrorCode};
-use crate::keys::{
+use crate::kms::{
     crypto_box_seal, crypto_box_seal_open, derive_key_ecdh_1pu, derive_key_ecdh_es, KeyAlg,
     LocalKey,
 };
@@ -118,7 +118,7 @@ pub extern "C" fn askar_key_get_algorithm(
         trace!("Get key algorithm: {}", handle);
         check_useful_c_ptr!(out);
         let key = handle.load()?;
-        unsafe { *out = rust_string_to_c(key.algorithm()) };
+        unsafe { *out = rust_string_to_c(key.algorithm().as_str()) };
         Ok(ErrorCode::Success)
     }
 }

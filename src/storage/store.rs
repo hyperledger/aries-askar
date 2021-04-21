@@ -1,17 +1,10 @@
-use std::{
-    fmt::{self, Debug, Display, Formatter},
-    str::FromStr,
-    sync::Arc,
-};
-
-use futures_lite::stream::StreamExt;
-use zeroize::Zeroize;
+use std::sync::Arc;
 
 use super::entry::{Entry, EntryKind, EntryOperation, EntryTag, Scan, TagFilter};
 use crate::{
     backend::{Backend, QueryBackend},
     error::Error,
-    keys::{KeyEntry, KeyParams, LocalKey},
+    kms::{KeyEntry, KeyParams, KmsCategory, LocalKey},
     protect::{PassKey, StoreKeyMethod},
 };
 
@@ -277,7 +270,7 @@ impl<Q: QueryBackend> Session<Q> {
         };
         let value = params.to_bytes()?;
         let mut ins_tags = Vec::with_capacity(10);
-        let alg = key.algorithm();
+        let alg = key.algorithm().as_str();
         if !alg.is_empty() {
             ins_tags.push(EntryTag::Encrypted("alg".to_string(), alg.to_string()));
         }
@@ -399,49 +392,5 @@ impl<Q: QueryBackend> Session<Q> {
     /// Roll back the pending transaction
     pub async fn rollback(self) -> Result<(), Error> {
         Ok(self.0.close(false).await?)
-    }
-}
-
-/// Supported categories of KMS entries
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Zeroize)]
-pub(crate) enum KmsCategory {
-    /// A stored key or keypair
-    CryptoKey,
-}
-
-impl KmsCategory {
-    /// Get a reference to a string representing the `KmsCategory`
-    pub fn as_str(&self) -> &str {
-        match self {
-            Self::CryptoKey => "cryptokey",
-        }
-    }
-
-    /// Convert the `KmsCategory` into an owned string
-    pub fn to_string(&self) -> String {
-        self.as_str().to_string()
-    }
-}
-
-impl AsRef<str> for KmsCategory {
-    fn as_ref(&self) -> &str {
-        self.as_str()
-    }
-}
-
-impl FromStr for KmsCategory {
-    type Err = Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(match s {
-            "cryptokey" => Self::CryptoKey,
-            _ => return Err(err_msg!("Unknown KMS category: {}", s)),
-        })
-    }
-}
-
-impl Display for KmsCategory {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.write_str(self.as_str())
     }
 }
