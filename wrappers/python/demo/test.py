@@ -7,7 +7,15 @@ from aries_askar.bindings import (
     generate_raw_key,
     version,
 )
-from aries_askar import KeyAlg, Key, Store, derive_key_ecdh_es, derive_key_ecdh_1pu
+from aries_askar import (
+    KeyAlg,
+    Key,
+    Store,
+    crypto_box_seal,
+    crypto_box_seal_open,
+    derive_key_ecdh_es,
+    derive_key_ecdh_1pu,
+)
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "").upper() or None)
 
@@ -36,6 +44,15 @@ def keys_test():
     log("Verify:", verify)
     x25519_key = key.convert_key(KeyAlg.X25519)
     log("Converted key:", x25519_key)
+
+    x25519_key_2 = Key.generate(KeyAlg.X25519)
+    kex = x25519_key.key_exchange(KeyAlg.XC20P, x25519_key_2)
+    log("Key exchange:", kex)
+
+    msg = b"test message"
+    sealed = crypto_box_seal(x25519_key, msg)
+    opened = crypto_box_seal_open(x25519_key, sealed)
+    assert msg == opened
 
     log("Key algorithm:", key.algorithm)
 

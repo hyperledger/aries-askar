@@ -34,6 +34,9 @@ class Key:
     def convert_key(self, alg: Union[str, KeyAlg]) -> "Key":
         return Key(bindings.key_convert(self._handle, alg))
 
+    def key_exchange(self, alg: Union[str, KeyAlg], pk: "Key") -> "Key":
+        return Key(bindings.key_exchange(alg, self._handle, pk._handle))
+
     def get_jwk_public(self) -> str:
         return bindings.key_get_jwk_public(self._handle)
 
@@ -64,6 +67,20 @@ class Key:
 
     def __repr__(self) -> str:
         return f"<Key(handle={self._handle}, alg={self.algorithm}, ephemeral={self.ephemeral})>"
+
+
+def crypto_box_seal(
+    key: Key,
+    message: Union[bytes, str],
+) -> bytes:
+    return bytes(bindings.key_crypto_box_seal(key._handle, message))
+
+
+def crypto_box_seal_open(
+    key: Key,
+    ciphertext: bytes,
+) -> bytes:
+    return bytes(bindings.key_crypto_box_seal_open(key._handle, ciphertext))
 
 
 def derive_key_ecdh_1pu(

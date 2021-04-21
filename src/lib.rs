@@ -40,7 +40,8 @@ extern crate serde_json;
 #[cfg(feature = "ffi")]
 mod ffi;
 
-mod key;
+mod keys;
+pub use keys::{derive_key_ecdh_1pu, derive_key_ecdh_es, KeyAlg, KeyEntry, LocalKey};
 
 mod protect;
 pub use protect::{generate_raw_store_key, PassKey, StoreKeyMethod};

@@ -6,8 +6,13 @@ pub use crate::crypto::{
 };
 use crate::{
     crypto::{
-        alg::{AnyKey, AnyKeyCreate},
-        encrypt::KeyAeadInPlace,
+        alg::{x25519::X25519KeyPair, AnyKey, AnyKeyCreate},
+        encrypt::{
+            nacl_box::{
+                crypto_box_seal as nacl_box_seal, crypto_box_seal_open as nacl_box_seal_open,
+            },
+            KeyAeadInPlace,
+        },
         jwk::{FromJwk, ToJwk},
         kdf::{ecdh_1pu::Ecdh1PU, ecdh_es::EcdhEs, KeyDerivation, KeyExchange},
         random::fill_random,
@@ -83,6 +88,14 @@ impl LocalKey {
         Ok(Self {
             inner,
             ephemeral: false,
+        })
+    }
+
+    pub fn to_key_exchange(&self, alg: KeyAlg, pk: &LocalKey) -> Result<Self, Error> {
+        let inner = Box::<AnyKey>::from_key_exchange(alg, &*self.inner, &*pk.inner)?;
+        Ok(Self {
+            inner,
+            ephemeral: self.ephemeral || pk.ephemeral,
         })
     }
 
@@ -178,6 +191,26 @@ impl KeyExchange for LocalKey {
         out: &mut dyn WriteBuffer,
     ) -> Result<(), CryptoError> {
         self.inner.key_exchange_buffer(&other.inner, out)
+    }
+}
+
+pub fn crypto_box_seal(x25519_key: &LocalKey, message: &[u8]) -> Result<Vec<u8>, Error> {
+    if let Some(kp) = x25519_key.inner.downcast_ref::<X25519KeyPair>() {
+        let sealed = nacl_box_seal(kp, message)?;
+        Ok(sealed.into_vec())
+    } else {
+        Err(err_msg!(Input, "x25519 keypair required"))
+    }
+}
+
+pub fn crypto_box_seal_open(
+    x25519_key: &LocalKey,
+    ciphertext: &[u8],
+) -> Result<SecretBytes, Error> {
+    if let Some(kp) = x25519_key.inner.downcast_ref::<X25519KeyPair>() {
+        Ok(nacl_box_seal_open(kp, ciphertext)?)
+    } else {
+        Err(err_msg!(Input, "x25519 keypair required"))
     }
 }
 

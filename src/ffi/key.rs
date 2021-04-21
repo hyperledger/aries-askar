@@ -3,7 +3,10 @@ use std::{os::raw::c_char, str::FromStr};
 use ffi_support::{rust_string_to_c, ByteBuffer, FfiStr};
 
 use super::{handle::ArcHandle, secret::SecretBuffer, ErrorCode};
-use crate::key::{derive_key_ecdh_1pu, derive_key_ecdh_es, KeyAlg, LocalKey};
+use crate::keys::{
+    crypto_box_seal, crypto_box_seal_open, derive_key_ecdh_1pu, derive_key_ecdh_es, KeyAlg,
+    LocalKey,
+};
 
 pub type LocalKeyHandle = ArcHandle<LocalKey>;
 
@@ -18,8 +21,7 @@ pub extern "C" fn askar_key_generate(
         check_useful_c_ptr!(out);
         let alg = KeyAlg::from_str(alg.as_str())?;
         let key = LocalKey::generate(alg, ephemeral != 0)?;
-        let handle = LocalKeyHandle::create(key);
-        unsafe { *out = handle };
+        unsafe { *out = LocalKeyHandle::create(key) };
         Ok(ErrorCode::Success)
     }
 }
@@ -30,8 +32,7 @@ pub extern "C" fn askar_key_from_jwk(jwk: FfiStr<'_>, out: *mut LocalKeyHandle) 
         trace!("Load key from JWK");
         check_useful_c_ptr!(out);
         let key = LocalKey::from_jwk(jwk.as_str())?;
-        let handle = LocalKeyHandle::create(key);
-        unsafe { *out = handle };
+        unsafe { *out = LocalKeyHandle::create(key) };
         Ok(ErrorCode::Success)
     }
 }
@@ -47,8 +48,7 @@ pub extern "C" fn askar_key_from_public_bytes(
         check_useful_c_ptr!(out);
         let alg = KeyAlg::from_str(alg.as_str())?;
         let key = LocalKey::from_public_bytes(alg, public.as_slice())?;
-        let handle = LocalKeyHandle::create(key);
-        unsafe { *out = handle };
+        unsafe { *out = LocalKeyHandle::create(key) };
         Ok(ErrorCode::Success)
     }
 }
@@ -64,8 +64,7 @@ pub extern "C" fn askar_key_from_secret_bytes(
         check_useful_c_ptr!(out);
         let alg = KeyAlg::from_str(alg.as_str())?;
         let key = LocalKey::from_secret_bytes(alg, secret.as_slice())?;
-        let handle = LocalKeyHandle::create(key);
-        unsafe { *out = handle };
+        unsafe { *out = LocalKeyHandle::create(key) };
         Ok(ErrorCode::Success)
     }
 }
@@ -81,8 +80,26 @@ pub extern "C" fn askar_key_convert(
         check_useful_c_ptr!(out);
         let alg = KeyAlg::from_str(alg.as_str())?;
         let key = handle.load()?.convert_key(alg)?;
-        let handle = LocalKeyHandle::create(key);
-        unsafe { *out = handle };
+        unsafe { *out = LocalKeyHandle::create(key) };
+        Ok(ErrorCode::Success)
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn askar_key_from_key_exchange(
+    alg: FfiStr<'_>,
+    sk_handle: LocalKeyHandle,
+    pk_handle: LocalKeyHandle,
+    out: *mut LocalKeyHandle,
+) -> ErrorCode {
+    catch_err! {
+        trace!("Key exchange: {}, {}", sk_handle, pk_handle);
+        check_useful_c_ptr!(out);
+        let alg = KeyAlg::from_str(alg.as_str())?;
+        let sk = sk_handle.load()?;
+        let pk = pk_handle.load()?;
+        let key = sk.to_key_exchange(alg, &pk)?;
+        unsafe { *out = LocalKeyHandle::create(key) };
         Ok(ErrorCode::Success)
     }
 }
@@ -246,6 +263,38 @@ pub extern "C" fn askar_key_verify_signature(
         let key = handle.load()?;
         let verify = key.verify_signature(message.as_slice(),signature.as_slice(), sig_type.as_opt_str())?;
         unsafe { *out = verify as i8 };
+        Ok(ErrorCode::Success)
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn askar_key_crypto_box_seal(
+    handle: LocalKeyHandle,
+    message: ByteBuffer,
+    out: *mut SecretBuffer,
+) -> ErrorCode {
+    catch_err! {
+        trace!("crypto box seal: {}", handle);
+        check_useful_c_ptr!(out);
+        let key = handle.load()?;
+        let enc = crypto_box_seal(&key, message.as_slice())?;
+        unsafe { *out = SecretBuffer::from_secret(enc) };
+        Ok(ErrorCode::Success)
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn askar_key_crypto_box_seal_open(
+    handle: LocalKeyHandle,
+    ciphertext: ByteBuffer,
+    out: *mut SecretBuffer,
+) -> ErrorCode {
+    catch_err! {
+        trace!("crypto box seal open: {}", handle);
+        check_useful_c_ptr!(out);
+        let key = handle.load()?;
+        let enc = crypto_box_seal_open(&key, ciphertext.as_slice())?;
+        unsafe { *out = SecretBuffer::from_secret(enc) };
         Ok(ErrorCode::Success)
     }
 }

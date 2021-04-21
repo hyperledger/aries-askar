@@ -12,7 +12,7 @@ use super::entry::{Entry, EntryKind, EntryOperation, EntryTag, TagFilter};
 use crate::{
     error::Error,
     future::BoxFuture,
-    key::{KeyEntry, KeyParams, LocalKey},
+    keys::{KeyEntry, KeyParams, LocalKey},
     protect::{PassKey, StoreKeyMethod},
 };
 
@@ -567,9 +567,8 @@ impl<S> Debug for Scan<'_, S> {
 /// Supported categories of KMS entries
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Zeroize)]
 pub(crate) enum KmsCategory {
-    /// A user managed key
+    /// A stored key or keypair
     CryptoKey,
-    // may want to manage certificates, passwords, etc
 }
 
 impl KmsCategory {

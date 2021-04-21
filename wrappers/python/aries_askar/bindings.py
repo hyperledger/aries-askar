@@ -746,6 +746,18 @@ def key_convert(handle: LocalKeyHandle, alg: Union[str, KeyAlg]) -> LocalKeyHand
     return key
 
 
+def key_exchange(
+    alg: Union[str, KeyAlg], sk_handle: LocalKeyHandle, pk_handle: LocalKeyHandle
+) -> LocalKeyHandle:
+    key = LocalKeyHandle()
+    if isinstance(alg, KeyAlg):
+        alg = alg.value
+    do_call(
+        "askar_key_from_key_exchange", encode_str(alg), sk_handle, pk_handle, byref(key)
+    )
+    return key
+
+
 def key_get_algorithm(handle: LocalKeyHandle) -> str:
     alg = StrBuffer()
     do_call("askar_key_get_algorithm", handle, byref(alg))
@@ -850,6 +862,34 @@ def key_verify_signature(
         byref(verify),
     )
     return bool(verify)
+
+
+def key_crypto_box_seal(
+    handle: LocalKeyHandle,
+    message: Union[bytes, str, ByteBuffer],
+) -> ByteBuffer:
+    buf = ByteBuffer()
+    do_call(
+        "askar_key_crypto_box_seal",
+        handle,
+        encode_bytes(message),
+        byref(buf),
+    )
+    return buf
+
+
+def key_crypto_box_seal_open(
+    handle: LocalKeyHandle,
+    ciphertext: Union[bytes, ByteBuffer],
+) -> ByteBuffer:
+    buf = ByteBuffer()
+    do_call(
+        "askar_key_crypto_box_seal_open",
+        handle,
+        encode_bytes(ciphertext),
+        byref(buf),
+    )
+    return buf
 
 
 def key_derive_ecdh_es(
