@@ -3,7 +3,7 @@ use std::{os::raw::c_char, str::FromStr};
 use ffi_support::{rust_string_to_c, ByteBuffer, FfiStr};
 
 use super::{handle::ArcHandle, secret::SecretBuffer, ErrorCode};
-use crate::key::{Ecdh1PU, EcdhEs, KeyAlg, LocalKey};
+use crate::key::{derive_key_ecdh_1pu, derive_key_ecdh_es, KeyAlg, LocalKey};
 
 pub type LocalKeyHandle = ArcHandle<LocalKey>;
 
@@ -262,17 +262,9 @@ pub extern "C" fn askar_key_derive_ecdh_es(
     catch_err! {
         trace!("ECDH-ES: {}", alg.as_str());
         check_useful_c_ptr!(out);
-        let key_alg = KeyAlg::from_str(alg.as_str())?;
         let ephem_key = ephem_key.load()?;
         let recip_key = recip_key.load()?;
-        let derive = EcdhEs::new(
-            &*ephem_key,
-            &*recip_key,
-            alg.as_str().as_bytes(),
-            apu.as_slice(),
-            apv.as_slice()
-        );
-        let key = LocalKey::from_key_derivation(key_alg, derive)?;
+        let key = derive_key_ecdh_es(&ephem_key, &recip_key, alg.as_str(), apu.as_slice(), apv.as_slice())?;
         unsafe { *out = LocalKeyHandle::create(key) };
         Ok(ErrorCode::Success)
     }
@@ -291,19 +283,10 @@ pub extern "C" fn askar_key_derive_ecdh_1pu(
     catch_err! {
         trace!("ECDH-1PU: {}", alg.as_str());
         check_useful_c_ptr!(out);
-        let key_alg = KeyAlg::from_str(alg.as_str())?;
         let ephem_key = ephem_key.load()?;
         let sender_key = sender_key.load()?;
         let recip_key = recip_key.load()?;
-        let derive = Ecdh1PU::new(
-            &*ephem_key,
-            &*sender_key,
-            &*recip_key,
-            alg.as_str().as_bytes(),
-            apu.as_slice(),
-            apv.as_slice()
-        );
-        let key = LocalKey::from_key_derivation(key_alg, derive)?;
+        let key = derive_key_ecdh_1pu(&ephem_key, &sender_key, &recip_key, alg.as_str(), apu.as_slice(), apv.as_slice())?;
         unsafe { *out = LocalKeyHandle::create(key) };
         Ok(ErrorCode::Success)
     }

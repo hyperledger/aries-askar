@@ -1,13 +1,15 @@
+use std::str::FromStr;
+
 pub use crate::crypto::{
     alg::KeyAlg,
     buffer::{SecretBytes, WriteBuffer},
-    kdf::{ecdh_1pu::Ecdh1PU, ecdh_es::EcdhEs, KeyDerivation, KeyExchange},
 };
 use crate::{
     crypto::{
         alg::{AnyKey, AnyKeyCreate},
         encrypt::KeyAeadInPlace,
         jwk::{FromJwk, ToJwk},
+        kdf::{ecdh_1pu::Ecdh1PU, ecdh_es::EcdhEs, KeyDerivation, KeyExchange},
         random::fill_random,
         sign::{KeySigVerify, KeySign},
         Error as CryptoError,
@@ -84,7 +86,7 @@ impl LocalKey {
         })
     }
 
-    pub fn from_key_derivation(alg: KeyAlg, derive: impl KeyDerivation) -> Result<Self, Error> {
+    fn from_key_derivation(alg: KeyAlg, derive: impl KeyDerivation) -> Result<Self, Error> {
         let inner = Box::<AnyKey>::from_key_derivation(alg, derive)?;
         Ok(Self {
             inner,
@@ -177,6 +179,38 @@ impl KeyExchange for LocalKey {
     ) -> Result<(), CryptoError> {
         self.inner.key_exchange_buffer(&other.inner, out)
     }
+}
+
+pub fn derive_key_ecdh_1pu(
+    ephem_key: &LocalKey,
+    sender_key: &LocalKey,
+    recip_key: &LocalKey,
+    alg: &str,
+    apu: &[u8],
+    apv: &[u8],
+) -> Result<LocalKey, Error> {
+    let key_alg = KeyAlg::from_str(alg)?;
+    let derive = Ecdh1PU::new(
+        &*ephem_key,
+        &*sender_key,
+        &*recip_key,
+        alg.as_bytes(),
+        apu,
+        apv,
+    );
+    LocalKey::from_key_derivation(key_alg, derive)
+}
+
+pub fn derive_key_ecdh_es(
+    ephem_key: &LocalKey,
+    recip_key: &LocalKey,
+    alg: &str,
+    apu: &[u8],
+    apv: &[u8],
+) -> Result<LocalKey, Error> {
+    let key_alg = KeyAlg::from_str(alg)?;
+    let derive = EcdhEs::new(&*ephem_key, &*recip_key, alg.as_bytes(), apu, apv);
+    LocalKey::from_key_derivation(key_alg, derive)
 }
 
 /// A stored key entry
