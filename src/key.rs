@@ -113,6 +113,14 @@ impl LocalKey {
         Ok(self.inner.to_jwk_thumbprint()?)
     }
 
+    pub fn convert_key(&self, alg: KeyAlg) -> Result<Self, Error> {
+        let inner = self.inner.convert_key(alg)?;
+        Ok(Self {
+            inner,
+            ephemeral: self.ephemeral,
+        })
+    }
+
     pub fn aead_random_nonce(&self) -> Result<Vec<u8>, Error> {
         let nonce_len = self.inner.aead_params().nonce_length;
         if nonce_len == 0 {

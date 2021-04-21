@@ -31,6 +31,9 @@ class Key:
     def generate(cls, alg: Union[str, KeyAlg], *, ephemeral: bool = False) -> "Key":
         return Key(bindings.key_generate(alg, ephemeral))
 
+    def convert_key(self, alg: Union[str, KeyAlg]) -> "Key":
+        return Key(bindings.key_convert(self._handle, alg))
+
     def get_jwk_public(self) -> str:
         return bindings.key_get_jwk_public(self._handle)
 

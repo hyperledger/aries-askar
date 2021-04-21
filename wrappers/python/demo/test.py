@@ -34,6 +34,8 @@ def keys_test():
     log("Signature:", sig)
     verify = key.verify_signature(message, sig)
     log("Verify:", verify)
+    x25519_key = key.convert_key(KeyAlg.X25519)
+    log("Converted key:", x25519_key)
 
     log("Key algorithm:", key.algorithm)
 

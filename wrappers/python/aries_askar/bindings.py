@@ -738,6 +738,14 @@ def key_from_jwk(jwk: str) -> LocalKeyHandle:
     return handle
 
 
+def key_convert(handle: LocalKeyHandle, alg: Union[str, KeyAlg]) -> LocalKeyHandle:
+    key = LocalKeyHandle()
+    if isinstance(alg, KeyAlg):
+        alg = alg.value
+    do_call("askar_key_convert", handle, encode_str(alg), byref(key))
+    return key
+
+
 def key_get_algorithm(handle: LocalKeyHandle) -> str:
     alg = StrBuffer()
     do_call("askar_key_get_algorithm", handle, byref(alg))

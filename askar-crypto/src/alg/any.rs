@@ -1,6 +1,7 @@
 use alloc::{boxed::Box, sync::Arc};
 use core::{
     any::{Any, TypeId},
+    convert::TryFrom,
     fmt::Debug,
 };
 
@@ -67,6 +68,8 @@ pub trait AnyKeyCreate: Sized {
         Pk: ?Sized;
 
     fn from_key_derivation(alg: KeyAlg, derive: impl KeyDerivation) -> Result<Self, Error>;
+
+    fn convert_key(&self, alg: KeyAlg) -> Result<Self, Error>;
 }
 
 impl AnyKeyCreate for Box<AnyKey> {
@@ -98,6 +101,10 @@ impl AnyKeyCreate for Box<AnyKey> {
     fn from_key_derivation(alg: KeyAlg, derive: impl KeyDerivation) -> Result<Self, Error> {
         from_key_derivation_any(alg, derive)
     }
+
+    fn convert_key(&self, alg: KeyAlg) -> Result<Self, Error> {
+        convert_key_any(self, alg)
+    }
 }
 
 impl AnyKeyCreate for Arc<AnyKey> {
@@ -128,6 +135,10 @@ impl AnyKeyCreate for Arc<AnyKey> {
 
     fn from_key_derivation(alg: KeyAlg, derive: impl KeyDerivation) -> Result<Self, Error> {
         from_key_derivation_any(alg, derive)
+    }
+
+    fn convert_key(&self, alg: KeyAlg) -> Result<Self, Error> {
+        convert_key_any(self, alg)
     }
 }
 
@@ -261,6 +272,23 @@ fn from_key_derivation_any<R: AllocKey>(
             return Err(err_msg!(
                 Unsupported,
                 "Unsupported algorithm for key import"
+            ))
+        }
+    }
+}
+
+#[inline]
+fn convert_key_any<R: AllocKey>(key: &AnyKey, alg: KeyAlg) -> Result<R, Error> {
+    match (key.algorithm(), alg) {
+        (KeyAlg::Ed25519, KeyAlg::X25519) => Ok(<X25519KeyPair as TryFrom<_>>::try_from(
+            key.assume::<Ed25519KeyPair>(),
+        )
+        .map(R::alloc_key)?),
+        #[allow(unreachable_patterns)]
+        _ => {
+            return Err(err_msg!(
+                Unsupported,
+                "Unsupported key conversion operation"
             ))
         }
     }

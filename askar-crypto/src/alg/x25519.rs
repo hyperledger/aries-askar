@@ -1,12 +1,12 @@
 use core::{
-    convert::TryInto,
+    convert::{TryFrom, TryInto},
     fmt::{self, Debug, Formatter},
 };
 
 use x25519_dalek::{PublicKey, StaticSecret as SecretKey};
 use zeroize::Zeroizing;
 
-use super::{HasKeyAlg, KeyAlg};
+use super::{ed25519::Ed25519KeyPair, HasKeyAlg, KeyAlg};
 use crate::{
     buffer::{ArrayKey, WriteBuffer},
     error::Error,
@@ -230,6 +230,14 @@ impl KeyExchange for X25519KeyPair {
             }
             None => Err(err_msg!(MissingSecretKey)),
         }
+    }
+}
+
+impl TryFrom<&Ed25519KeyPair> for X25519KeyPair {
+    type Error = Error;
+
+    fn try_from(value: &Ed25519KeyPair) -> Result<Self, Self::Error> {
+        Ok(value.to_x25519_keypair())
     }
 }
 

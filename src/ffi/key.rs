@@ -71,6 +71,23 @@ pub extern "C" fn askar_key_from_secret_bytes(
 }
 
 #[no_mangle]
+pub extern "C" fn askar_key_convert(
+    handle: LocalKeyHandle,
+    alg: FfiStr<'_>,
+    out: *mut LocalKeyHandle,
+) -> ErrorCode {
+    catch_err! {
+        trace!("Convert key: {} to {}", handle, alg.as_str());
+        check_useful_c_ptr!(out);
+        let alg = KeyAlg::from_str(alg.as_str())?;
+        let key = handle.load()?.convert_key(alg)?;
+        let handle = LocalKeyHandle::create(key);
+        unsafe { *out = handle };
+        Ok(ErrorCode::Success)
+    }
+}
+
+#[no_mangle]
 pub extern "C" fn askar_key_free(handle: LocalKeyHandle) {
     handle.remove();
 }
