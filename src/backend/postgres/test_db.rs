@@ -13,7 +13,7 @@ use crate::{
     error::Error,
     future::{block_on, unblock},
     protect::{generate_raw_store_key, KeyCache, StoreKeyMethod},
-    storage::store::Store,
+    storage::Store,
 };
 
 #[derive(Debug)]

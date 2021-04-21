@@ -20,7 +20,7 @@ use crate::{
     crypto::buffer::SecretBytes,
     error::Error,
     future::unblock,
-    storage::entry::{EncEntryTag, EntryTag},
+    storage::{EncEntryTag, EntryTag},
 };
 
 pub type ProfileId = i64;

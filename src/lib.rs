@@ -56,7 +56,4 @@ mod protect;
 pub use protect::{generate_raw_store_key, PassKey, StoreKeyMethod};
 
 mod storage;
-pub use storage::{
-    entry::{Entry, EntryTag, TagFilter},
-    store::Store,
-};
+pub use storage::{Entry, EntryTag, Scan, Store, TagFilter};

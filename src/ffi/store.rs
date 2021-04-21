@@ -24,7 +24,7 @@ use crate::{
     error::Error,
     future::spawn_ok,
     protect::{generate_raw_store_key, PassKey, StoreKeyMethod},
-    storage::entry::{Entry, EntryOperation, EntryTagSet, Scan, TagFilter},
+    storage::{Entry, EntryOperation, EntryTagSet, Scan, TagFilter},
 };
 
 new_sequence_handle!(StoreHandle, FFI_STORE_COUNTER);

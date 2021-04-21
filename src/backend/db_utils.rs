@@ -12,11 +12,11 @@ use crate::{
     future::BoxFuture,
     protect::{EntryEncryptor, KeyCache, PassKey, ProfileId, ProfileKey, StoreKey, StoreKeyMethod},
     storage::{
-        entry::{EncEntryTag, Entry, EntryTag, TagFilter},
         wql::{
             sql::TagSqlEncoder,
             tags::{tag_query, TagQueryEncoder},
         },
+        {EncEntryTag, Entry, EntryTag, TagFilter},
     },
 };
 

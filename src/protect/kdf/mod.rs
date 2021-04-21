@@ -5,10 +5,8 @@ use crate::{
         generic_array::ArrayLength,
     },
     error::Error,
-    storage::options::Options,
+    storage::Options,
 };
-// use crate::keys::wrap::WrapKey;
-// use crate::options::Options;
 
 mod argon2;
 use self::argon2::{Level as Argon2Level, SaltSize as Argon2Salt};

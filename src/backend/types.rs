@@ -2,7 +2,7 @@ use crate::{
     error::Error,
     future::BoxFuture,
     protect::{PassKey, StoreKeyMethod},
-    storage::entry::{Entry, EntryKind, EntryOperation, EntryTag, Scan, TagFilter},
+    storage::{Entry, EntryKind, EntryOperation, EntryTag, Scan, TagFilter},
 };
 
 /// Represents a generic backend implementation

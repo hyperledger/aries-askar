@@ -15,7 +15,7 @@ use crate::{
     error::Error,
     future::{unblock, BoxFuture},
     protect::{KeyCache, PassKey, ProfileId, StoreKeyMethod, StoreKeyReference},
-    storage::{options::IntoOptions, store::Store},
+    storage::{IntoOptions, Store},
 };
 
 use super::PostgresStore;

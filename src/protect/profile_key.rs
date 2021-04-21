@@ -12,7 +12,7 @@ use crate::{
         repr::{KeyGen, KeyMeta, KeySecretBytes},
     },
     error::Error,
-    storage::entry::{EncEntryTag, EntryTag},
+    storage::{EncEntryTag, EntryTag},
 };
 
 pub type ProfileKey = ProfileKeyImpl<Chacha20Key<C20P>, super::hmac_key::HmacKey<U32, Sha256>>;
@@ -256,7 +256,7 @@ fn decode_utf8(value: Vec<u8>) -> Result<String, Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::storage::entry::Entry;
+    use crate::storage::Entry;
 
     #[test]
     fn encrypt_entry_round_trip() {

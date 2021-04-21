@@ -27,7 +27,7 @@ use crate::{
     error::Error,
     future::{unblock, BoxFuture},
     protect::{EntryEncryptor, KeyCache, PassKey, ProfileId, ProfileKey, StoreKeyMethod},
-    storage::entry::{EncEntryTag, Entry, EntryKind, EntryOperation, EntryTag, Scan, TagFilter},
+    storage::{EncEntryTag, Entry, EntryKind, EntryOperation, EntryTag, Scan, TagFilter},
 };
 
 mod provision;

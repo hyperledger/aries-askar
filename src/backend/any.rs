@@ -4,9 +4,7 @@ use crate::{
     future::BoxFuture,
     protect::{PassKey, StoreKeyMethod},
     storage::{
-        entry::{Entry, EntryKind, EntryOperation, EntryTag, Scan, TagFilter},
-        options::IntoOptions,
-        store::{Session, Store},
+        Entry, EntryKind, EntryOperation, EntryTag, IntoOptions, Scan, Session, Store, TagFilter,
     },
 };
 

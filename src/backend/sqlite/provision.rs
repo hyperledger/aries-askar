@@ -17,8 +17,7 @@ use crate::{
     error::Error,
     future::{unblock, BoxFuture},
     protect::{KeyCache, PassKey, StoreKeyMethod, StoreKeyReference},
-    storage::options::{IntoOptions, Options},
-    storage::store::Store,
+    storage::{IntoOptions, Options, Store},
 };
 
 /// Configuration options for Sqlite stores
