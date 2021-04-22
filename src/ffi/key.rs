@@ -54,6 +54,21 @@ pub extern "C" fn askar_key_from_public_bytes(
 }
 
 #[no_mangle]
+pub extern "C" fn askar_key_get_public_bytes(
+    handle: LocalKeyHandle,
+    out: *mut SecretBuffer,
+) -> ErrorCode {
+    catch_err! {
+        trace!("Get key public bytes: {}", handle);
+        check_useful_c_ptr!(out);
+        let key = handle.load()?;
+        let public = key.to_public_bytes()?;
+        unsafe { *out = SecretBuffer::from_secret(public) };
+        Ok(ErrorCode::Success)
+    }
+}
+
+#[no_mangle]
 pub extern "C" fn askar_key_from_secret_bytes(
     alg: FfiStr<'_>,
     secret: ByteBuffer,
@@ -65,6 +80,21 @@ pub extern "C" fn askar_key_from_secret_bytes(
         let alg = KeyAlg::from_str(alg.as_str())?;
         let key = LocalKey::from_secret_bytes(alg, secret.as_slice())?;
         unsafe { *out = LocalKeyHandle::create(key) };
+        Ok(ErrorCode::Success)
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn askar_key_get_secret_bytes(
+    handle: LocalKeyHandle,
+    out: *mut SecretBuffer,
+) -> ErrorCode {
+    catch_err! {
+        trace!("Get key secret bytes: {}", handle);
+        check_useful_c_ptr!(out);
+        let key = handle.load()?;
+        let public = key.to_secret_bytes()?;
+        unsafe { *out = SecretBuffer::from_secret(public) };
         Ok(ErrorCode::Success)
     }
 }

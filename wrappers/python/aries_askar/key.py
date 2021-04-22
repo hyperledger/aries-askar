@@ -14,6 +14,18 @@ class Key:
         """Initialize the Key instance."""
         self._handle = handle
 
+    @classmethod
+    def generate(cls, alg: Union[str, KeyAlg], *, ephemeral: bool = False) -> "Key":
+        return Key(bindings.key_generate(alg, ephemeral))
+
+    @classmethod
+    def from_secret_bytes(cls, alg: Union[str, KeyAlg], secret: bytes) -> "Key":
+        return Key(bindings.key_from_secret_bytes(alg, secret))
+
+    @classmethod
+    def from_public_bytes(cls, alg: Union[str, KeyAlg], public: bytes) -> "Key":
+        return Key(bindings.key_from_public_bytes(alg, public))
+
     @property
     def handle(self) -> bindings.LocalKeyHandle:
         """Accessor for the key handle."""
@@ -26,10 +38,6 @@ class Key:
     @property
     def ephemeral(self) -> "Key":
         return bindings.key_get_ephemeral(self._handle)
-
-    @classmethod
-    def generate(cls, alg: Union[str, KeyAlg], *, ephemeral: bool = False) -> "Key":
-        return Key(bindings.key_generate(alg, ephemeral))
 
     def convert_key(self, alg: Union[str, KeyAlg]) -> "Key":
         return Key(bindings.key_convert(self._handle, alg))

@@ -47,6 +47,11 @@ impl LocalKey {
         })
     }
 
+    /// Export the raw bytes of the public key
+    pub fn to_public_bytes(&self) -> Result<SecretBytes, Error> {
+        Ok(self.inner.to_public_bytes()?)
+    }
+
     /// Import a symmetric key or public-private keypair from its compact representation
     pub fn from_secret_bytes(alg: KeyAlg, secret: &[u8]) -> Result<Self, Error> {
         let inner = Box::<AnyKey>::from_secret_bytes(alg, secret)?;
@@ -54,6 +59,11 @@ impl LocalKey {
             inner,
             ephemeral: false,
         })
+    }
+
+    /// Export the raw bytes of the private key
+    pub fn to_secret_bytes(&self) -> Result<SecretBytes, Error> {
+        Ok(self.inner.to_secret_bytes()?)
     }
 
     /// Derive a new key from a Diffie-Hellman exchange between this keypair and a public key

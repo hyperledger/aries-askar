@@ -13,7 +13,7 @@ use super::p256::{self, P256KeyPair};
 use super::x25519::{self, X25519KeyPair};
 use super::{AesTypes, Chacha20Types, EcCurves, HasKeyAlg, KeyAlg};
 use crate::{
-    buffer::{ResizeBuffer, WriteBuffer},
+    buffer::{ResizeBuffer, SecretBytes, WriteBuffer},
     encrypt::{KeyAeadInPlace, KeyAeadParams},
     error::Error,
     jwk::{FromJwk, JwkEncoder, JwkParts, ToJwk},
@@ -78,11 +78,11 @@ impl AnyKeyCreate for Box<AnyKey> {
     }
 
     fn from_public_bytes(alg: KeyAlg, public: &[u8]) -> Result<Self, Error> {
-        from_public_any(alg, public)
+        from_public_bytes_any(alg, public)
     }
 
     fn from_secret_bytes(alg: KeyAlg, secret: &[u8]) -> Result<Self, Error> {
-        from_secret_any(alg, secret)
+        from_secret_bytes_any(alg, secret)
     }
 
     #[inline(always)]
@@ -113,11 +113,11 @@ impl AnyKeyCreate for Arc<AnyKey> {
     }
 
     fn from_public_bytes(alg: KeyAlg, public: &[u8]) -> Result<Self, Error> {
-        from_public_any(alg, public)
+        from_public_bytes_any(alg, public)
     }
 
     fn from_secret_bytes(alg: KeyAlg, secret: &[u8]) -> Result<Self, Error> {
-        from_secret_any(alg, secret)
+        from_secret_bytes_any(alg, secret)
     }
 
     #[inline(always)]
@@ -166,7 +166,7 @@ fn generate_any<R: AllocKey>(alg: KeyAlg) -> Result<R, Error> {
 }
 
 #[inline]
-fn from_public_any<R: AllocKey>(alg: KeyAlg, public: &[u8]) -> Result<R, Error> {
+fn from_public_bytes_any<R: AllocKey>(alg: KeyAlg, public: &[u8]) -> Result<R, Error> {
     match alg {
         KeyAlg::Ed25519 => Ed25519KeyPair::from_public_bytes(public).map(R::alloc_key),
         KeyAlg::X25519 => X25519KeyPair::from_public_bytes(public).map(R::alloc_key),
@@ -187,7 +187,7 @@ fn from_public_any<R: AllocKey>(alg: KeyAlg, public: &[u8]) -> Result<R, Error> 
 }
 
 #[inline]
-fn from_secret_any<R: AllocKey>(alg: KeyAlg, secret: &[u8]) -> Result<R, Error> {
+fn from_secret_bytes_any<R: AllocKey>(alg: KeyAlg, secret: &[u8]) -> Result<R, Error> {
     match alg {
         KeyAlg::Aes(AesTypes::A128GCM) => {
             AesGcmKey::<A128>::from_secret_bytes(secret).map(R::alloc_key)
@@ -338,6 +338,58 @@ fn from_jwk_any<R: AllocKey>(jwk: JwkParts<'_>) -> Result<R, Error> {
         ("EC", c) if c == p256::JWK_CURVE => P256KeyPair::from_jwk_parts(jwk).map(R::alloc_key),
         // "oct"
         _ => Err(err_msg!(Unsupported, "Unsupported JWK for key import")),
+    }
+}
+
+impl AnyKey {
+    pub fn to_public_bytes(&self) -> Result<SecretBytes, Error> {
+        match self.key_type_id() {
+            s if s == TypeId::of::<Ed25519KeyPair>() => {
+                Ok(self.assume::<Ed25519KeyPair>().to_public_bytes()?)
+            }
+            s if s == TypeId::of::<X25519KeyPair>() => {
+                Ok(self.assume::<X25519KeyPair>().to_public_bytes()?)
+            }
+            s if s == TypeId::of::<K256KeyPair>() => {
+                Ok(self.assume::<K256KeyPair>().to_public_bytes()?)
+            }
+            s if s == TypeId::of::<P256KeyPair>() => {
+                Ok(self.assume::<P256KeyPair>().to_public_bytes()?)
+            }
+            #[allow(unreachable_patterns)]
+            _ => return Err(err_msg!(Unsupported, "Unsupported key exchange")),
+        }
+    }
+
+    pub fn to_secret_bytes(&self) -> Result<SecretBytes, Error> {
+        match self.key_type_id() {
+            s if s == TypeId::of::<AesGcmKey<A128>>() => {
+                Ok(self.assume::<AesGcmKey<A128>>().to_secret_bytes()?)
+            }
+            s if s == TypeId::of::<AesGcmKey<A256>>() => {
+                Ok(self.assume::<AesGcmKey<A256>>().to_secret_bytes()?)
+            }
+            s if s == TypeId::of::<Chacha20Key<C20P>>() => {
+                Ok(self.assume::<Chacha20Key<C20P>>().to_secret_bytes()?)
+            }
+            s if s == TypeId::of::<Chacha20Key<XC20P>>() => {
+                Ok(self.assume::<Chacha20Key<XC20P>>().to_secret_bytes()?)
+            }
+            s if s == TypeId::of::<Ed25519KeyPair>() => {
+                Ok(self.assume::<Ed25519KeyPair>().to_secret_bytes()?)
+            }
+            s if s == TypeId::of::<X25519KeyPair>() => {
+                Ok(self.assume::<X25519KeyPair>().to_secret_bytes()?)
+            }
+            s if s == TypeId::of::<K256KeyPair>() => {
+                Ok(self.assume::<K256KeyPair>().to_secret_bytes()?)
+            }
+            s if s == TypeId::of::<P256KeyPair>() => {
+                Ok(self.assume::<P256KeyPair>().to_secret_bytes()?)
+            }
+            #[allow(unreachable_patterns)]
+            _ => return Err(err_msg!(Unsupported, "Unsupported key exchange")),
+        }
     }
 }
 

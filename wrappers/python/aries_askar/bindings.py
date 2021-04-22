@@ -799,6 +799,56 @@ def key_generate(alg: Union[str, KeyAlg], ephemeral: bool = False) -> LocalKeyHa
     return handle
 
 
+def key_from_public_bytes(
+    alg: Union[str, KeyAlg], public: Union[bytes, ByteBuffer]
+) -> LocalKeyHandle:
+    handle = LocalKeyHandle()
+    if isinstance(alg, KeyAlg):
+        alg = alg.value
+    do_call(
+        "askar_key_from_public_bytes",
+        encode_str(alg),
+        encode_bytes(public),
+        byref(handle),
+    )
+    return handle
+
+
+def key_get_public_bytes(handle: LocalKeyHandle) -> ByteBuffer:
+    buf = ByteBuffer()
+    do_call(
+        "askar_key_get_public_bytes",
+        handle,
+        byref(buf),
+    )
+    return buf
+
+
+def key_from_secret_bytes(
+    alg: Union[str, KeyAlg], secret: Union[bytes, ByteBuffer]
+) -> LocalKeyHandle:
+    handle = LocalKeyHandle()
+    if isinstance(alg, KeyAlg):
+        alg = alg.value
+    do_call(
+        "askar_key_from_secret_bytes",
+        encode_str(alg),
+        encode_bytes(secret),
+        byref(handle),
+    )
+    return handle
+
+
+def key_get_secret_bytes(handle: LocalKeyHandle) -> ByteBuffer:
+    buf = ByteBuffer()
+    do_call(
+        "askar_key_get_secret_bytes",
+        handle,
+        byref(buf),
+    )
+    return buf
+
+
 def key_from_jwk(jwk: str) -> LocalKeyHandle:
     handle = LocalKeyHandle()
     do_call("askar_key_from_jwk", encode_str(jwk), byref(handle))
