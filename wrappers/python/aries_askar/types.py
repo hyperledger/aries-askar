@@ -56,26 +56,6 @@ class Entry:
         )
 
 
-class KeyEntry:
-    def __init__(
-        self,
-        category: str,
-        ident: str,
-        params: dict,
-        tags: Mapping[str, str] = None,
-    ) -> "Entry":
-        self.category = category
-        self.ident = ident
-        self.params = params
-        self.tags = dict(tags) if tags else {}
-
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__name__}(category={repr(self.category)}, "
-            f"ident={repr(self.ident)}, params=.., tags={self.tags})"
-        )
-
-
 class KeyAlg(Enum):
     AES128GCM = "a128gcm"
     AES256GCM = "a256gcm"

@@ -34,11 +34,6 @@ impl KmsCategory {
             Self::CryptoKey => "cryptokey",
         }
     }
-
-    /// Convert the `KmsCategory` into an owned string
-    pub fn to_string(&self) -> String {
-        self.as_str().to_string()
-    }
 }
 
 impl AsRef<str> for KmsCategory {

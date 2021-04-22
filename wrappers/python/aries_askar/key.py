@@ -66,7 +66,10 @@ class Key:
         return bindings.key_verify_signature(self._handle, message, signature, sig_type)
 
     def __repr__(self) -> str:
-        return f"<Key(handle={self._handle}, alg={self.algorithm}, ephemeral={self.ephemeral})>"
+        return (
+            f"<Key(handle={self._handle}, alg={self.algorithm}, "
+            f"ephemeral={self.ephemeral})>"
+        )
 
 
 def crypto_box_seal(

@@ -56,6 +56,11 @@ impl KeyEntry {
         self.alg.as_ref().map(String::as_ref)
     }
 
+    /// Accessor for the stored key metadata
+    pub fn metadata(&self) -> Option<&str> {
+        self.params.metadata.as_ref().map(String::as_ref)
+    }
+
     /// Accessor for the key identity
     pub fn name(&self) -> &str {
         self.name.as_str()
@@ -99,7 +104,8 @@ impl KeyEntry {
         })
     }
 
-    fn load_key(&mut self) -> Result<LocalKey, Error> {
+    /// Create a local key instance from this key storage entry
+    pub fn load_local_key(&self) -> Result<LocalKey, Error> {
         if let Some(key_data) = self.params.data.as_ref() {
             let inner = Box::<AnyKey>::from_jwk_slice(key_data.as_ref())?;
             Ok(LocalKey {

@@ -2,37 +2,163 @@
 
 import json
 
-from typing import Optional, Sequence, Union
+from typing import Optional, Union
+
+from cached_property import cached_property
 
 from . import bindings
 
+from .bindings import (
+    EntryListHandle,
+    KeyEntryListHandle,
+    ScanHandle,
+    SessionHandle,
+    StoreHandle,
+)
 from .error import StoreError, StoreErrorCode
-from .types import Entry, EntryOperation, KeyAlg, KeyEntry
+from .key import Key
+from .types import EntryOperation
 
 
-class EntrySet:
-    """A set of query results."""
+class Entry:
+    """A single result from a store query."""
 
-    def __init__(self, handle: bindings.EntrySetHandle):
-        """Initialize the EntrySet instance."""
+    def __init__(self, lst: EntryListHandle, pos: int):
+        """Initialize the EntryHandle."""
+        self._list = lst
+        self._pos = pos
+        self._cache = dict()
+
+    @cached_property
+    def category(self) -> str:
+        """Accessor for the entry category."""
+        return self._list.get_category(self._pos)
+
+    @cached_property
+    def name(self) -> str:
+        """Accessor for the entry name."""
+        return self._list.get_name(self._pos)
+
+    @cached_property
+    def value(self) -> bytes:
+        """Accessor for the entry value."""
+        return self._list.get_value(self._pos)
+
+    @cached_property
+    def tags(self) -> dict:
+        """Accessor for the entry tags."""
+        return self._list.get_value(self._pos)
+
+    def __repr__(self) -> str:
+        """Format entry handle as a string."""
+        return (
+            f"<Entry(category={repr(self.category)}, name={repr(self.name)}, "
+            f"value={self.value}, tags={self.tags})>"
+        )
+
+
+class EntryList:
+    """A list of query results."""
+
+    def __init__(self, handle: EntryListHandle, len: int = None):
+        """Initialize the EntryList instance."""
         self._handle = handle
+        self._pos = 0
+        if handle:
+            self._len = bindings.entry_list_length(self._handle) if len is None else len
+        else:
+            self._len = 0
 
     @property
-    def handle(self) -> bindings.EntrySetHandle:
-        """Accessor for the entry set handle."""
+    def handle(self) -> EntryListHandle:
+        """Accessor for the entry list handle."""
         return self._handle
 
     def __iter__(self):
         return self
 
     def __next__(self):
-        entry = bindings.entry_set_next(self._handle)
-        if entry:
-            # keep reference to self so the buffer isn't dropped
-            entry.entry_set = self
+        if self._pos < self._len:
+            entry = Entry(self._handle, self._pos)
+            self._pos += 1
             return entry
         else:
             raise StopIteration
+
+    def __repr__(self) -> str:
+        return f"<EntryList(handle={self._handle}, pos={self._pos}, len={self._len})>"
+
+
+class KeyEntry:
+    """Pointer to one result of a KeyEntryList instance."""
+
+    def __init__(self, lst: KeyEntryListHandle, pos: int):
+        """Initialize the KeyEntryHandle."""
+        self._list = lst
+        self._pos = pos
+        self._cache = dict()
+
+    @cached_property
+    def name(self) -> str:
+        """Accessor for the entry name."""
+        return self._list.get_name(self._pos)
+
+    @cached_property
+    def metadata(self) -> str:
+        """Accessor for the entry metadata."""
+        return self._list.get_metadata(self._pos)
+
+    @cached_property
+    def key(self) -> Key:
+        """Accessor for the entry metadata."""
+        return Key(self._list.load_key(self._pos))
+
+    @cached_property
+    def tags(self) -> dict:
+        """Accessor for the entry tags."""
+        return self._list.get_value(self._pos)
+
+    def __repr__(self) -> str:
+        """Format key entry handle as a string."""
+        return (
+            f"<KeyEntry(name={repr(self.name)}, metadata={repr(self.metadata)}, "
+            f"key={self.key}, tags={self.tags})>"
+        )
+
+
+class KeyEntryList:
+    """A list of key query results."""
+
+    def __init__(self, handle: KeyEntryListHandle, len: int = None):
+        """Initialize the KeyEntryList instance."""
+        self._handle = handle
+        if handle:
+            self._len = (
+                bindings.key_entry_list_length(self._handle) if len is None else len
+            )
+        else:
+            self._len = 0
+
+    @property
+    def handle(self) -> KeyEntryListHandle:
+        """Accessor for the key entry list handle."""
+        return self._handle
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        if self._pos < self._len:
+            entry = KeyEntry(self._handle, self._pos)
+            self._pos += 1
+            return entry
+        else:
+            raise StopIteration
+
+    def __repr__(self) -> str:
+        return (
+            f"<KeyEntryList(handle={self._handle}, pos={self._pos}, len={self._len})>"
+        )
 
 
 class Scan:
@@ -49,11 +175,11 @@ class Scan:
     ):
         """Initialize the Scan instance."""
         self.params = (store, profile, category, tag_filter, offset, limit)
-        self._handle: bindings.ScanHandle = None
-        self._buffer: EntrySet = None
+        self._handle: ScanHandle = None
+        self._buffer: EntryList = None
 
     @property
-    def handle(self) -> bindings.ScanHandle:
+    def handle(self) -> ScanHandle:
         """Accessor for the scan handle."""
         return self._handle
 
@@ -70,16 +196,16 @@ class Scan:
             self._handle = await bindings.scan_start(
                 store.handle, profile, category, tag_filter, offset, limit
             )
-            scan_handle = await bindings.scan_next(self._handle)
-            self._buffer = EntrySet(scan_handle) if scan_handle else None
+            list_handle = await bindings.scan_next(self._handle)
+            self._buffer = EntryList(list_handle) if list_handle else None
         while True:
             if not self._buffer:
                 raise StopAsyncIteration
             row = next(self._buffer, None)
             if row:
                 return row
-            scan_handle = await bindings.scan_next(self._handle)
-            self._buffer = EntrySet(scan_handle) if scan_handle else None
+            list_handle = await bindings.scan_next(self._handle)
+            self._buffer = EntryList(list_handle) if list_handle else None
 
     def __repr__(self) -> str:
         return f"<Scan(handle={self._handle})>"
@@ -88,14 +214,14 @@ class Scan:
 class Store:
     """An opened Store instance."""
 
-    def __init__(self, handle: bindings.StoreHandle, uri: str):
+    def __init__(self, handle: StoreHandle, uri: str):
         """Initialize the Store instance."""
         self._handle = handle
         self._opener: OpenSession = None
         self._uri = uri
 
     @property
-    def handle(self) -> bindings.StoreHandle:
+    def handle(self) -> StoreHandle:
         """Accessor for the store handle."""
         return self._handle
 
@@ -194,7 +320,7 @@ class Store:
 class Session:
     """An opened Session instance."""
 
-    def __init__(self, store: Store, handle: bindings.SessionHandle, is_txn: bool):
+    def __init__(self, store: Store, handle: SessionHandle, is_txn: bool):
         """Initialize the Session instance."""
         self._store = store
         self._handle = handle
@@ -206,7 +332,7 @@ class Session:
         return self._is_txn
 
     @property
-    def handle(self) -> bindings.SessionHandle:
+    def handle(self) -> SessionHandle:
         """Accessor for the SessionHandle instance."""
         return self._handle
 
@@ -228,7 +354,7 @@ class Session:
         result_handle = await bindings.session_fetch(
             self._handle, category, name, for_update
         )
-        return next(EntrySet(result_handle), None) if result_handle else None
+        return next(EntryList(result_handle, 1), None) if result_handle else None
 
     async def fetch_all(
         self,
@@ -237,14 +363,12 @@ class Session:
         limit: int = None,
         *,
         for_update: bool = False,
-    ) -> Sequence[Entry]:
+    ) -> EntryList:
         if not self._handle:
             raise StoreError(StoreErrorCode.WRAPPER, "Cannot fetch from closed session")
-        return list(
-            EntrySet(
-                await bindings.session_fetch_all(
-                    self._handle, category, tag_filter, limit, for_update
-                )
+        return EntryList(
+            await bindings.session_fetch_all(
+                self._handle, category, tag_filter, limit, for_update
             )
         )
 
@@ -304,86 +428,57 @@ class Session:
             )
         return await bindings.session_remove_all(self._handle, category, tag_filter)
 
-    async def create_keypair(
+    async def insert_key(
         self,
-        key_alg: KeyAlg,
+        name: str,
+        key: Key,
         *,
         metadata: str = None,
         tags: dict = None,
-        seed: Union[str, bytes] = None,
     ) -> str:
         if not self._handle:
             raise StoreError(
-                StoreErrorCode.WRAPPER, "Cannot create keypair with closed session"
+                StoreErrorCode.WRAPPER, "Cannot insert key with closed session"
             )
         return str(
-            await bindings.session_create_keypair(
-                self._handle, key_alg.value, metadata, tags, seed
+            await bindings.session_insert_key(
+                self._handle,
+                name,
+                key._handle,
+                metadata,
+                tags,
             )
         )
 
-    async def fetch_keypair(
-        self, ident: str, *, for_update: bool = False
+    async def fetch_key(
+        self, name: str, *, for_update: bool = False
     ) -> Optional[KeyEntry]:
         if not self._handle:
             raise StoreError(
-                StoreErrorCode.WRAPPER, "Cannot fetch keypair from closed session"
+                StoreErrorCode.WRAPPER, "Cannot fetch key from closed session"
             )
-        handle = await bindings.session_fetch_keypair(self._handle, ident, for_update)
-        if handle:
-            entry = next(EntrySet(handle))
-            result = KeyEntry(entry.category, entry.name, entry.value_json, entry.tags)
-            return result
+        result_handle = await bindings.session_fetch_key(self._handle, name, for_update)
+        return next(KeyEntryList(result_handle, 1)) if result_handle else None
 
-    async def update_keypair(
+    async def update_key(
         self,
-        ident: str,
+        name: str,
         *,
         metadata: str = None,
         tags: dict = None,
     ):
         if not self._handle:
             raise StoreError(
-                StoreErrorCode.WRAPPER, "Cannot update keypair with closed session"
+                StoreErrorCode.WRAPPER, "Cannot update key with closed session"
             )
-        await bindings.session_update_keypair(self._handle, ident, metadata, tags)
+        await bindings.session_update_key(self._handle, name, metadata, tags)
 
-    async def sign_message(self, key_ident: str, message: Union[str, bytes]) -> bytes:
+    async def remove_key(self, name: str):
         if not self._handle:
             raise StoreError(
-                StoreErrorCode.WRAPPER, "Cannot sign message with closed session"
+                StoreErrorCode.WRAPPER, "Cannot remove key with closed session"
             )
-        buf = await bindings.session_sign_message(self._handle, key_ident, message)
-        return bytes(buf)
-
-    async def pack_message(
-        self,
-        recipient_vks: Sequence[str],
-        from_key_ident: Optional[str],
-        message: Union[str, bytes],
-    ) -> bytes:
-        if not self._handle:
-            raise StoreError(
-                StoreErrorCode.WRAPPER, "Cannot pack message with closed session"
-            )
-        return bytes(
-            await bindings.session_pack_message(
-                self._handle, recipient_vks, from_key_ident, message
-            )
-        )
-
-    async def unpack_message(
-        self,
-        message: Union[str, bytes],
-    ) -> (bytes, str, Optional[str]):
-        if not self._handle:
-            raise StoreError(
-                StoreErrorCode.WRAPPER, "Cannot unpack message with closed session"
-            )
-        (unpacked, recip, sender) = await bindings.session_unpack_message(
-            self._handle, message
-        )
-        return (bytes(unpacked), recip, sender)
+        await bindings.session_remove_key(self._handle, name)
 
     async def commit(self):
         if not self._is_txn:

@@ -24,7 +24,7 @@ from ctypes.util import find_library
 from typing import Optional, Union
 
 from .error import StoreError, StoreErrorCode
-from .types import Entry, EntryOperation, KeyAlg
+from .types import EntryOperation, KeyAlg
 
 
 CALLBACKS = {}
@@ -94,38 +94,115 @@ class ScanHandle(c_size_t):
             get_library().askar_scan_free(self)
 
 
-class EntrySetHandle(c_size_t):
-    """Pointer to an active EntrySet instance."""
+class EntryListHandle(c_size_t):
+    """Pointer to an active EntryList instance."""
+
+    def get_category(self, index: int) -> str:
+        """Get the entry category."""
+        cat = StrBuffer()
+        do_call(
+            "askar_entry_list_get_category",
+            self,
+            c_int32(index),
+            byref(cat),
+        )
+        return str(cat)
+
+    def get_name(self, index: int) -> str:
+        """Get the entry name."""
+        name = StrBuffer()
+        do_call(
+            "askar_entry_list_get_name",
+            self,
+            c_int32(index),
+            byref(name),
+        )
+        return str(name)
+
+    def get_value(self, index: int) -> bytes:
+        """Get the entry value."""
+        val = ByteBuffer()
+        do_call("askar_entry_list_get_value", self, c_int32(index), byref(val))
+        return bytes(val)
 
     def __repr__(self) -> str:
-        """Format entry set handle as a string."""
+        """Format entry list handle as a string."""
         return f"{self.__class__.__name__}({self.value})"
 
     def __del__(self):
         """Free the entry set when there are no more references."""
         if self:
-            get_library().askar_entry_set_free(self)
+            get_library().askar_entry_list_free(self)
 
 
-class FfiEntry(Structure):
-    _fields_ = [
-        ("category", c_char_p),
-        ("name", c_char_p),
-        ("value_len", c_int64),
-        ("value", c_void_p),
-        ("tags", c_char_p),
-    ]
+class KeyEntryListHandle(c_size_t):
+    """Pointer to an active KeyEntryList instance."""
 
-    def decode(self, handle: EntrySetHandle) -> Entry:
-        value = (c_ubyte * self.value_len).from_address(self.value)
-        setattr(value, "_ref_", handle)  # ensure buffer is not dropped
-        tags = json.loads(decode_str(self.tags)) if self.tags is not None else None
-        return Entry(
-            decode_str(self.category),
-            decode_str(self.name),
-            memoryview(value),
-            tags,
+    def get_name(self, index: int) -> str:
+        """Get the key name."""
+        name = StrBuffer()
+        do_call(
+            "askar_key_entry_list_get_name",
+            self,
+            c_int32(index),
+            byref(name),
         )
+        return str(name)
+
+    def get_metadata(self, index: int) -> str:
+        """Get for the key metadata."""
+        metadata = StrBuffer()
+        do_call(
+            "askar_key_entry_list_get_metadata",
+            self,
+            c_int32(index),
+            byref(metadata),
+        )
+        return str(metadata)
+
+    def get_tags(self, index: int) -> dict:
+        """Get the key tags."""
+        tags = StrBuffer()
+        do_call(
+            "askar_key_entry_list_get_tags",
+            self,
+            c_int32(index),
+            byref(tags),
+        )
+        return json.loads(decode_str(tags)) if tags else None
+
+    def load_key(self, index: int) -> "LocalKeyHandle":
+        """Load the key instance."""
+        handle = LocalKeyHandle()
+        do_call(
+            "askar_key_entry_list_load_local",
+            self,
+            c_int32(index),
+            byref(handle),
+        )
+        return handle
+
+    def __repr__(self) -> str:
+        """Format key entry list handle as a string."""
+        return f"{self.__class__.__name__}({self.value})"
+
+    def __del__(self):
+        """Free the key entry set when there are no more references."""
+        if self:
+            get_library().askar_key_entry_list_free(self)
+
+
+class LocalKeyHandle(c_size_t):
+    """Pointer to an active LocalKey instance."""
+
+    def __repr__(self) -> str:
+        """Format key handle as a string."""
+        return f"{self.__class__.__name__}({self.value})"
+
+    def __del__(self):
+        """Free the key when there are no more references."""
+        if self:
+            get_library().askar_key_free(self)
 
 
 class FfiByteBuffer(Structure):
@@ -566,7 +643,7 @@ async def session_count(
 
 async def session_fetch(
     handle: SessionHandle, category: str, name: str, for_update: bool = False
-) -> EntrySetHandle:
+) -> EntryListHandle:
     """Fetch a row from the Store."""
     category = encode_str(category)
     name = encode_str(name)
@@ -576,7 +653,7 @@ async def session_fetch(
         category,
         name,
         c_int8(for_update),
-        return_type=EntrySetHandle,
+        return_type=EntryListHandle,
     )
 
 
@@ -586,7 +663,7 @@ async def session_fetch_all(
     tag_filter: Union[str, dict] = None,
     limit: int = None,
     for_update: bool = False,
-) -> EntrySetHandle:
+) -> EntryListHandle:
     """Fetch all matching rows in the Store."""
     category = encode_str(category)
     if isinstance(tag_filter, dict):
@@ -599,7 +676,7 @@ async def session_fetch_all(
         tag_filter,
         c_int64(limit if limit is not None else -1),
         c_int8(for_update),
-        return_type=EntrySetHandle,
+        return_type=EntryListHandle,
     )
 
 
@@ -647,27 +724,27 @@ async def session_update(
     )
 
 
-async def session_fetch_keypair(
+async def session_fetch_key(
     handle: SessionHandle, ident: str, for_update: bool = False
-) -> Optional[EntrySetHandle]:
+) -> Optional[KeyEntryListHandle]:
     ptr = await do_call_async(
-        "askar_session_fetch_keypair",
+        "askar_session_fetch_key",
         handle,
         encode_str(ident),
         c_int8(for_update),
         return_type=c_void_p,
     )
     if ptr:
-        return EntrySetHandle(ptr)
+        return KeyEntryListHandle(ptr)
 
 
-async def session_update_keypair(
-    handle: SessionHandle, ident: str, metadata: str = None, tags: dict = None
+async def session_update_key(
+    handle: SessionHandle, name: str, metadata: str = None, tags: dict = None
 ):
     await do_call_async(
-        "askar_session_update_keypair",
+        "askar_session_update_key",
         handle,
-        encode_str(ident),
+        encode_str(name),
         encode_str(metadata),
         encode_str(None if tags is None else json.dumps(tags)),
     )
@@ -697,31 +774,21 @@ async def scan_start(
     )
 
 
-async def scan_next(handle: StoreHandle) -> Optional[EntrySetHandle]:
-    handle = await do_call_async("askar_scan_next", handle, return_type=EntrySetHandle)
+async def scan_next(handle: StoreHandle) -> Optional[EntryListHandle]:
+    handle = await do_call_async("askar_scan_next", handle, return_type=EntryListHandle)
     return handle or None
 
 
-def entry_set_next(handle: EntrySetHandle) -> Optional[Entry]:
-    ffi_entry = FfiEntry()
-    found = c_int8(0)
-    do_call("askar_entry_set_next", handle, byref(ffi_entry), byref(found))
-    if found:
-        return ffi_entry.decode(handle)
-    return None
+def entry_list_length(handle: EntryListHandle) -> int:
+    len = c_int32()
+    do_call("askar_entry_list_length", handle, byref(len))
+    return len.value
 
 
-class LocalKeyHandle(c_size_t):
-    """Pointer to an active LocalKey instance."""
-
-    def __repr__(self) -> str:
-        """Format key handle as a string."""
-        return f"{self.__class__.__name__}({self.value})"
-
-    def __del__(self):
-        """Free the key when there are no more references."""
-        if self:
-            get_library().askar_key_free(self)
+def key_entry_list_length(handle: EntryListHandle) -> int:
+    len = c_int32()
+    do_call("askar_key_entry_list_length", handle, byref(len))
+    return len.value
 
 
 def key_generate(alg: Union[str, KeyAlg], ephemeral: bool = False) -> LocalKeyHandle:
@@ -767,7 +834,7 @@ def key_get_algorithm(handle: LocalKeyHandle) -> str:
 def key_get_ephemeral(handle: LocalKeyHandle) -> bool:
     eph = c_int8()
     do_call("askar_key_get_ephemeral", handle, byref(eph))
-    return bool(eph)
+    return eph.value != 0
 
 
 def key_get_jwk_public(handle: LocalKeyHandle) -> str:
@@ -861,7 +928,7 @@ def key_verify_signature(
         encode_str(sig_type),
         byref(verify),
     )
-    return bool(verify)
+    return verify.value != 0
 
 
 def key_crypto_box_seal(

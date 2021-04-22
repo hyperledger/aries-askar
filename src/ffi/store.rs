@@ -1,21 +1,15 @@
-use std::{
-    collections::BTreeMap,
-    ffi::CString,
-    os::raw::c_char,
-    ptr,
-    str::FromStr,
-    sync::{
-        atomic::{AtomicUsize, Ordering},
-        Arc,
-    },
-};
+use std::{collections::BTreeMap, os::raw::c_char, ptr, str::FromStr, sync::Arc};
 
 use async_mutex::{Mutex, MutexGuardArc};
 use ffi_support::{rust_string_to_c, ByteBuffer, FfiStr};
 use once_cell::sync::Lazy;
-use zeroize::Zeroize;
 
-use super::{error::set_last_error, handle::ArcHandle, CallbackId, EnsureCallback, ErrorCode};
+use super::{
+    error::set_last_error,
+    key::LocalKeyHandle,
+    result_list::{EntryListHandle, FfiEntryList, FfiKeyEntryList, KeyEntryListHandle},
+    CallbackId, EnsureCallback, ErrorCode,
+};
 use crate::{
     backend::{
         any::{AnySession, AnyStore},
@@ -131,111 +125,6 @@ impl ScanHandle {
             .remove(self)
             .ok_or_else(|| err_msg!("Invalid scan handle"))?
             .ok_or_else(|| err_msg!(Busy, "Scan handle in use"))
-    }
-}
-
-pub type EntrySetHandle = ArcHandle<FfiEntrySet>;
-
-pub struct FfiEntrySet {
-    pos: AtomicUsize,
-    rows: Vec<FfiEntry>,
-}
-
-impl FfiEntrySet {
-    pub fn next(&self) -> Option<FfiEntry> {
-        let pos = self.pos.fetch_add(1, Ordering::Release);
-        if pos < self.rows.len() {
-            Some(self.rows[pos].clone())
-        } else {
-            None
-        }
-    }
-}
-
-impl From<Entry> for FfiEntrySet {
-    fn from(entry: Entry) -> Self {
-        Self {
-            pos: AtomicUsize::default(),
-            rows: vec![FfiEntry::new(entry)],
-        }
-    }
-}
-
-impl From<Vec<Entry>> for FfiEntrySet {
-    fn from(entries: Vec<Entry>) -> Self {
-        Self {
-            pos: AtomicUsize::default(),
-            rows: {
-                let mut acc = Vec::with_capacity(entries.len());
-                acc.extend(entries.into_iter().map(FfiEntry::new));
-                acc
-            },
-        }
-    }
-}
-
-impl Drop for FfiEntrySet {
-    fn drop(&mut self) {
-        self.rows.drain(..).for_each(FfiEntry::destroy);
-    }
-}
-
-#[repr(C)]
-pub struct FfiEntry {
-    category: *const c_char,
-    name: *const c_char,
-    value: ByteBuffer,
-    tags: *const c_char,
-}
-
-unsafe impl Send for FfiEntry {}
-unsafe impl Sync for FfiEntry {}
-
-impl Clone for FfiEntry {
-    fn clone(&self) -> Self {
-        Self {
-            category: self.category,
-            name: self.name,
-            value: unsafe { ptr::read(&self.value) },
-            tags: self.tags,
-        }
-    }
-}
-
-impl FfiEntry {
-    pub fn new(entry: Entry) -> Self {
-        let Entry {
-            category,
-            name,
-            value,
-            tags,
-        } = entry;
-        let category = CString::new(category).unwrap().into_raw();
-        let name = CString::new(name).unwrap().into_raw();
-        let value = ByteBuffer::from_vec(value.into_vec());
-        let tags = if tags.is_empty() {
-            ptr::null()
-        } else {
-            let tags = serde_json::to_vec(&EntryTagSet::new(tags)).unwrap();
-            CString::new(tags).unwrap().into_raw()
-        };
-        Self {
-            category,
-            name,
-            value,
-            tags,
-        }
-    }
-
-    pub fn destroy(self) {
-        unsafe {
-            CString::from_raw(self.category as *mut c_char);
-            CString::from_raw(self.name as *mut c_char);
-            self.value.destroy_into_vec().zeroize();
-            if !self.tags.is_null() {
-                CString::from_raw(self.tags as *mut c_char);
-            }
-        }
     }
 }
 
@@ -572,7 +461,7 @@ pub extern "C" fn askar_scan_start(
 #[no_mangle]
 pub extern "C" fn askar_scan_next(
     handle: ScanHandle,
-    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, results: EntrySetHandle)>,
+    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, results: EntryListHandle)>,
     cb_id: CallbackId,
 ) -> ErrorCode {
     catch_err! {
@@ -581,11 +470,11 @@ pub extern "C" fn askar_scan_next(
         let cb = EnsureCallback::new(move |result: Result<Option<Vec<Entry>>,Error>|
             match result {
                 Ok(Some(entries)) => {
-                    let results = EntrySetHandle::create(FfiEntrySet::from(entries));
+                    let results = EntryListHandle::create(FfiEntryList::from(entries));
                     cb(cb_id, ErrorCode::Success, results)
                 },
-                Ok(None) => cb(cb_id, ErrorCode::Success, EntrySetHandle::invalid()),
-                Err(err) => cb(cb_id, set_last_error(Some(err)), EntrySetHandle::invalid()),
+                Ok(None) => cb(cb_id, ErrorCode::Success, EntryListHandle::invalid()),
+                Err(err) => cb(cb_id, set_last_error(Some(err)), EntryListHandle::invalid()),
             }
         );
         spawn_ok(async move {
@@ -611,31 +500,6 @@ pub extern "C" fn askar_scan_free(handle: ScanHandle) -> ErrorCode {
         });
         Ok(ErrorCode::Success)
     }
-}
-
-#[no_mangle]
-pub extern "C" fn askar_entry_set_next(
-    handle: EntrySetHandle,
-    entry: *mut FfiEntry,
-    found: *mut i8,
-) -> ErrorCode {
-    catch_err! {
-        check_useful_c_ptr!(entry);
-        check_useful_c_ptr!(found);
-        let results = handle.load()?;
-        if let Some(next) = results.next() {
-            unsafe { *entry = next };
-            unsafe { *found = 1 };
-        } else {
-            unsafe { *found = 0 };
-        }
-        Ok(ErrorCode::Success)
-    }
-}
-
-#[no_mangle]
-pub extern "C" fn askar_entry_set_free(handle: EntrySetHandle) {
-    handle.remove();
 }
 
 #[no_mangle]
@@ -711,7 +575,7 @@ pub extern "C" fn askar_session_fetch(
     category: FfiStr<'_>,
     name: FfiStr<'_>,
     for_update: i8,
-    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, results: EntrySetHandle)>,
+    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, results: EntryListHandle)>,
     cb_id: CallbackId,
 ) -> ErrorCode {
     catch_err! {
@@ -722,11 +586,11 @@ pub extern "C" fn askar_session_fetch(
         let cb = EnsureCallback::new(move |result: Result<Option<Entry>,Error>|
             match result {
                 Ok(Some(entry)) => {
-                    let results = EntrySetHandle::create(FfiEntrySet::from(entry));
+                    let results = EntryListHandle::create(FfiEntryList::from(entry));
                     cb(cb_id, ErrorCode::Success, results)
                 },
-                Ok(None) => cb(cb_id, ErrorCode::Success, EntrySetHandle::invalid()),
-                Err(err) => cb(cb_id, set_last_error(Some(err)), EntrySetHandle::invalid()),
+                Ok(None) => cb(cb_id, ErrorCode::Success, EntryListHandle::invalid()),
+                Err(err) => cb(cb_id, set_last_error(Some(err)), EntryListHandle::invalid()),
             }
         );
         spawn_ok(async move {
@@ -747,7 +611,7 @@ pub extern "C" fn askar_session_fetch_all(
     tag_filter: FfiStr<'_>,
     limit: i64,
     for_update: i8,
-    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, results: EntrySetHandle)>,
+    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, results: EntryListHandle)>,
     cb_id: CallbackId,
 ) -> ErrorCode {
     catch_err! {
@@ -759,10 +623,10 @@ pub extern "C" fn askar_session_fetch_all(
         let cb = EnsureCallback::new(move |result|
             match result {
                 Ok(rows) => {
-                    let results = EntrySetHandle::create(FfiEntrySet::from(rows));
+                    let results = EntryListHandle::create(FfiEntryList::from(rows));
                     cb(cb_id, ErrorCode::Success, results)
                 }
-                Err(err) => cb(cb_id, set_last_error(Some(err)), EntrySetHandle::invalid()),
+                Err(err) => cb(cb_id, set_last_error(Some(err)), EntryListHandle::invalid()),
             }
         );
         spawn_ok(async move {
@@ -834,9 +698,9 @@ pub extern "C" fn askar_session_update(
         let value = value.as_slice().to_vec();
         let tags = if let Some(tags) = tags.as_opt_str() {
             Some(
-                serde_json::from_str::<EntryTagSet>(tags)
+                serde_json::from_str::<EntryTagSet<'static>>(tags)
                     .map_err(err_map!("Error decoding tags"))?
-                    .into_inner(),
+                    .into_vec(),
             )
         } else {
             None
@@ -864,97 +728,194 @@ pub extern "C" fn askar_session_update(
     }
 }
 
-// #[no_mangle]
-// pub extern "C" fn askar_session_fetch_keypair(
-//     handle: SessionHandle,
-//     ident: FfiStr<'_>,
-//     for_update: i8,
-//     cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, results: *const FfiEntrySet)>,
-//     cb_id: CallbackId,
-// ) -> ErrorCode {
-//     catch_err! {
-//         trace!("Fetch keypair");
-//         let cb = cb.ok_or_else(|| err_msg!("No callback provided"))?;
-//         let ident = ident.into_opt_string().ok_or_else(|| err_msg!("No key ident provided"))?;
+#[no_mangle]
+pub extern "C" fn askar_session_insert_key(
+    handle: SessionHandle,
+    key_handle: LocalKeyHandle,
+    name: FfiStr<'_>,
+    metadata: FfiStr<'_>,
+    tags: FfiStr<'_>,
+    expiry_ms: i64,
+    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode)>,
+    cb_id: CallbackId,
+) -> ErrorCode {
+    catch_err! {
+        trace!("Insert key");
+        let cb = cb.ok_or_else(|| err_msg!("No callback provided"))?;
+        let key = key_handle.load()?;
+        let name = name.into_opt_string().ok_or_else(|| err_msg!("No key name provided"))?;
+        let metadata = metadata.into_opt_string();
+        let tags = if let Some(tags) = tags.as_opt_str() {
+            Some(
+                serde_json::from_str::<EntryTagSet<'static>>(tags)
+                    .map_err(err_map!("Error decoding tags"))?
+                    .into_vec(),
+            )
+        } else {
+            None
+        };
+        let expiry_ms = if expiry_ms < 0 {
+            None
+        } else {
+            Some(expiry_ms)
+        };
+        let cb = EnsureCallback::new(move |result|
+            match result {
+                Ok(_) => {
+                    cb(cb_id, ErrorCode::Success)
+                }
+                Err(err) => cb(cb_id, set_last_error(Some(err))),
+            }
+        );
 
-//         let cb = EnsureCallback::new(move |result|
-//             match result {
-//                 Ok(Some(entry)) => {
-//                     let results = Box::into_raw(Box::new(FfiEntrySet::from(entry)));
-//                     cb(cb_id, ErrorCode::Success, results)
-//                 }
-//                 Ok(None) => {
-//                     cb(cb_id, ErrorCode::Success, ptr::null())
-//                 }
-//                 Err(err) => cb(cb_id, set_last_error(Some(err)), ptr::null()),
-//             }
-//         );
+        spawn_ok(async move {
+            let result = async {
+                let mut session = handle.load().await?;
+                session.insert_key(
+                    name.as_str(),
+                    &key,
+                    metadata.as_ref().map(String::as_str),
+                    tags.as_ref().map(Vec::as_slice),
+                    expiry_ms,
+                ).await?;
+                Ok(())
+            }.await;
+            cb.resolve(result);
+        });
+        Ok(ErrorCode::Success)
+    }
+}
 
-//         spawn_ok(async move {
-//             let result = async {
-//                 let mut session = handle.load().await?;
-//                 let key_entry = session.fetch_key(
-//                     KeyCategory::PrivateKey,
-//                     &ident,
-//                     for_update != 0
-//                 ).await?;
-//                 Ok(key_entry.map(export_key_entry).transpose()?)
-//             }.await;
-//             cb.resolve(result);
-//         });
-//         Ok(ErrorCode::Success)
-//     }
-// }
+#[no_mangle]
+pub extern "C" fn askar_session_fetch_key(
+    handle: SessionHandle,
+    name: FfiStr<'_>,
+    for_update: i8,
+    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, results: KeyEntryListHandle)>,
+    cb_id: CallbackId,
+) -> ErrorCode {
+    catch_err! {
+        trace!("Fetch key");
+        let cb = cb.ok_or_else(|| err_msg!("No callback provided"))?;
+        let name = name.into_opt_string().ok_or_else(|| err_msg!("No key name provided"))?;
 
-// #[no_mangle]
-// pub extern "C" fn askar_session_update_keypair(
-//     handle: SessionHandle,
-//     ident: FfiStr<'_>,
-//     metadata: FfiStr<'_>,
-//     tags: FfiStr<'_>,
-//     cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode)>,
-//     cb_id: CallbackId,
-// ) -> ErrorCode {
-//     catch_err! {
-//         trace!("Update keypair");
-//         let cb = cb.ok_or_else(|| err_msg!("No callback provided"))?;
-//         let ident = ident.into_opt_string().ok_or_else(|| err_msg!("No key ident provided"))?;
-//         let metadata = metadata.into_opt_string();
-//         let tags = if let Some(tags) = tags.as_opt_str() {
-//             Some(
-//                 serde_json::from_str::<EntryTagSet>(tags)
-//                     .map_err(err_map!("Error decoding tags"))?
-//                     .into_inner(),
-//             )
-//         } else {
-//             None
-//         };
+        let cb = EnsureCallback::new(move |result|
+            match result {
+                Ok(Some(entry)) => {
+                    let results = KeyEntryListHandle::create(FfiKeyEntryList::from(entry));
+                    cb(cb_id, ErrorCode::Success, results)
+                }
+                Ok(None) => {
+                    cb(cb_id, ErrorCode::Success, KeyEntryListHandle::invalid())
+                }
+                Err(err) => cb(cb_id, set_last_error(Some(err)), KeyEntryListHandle::invalid()),
+            }
+        );
 
-//         let cb = EnsureCallback::new(move |result|
-//             match result {
-//                 Ok(_) => {
-//                     cb(cb_id, ErrorCode::Success)
-//                 }
-//                 Err(err) => cb(cb_id, set_last_error(Some(err))),
-//             }
-//         );
+        spawn_ok(async move {
+            let result = async {
+                let mut session = handle.load().await?;
+                let key_entry = session.fetch_key(
+                    name.as_str(),
+                    for_update != 0
+                ).await?;
+                Ok(key_entry)
+            }.await;
+            cb.resolve(result);
+        });
+        Ok(ErrorCode::Success)
+    }
+}
 
-//         spawn_ok(async move {
-//             let result = async {
-//                 let mut session = handle.load().await?;
-//                 session.update_key(
-//                     KeyCategory::PrivateKey,
-//                     &ident,
-//                     metadata.as_ref().map(String::as_str),
-//                     tags.as_ref().map(Vec::as_slice)
-//                 ).await?;
-//                 Ok(())
-//             }.await;
-//             cb.resolve(result);
-//         });
-//         Ok(ErrorCode::Success)
-//     }
-// }
+#[no_mangle]
+pub extern "C" fn askar_session_update_key(
+    handle: SessionHandle,
+    name: FfiStr<'_>,
+    metadata: FfiStr<'_>,
+    tags: FfiStr<'_>,
+    expiry_ms: i64,
+    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode)>,
+    cb_id: CallbackId,
+) -> ErrorCode {
+    catch_err! {
+        trace!("Update key");
+        let cb = cb.ok_or_else(|| err_msg!("No callback provided"))?;
+        let name = name.into_opt_string().ok_or_else(|| err_msg!("No key name provided"))?;
+        let metadata = metadata.into_opt_string();
+        let tags = if let Some(tags) = tags.as_opt_str() {
+            Some(
+                serde_json::from_str::<EntryTagSet<'static>>(tags)
+                    .map_err(err_map!("Error decoding tags"))?
+                    .into_vec(),
+            )
+        } else {
+            None
+        };
+        let expiry_ms = if expiry_ms < 0 {
+            None
+        } else {
+            Some(expiry_ms)
+        };
+        let cb = EnsureCallback::new(move |result|
+            match result {
+                Ok(_) => {
+                    cb(cb_id, ErrorCode::Success)
+                }
+                Err(err) => cb(cb_id, set_last_error(Some(err))),
+            }
+        );
+
+        spawn_ok(async move {
+            let result = async {
+                let mut session = handle.load().await?;
+                session.update_key(
+                    &name,
+                    metadata.as_ref().map(String::as_str),
+                    tags.as_ref().map(Vec::as_slice),
+                    expiry_ms,
+
+                ).await?;
+                Ok(())
+            }.await;
+            cb.resolve(result);
+        });
+        Ok(ErrorCode::Success)
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn askar_session_remove_key(
+    handle: SessionHandle,
+    name: FfiStr<'_>,
+    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode)>,
+    cb_id: CallbackId,
+) -> ErrorCode {
+    catch_err! {
+        trace!("Remove key");
+        let cb = cb.ok_or_else(|| err_msg!("No callback provided"))?;
+        let name = name.into_opt_string().ok_or_else(|| err_msg!("No key name provided"))?;
+        let cb = EnsureCallback::new(move |result|
+            match result {
+                Ok(_) => {
+                    cb(cb_id, ErrorCode::Success)
+                }
+                Err(err) => cb(cb_id, set_last_error(Some(err))),
+            }
+        );
+
+        spawn_ok(async move {
+            let result = async {
+                let mut session = handle.load().await?;
+                session.remove_key(
+                    &name,
+                ).await?;
+                Ok(())
+            }.await;
+            cb.resolve(result);
+        });
+        Ok(ErrorCode::Success)
+    }
+}
 
 #[no_mangle]
 pub extern "C" fn askar_session_close(
@@ -1002,16 +963,3 @@ pub extern "C" fn askar_session_close(
         Ok(ErrorCode::Success)
     }
 }
-
-// fn export_key_entry(key_entry: KeyEntry) -> Result<Entry, Error> {
-//     let KeyEntry {
-//         category,
-//         ident,
-//         params,
-//         tags,
-//     } = key_entry;
-//     let value = serde_json::to_string(&params)
-//         .map_err(err_map!("Error converting key entry to JSON"))?
-//         .into_bytes();
-//     Ok(Entry::new(category.to_string(), ident, value, tags))
-// }

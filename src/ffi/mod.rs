@@ -21,6 +21,8 @@ mod key;
 
 mod log;
 
+mod result_list;
+
 mod secret;
 
 mod store;

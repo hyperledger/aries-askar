@@ -1,4 +1,5 @@
 use std::{
+    borrow::Cow,
     fmt::{self, Debug, Formatter},
     pin::Pin,
     str::FromStr,
@@ -158,22 +159,30 @@ impl Debug for EntryTag {
     }
 }
 
+/// A wrapper type used for managing (de)serialization of tags
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub(crate) struct EntryTagSet(Vec<EntryTag>);
+pub(crate) struct EntryTagSet<'e>(Cow<'e, [EntryTag]>);
 
-impl EntryTagSet {
+impl EntryTagSet<'_> {
     #[inline]
-    pub fn new(tags: Vec<EntryTag>) -> Self {
-        Self(tags)
-    }
-
-    #[inline]
-    pub fn into_inner(self) -> Vec<EntryTag> {
-        self.0
+    pub fn into_vec(self) -> Vec<EntryTag> {
+        self.0.into_owned()
     }
 }
 
-impl<'de> Deserialize<'de> for EntryTagSet {
+impl<'e> From<&'e [EntryTag]> for EntryTagSet<'e> {
+    fn from(tags: &'e [EntryTag]) -> Self {
+        Self(Cow::Borrowed(tags))
+    }
+}
+
+impl From<Vec<EntryTag>> for EntryTagSet<'static> {
+    fn from(tags: Vec<EntryTag>) -> Self {
+        Self(Cow::Owned(tags))
+    }
+}
+
+impl<'de> Deserialize<'de> for EntryTagSet<'static> {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
@@ -181,7 +190,7 @@ impl<'de> Deserialize<'de> for EntryTagSet {
         struct TagSetVisitor;
 
         impl<'d> Visitor<'d> for TagSetVisitor {
-            type Value = EntryTagSet;
+            type Value = EntryTagSet<'static>;
 
             fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
                 formatter.write_str("an object containing zero or more entry tags")
@@ -219,7 +228,7 @@ impl<'de> Deserialize<'de> for EntryTagSet {
                     }
                 }
 
-                Ok(EntryTagSet(v))
+                Ok(EntryTagSet(Cow::Owned(v)))
             }
         }
 
@@ -276,7 +285,7 @@ impl<'de> Deserialize<'de> for EntryTagValues {
     }
 }
 
-impl Serialize for EntryTagSet {
+impl Serialize for EntryTagSet<'_> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -503,7 +512,7 @@ mod tests {
 
     #[test]
     fn serialize_tags() {
-        let tags = EntryTagSet(vec![
+        let tags = EntryTagSet::from(vec![
             EntryTag::Encrypted("a".to_owned(), "aval".to_owned()),
             EntryTag::Plaintext("b".to_owned(), "bval".to_owned()),
             EntryTag::Plaintext("b".to_owned(), "bval-2".to_owned()),

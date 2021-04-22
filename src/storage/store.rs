@@ -340,7 +340,7 @@ impl<Q: QueryBackend> Session<Q> {
     }
 
     /// Replace the metadata and tags on an existing key in the store
-    pub async fn replace_key(
+    pub async fn update_key(
         &mut self,
         name: &str,
         metadata: Option<&str>,
