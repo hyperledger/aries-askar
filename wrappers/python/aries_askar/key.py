@@ -45,6 +45,12 @@ class Key:
     def key_exchange(self, alg: Union[str, KeyAlg], pk: "Key") -> "Key":
         return Key(bindings.key_exchange(alg, self._handle, pk._handle))
 
+    def get_public_bytes(self) -> bytes:
+        return bytes(bindings.key_get_public_bytes(self._handle))
+
+    def get_secret_bytes(self) -> bytes:
+        return bytes(bindings.key_get_secret_bytes(self._handle))
+
     def get_jwk_public(self) -> str:
         return bindings.key_get_jwk_public(self._handle)
 

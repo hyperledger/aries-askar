@@ -73,10 +73,6 @@ def keys_test():
     bob = Key.generate(KeyAlg.P256)
     derived = derive_key_ecdh_1pu("A256GCM", ephem, alice, bob, "Alice", "Bob")
     log("Derived:", derived.get_jwk_thumbprint())
-    # derived = bindings.key_derive_ecdh_1pu("a256gcm", ephem, alice, bob, "Alice", "Bob")
-    # log("Derived:", bindings.key_get_jwk_thumbprint(derived))
-    # derived = bindings.key_derive_ecdh_es("a256gcm", ephem, bob, "Alice", "Bob")
-    # log("Derived:", bindings.key_get_jwk_thumbprint(derived))
     derived = derive_key_ecdh_es("A256GCM", ephem, bob, "Alice", "Bob")
     log("Derived:", derived.get_jwk_thumbprint())
 
@@ -127,26 +123,24 @@ async def store_test():
 
     # test key operations in a new session
     async with store as session:
-        # # Create a new keypair
-        # key_ident = await session.create_keypair(KeyAlg.ED25519, metadata="metadata")
-        # log("Created key:", key_ident)
+        # Create a new keypair
+        keypair = Key.generate(KeyAlg.ED25519)
+        log("Created key:", keypair)
 
-        # # Update keypair
-        # await session.update_keypair(key_ident, metadata="updated metadata")
-        # log("Updated key")
+        # Store keypair
+        key_name = "testkey"
+        await session.insert_key(key_name, keypair, metadata="metadata")
+        log("Inserted key")
 
-        # # Fetch keypair
-        # key = await session.fetch_keypair(key_ident)
-        # log("Fetch key:", key, "\nKey params:", key.params)
+        # Update keypair
+        await session.update_key(key_name, metadata="updated metadata")
+        log("Updated key")
 
-        # # Sign a message
-        # signature = await session.sign_message(key_ident, b"my message")
-        # log("Signature:", signature)
+        # Fetch keypair
+        key = await session.fetch_key(key_name)
+        log("Fetched key:", key)
 
-        # # Verify signature
-        # verify = await verify_signature(key_ident, b"my message", signature)
-        # log("Verify signature:", verify)
-
+    async with store as session:
         # Remove rows by category and (optional) tag filter
         log(
             "Removed entry count:",

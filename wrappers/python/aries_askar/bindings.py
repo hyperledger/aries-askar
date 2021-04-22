@@ -125,6 +125,17 @@ class EntryListHandle(c_size_t):
         do_call("askar_entry_list_get_value", self, c_int32(index), byref(val))
         return bytes(val)
 
+    def get_tags(self, index: int) -> dict:
+        """Get the entry tags."""
+        tags = StrBuffer()
+        do_call(
+            "askar_entry_list_get_tags",
+            self,
+            c_int32(index),
+            byref(tags),
+        )
+        return json.loads(tags.value) if tags else None
+
     def __repr__(self) -> str:
         """Format entry list handle as a string."""
         return f"{self.__class__.__name__}({self.value})"
@@ -137,6 +148,17 @@ class EntryListHandle(c_size_t):
 
 class KeyEntryListHandle(c_size_t):
     """Pointer to an active KeyEntryList instance."""
+
+    def get_algorithm(self, index: int) -> str:
+        """Get the key algorithm."""
+        name = StrBuffer()
+        do_call(
+            "askar_key_entry_list_get_algorithm",
+            self,
+            c_int32(index),
+            byref(name),
+        )
+        return str(name)
 
     def get_name(self, index: int) -> str:
         """Get the key name."""
@@ -169,7 +191,7 @@ class KeyEntryListHandle(c_size_t):
             c_int32(index),
             byref(tags),
         )
-        return json.loads(decode_str(tags)) if tags else None
+        return json.loads(tags.value) if tags else None
 
     def load_key(self, index: int) -> "LocalKeyHandle":
         """Load the key instance."""
@@ -439,10 +461,6 @@ def do_call_async(
         if CALLBACKS.pop(fut):
             fut.set_exception(get_current_error())
     return fut
-
-
-def decode_str(value: c_char_p) -> str:
-    return value.decode("utf-8")
 
 
 def encode_str(arg: Optional[Union[str, bytes]]) -> c_char_p:
@@ -724,13 +742,33 @@ async def session_update(
     )
 
 
+async def session_insert_key(
+    handle: SessionHandle,
+    key_handle: LocalKeyHandle,
+    name: str,
+    metadata: str = None,
+    tags: dict = None,
+    expiry_ms: Optional[int] = None,
+):
+    await do_call_async(
+        "askar_session_insert_key",
+        handle,
+        key_handle,
+        encode_str(name),
+        encode_str(metadata),
+        encode_str(None if tags is None else json.dumps(tags)),
+        c_int64(-1 if expiry_ms is None else expiry_ms),
+        return_type=c_void_p,
+    )
+
+
 async def session_fetch_key(
-    handle: SessionHandle, ident: str, for_update: bool = False
+    handle: SessionHandle, name: str, for_update: bool = False
 ) -> Optional[KeyEntryListHandle]:
     ptr = await do_call_async(
         "askar_session_fetch_key",
         handle,
-        encode_str(ident),
+        encode_str(name),
         c_int8(for_update),
         return_type=c_void_p,
     )
@@ -739,7 +777,11 @@ async def session_fetch_key(
 
 
 async def session_update_key(
-    handle: SessionHandle, name: str, metadata: str = None, tags: dict = None
+    handle: SessionHandle,
+    name: str,
+    metadata: str = None,
+    tags: dict = None,
+    expiry_ms: Optional[int] = None,
 ):
     await do_call_async(
         "askar_session_update_key",
@@ -747,6 +789,15 @@ async def session_update_key(
         encode_str(name),
         encode_str(metadata),
         encode_str(None if tags is None else json.dumps(tags)),
+        c_int64(-1 if expiry_ms is None else expiry_ms),
+    )
+
+
+async def session_remove_key(handle: SessionHandle, name: str):
+    await do_call_async(
+        "askar_session_remove_key",
+        handle,
+        encode_str(name),
     )
 
 
@@ -779,15 +830,15 @@ async def scan_next(handle: StoreHandle) -> Optional[EntryListHandle]:
     return handle or None
 
 
-def entry_list_length(handle: EntryListHandle) -> int:
+def entry_list_count(handle: EntryListHandle) -> int:
     len = c_int32()
-    do_call("askar_entry_list_length", handle, byref(len))
+    do_call("askar_entry_list_count", handle, byref(len))
     return len.value
 
 
-def key_entry_list_length(handle: EntryListHandle) -> int:
+def key_entry_list_count(handle: EntryListHandle) -> int:
     len = c_int32()
-    do_call("askar_key_entry_list_length", handle, byref(len))
+    do_call("askar_key_entry_list_count", handle, byref(len))
     return len.value
 
 

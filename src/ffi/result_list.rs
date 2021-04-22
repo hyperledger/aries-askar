@@ -56,11 +56,11 @@ pub type EntryListHandle = ArcHandle<FfiEntryList>;
 pub type FfiEntryList = FfiResultList<Entry>;
 
 #[no_mangle]
-pub extern "C" fn askar_entry_list_length(handle: EntryListHandle, length: *mut i32) -> ErrorCode {
+pub extern "C" fn askar_entry_list_count(handle: EntryListHandle, count: *mut i32) -> ErrorCode {
     catch_err! {
-        check_useful_c_ptr!(length);
+        check_useful_c_ptr!(count);
         let results = handle.load()?;
-        unsafe { *length = results.len() };
+        unsafe { *count = results.len() };
         Ok(ErrorCode::Success)
     }
 }
@@ -140,14 +140,14 @@ pub type KeyEntryListHandle = ArcHandle<FfiKeyEntryList>;
 pub type FfiKeyEntryList = FfiResultList<KeyEntry>;
 
 #[no_mangle]
-pub extern "C" fn askar_key_entry_list_length(
+pub extern "C" fn askar_key_entry_list_count(
     handle: KeyEntryListHandle,
-    length: *mut i32,
+    count: *mut i32,
 ) -> ErrorCode {
     catch_err! {
-        check_useful_c_ptr!(length);
+        check_useful_c_ptr!(count);
         let results = handle.load()?;
-        unsafe { *length = results.len() };
+        unsafe { *count = results.len() };
         Ok(ErrorCode::Success)
     }
 }
@@ -155,6 +155,25 @@ pub extern "C" fn askar_key_entry_list_length(
 #[no_mangle]
 pub extern "C" fn askar_key_entry_list_free(handle: KeyEntryListHandle) {
     handle.remove();
+}
+
+#[no_mangle]
+pub extern "C" fn askar_key_entry_list_get_algorithm(
+    handle: KeyEntryListHandle,
+    index: i32,
+    alg: *mut *const c_char,
+) -> ErrorCode {
+    catch_err! {
+        check_useful_c_ptr!(alg);
+        let results = handle.load()?;
+        let entry = results.get_row(index)?;
+        if let Some(alg_name) = entry.algorithm() {
+            unsafe { *alg = CString::new(alg_name).unwrap().into_raw() };
+        } else {
+            unsafe { *alg = ptr::null() };
+        }
+        Ok(ErrorCode::Success)
+    }
 }
 
 #[no_mangle]

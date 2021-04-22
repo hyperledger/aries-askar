@@ -47,7 +47,7 @@ class Entry:
     @cached_property
     def tags(self) -> dict:
         """Accessor for the entry tags."""
-        return self._list.get_value(self._pos)
+        return self._list.get_tags(self._pos)
 
     def __repr__(self) -> str:
         """Format entry handle as a string."""
@@ -65,7 +65,7 @@ class EntryList:
         self._handle = handle
         self._pos = 0
         if handle:
-            self._len = bindings.entry_list_length(self._handle) if len is None else len
+            self._len = bindings.entry_list_count(self._handle) if len is None else len
         else:
             self._len = 0
 
@@ -99,6 +99,11 @@ class KeyEntry:
         self._cache = dict()
 
     @cached_property
+    def algorithm(self) -> str:
+        """Accessor for the entry algorithm."""
+        return self._list.get_algorithm(self._pos)
+
+    @cached_property
     def name(self) -> str:
         """Accessor for the entry name."""
         return self._list.get_name(self._pos)
@@ -116,13 +121,13 @@ class KeyEntry:
     @cached_property
     def tags(self) -> dict:
         """Accessor for the entry tags."""
-        return self._list.get_value(self._pos)
+        return self._list.get_tags(self._pos)
 
     def __repr__(self) -> str:
         """Format key entry handle as a string."""
         return (
-            f"<KeyEntry(name={repr(self.name)}, metadata={repr(self.metadata)}, "
-            f"key={self.key}, tags={self.tags})>"
+            f"<KeyEntry(algorithm={repr(self.algorithm)}, name={repr(self.name)}, "
+            f"metadata={repr(self.metadata)}, key={self.key}, tags={self.tags})>"
         )
 
 
@@ -132,9 +137,10 @@ class KeyEntryList:
     def __init__(self, handle: KeyEntryListHandle, len: int = None):
         """Initialize the KeyEntryList instance."""
         self._handle = handle
+        self._pos = 0
         if handle:
             self._len = (
-                bindings.key_entry_list_length(self._handle) if len is None else len
+                bindings.key_entry_list_count(self._handle) if len is None else len
             )
         else:
             self._len = 0
@@ -435,6 +441,7 @@ class Session:
         *,
         metadata: str = None,
         tags: dict = None,
+        expiry_ms: int = None,
     ) -> str:
         if not self._handle:
             raise StoreError(
@@ -442,11 +449,7 @@ class Session:
             )
         return str(
             await bindings.session_insert_key(
-                self._handle,
-                name,
-                key._handle,
-                metadata,
-                tags,
+                self._handle, key._handle, name, metadata, tags, expiry_ms
             )
         )
 
@@ -466,12 +469,13 @@ class Session:
         *,
         metadata: str = None,
         tags: dict = None,
+        expiry_ms: int = None,
     ):
         if not self._handle:
             raise StoreError(
                 StoreErrorCode.WRAPPER, "Cannot update key with closed session"
             )
-        await bindings.session_update_key(self._handle, name, metadata, tags)
+        await bindings.session_update_key(self._handle, name, metadata, tags, expiry_ms)
 
     async def remove_key(self, name: str):
         if not self._handle:

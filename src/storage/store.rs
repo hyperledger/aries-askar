@@ -376,7 +376,7 @@ impl<Q: QueryBackend> Session<Q> {
                 KmsCategory::CryptoKey.as_str(),
                 name,
                 Some(value.as_ref()),
-                tags,
+                Some(upd_tags.as_slice()),
                 expiry_ms,
             )
             .await?;
