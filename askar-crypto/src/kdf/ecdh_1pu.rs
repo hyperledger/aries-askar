@@ -54,7 +54,7 @@ impl<Key: KeyExchange + ?Sized> KeyDerivation for Ecdh1PU<'_, Key> {
             alg: self.alg,
             apu: self.apu,
             apv: self.apv,
-            pub_info: &(256u32).to_be_bytes(), // output length in bits
+            pub_info: &(output_len * 8).to_be_bytes(), // output length in bits
             prv_info: &[],
         });
 
