@@ -1,3 +1,5 @@
+//! X25519 key exchange support on Curve25519
+
 use core::{
     convert::{TryFrom, TryInto},
     fmt::{self, Debug, Formatter},

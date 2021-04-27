@@ -1,3 +1,5 @@
+//! Structures and traits for representing byte ranges in memory
+
 #[cfg(feature = "alloc")]
 use alloc::vec::Vec;
 use core::{fmt::Debug, ops::Range};
@@ -21,17 +23,25 @@ pub use self::string::HexRepr;
 mod writer;
 pub use self::writer::Writer;
 
+/// Support for writing to a byte buffer
 pub trait WriteBuffer: Debug {
+    /// Append a slice to the buffer
     fn buffer_write(&mut self, data: &[u8]) -> Result<(), Error>;
 }
 
+/// Support for writing to, accessing, and resizing a byte buffer
 pub trait ResizeBuffer: WriteBuffer + AsRef<[u8]> + AsMut<[u8]> {
+    /// Insert a slice at the given position in the buffer
     fn buffer_insert(&mut self, pos: usize, data: &[u8]) -> Result<(), Error>;
 
+    /// Remove an exclusive range from the buffer
     fn buffer_remove(&mut self, range: Range<usize>) -> Result<(), Error>;
 
+    /// Resize the buffer, truncating or padding it with zeroes
     fn buffer_resize(&mut self, len: usize) -> Result<(), Error>;
 
+    /// Extend the buffer with `len` bytes of zeroes and return
+    /// a mutable reference to the slice
     fn buffer_extend(&mut self, len: usize) -> Result<&mut [u8], Error> {
         let pos = self.as_ref().len();
         let end = pos + len;

@@ -1,3 +1,5 @@
+//! ChaCha20 and XChaCha20 stream ciphers with AEAD
+
 use core::fmt::{self, Debug, Formatter};
 
 use aead::{Aead, AeadInPlace, NewAead};

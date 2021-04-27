@@ -15,29 +15,36 @@ use crate::random::fill_random;
 pub struct ArrayKey<L: ArrayLength<u8>>(GenericArray<u8, L>);
 
 impl<L: ArrayLength<u8>> ArrayKey<L> {
+    /// The array length in bytes
     pub const SIZE: usize = L::USIZE;
 
+    /// Copy from a slice of the same length as this array
     #[inline]
     pub fn copy_from_slice<D: AsRef<[u8]>>(&mut self, data: D) {
         self.0[..].copy_from_slice(data.as_ref());
     }
 
+    /// Convert this array to a non-zeroing GenericArray instance
     #[inline]
     pub fn extract(self) -> GenericArray<u8, L> {
         self.0.clone()
     }
 
+    /// Create a new array instance from a slice of bytes.
+    /// Like <&GenericArray>::from_slice, panics if the length of the slice
+    /// is incorrect.
     #[inline]
     pub fn from_slice(data: &[u8]) -> Self {
-        // like <&GenericArray>::from_slice, panics if the length is incorrect
         Self(GenericArray::from_slice(data).clone())
     }
 
+    /// Get the length of the array
     #[inline]
     pub fn len(&self) -> usize {
         self.0.len()
     }
 
+    /// Create a new array of random bytes
     #[inline]
     pub fn random() -> Self {
         let mut slf = GenericArray::default();

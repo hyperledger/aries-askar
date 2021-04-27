@@ -1,3 +1,5 @@
+//! Cryptography primitives and operations for aries-askar.
+
 #![no_std]
 #![deny(missing_debug_implementations)]
 // #![deny(missing_docs)]

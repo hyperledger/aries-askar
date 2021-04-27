@@ -1,3 +1,5 @@
+//! AES-GCM (Advanced Encryption Standard, Galois Counter Mode) key support
+
 use core::fmt::{self, Debug, Formatter};
 
 use aead::{Aead, AeadInPlace, NewAead};

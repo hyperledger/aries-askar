@@ -1,3 +1,5 @@
+//! Elliptic curve ECDH and ECDSA support on curve secp256r1
+
 use core::convert::{TryFrom, TryInto};
 
 use p256::{

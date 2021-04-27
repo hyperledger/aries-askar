@@ -1,3 +1,5 @@
+//! Argon2 key derivation from a password
+
 use crate::{
     error::Error,
     generic_array::typenum::{Unsigned, U16},
@@ -5,16 +7,20 @@ use crate::{
 
 pub use argon2::{Algorithm, Version};
 
+/// The size of the password salt
 pub type SaltSize = U16;
 
+/// The length of the password salt
 pub const SALT_LENGTH: usize = SaltSize::USIZE;
 
+/// Standard parameters for 'interactive' level
 pub const PARAMS_INTERACTIVE: Params = Params {
     alg: Algorithm::Argon2i,
     version: Version::V0x13,
     mem_cost: 32768,
     time_cost: 4,
 };
+/// Standard parameters for 'moderate' level
 pub const PARAMS_MODERATE: Params = Params {
     alg: Algorithm::Argon2i,
     version: Version::V0x13,
@@ -22,6 +28,7 @@ pub const PARAMS_MODERATE: Params = Params {
     time_cost: 6,
 };
 
+/// Parameters to the argon2 key derivation
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Params {
     alg: Algorithm,
@@ -30,10 +37,12 @@ pub struct Params {
     time_cost: u32,
 }
 
+/// Struct wrapping the KDF functionality
 #[derive(Clone, Copy, Debug)]
 pub struct Argon2;
 
 impl Argon2 {
+    /// Derive the key and write it to the provided buffer
     pub fn derive_key(
         password: &[u8],
         salt: &[u8],

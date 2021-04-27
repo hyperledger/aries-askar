@@ -1,3 +1,5 @@
+//! Compatibility with libsodium's crypto_box construct
+
 use crate::{
     buffer::Writer,
     generic_array::{typenum::Unsigned, GenericArray},

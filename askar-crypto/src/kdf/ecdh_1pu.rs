@@ -1,3 +1,5 @@
+//! ECDH-1PU key derivation
+
 use sha2::Sha256;
 use zeroize::Zeroize;
 
@@ -7,6 +9,7 @@ use super::{
 };
 use crate::error::Error;
 
+/// An instantiation of the ECDH-1PU key derivation
 #[derive(Debug)]
 pub struct Ecdh1PU<'d, Key: KeyExchange + ?Sized> {
     ephem_key: &'d Key,
@@ -18,6 +21,7 @@ pub struct Ecdh1PU<'d, Key: KeyExchange + ?Sized> {
 }
 
 impl<'d, Key: KeyExchange + ?Sized> Ecdh1PU<'d, Key> {
+    /// Create a new KDF instance
     pub fn new(
         ephem_key: &'d Key,
         send_key: &'d Key,

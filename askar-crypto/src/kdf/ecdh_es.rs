@@ -1,3 +1,5 @@
+//! ECDH-ES key derivation
+
 use sha2::Sha256;
 use zeroize::Zeroize;
 
@@ -7,6 +9,7 @@ use super::{
 };
 use crate::error::Error;
 
+/// An instantiation of the ECDH-ES key derivation
 #[derive(Debug)]
 pub struct EcdhEs<'d, Key>
 where
@@ -20,6 +23,7 @@ where
 }
 
 impl<'d, Key: KeyExchange + ?Sized> EcdhEs<'d, Key> {
+    /// Create a new KDF instance
     pub fn new(
         ephem_key: &'d Key,
         recip_key: &'d Key,

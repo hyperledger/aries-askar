@@ -8,15 +8,22 @@ use crate::generic_array::GenericArray;
 
 use crate::{buffer::WriteBuffer, error::Error};
 
+/// A struct providing the key derivation for a particular hash function
 #[derive(Clone, Copy, Debug)]
 pub struct ConcatKDF<H>(PhantomData<H>);
 
+/// Parameters for the key derivation
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct ConcatKDFParams<'p> {
+    /// The algorithm name
     pub alg: &'p [u8],
+    /// Sender identifier (PartyUInfo)
     pub apu: &'p [u8],
+    /// Recipient identifier (PartyVInfo)
     pub apv: &'p [u8],
+    /// SuppPubInfo as defined by the application
     pub pub_info: &'p [u8],
+    /// SuppPrivInfo as defined by the application
     pub prv_info: &'p [u8],
 }
 
@@ -24,6 +31,7 @@ impl<H> ConcatKDF<H>
 where
     H: Digest,
 {
+    /// Perform the key derivation and write the result to the provided buffer
     pub fn derive_key(
         message: &[u8],
         params: ConcatKDFParams<'_>,
@@ -50,6 +58,7 @@ where
     }
 }
 
+/// Core hashing implementation of the multi-pass key derivation
 #[derive(Debug)]
 pub struct ConcatKDFHash<H: Digest> {
     hasher: H,
@@ -57,6 +66,7 @@ pub struct ConcatKDFHash<H: Digest> {
 }
 
 impl<H: Digest> ConcatKDFHash<H> {
+    /// Create a new instance
     pub fn new() -> Self {
         Self {
             hasher: H::new(),
@@ -64,15 +74,18 @@ impl<H: Digest> ConcatKDFHash<H> {
         }
     }
 
+    /// Start a new pass of the key derivation
     pub fn start_pass(&mut self) {
         self.hasher.update(self.counter.to_be_bytes());
         self.counter += 1;
     }
 
+    /// Hash input to the key derivation
     pub fn hash_message(&mut self, data: &[u8]) {
         self.hasher.update(data);
     }
 
+    /// Hash the parameters of the key derivation
     pub fn hash_params(&mut self, params: ConcatKDFParams<'_>) {
         let hash = &mut self.hasher;
         hash.update((params.alg.len() as u32).to_be_bytes());
@@ -85,6 +98,7 @@ impl<H: Digest> ConcatKDFHash<H> {
         hash.update(params.prv_info);
     }
 
+    /// Complete this pass of the key derivation, returning the result
     pub fn finish_pass(&mut self) -> GenericArray<u8, H::OutputSize> {
         self.hasher.finalize_reset()
     }

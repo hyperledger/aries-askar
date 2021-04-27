@@ -1,3 +1,5 @@
+//! JSON Web Key (JWK) support
+
 #[cfg(feature = "alloc")]
 use alloc::{string::String, vec::Vec};
 

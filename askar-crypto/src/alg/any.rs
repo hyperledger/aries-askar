@@ -25,6 +25,7 @@ use crate::{
 #[derive(Debug)]
 pub struct KeyT<T: AnyKeyAlg + Send + Sync + ?Sized>(T);
 
+/// The type-erased representation for a concrete key instance
 pub type AnyKey = KeyT<dyn AnyKeyAlg + Send + Sync>;
 
 impl AnyKey {
@@ -53,22 +54,30 @@ impl std::panic::UnwindSafe for AnyKey {}
 #[cfg(feature = "std")]
 impl std::panic::RefUnwindSafe for AnyKey {}
 
+/// Create `AnyKey` instances from various sources
 pub trait AnyKeyCreate: Sized {
+    /// Generate a new key for the given key algorithm.
     fn generate(alg: KeyAlg) -> Result<Self, Error>;
 
+    /// Load a public key from its byte representation
     fn from_public_bytes(alg: KeyAlg, public: &[u8]) -> Result<Self, Error>;
 
+    /// Load a secret key or keypair from its byte representation
     fn from_secret_bytes(alg: KeyAlg, secret: &[u8]) -> Result<Self, Error>;
 
+    /// Convert from a concrete key instance
     fn from_key<K: HasKeyAlg + Send + Sync + 'static>(key: K) -> Self;
 
+    /// Create a new key instance from a key exchange
     fn from_key_exchange<Sk, Pk>(alg: KeyAlg, secret: &Sk, public: &Pk) -> Result<Self, Error>
     where
         Sk: KeyExchange<Pk> + ?Sized,
         Pk: ?Sized;
 
+    /// Create a new key instance from a key derivation
     fn from_key_derivation(alg: KeyAlg, derive: impl KeyDerivation) -> Result<Self, Error>;
 
+    /// Derive the corresponding key for the provided key algorithm
     fn convert_key(&self, alg: KeyAlg) -> Result<Self, Error>;
 }
 

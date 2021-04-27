@@ -1,3 +1,5 @@
+//! Ed25519 signature and verification key support
+
 use core::{
     convert::{TryFrom, TryInto},
     fmt::{self, Debug, Formatter},

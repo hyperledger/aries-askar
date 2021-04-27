@@ -1,3 +1,5 @@
+//! Support for random number generation
+
 use aead::generic_array::{typenum::Unsigned, GenericArray};
 use chacha20::{
     cipher::{NewStreamCipher, SyncStreamCipher},
@@ -9,10 +11,13 @@ use rand::{rngs::OsRng, RngCore};
 use crate::buffer::SecretBytes;
 use crate::error::Error;
 
-pub const SEED_LENGTH: usize = <ChaCha20 as NewStreamCipher>::KeySize::USIZE;
+/// The expected length of a seed for `fill_random_deterministic`
+pub const DETERMINISTIC_SEED_LENGTH: usize = <ChaCha20 as NewStreamCipher>::KeySize::USIZE;
 
+/// The type of the standard random number generator
 pub type StdRng = OsRng;
 
+/// Perform an operation with a reference to the random number generator
 #[inline(always)]
 pub fn with_rng<O>(f: impl FnOnce(&mut StdRng) -> O) -> O {
     // may need to substitute another RNG depending on the platform
@@ -29,7 +34,7 @@ pub fn fill_random(value: &mut [u8]) {
 /// Written to be compatible with randombytes_deterministic in libsodium,
 /// used to generate a deterministic symmetric encryption key
 pub fn fill_random_deterministic(seed: &[u8], output: &mut [u8]) -> Result<(), Error> {
-    if seed.len() != SEED_LENGTH {
+    if seed.len() != DETERMINISTIC_SEED_LENGTH {
         return Err(err_msg!(Usage, "Invalid length for seed"));
     }
     let mut cipher = ChaCha20::new(

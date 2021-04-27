@@ -1,3 +1,5 @@
+//! Supported key algorithms
+
 use core::{
     fmt::{self, Debug, Display, Formatter},
     str::FromStr,
@@ -134,6 +136,7 @@ impl Display for KeyAlg {
     }
 }
 
+/// Supported BLS12-381 groups
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Zeroize)]
 pub enum BlsGroups {
     /// A key or signature represented by an element from the BLS12-381 G1 group
@@ -169,6 +172,9 @@ pub enum EcCurves {
     Secp256k1,
 }
 
+/// A common trait for accessing the algorithm of a key,
+/// used when converting to generic `AnyKey` instances.
 pub trait HasKeyAlg: Debug {
+    /// Get the corresponding key algorithm.
     fn algorithm(&self) -> KeyAlg;
 }
