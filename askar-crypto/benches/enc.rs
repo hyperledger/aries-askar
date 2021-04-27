@@ -5,9 +5,13 @@ extern crate criterion;
 extern crate hex_literal;
 
 use askar_crypto::{
-    alg::chacha20::{Chacha20Key, C20P},
+    alg::{
+        chacha20::{Chacha20Key, C20P},
+        AnyKey, AnyKeyCreate, Chacha20Types, KeyAlg,
+    },
     buffer::{SecretBytes, WriteBuffer, Writer},
     encrypt::{KeyAeadInPlace, KeyAeadMeta},
+    random::fill_random,
     repr::KeySecretBytes,
 };
 
@@ -36,6 +40,23 @@ fn criterion_benchmark(c: &mut Criterion) {
                 buffer.buffer_write(black_box(&message[..])).unwrap();
                 let nonce = Chacha20Key::<C20P>::random_nonce();
                 key.encrypt_in_place(&mut buffer, &nonce, &[]).unwrap();
+            })
+        });
+        c.bench_function(&format!("chacha20-poly1305 encrypt as any"), move |b| {
+            b.iter(|| {
+                let key = Box::<AnyKey>::from_secret_bytes(
+                    KeyAlg::Chacha20(Chacha20Types::C20P),
+                    &key[..],
+                )
+                .unwrap();
+                let mut buffer = [0u8; 255];
+                buffer[0..message.len()].copy_from_slice(black_box(&message[..]));
+                let mut nonce = [0u8; 255];
+                let nonce_len = key.aead_params().nonce_length;
+                fill_random(&mut nonce[..nonce_len]);
+                let mut writer = Writer::from_slice_position(&mut buffer, message.len());
+                key.encrypt_in_place(&mut writer, &nonce[..nonce_len], &[])
+                    .unwrap();
             })
         });
     }
