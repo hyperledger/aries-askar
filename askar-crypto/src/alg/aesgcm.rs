@@ -25,18 +25,18 @@ pub trait AesGcmType: 'static {
     const JWK_ALG: &'static str;
 }
 
-pub struct A128;
+pub struct A128GCM;
 
-impl AesGcmType for A128 {
+impl AesGcmType for A128GCM {
     type Aead = Aes128Gcm;
 
     const ALG_TYPE: AesTypes = AesTypes::A128GCM;
     const JWK_ALG: &'static str = "A128GCM";
 }
 
-pub struct A256;
+pub struct A256GCM;
 
-impl AesGcmType for A256 {
+impl AesGcmType for A256GCM {
     type Aead = Aes256Gcm;
 
     const ALG_TYPE: AesTypes = AesTypes::A256GCM;
@@ -245,8 +245,8 @@ mod tests {
             key.decrypt_in_place(&mut buffer, &nonce, &[]).unwrap();
             assert_eq!(&buffer[..], input);
         }
-        test_encrypt::<A128>();
-        test_encrypt::<A256>();
+        test_encrypt::<A128GCM>();
+        test_encrypt::<A256GCM>();
     }
 
     #[test]
@@ -258,7 +258,7 @@ mod tests {
             let deser: &[u8] = serde_cbor::from_slice(bytes.as_ref()).unwrap();
             assert_eq!(deser, sk.as_ref());
         }
-        test_serialize::<A128>();
-        test_serialize::<A256>();
+        test_serialize::<A128GCM>();
+        test_serialize::<A256GCM>();
     }
 }

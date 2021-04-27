@@ -5,7 +5,7 @@ use core::{
     fmt::Debug,
 };
 
-use super::aesgcm::{AesGcmKey, A128, A256};
+use super::aesgcm::{AesGcmKey, A128GCM, A256GCM};
 use super::chacha20::{Chacha20Key, C20P, XC20P};
 use super::ed25519::{self, Ed25519KeyPair};
 use super::k256::{self, K256KeyPair};
@@ -23,21 +23,21 @@ use crate::{
 };
 
 #[derive(Debug)]
-pub struct KeyT<T: KeyAsAny + Send + Sync + ?Sized>(T);
+pub struct KeyT<T: AnyKeyAlg + Send + Sync + ?Sized>(T);
 
-pub type AnyKey = KeyT<dyn KeyAsAny + Send + Sync>;
+pub type AnyKey = KeyT<dyn AnyKeyAlg + Send + Sync>;
 
 impl AnyKey {
     pub fn algorithm(&self) -> KeyAlg {
         self.0.algorithm()
     }
 
-    fn assume<K: KeyAsAny>(&self) -> &K {
+    fn assume<K: AnyKeyAlg>(&self) -> &K {
         self.downcast_ref().expect("Error assuming key type")
     }
 
     #[inline]
-    pub fn downcast_ref<K: KeyAsAny>(&self) -> Option<&K> {
+    pub fn downcast_ref<K: AnyKeyAlg>(&self) -> Option<&K> {
         self.0.as_any().downcast_ref()
     }
 
@@ -145,8 +145,8 @@ impl AnyKeyCreate for Arc<AnyKey> {
 #[inline]
 fn generate_any<R: AllocKey>(alg: KeyAlg) -> Result<R, Error> {
     match alg {
-        KeyAlg::Aes(AesTypes::A128GCM) => AesGcmKey::<A128>::generate().map(R::alloc_key),
-        KeyAlg::Aes(AesTypes::A256GCM) => AesGcmKey::<A256>::generate().map(R::alloc_key),
+        KeyAlg::Aes(AesTypes::A128GCM) => AesGcmKey::<A128GCM>::generate().map(R::alloc_key),
+        KeyAlg::Aes(AesTypes::A256GCM) => AesGcmKey::<A256GCM>::generate().map(R::alloc_key),
         KeyAlg::Chacha20(Chacha20Types::C20P) => Chacha20Key::<C20P>::generate().map(R::alloc_key),
         KeyAlg::Chacha20(Chacha20Types::XC20P) => {
             Chacha20Key::<XC20P>::generate().map(R::alloc_key)
@@ -190,10 +190,10 @@ fn from_public_bytes_any<R: AllocKey>(alg: KeyAlg, public: &[u8]) -> Result<R, E
 fn from_secret_bytes_any<R: AllocKey>(alg: KeyAlg, secret: &[u8]) -> Result<R, Error> {
     match alg {
         KeyAlg::Aes(AesTypes::A128GCM) => {
-            AesGcmKey::<A128>::from_secret_bytes(secret).map(R::alloc_key)
+            AesGcmKey::<A128GCM>::from_secret_bytes(secret).map(R::alloc_key)
         }
         KeyAlg::Aes(AesTypes::A256GCM) => {
-            AesGcmKey::<A256>::from_secret_bytes(secret).map(R::alloc_key)
+            AesGcmKey::<A256GCM>::from_secret_bytes(secret).map(R::alloc_key)
         }
         KeyAlg::Chacha20(Chacha20Types::C20P) => {
             Chacha20Key::<C20P>::from_secret_bytes(secret).map(R::alloc_key)
@@ -228,10 +228,10 @@ where
 {
     match alg {
         KeyAlg::Aes(AesTypes::A128GCM) => {
-            AesGcmKey::<A128>::from_key_exchange(secret, public).map(R::alloc_key)
+            AesGcmKey::<A128GCM>::from_key_exchange(secret, public).map(R::alloc_key)
         }
         KeyAlg::Aes(AesTypes::A256GCM) => {
-            AesGcmKey::<A256>::from_key_exchange(secret, public).map(R::alloc_key)
+            AesGcmKey::<A256GCM>::from_key_exchange(secret, public).map(R::alloc_key)
         }
         KeyAlg::Chacha20(Chacha20Types::C20P) => {
             Chacha20Key::<C20P>::from_key_exchange(secret, public).map(R::alloc_key)
@@ -256,10 +256,10 @@ fn from_key_derivation_any<R: AllocKey>(
 ) -> Result<R, Error> {
     match alg {
         KeyAlg::Aes(AesTypes::A128GCM) => {
-            AesGcmKey::<A128>::from_key_derivation(derive).map(R::alloc_key)
+            AesGcmKey::<A128GCM>::from_key_derivation(derive).map(R::alloc_key)
         }
         KeyAlg::Aes(AesTypes::A256GCM) => {
-            AesGcmKey::<A256>::from_key_derivation(derive).map(R::alloc_key)
+            AesGcmKey::<A256GCM>::from_key_derivation(derive).map(R::alloc_key)
         }
         KeyAlg::Chacha20(Chacha20Types::C20P) => {
             Chacha20Key::<C20P>::from_key_derivation(derive).map(R::alloc_key)
@@ -363,11 +363,11 @@ impl AnyKey {
 
     pub fn to_secret_bytes(&self) -> Result<SecretBytes, Error> {
         match self.key_type_id() {
-            s if s == TypeId::of::<AesGcmKey<A128>>() => {
-                Ok(self.assume::<AesGcmKey<A128>>().to_secret_bytes()?)
+            s if s == TypeId::of::<AesGcmKey<A128GCM>>() => {
+                Ok(self.assume::<AesGcmKey<A128GCM>>().to_secret_bytes()?)
             }
-            s if s == TypeId::of::<AesGcmKey<A256>>() => {
-                Ok(self.assume::<AesGcmKey<A256>>().to_secret_bytes()?)
+            s if s == TypeId::of::<AesGcmKey<A256GCM>>() => {
+                Ok(self.assume::<AesGcmKey<A256GCM>>().to_secret_bytes()?)
             }
             s if s == TypeId::of::<Chacha20Key<C20P>>() => {
                 Ok(self.assume::<Chacha20Key<C20P>>().to_secret_bytes()?)
@@ -414,8 +414,8 @@ impl AnyKey {
     fn key_as_aead(&self) -> Result<&dyn KeyAeadInPlace, Error> {
         Ok(match_key_types! {
             self,
-            AesGcmKey<A128>,
-            AesGcmKey<A256>,
+            AesGcmKey<A128GCM>,
+            AesGcmKey<A256GCM>,
             Chacha20Key<C20P>,
             Chacha20Key<XC20P>;
             "AEAD is not supported for this key type"
@@ -455,8 +455,8 @@ impl ToJwk for AnyKey {
     fn to_jwk_encoder(&self, enc: &mut JwkEncoder<'_>) -> Result<(), Error> {
         let key: &dyn ToJwk = match_key_types! {
             self,
-            AesGcmKey<A128>,
-            AesGcmKey<A256>,
+            AesGcmKey<A128GCM>,
+            AesGcmKey<A256GCM>,
             Chacha20Key<C20P>,
             Chacha20Key<XC20P>,
             Ed25519KeyPair,
@@ -507,29 +507,29 @@ impl KeySigVerify for AnyKey {
 
 // may want to implement in-place initialization to avoid copies
 trait AllocKey {
-    fn alloc_key<K: KeyAsAny + Send + Sync>(key: K) -> Self;
+    fn alloc_key<K: AnyKeyAlg + Send + Sync>(key: K) -> Self;
 }
 
 impl AllocKey for Arc<AnyKey> {
     #[inline(always)]
-    fn alloc_key<K: KeyAsAny + Send + Sync>(key: K) -> Self {
+    fn alloc_key<K: AnyKeyAlg + Send + Sync>(key: K) -> Self {
         Self::from_key(key)
     }
 }
 
 impl AllocKey for Box<AnyKey> {
     #[inline(always)]
-    fn alloc_key<K: KeyAsAny + Send + Sync>(key: K) -> Self {
+    fn alloc_key<K: AnyKeyAlg + Send + Sync>(key: K) -> Self {
         Self::from_key(key)
     }
 }
 
-pub trait KeyAsAny: HasKeyAlg + 'static {
+pub trait AnyKeyAlg: HasKeyAlg + 'static {
     fn as_any(&self) -> &dyn Any;
 }
 
 // implement for all concrete key types
-impl<K: HasKeyAlg + Sized + 'static> KeyAsAny for K {
+impl<K: HasKeyAlg + Sized + 'static> AnyKeyAlg for K {
     fn as_any(&self) -> &dyn Any {
         self
     }
