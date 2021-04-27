@@ -36,6 +36,13 @@ impl SecretBytes {
     }
 
     #[inline]
+    pub fn from_slice_reserve(data: &[u8], reserve: usize) -> Self {
+        let mut v = Vec::with_capacity(data.len() + reserve);
+        v.extend_from_slice(data);
+        Self(v)
+    }
+
+    #[inline]
     pub fn len(&self) -> usize {
         self.0.len()
     }

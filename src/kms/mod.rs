@@ -11,7 +11,8 @@ use crate::error::Error;
 
 mod envelope;
 pub use self::envelope::{
-    crypto_box_seal, crypto_box_seal_open, derive_key_ecdh_1pu, derive_key_ecdh_es,
+    crypto_box, crypto_box_open, crypto_box_random_nonce, crypto_box_seal, crypto_box_seal_open,
+    derive_key_ecdh_1pu, derive_key_ecdh_es,
 };
 
 mod entry;

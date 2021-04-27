@@ -16,15 +16,15 @@ class Key:
 
     @classmethod
     def generate(cls, alg: Union[str, KeyAlg], *, ephemeral: bool = False) -> "Key":
-        return Key(bindings.key_generate(alg, ephemeral))
+        return cls(bindings.key_generate(alg, ephemeral))
 
     @classmethod
     def from_secret_bytes(cls, alg: Union[str, KeyAlg], secret: bytes) -> "Key":
-        return Key(bindings.key_from_secret_bytes(alg, secret))
+        return cls(bindings.key_from_secret_bytes(alg, secret))
 
     @classmethod
     def from_public_bytes(cls, alg: Union[str, KeyAlg], public: bytes) -> "Key":
-        return Key(bindings.key_from_public_bytes(alg, public))
+        return cls(bindings.key_from_public_bytes(alg, public))
 
     @property
     def handle(self) -> bindings.LocalKeyHandle:
@@ -40,10 +40,10 @@ class Key:
         return bindings.key_get_ephemeral(self._handle)
 
     def convert_key(self, alg: Union[str, KeyAlg]) -> "Key":
-        return Key(bindings.key_convert(self._handle, alg))
+        return self.__class__(bindings.key_convert(self._handle, alg))
 
     def key_exchange(self, alg: Union[str, KeyAlg], pk: "Key") -> "Key":
-        return Key(bindings.key_exchange(alg, self._handle, pk._handle))
+        return self.__class__(bindings.key_exchange(alg, self._handle, pk._handle))
 
     def get_public_bytes(self) -> bytes:
         return bytes(bindings.key_get_public_bytes(self._handle))
@@ -86,18 +86,46 @@ class Key:
         )
 
 
+def crypto_box_random_nonce() -> bytes:
+    return bytes(bindings.key_crypto_box_random_nonce())
+
+
+def crypto_box(
+    recip_key: Key,
+    sender_key: Key,
+    message: Union[bytes, str],
+    nonce: bytes,
+) -> bytes:
+    return bytes(
+        bindings.key_crypto_box(recip_key._handle, sender_key._handle, message, nonce)
+    )
+
+
+def crypto_box_open(
+    recip_key: Key,
+    sender_key: Key,
+    message: Union[bytes, str],
+    nonce: bytes,
+) -> bytes:
+    return bytes(
+        bindings.key_crypto_box_open(
+            recip_key._handle, sender_key._handle, message, nonce
+        )
+    )
+
+
 def crypto_box_seal(
-    key: Key,
+    recip_key: Key,
     message: Union[bytes, str],
 ) -> bytes:
-    return bytes(bindings.key_crypto_box_seal(key._handle, message))
+    return bytes(bindings.key_crypto_box_seal(recip_key._handle, message))
 
 
 def crypto_box_seal_open(
-    key: Key,
+    recip_key: Key,
     ciphertext: bytes,
 ) -> bytes:
-    return bytes(bindings.key_crypto_box_seal_open(key._handle, ciphertext))
+    return bytes(bindings.key_crypto_box_seal_open(recip_key._handle, ciphertext))
 
 
 def derive_key_ecdh_1pu(

@@ -136,9 +136,8 @@ impl LocalKey {
     /// Perform AEAD message encryption with this encryption key
     pub fn aead_encrypt(&self, message: &[u8], nonce: &[u8], aad: &[u8]) -> Result<Vec<u8>, Error> {
         let params = self.inner.aead_params();
-        let enc_size = message.len() + params.nonce_length + params.tag_length;
-        let mut buf = SecretBytes::with_capacity(enc_size);
-        buf.extend_from_slice(message);
+        let mut buf =
+            SecretBytes::from_slice_reserve(message, params.nonce_length + params.tag_length);
         self.inner.encrypt_in_place(&mut buf, nonce, aad)?;
         Ok(buf.into_vec())
     }

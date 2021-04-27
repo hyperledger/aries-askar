@@ -1032,6 +1032,51 @@ def key_verify_signature(
     return verify.value != 0
 
 
+def key_crypto_box_random_nonce() -> ByteBuffer:
+    buf = ByteBuffer()
+    do_call(
+        "askar_key_crypto_box_random_nonce",
+        byref(buf),
+    )
+    return buf
+
+
+def key_crypto_box(
+    recip_handle: LocalKeyHandle,
+    sender_handle: LocalKeyHandle,
+    message: Union[bytes, str, ByteBuffer],
+    nonce: Union[bytes, ByteBuffer],
+) -> ByteBuffer:
+    buf = ByteBuffer()
+    do_call(
+        "askar_key_crypto_box",
+        recip_handle,
+        sender_handle,
+        encode_bytes(message),
+        encode_bytes(nonce),
+        byref(buf),
+    )
+    return buf
+
+
+def key_crypto_box_open(
+    recip_handle: LocalKeyHandle,
+    sender_handle: LocalKeyHandle,
+    message: Union[bytes, str, ByteBuffer],
+    nonce: Union[bytes, ByteBuffer],
+) -> ByteBuffer:
+    buf = ByteBuffer()
+    do_call(
+        "askar_key_crypto_box_open",
+        recip_handle,
+        sender_handle,
+        encode_bytes(message),
+        encode_bytes(nonce),
+        byref(buf),
+    )
+    return buf
+
+
 def key_crypto_box_seal(
     handle: LocalKeyHandle,
     message: Union[bytes, str, ByteBuffer],

@@ -4,8 +4,8 @@ use ffi_support::{rust_string_to_c, ByteBuffer, FfiStr};
 
 use super::{handle::ArcHandle, secret::SecretBuffer, ErrorCode};
 use crate::kms::{
-    crypto_box_seal, crypto_box_seal_open, derive_key_ecdh_1pu, derive_key_ecdh_es, KeyAlg,
-    LocalKey,
+    crypto_box, crypto_box_open, crypto_box_random_nonce, crypto_box_seal, crypto_box_seal_open,
+    derive_key_ecdh_1pu, derive_key_ecdh_es, KeyAlg, LocalKey,
 };
 
 pub type LocalKeyHandle = ArcHandle<LocalKey>;
@@ -293,6 +293,65 @@ pub extern "C" fn askar_key_verify_signature(
         let key = handle.load()?;
         let verify = key.verify_signature(message.as_slice(),signature.as_slice(), sig_type.as_opt_str())?;
         unsafe { *out = verify as i8 };
+        Ok(ErrorCode::Success)
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn askar_key_crypto_box_random_nonce(out: *mut SecretBuffer) -> ErrorCode {
+    catch_err! {
+        trace!("crypto box random nonce");
+        check_useful_c_ptr!(out);
+        let nonce = crypto_box_random_nonce()?;
+        unsafe { *out = SecretBuffer::from_secret(&nonce[..]) };
+        Ok(ErrorCode::Success)
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn askar_key_crypto_box(
+    recip_key: LocalKeyHandle,
+    sender_key: LocalKeyHandle,
+    message: ByteBuffer,
+    nonce: ByteBuffer,
+    out: *mut SecretBuffer,
+) -> ErrorCode {
+    catch_err! {
+        trace!("crypto box: {}, {}", recip_key, sender_key);
+        check_useful_c_ptr!(out);
+        let recip_key = recip_key.load()?;
+        let sender_key = sender_key.load()?;
+        let message = crypto_box(
+            &*recip_key,
+            &*sender_key,
+            message.as_slice(),
+            nonce.as_slice()
+        )?;
+        unsafe { *out = SecretBuffer::from_secret(message) };
+        Ok(ErrorCode::Success)
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn askar_key_crypto_box_open(
+    recip_key: LocalKeyHandle,
+    sender_key: LocalKeyHandle,
+    message: ByteBuffer,
+    nonce: ByteBuffer,
+    out: *mut SecretBuffer,
+) -> ErrorCode {
+    catch_err! {
+        trace!("crypto box open: {}, {}", recip_key, sender_key);
+        check_useful_c_ptr!(out);
+        let recip_key = recip_key.load()?;
+        let sender_key = sender_key.load()?;
+        let message = crypto_box_open(
+            &*recip_key,
+            &*sender_key,
+            message.as_slice(),
+            nonce.as_slice()
+        )?;
+        unsafe { *out = SecretBuffer::from_secret(message) };
         Ok(ErrorCode::Success)
     }
 }

@@ -44,6 +44,11 @@ class Entry:
         """Accessor for the entry value."""
         return self._list.get_value(self._pos)
 
+    @property
+    def value_json(self) -> dict:
+        """Accessor for the entry value as JSON."""
+        return json.loads(self.value)
+
     @cached_property
     def tags(self) -> dict:
         """Accessor for the entry tags."""
@@ -74,6 +79,11 @@ class EntryList:
         """Accessor for the entry list handle."""
         return self._handle
 
+    def __getitem__(self, index) -> Entry:
+        if not isinstance(index, int) or index < 0 or index >= self._len:
+            return IndexError()
+        return Entry(self._handle, index)
+
     def __iter__(self):
         return self
 
@@ -84,6 +94,9 @@ class EntryList:
             return entry
         else:
             raise StopIteration
+
+    def __len__(self) -> int:
+        return self._len
 
     def __repr__(self) -> str:
         return f"<EntryList(handle={self._handle}, pos={self._pos}, len={self._len})>"
@@ -150,6 +163,11 @@ class KeyEntryList:
         """Accessor for the key entry list handle."""
         return self._handle
 
+    def __getitem__(self, index) -> KeyEntry:
+        if not isinstance(index, int) or index < 0 or index >= self._len:
+            return IndexError()
+        return KeyEntry(self._handle, index)
+
     def __iter__(self):
         return self
 
@@ -160,6 +178,9 @@ class KeyEntryList:
             return entry
         else:
             raise StopIteration
+
+    def __len__(self) -> int:
+        return self._len
 
     def __repr__(self) -> str:
         return (
