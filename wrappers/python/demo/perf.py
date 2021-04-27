@@ -42,24 +42,23 @@ async def perf_test():
     dur = time.perf_counter() - insert_start
     print(f"insert duration ({PERF_ROWS} rows): {dur:0.2f}s")
 
-    # fetch_start = time.perf_counter()
-    # async with store as session:
-    #     tags = 0
-    #     for idx in range(PERF_ROWS):
-    #         entry = await session.fetch("category", f"name-{idx}")
-    #         tags += len(entry.tags)
-    # dur = time.perf_counter() - fetch_start
-    # print(f"fetch duration ({PERF_ROWS} rows, {tags} tags): {dur:0.2f}s")
-
-    for _ in range(10):
-        rc = 0
+    fetch_start = time.perf_counter()
+    async with store as session:
         tags = 0
-        scan_start = time.perf_counter()
-        async for row in store.scan("category", {"~plaintag": "a", "enctag": "b"}):
-            rc += 1
-            tags += len(row.tags)
-        dur = time.perf_counter() - scan_start
-        print(f"scan duration ({rc} rows, {tags} tags): {dur:0.2f}s")
+        for idx in range(PERF_ROWS):
+            entry = await session.fetch("category", f"name-{idx}")
+            tags += len(entry.tags)
+    dur = time.perf_counter() - fetch_start
+    print(f"fetch duration ({PERF_ROWS} rows, {tags} tags): {dur:0.2f}s")
+
+    rc = 0
+    tags = 0
+    scan_start = time.perf_counter()
+    async for row in store.scan("category", {"~plaintag": "a", "enctag": "b"}):
+        rc += 1
+        tags += len(row.tags)
+    dur = time.perf_counter() - scan_start
+    print(f"scan duration ({rc} rows, {tags} tags): {dur:0.2f}s")
 
     await store.close()
 
