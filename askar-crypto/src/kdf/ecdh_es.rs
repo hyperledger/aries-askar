@@ -7,6 +7,7 @@ use super::{
 };
 use crate::error::Error;
 
+#[derive(Debug)]
 pub struct EcdhEs<'d, Key>
 where
     Key: KeyExchange + ?Sized,

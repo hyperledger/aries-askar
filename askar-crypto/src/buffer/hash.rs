@@ -1,9 +1,12 @@
+use core::fmt::Debug;
+
 use digest::Digest;
 
 use crate::generic_array::GenericArray;
 
 use crate::{buffer::WriteBuffer, error::Error};
 
+#[derive(Debug)]
 pub struct HashBuffer<D: Digest>(D);
 
 impl<D: Digest> HashBuffer<D> {
@@ -16,7 +19,7 @@ impl<D: Digest> HashBuffer<D> {
     }
 }
 
-impl<D: Digest> WriteBuffer for HashBuffer<D> {
+impl<D: Debug + Digest> WriteBuffer for HashBuffer<D> {
     fn buffer_write(&mut self, data: &[u8]) -> Result<(), Error> {
         self.0.update(data);
         Ok(())

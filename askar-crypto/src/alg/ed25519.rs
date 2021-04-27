@@ -278,13 +278,21 @@ impl FromJwk for Ed25519KeyPair {
     }
 }
 
-/// FIXME implement debug
 // SECURITY: ExpandedSecretKey zeroizes on drop
 pub struct Ed25519SigningKey<'p>(ExpandedSecretKey, &'p PublicKey);
 
 impl Ed25519SigningKey<'_> {
     pub fn sign(&self, message: &[u8]) -> [u8; EDDSA_SIGNATURE_LENGTH] {
         self.0.sign(message, &self.1).to_bytes()
+    }
+}
+
+impl Debug for Ed25519SigningKey<'_> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Ed25519SigningKey")
+            .field("secret", &"<secret>")
+            .field("public", &self.1)
+            .finish()
     }
 }
 

@@ -22,7 +22,7 @@ pub const PARAMS_MODERATE: Params = Params {
     time_cost: 6,
 };
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Params {
     alg: Algorithm,
     version: Version,
@@ -30,6 +30,7 @@ pub struct Params {
     time_cost: u32,
 }
 
+#[derive(Clone, Copy, Debug)]
 pub struct Argon2;
 
 impl Argon2 {

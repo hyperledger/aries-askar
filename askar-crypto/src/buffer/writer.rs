@@ -5,6 +5,7 @@ use core::{fmt, ops::Range};
 use super::{ResizeBuffer, WriteBuffer};
 use crate::error::Error;
 
+#[derive(Debug)]
 pub struct Writer<'w, B: ?Sized> {
     inner: &'w mut B,
     pos: usize,

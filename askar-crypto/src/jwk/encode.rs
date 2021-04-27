@@ -7,13 +7,14 @@ use crate::{
 
 use super::ops::KeyOpsSet;
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum JwkEncoderMode {
     PublicKey,
     SecretKey,
     Thumbprint,
 }
 
+#[derive(Debug)]
 pub struct JwkEncoder<'b> {
     buffer: &'b mut dyn WriteBuffer,
     empty: bool,

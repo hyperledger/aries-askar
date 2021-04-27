@@ -7,6 +7,7 @@ use super::{
 };
 use crate::error::Error;
 
+#[derive(Debug)]
 pub struct Ecdh1PU<'d, Key: KeyExchange + ?Sized> {
     ephem_key: &'d Key,
     send_key: &'d Key,

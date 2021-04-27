@@ -158,6 +158,7 @@ impl IntoIterator for &KeyOpsSet {
     }
 }
 
+#[derive(Debug)]
 pub struct KeyOpsIter {
     index: usize,
     value: KeyOpsSet,

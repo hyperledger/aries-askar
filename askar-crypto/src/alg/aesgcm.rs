@@ -25,6 +25,7 @@ pub trait AesGcmType: 'static {
     const JWK_ALG: &'static str;
 }
 
+#[derive(Debug)]
 pub struct A128GCM;
 
 impl AesGcmType for A128GCM {
@@ -34,6 +35,7 @@ impl AesGcmType for A128GCM {
     const JWK_ALG: &'static str = "A128GCM";
 }
 
+#[derive(Debug)]
 pub struct A256GCM;
 
 impl AesGcmType for A256GCM {

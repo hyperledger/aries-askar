@@ -1,6 +1,6 @@
 //! ConcatKDF from NIST 800-56ar for ECDH-ES / ECDH-1PU
 
-use core::marker::PhantomData;
+use core::{fmt::Debug, marker::PhantomData};
 
 use digest::Digest;
 
@@ -8,9 +8,10 @@ use crate::generic_array::GenericArray;
 
 use crate::{buffer::WriteBuffer, error::Error};
 
+#[derive(Clone, Copy, Debug)]
 pub struct ConcatKDF<H>(PhantomData<H>);
 
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct ConcatKDFParams<'p> {
     pub alg: &'p [u8],
     pub apu: &'p [u8],
@@ -49,6 +50,7 @@ where
     }
 }
 
+#[derive(Debug)]
 pub struct ConcatKDFHash<H: Digest> {
     hasher: H,
     counter: u32,
@@ -88,7 +90,7 @@ impl<H: Digest> ConcatKDFHash<H> {
     }
 }
 
-impl<D: Digest> WriteBuffer for ConcatKDFHash<D> {
+impl<D: Debug + Digest> WriteBuffer for ConcatKDFHash<D> {
     fn buffer_write(&mut self, data: &[u8]) -> Result<(), Error> {
         self.hasher.update(data);
         Ok(())

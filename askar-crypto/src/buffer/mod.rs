@@ -1,6 +1,6 @@
 #[cfg(feature = "alloc")]
 use alloc::vec::Vec;
-use core::ops::Range;
+use core::{fmt::Debug, ops::Range};
 
 use crate::error::Error;
 
@@ -21,7 +21,7 @@ pub use self::string::HexRepr;
 mod writer;
 pub use self::writer::Writer;
 
-pub trait WriteBuffer {
+pub trait WriteBuffer: Debug {
     fn buffer_write(&mut self, data: &[u8]) -> Result<(), Error>;
 }
 

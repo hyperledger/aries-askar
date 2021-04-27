@@ -26,6 +26,7 @@ pub trait Chacha20Type: 'static {
     const JWK_ALG: &'static str;
 }
 
+#[derive(Debug)]
 pub struct C20P;
 
 impl Chacha20Type for C20P {
@@ -35,6 +36,7 @@ impl Chacha20Type for C20P {
     const JWK_ALG: &'static str = "C20P";
 }
 
+#[derive(Debug)]
 pub struct XC20P;
 
 impl Chacha20Type for XC20P {
