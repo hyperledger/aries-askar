@@ -23,7 +23,7 @@ from ctypes import (
 from ctypes.util import find_library
 from typing import Optional, Union
 
-from .error import StoreError, StoreErrorCode
+from .error import AskarError, AskarErrorCode
 from .types import EntryOperation, KeyAlg
 
 
@@ -325,14 +325,14 @@ def _load_library(lib_name: str) -> CDLL:
 
     lib_path = find_library(lib_name)
     if not lib_path:
-        raise StoreError(
-            StoreErrorCode.WRAPPER, f"Library not found in path: {lib_path}"
+        raise AskarError(
+            AskarErrorCode.WRAPPER, f"Library not found in path: {lib_path}"
         )
     try:
         return CDLL(lib_path)
     except OSError as e:
-        raise StoreError(
-            StoreErrorCode.WRAPPER, f"Error loading library: {lib_path}"
+        raise AskarError(
+            AskarErrorCode.WRAPPER, f"Error loading library: {lib_path}"
         ) from e
 
 
@@ -499,7 +499,7 @@ def encode_bytes(
     return buf
 
 
-def get_current_error(expect: bool = False) -> Optional[StoreError]:
+def get_current_error(expect: bool = False) -> Optional[AskarError]:
     """
     Get the error result from the previous failed API method.
 
@@ -514,12 +514,12 @@ def get_current_error(expect: bool = False) -> Optional[StoreError]:
             LOGGER.warning("JSON decode error for askar_get_current_error")
             msg = None
         if msg and "message" in msg and "code" in msg:
-            return StoreError(
-                StoreErrorCode(msg["code"]), msg["message"], msg.get("extra")
+            return AskarError(
+                AskarErrorCode(msg["code"]), msg["message"], msg.get("extra")
             )
         if not expect:
             return None
-    return StoreError(StoreErrorCode.WRAPPER, "Unknown error")
+    return AskarError(AskarErrorCode.WRAPPER, "Unknown error")
 
 
 def generate_raw_key(seed: Union[str, bytes] = None) -> str:

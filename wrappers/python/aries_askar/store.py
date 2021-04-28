@@ -15,7 +15,7 @@ from .bindings import (
     SessionHandle,
     StoreHandle,
 )
-from .error import StoreError, StoreErrorCode
+from .error import AskarError, AskarErrorCode
 from .key import Key
 from .types import EntryOperation
 
@@ -217,8 +217,8 @@ class Scan:
         if self._handle is None:
             (store, profile, category, tag_filter, offset, limit) = self.params
             if not store.handle:
-                raise StoreError(
-                    StoreErrorCode.WRAPPER, "Cannot scan from closed store"
+                raise AskarError(
+                    AskarErrorCode.WRAPPER, "Cannot scan from closed store"
                 )
             self._handle = await bindings.scan_start(
                 store.handle, profile, category, tag_filter, offset, limit
@@ -370,14 +370,14 @@ class Session:
 
     async def count(self, category: str, tag_filter: Union[str, dict] = None) -> int:
         if not self._handle:
-            raise StoreError(StoreErrorCode.WRAPPER, "Cannot count from closed session")
+            raise AskarError(AskarErrorCode.WRAPPER, "Cannot count from closed session")
         return await bindings.session_count(self._handle, category, tag_filter)
 
     async def fetch(
         self, category: str, name: str, *, for_update: bool = False
     ) -> Optional[Entry]:
         if not self._handle:
-            raise StoreError(StoreErrorCode.WRAPPER, "Cannot fetch from closed session")
+            raise AskarError(AskarErrorCode.WRAPPER, "Cannot fetch from closed session")
         result_handle = await bindings.session_fetch(
             self._handle, category, name, for_update
         )
@@ -392,7 +392,7 @@ class Session:
         for_update: bool = False,
     ) -> EntryList:
         if not self._handle:
-            raise StoreError(StoreErrorCode.WRAPPER, "Cannot fetch from closed session")
+            raise AskarError(AskarErrorCode.WRAPPER, "Cannot fetch from closed session")
         return EntryList(
             await bindings.session_fetch_all(
                 self._handle, category, tag_filter, limit, for_update
@@ -409,7 +409,7 @@ class Session:
         value_json=None,
     ):
         if not self._handle:
-            raise StoreError(StoreErrorCode.WRAPPER, "Cannot update closed session")
+            raise AskarError(AskarErrorCode.WRAPPER, "Cannot update closed session")
         if value is None and value_json is not None:
             value = json.dumps(value_json)
         await bindings.session_update(
@@ -426,7 +426,7 @@ class Session:
         value_json=None,
     ):
         if not self._handle:
-            raise StoreError(StoreErrorCode.WRAPPER, "Cannot update closed session")
+            raise AskarError(AskarErrorCode.WRAPPER, "Cannot update closed session")
         if value is None and value_json is not None:
             value = json.dumps(value_json)
         await bindings.session_update(
@@ -439,7 +439,7 @@ class Session:
         name: str,
     ):
         if not self._handle:
-            raise StoreError(StoreErrorCode.WRAPPER, "Cannot update closed session")
+            raise AskarError(AskarErrorCode.WRAPPER, "Cannot update closed session")
         await bindings.session_update(
             self._handle, EntryOperation.REMOVE, category, name
         )
@@ -450,8 +450,8 @@ class Session:
         tag_filter: Union[str, dict] = None,
     ) -> int:
         if not self._handle:
-            raise StoreError(
-                StoreErrorCode.WRAPPER, "Cannot remove all for closed session"
+            raise AskarError(
+                AskarErrorCode.WRAPPER, "Cannot remove all for closed session"
             )
         return await bindings.session_remove_all(self._handle, category, tag_filter)
 
@@ -465,8 +465,8 @@ class Session:
         expiry_ms: int = None,
     ) -> str:
         if not self._handle:
-            raise StoreError(
-                StoreErrorCode.WRAPPER, "Cannot insert key with closed session"
+            raise AskarError(
+                AskarErrorCode.WRAPPER, "Cannot insert key with closed session"
             )
         return str(
             await bindings.session_insert_key(
@@ -478,8 +478,8 @@ class Session:
         self, name: str, *, for_update: bool = False
     ) -> Optional[KeyEntry]:
         if not self._handle:
-            raise StoreError(
-                StoreErrorCode.WRAPPER, "Cannot fetch key from closed session"
+            raise AskarError(
+                AskarErrorCode.WRAPPER, "Cannot fetch key from closed session"
             )
         result_handle = await bindings.session_fetch_key(self._handle, name, for_update)
         return next(KeyEntryList(result_handle, 1)) if result_handle else None
@@ -493,32 +493,32 @@ class Session:
         expiry_ms: int = None,
     ):
         if not self._handle:
-            raise StoreError(
-                StoreErrorCode.WRAPPER, "Cannot update key with closed session"
+            raise AskarError(
+                AskarErrorCode.WRAPPER, "Cannot update key with closed session"
             )
         await bindings.session_update_key(self._handle, name, metadata, tags, expiry_ms)
 
     async def remove_key(self, name: str):
         if not self._handle:
-            raise StoreError(
-                StoreErrorCode.WRAPPER, "Cannot remove key with closed session"
+            raise AskarError(
+                AskarErrorCode.WRAPPER, "Cannot remove key with closed session"
             )
         await bindings.session_remove_key(self._handle, name)
 
     async def commit(self):
         if not self._is_txn:
-            raise StoreError(StoreErrorCode.WRAPPER, "Session is not a transaction")
+            raise AskarError(AskarErrorCode.WRAPPER, "Session is not a transaction")
         if not self._handle:
-            raise StoreError(StoreErrorCode.WRAPPER, "Cannot commit closed transaction")
+            raise AskarError(AskarErrorCode.WRAPPER, "Cannot commit closed transaction")
         await self._handle.close(commit=True)
         self._handle = None
 
     async def rollback(self):
         if not self._is_txn:
-            raise StoreError(StoreErrorCode.WRAPPER, "Session is not a transaction")
+            raise AskarError(AskarErrorCode.WRAPPER, "Session is not a transaction")
         if not self._handle:
-            raise StoreError(
-                StoreErrorCode.WRAPPER, "Cannot rollback closed transaction"
+            raise AskarError(
+                AskarErrorCode.WRAPPER, "Cannot rollback closed transaction"
             )
         await self._handle.close(commit=False)
         self._handle = None
@@ -546,11 +546,11 @@ class OpenSession:
 
     async def _open(self) -> Session:
         if not self._store.handle:
-            raise StoreError(
-                StoreErrorCode.WRAPPER, "Cannot start session from closed store"
+            raise AskarError(
+                AskarErrorCode.WRAPPER, "Cannot start session from closed store"
             )
         if self._session:
-            raise StoreError(StoreErrorCode.WRAPPER, "Session already opened")
+            raise AskarError(AskarErrorCode.WRAPPER, "Session already opened")
         self._session = Session(
             self._store,
             await bindings.session_start(
