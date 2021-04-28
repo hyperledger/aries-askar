@@ -60,6 +60,9 @@ class Key:
     def get_jwk_thumbprint(self) -> str:
         return bindings.key_get_jwk_thumbprint(self._handle)
 
+    def aead_params(self) -> bindings.AeadParams:
+        return bindings.key_aead_get_params(self._handle)
+
     def aead_random_nonce(self) -> bytes:
         return bytes(bindings.key_aead_random_nonce(self._handle))
 

@@ -10,6 +10,12 @@ use crate::kms::{
 
 pub type LocalKeyHandle = ArcHandle<LocalKey>;
 
+#[repr(C)]
+pub struct AeadParams {
+    nonce_length: i32,
+    tag_length: i32,
+}
+
 #[no_mangle]
 pub extern "C" fn askar_key_generate(
     alg: FfiStr<'_>,
@@ -222,6 +228,24 @@ pub extern "C" fn askar_key_aead_random_nonce(
         let key = handle.load()?;
         let nonce = key.aead_random_nonce()?;
         unsafe { *out = SecretBuffer::from_secret(nonce) };
+        Ok(ErrorCode::Success)
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn askar_key_aead_get_params(
+    handle: LocalKeyHandle,
+    out: *mut AeadParams,
+) -> ErrorCode {
+    catch_err! {
+        trace!("AEAD get params: {}", handle);
+        check_useful_c_ptr!(out);
+        let key = handle.load()?;
+        let params = key.aead_params()?;
+        unsafe { *out = AeadParams {
+            nonce_length: params.nonce_length as i32,
+            tag_length: params.tag_length as i32
+        } };
         Ok(ErrorCode::Success)
     }
 }

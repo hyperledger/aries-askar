@@ -64,6 +64,9 @@ def keys_test():
 
     data = b"test message"
     nonce = key.aead_random_nonce()
+    params = key.aead_params()
+    assert params.nonce_length == 12
+    assert params.tag_length == 16
     enc = key.aead_encrypt(data, nonce, b"aad")
     dec = key.aead_decrypt(enc, nonce, b"aad")
     assert data == bytes(dec)

@@ -294,6 +294,22 @@ class StrBuffer(c_char_p):
         get_library().askar_string_free(self)
 
 
+class AeadParams(Structure):
+    """A byte buffer allocated by the library."""
+
+    _fields_ = [
+        ("nonce_length", c_int32),
+        ("tag_length", c_int32),
+    ]
+
+    def __repr__(self) -> str:
+        """Format AEAD params as a string."""
+        return (
+            f"<AeadParams(nonce_length={self.nonce_length}, "
+            f"tag_length={self.tag_length})>"
+        )
+
+
 def get_library() -> CDLL:
     """Return the CDLL instance, loading it if necessary."""
     global LIB
@@ -954,6 +970,12 @@ def key_get_jwk_thumbprint(handle: LocalKeyHandle) -> str:
     thumb = StrBuffer()
     do_call("askar_key_get_jwk_thumbprint", handle, byref(thumb))
     return str(thumb)
+
+
+def key_aead_get_params(handle: LocalKeyHandle) -> AeadParams:
+    params = AeadParams()
+    do_call("askar_key_aead_get_params", handle, byref(params))
+    return params
 
 
 def key_aead_random_nonce(handle: LocalKeyHandle) -> ByteBuffer:

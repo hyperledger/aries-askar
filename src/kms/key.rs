@@ -3,6 +3,7 @@ use std::str::FromStr;
 pub use crate::crypto::{
     alg::KeyAlg,
     buffer::{SecretBytes, WriteBuffer},
+    encrypt::KeyAeadParams,
 };
 use crate::{
     crypto::{
@@ -120,6 +121,18 @@ impl LocalKey {
             inner,
             ephemeral: self.ephemeral,
         })
+    }
+
+    /// Fetch the AEAD parameter lengths
+    pub fn aead_params(&self) -> Result<KeyAeadParams, Error> {
+        let params = self.inner.aead_params();
+        if params.nonce_length == 0 {
+            return Err(err_msg!(
+                Unsupported,
+                "AEAD is not supported for this key type"
+            ));
+        }
+        Ok(params)
     }
 
     /// Create a new random nonce for AEAD message encryption
