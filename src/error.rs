@@ -1,6 +1,8 @@
 use std::error::Error as StdError;
 use std::fmt::{self, Display, Formatter};
 
+use crate::crypto::{Error as CryptoError, ErrorKind as CryptoErrorKind};
+
 /// The possible kinds of error produced by the crate
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ErrorKind {
@@ -157,10 +159,19 @@ impl From<indy_utils::ValidationError> for Error {
     }
 }
 
-impl From<askar_crypto::Error> for Error {
-    fn from(err: askar_crypto::Error) -> Self {
-        // FIXME map error types
-        Error::from_opt_msg(ErrorKind::Input, err.message())
+impl From<CryptoError> for Error {
+    fn from(err: CryptoError) -> Self {
+        let kind = match err.kind() {
+            CryptoErrorKind::Encryption => ErrorKind::Encryption,
+            CryptoErrorKind::ExceededBuffer | CryptoErrorKind::Unexpected => ErrorKind::Unexpected,
+            CryptoErrorKind::InvalidData
+            | CryptoErrorKind::InvalidKeyData
+            | CryptoErrorKind::InvalidNonce
+            | CryptoErrorKind::MissingSecretKey
+            | CryptoErrorKind::Usage => ErrorKind::Input,
+            CryptoErrorKind::Unsupported => ErrorKind::Unsupported,
+        };
+        Error::from_msg(kind, err.message())
     }
 }
 

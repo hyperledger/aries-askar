@@ -84,8 +84,8 @@ impl Error {
     }
 
     /// Accessor for the error message
-    pub fn message(&self) -> Option<&'static str> {
-        self.message
+    pub fn message(&self) -> &'static str {
+        self.message.unwrap_or_else(|| self.kind.as_str())
     }
 
     #[cfg(feature = "std")]
