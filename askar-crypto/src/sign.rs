@@ -1,8 +1,10 @@
 //! Signature traits and parameters
 
+use core::str::FromStr;
+
 #[cfg(feature = "alloc")]
 use crate::buffer::SecretBytes;
-use crate::{buffer::WriteBuffer, error::Error};
+use crate::{alg::normalize_alg, buffer::WriteBuffer, error::Error};
 
 /// Signature creation operations
 pub trait KeySign: KeySigVerify {
@@ -52,6 +54,19 @@ pub enum SignatureType {
     ES256,
     /// Elliptic curve DSA using K-256 and SHA-256
     ES256K,
+}
+
+impl FromStr for SignatureType {
+    type Err = Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match normalize_alg(s)? {
+            a if a == "eddsa" => Ok(Self::EdDSA),
+            a if a == "es256" => Ok(Self::ES256),
+            a if a == "es256k" => Ok(Self::ES256K),
+            _ => Err(err_msg!(Unsupported, "Unknown signature algorithm")),
+        }
+    }
 }
 
 impl SignatureType {

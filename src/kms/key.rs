@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 pub use crate::crypto::{
     alg::KeyAlg,
     buffer::{SecretBytes, WriteBuffer},
@@ -9,7 +11,7 @@ use crate::{
         jwk::{FromJwk, ToJwk},
         kdf::{KeyDerivation, KeyExchange},
         random::fill_random,
-        sign::{KeySigVerify, KeySign},
+        sign::{KeySigVerify, KeySign, SignatureType},
         Error as CryptoError,
     },
     error::Error,
@@ -157,7 +159,11 @@ impl LocalKey {
     /// Sign a message with this private signing key
     pub fn sign_message(&self, message: &[u8], sig_type: Option<&str>) -> Result<Vec<u8>, Error> {
         let mut sig = Vec::new();
-        self.inner.write_signature(message, None, &mut sig)?;
+        self.inner.write_signature(
+            message,
+            sig_type.map(SignatureType::from_str).transpose()?,
+            &mut sig,
+        )?;
         Ok(sig)
     }
 
@@ -168,7 +174,11 @@ impl LocalKey {
         signature: &[u8],
         sig_type: Option<&str>,
     ) -> Result<bool, Error> {
-        Ok(self.inner.verify_signature(message, signature, None)?)
+        Ok(self.inner.verify_signature(
+            message,
+            signature,
+            sig_type.map(SignatureType::from_str).transpose()?,
+        )?)
     }
 }
 
