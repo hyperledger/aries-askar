@@ -120,7 +120,7 @@ struct JwkMapVisitor<'de>(PhantomData<&'de ()>);
 impl<'de> Visitor<'de> for JwkMapVisitor<'de> {
     type Value = JwkParts<'de>;
 
-    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+    fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str("an object representing a JWK")
     }
 
@@ -194,7 +194,7 @@ struct KeyOpsVisitor;
 impl<'de> Visitor<'de> for KeyOpsVisitor {
     type Value = KeyOpsSet;
 
-    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+    fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str("an array of key operations")
     }
 
@@ -239,7 +239,7 @@ mod tests {
             "key_ops": ["sign", "verify"],
             "kid": "FdFYFzERwC2uCBB46pZQi4GG85LujR8obt-KWRBICVQ"
         }"#;
-        let parts = serde_json::from_str::<JwkParts>(jwk).unwrap();
+        let parts = serde_json::from_str::<JwkParts<'_>>(jwk).unwrap();
         assert_eq!(parts.kty, "OKP");
         assert_eq!(
             parts.kid,

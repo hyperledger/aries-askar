@@ -1,8 +1,7 @@
 //! Cryptography primitives and operations for aries-askar.
 
 #![no_std]
-#![deny(missing_debug_implementations)]
-#![deny(missing_docs)]
+#![deny(missing_docs, missing_debug_implementations, rust_2018_idioms)]
 
 #[cfg(feature = "alloc")]
 extern crate alloc;
