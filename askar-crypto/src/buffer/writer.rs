@@ -150,11 +150,12 @@ impl<B: ResizeBuffer + ?Sized> AsMut<[u8]> for Writer<'_, B> {
 
 impl<B: ResizeBuffer + ?Sized> ResizeBuffer for Writer<'_, B> {
     fn buffer_insert(&mut self, pos: usize, data: &[u8]) -> Result<(), Error> {
-        self.inner.buffer_insert(pos, data)
+        self.inner.buffer_insert(self.pos + pos, data)
     }
 
     fn buffer_remove(&mut self, range: Range<usize>) -> Result<(), Error> {
-        self.inner.buffer_remove(range)
+        self.inner
+            .buffer_remove((self.pos + range.start)..(self.pos + range.end))
     }
 
     fn buffer_resize(&mut self, len: usize) -> Result<(), Error> {

@@ -15,11 +15,11 @@ use crate::{
     repr::{KeyGen, KeyPublicBytes},
 };
 
-/// The size of the salsa box nonce
+/// The length of the salsa box nonce
 pub const CBOX_NONCE_LENGTH: usize = NonceSize::<SalsaBox>::USIZE;
-/// The size of the salsa box key size
+/// The length of the salsa box key (x25519 public key)
 pub const CBOX_KEY_LENGTH: usize = crate::alg::x25519::PUBLIC_KEY_LENGTH;
-/// The size of the salsa box tag size
+/// The length of the salsa box tag
 pub const CBOX_TAG_LENGTH: usize = TagSize::<SalsaBox>::USIZE;
 
 type NonceSize<A> = <A as AeadInPlace>::NonceSize;
@@ -57,7 +57,7 @@ pub fn crypto_box<B: ResizeBuffer>(
     let tag = box_inst
         .encrypt_in_place_detached(nonce, &[], buffer.as_mut())
         .map_err(|_| err_msg!(Encryption, "Crypto box AEAD encryption error"))?;
-    buffer.buffer_write(&tag[..])?;
+    buffer.buffer_insert(0, &tag[..])?;
     Ok(())
 }
 
@@ -71,19 +71,16 @@ pub fn crypto_box_open<B: ResizeBuffer>(
     let recip_sk = secret_key_from(recip_sk)?;
     let nonce = nonce_from(nonce)?;
     let buf_len = buffer.as_ref().len();
-    if buf_len < TagSize::<SalsaBox>::USIZE {
+    if buf_len < CBOX_TAG_LENGTH {
         return Err(err_msg!(Encryption, "Invalid size for encrypted data"));
     }
-    let tag_start = buf_len - TagSize::<SalsaBox>::USIZE;
-    let mut tag = GenericArray::default();
-    tag.clone_from_slice(&buffer.as_ref()[tag_start..]);
-
+    // the tag is prepended
+    let tag = GenericArray::clone_from_slice(&buffer.as_ref()[..CBOX_TAG_LENGTH]);
     let box_inst = SalsaBox::new(&sender_pk.public, &recip_sk);
-
     box_inst
-        .decrypt_in_place_detached(nonce, &[], &mut buffer.as_mut()[..tag_start], &tag)
+        .decrypt_in_place_detached(nonce, &[], &mut buffer.as_mut()[CBOX_TAG_LENGTH..], &tag)
         .map_err(|_| err_msg!(Encryption, "Crypto box AEAD decryption error"))?;
-    buffer.buffer_resize(tag_start)?;
+    buffer.buffer_remove(0..CBOX_TAG_LENGTH)?;
     Ok(())
 }
 
@@ -105,7 +102,7 @@ pub fn crypto_box_seal_nonce(
 pub fn crypto_box_seal(recip_pk: &X25519KeyPair, message: &[u8]) -> Result<SecretBytes, Error> {
     let ephem_kp = X25519KeyPair::generate()?;
     let ephem_pk_bytes = ephem_kp.public.as_bytes();
-    let buf_len = CBOX_KEY_LENGTH + message.len() + TagSize::<SalsaBox>::USIZE;
+    let buf_len = CBOX_KEY_LENGTH + CBOX_TAG_LENGTH + message.len();
     let mut buffer = SecretBytes::with_capacity(buf_len);
     buffer.buffer_write(ephem_pk_bytes)?;
     buffer.buffer_write(message)?;
@@ -149,7 +146,7 @@ mod tests {
         crypto_box(&pk, &sk, &mut buffer, nonce).unwrap();
         assert_eq!(
             buffer,
-            &hex!("1cc8721d567baa8f2b5583848dc97d373f7aa2223b57780c60f773")[..]
+            &hex!("848dc97d373f7aa2223b57780c60f7731cc8721d567baa8f2b5583")[..]
         );
 
         crypto_box_open(&sk, &pk, &mut buffer, nonce).unwrap();
@@ -169,5 +166,19 @@ mod tests {
 
         let open = crypto_box_seal_open(&recip, &sealed).unwrap();
         assert_eq!(open, &message[..]);
+    }
+
+    #[test]
+    fn crypto_box_unseal_expected() {
+        use crate::alg::ed25519::Ed25519KeyPair;
+        let recip = Ed25519KeyPair::from_secret_bytes(b"testseed000000000000000000000001")
+            .unwrap()
+            .to_x25519_keypair();
+        let ciphertext = hex!(
+            "ed443c0377a579857f2f00543e0da0f2585b6119cd9e43c871e4f1114c7ce9050b
+            a8811edf39d257bbeec0d423a0a7ff98d424fbfa9d52e0c5b3f674738f75d8e727f
+            5526296482fd0fd013d71d50ce4ce5ebe9c2fa1c230298419a9"
+        );
+        crypto_box_seal_open(&recip, &ciphertext).unwrap();
     }
 }
