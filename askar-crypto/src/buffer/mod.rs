@@ -15,6 +15,7 @@ pub use self::hash::HashBuffer;
 #[cfg(feature = "alloc")]
 mod secret;
 #[cfg(feature = "alloc")]
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 pub use self::secret::SecretBytes;
 
 mod string;
@@ -51,6 +52,7 @@ pub trait ResizeBuffer: WriteBuffer + AsRef<[u8]> + AsMut<[u8]> {
 }
 
 #[cfg(feature = "alloc")]
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 impl WriteBuffer for Vec<u8> {
     fn buffer_write(&mut self, data: &[u8]) -> Result<(), Error> {
         self.extend_from_slice(data);
@@ -59,6 +61,7 @@ impl WriteBuffer for Vec<u8> {
 }
 
 #[cfg(feature = "alloc")]
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 impl ResizeBuffer for Vec<u8> {
     fn buffer_insert(&mut self, pos: usize, data: &[u8]) -> Result<(), Error> {
         self.splice(pos..pos, data.into_iter().cloned());

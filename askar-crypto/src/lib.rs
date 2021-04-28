@@ -27,7 +27,6 @@ pub mod alg;
 pub mod buffer;
 
 pub mod encrypt;
-pub use self::encrypt::{KeyAeadInPlace, KeyAeadMeta};
 
 pub mod jwk;
 
@@ -36,7 +35,5 @@ pub mod kdf;
 pub mod random;
 
 pub mod sign;
-pub use self::sign::{KeySigVerify, KeySign, SignatureType};
 
 pub mod repr;
-pub use self::repr::{KeyGen, KeyMeta, KeyPublicBytes, KeySecretBytes, KeypairBytes, KeypairMeta};

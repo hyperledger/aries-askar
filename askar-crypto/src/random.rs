@@ -46,6 +46,7 @@ pub fn fill_random_deterministic(seed: &[u8], output: &mut [u8]) -> Result<(), E
 }
 
 #[cfg(feature = "alloc")]
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 /// Create a new `SecretBytes` instance with random data.
 #[inline(always)]
 pub fn random_secret(len: usize) -> SecretBytes {

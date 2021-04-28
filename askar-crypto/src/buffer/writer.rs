@@ -111,6 +111,7 @@ impl ResizeBuffer for Writer<'_, [u8]> {
 }
 
 #[cfg(feature = "alloc")]
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 impl<'w> Writer<'w, Vec<u8>> {
     #[inline]
     pub fn from_vec(vec: &'w mut Vec<u8>) -> Self {

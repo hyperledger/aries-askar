@@ -5,7 +5,7 @@ use crate::{
     crypto::{
         alg::{x25519::X25519KeyPair, KeyAlg},
         buffer::SecretBytes,
-        encrypt::nacl_box::{
+        encrypt::crypto_box::{
             crypto_box as nacl_box, crypto_box_open as nacl_box_open,
             crypto_box_seal as nacl_box_seal, crypto_box_seal_open as nacl_box_seal_open,
             CBOX_NONCE_SIZE, CBOX_TAG_SIZE,

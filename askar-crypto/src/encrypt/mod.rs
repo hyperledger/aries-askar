@@ -8,7 +8,8 @@ use crate::{
 };
 
 #[cfg(feature = "alloc")] // FIXME - support non-alloc?
-pub mod nacl_box;
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
+pub mod crypto_box;
 
 /// Trait for key types which perform AEAD encryption
 pub trait KeyAeadInPlace {

@@ -18,6 +18,7 @@ pub trait KeyExchange<Rhs: ?Sized = Self> {
     fn key_exchange_buffer(&self, other: &Rhs, out: &mut dyn WriteBuffer) -> Result<(), Error>;
 
     #[cfg(feature = "alloc")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
     /// Perform a key exchange and return a new allocated buffer.
     fn key_exchange_bytes(&self, other: &Rhs) -> Result<SecretBytes, Error> {
         let mut buf = SecretBytes::with_capacity(128);

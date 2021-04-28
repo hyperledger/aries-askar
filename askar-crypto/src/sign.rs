@@ -16,6 +16,7 @@ pub trait KeySign: KeySigVerify {
     ) -> Result<(), Error>;
 
     #[cfg(feature = "alloc")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
     /// Create a signature of the requested type and return an allocated
     /// buffer.
     fn create_signature(

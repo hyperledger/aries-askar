@@ -34,6 +34,7 @@ pub trait KeySecretBytes {
     }
 
     #[cfg(feature = "alloc")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
     /// Write the key secret bytes to a new allocated buffer.
     fn to_secret_bytes(&self) -> Result<SecretBytes, Error> {
         let mut buf = SecretBytes::with_capacity(128);
@@ -58,6 +59,7 @@ pub trait KeyPublicBytes {
     }
 
     #[cfg(feature = "alloc")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
     /// Write the key public bytes to a new allocated buffer.
     fn to_public_bytes(&self) -> Result<SecretBytes, Error> {
         let mut buf = SecretBytes::with_capacity(128);
@@ -88,6 +90,7 @@ pub trait KeypairBytes {
     }
 
     #[cfg(feature = "alloc")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
     /// Write the keypair bytes to a new allocated buffer.
     fn to_keypair_bytes(&self) -> Result<SecretBytes, Error> {
         let mut buf = SecretBytes::with_capacity(128);

@@ -25,6 +25,7 @@ pub trait ToJwk {
     fn to_jwk_encoder(&self, enc: &mut JwkEncoder<'_>) -> Result<(), Error>;
 
     #[cfg(feature = "alloc")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
     fn to_jwk_thumbprint(&self) -> Result<String, Error> {
         let mut v = Vec::with_capacity(43);
         jwk_thumbprint_buffer(self, &mut v)?;
@@ -32,6 +33,7 @@ pub trait ToJwk {
     }
 
     #[cfg(feature = "alloc")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
     fn to_jwk_public(&self) -> Result<String, Error> {
         let mut v = Vec::with_capacity(128);
         let mut buf = JwkEncoder::new(&mut v, JwkEncoderMode::PublicKey)?;
@@ -41,6 +43,7 @@ pub trait ToJwk {
     }
 
     #[cfg(feature = "alloc")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
     fn to_jwk_secret(&self) -> Result<SecretBytes, Error> {
         let mut v = SecretBytes::with_capacity(128);
         let mut buf = JwkEncoder::new(&mut v, JwkEncoderMode::SecretKey)?;
