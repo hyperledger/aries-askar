@@ -15,14 +15,14 @@ pub mod ecdh_es;
 /// Trait for keys supporting Diffie-Helman key exchange
 pub trait KeyExchange<Rhs: ?Sized = Self> {
     /// Perform a key exchange, writing the result to the provided buffer.
-    fn key_exchange_buffer(&self, other: &Rhs, out: &mut dyn WriteBuffer) -> Result<(), Error>;
+    fn write_key_exchange(&self, other: &Rhs, out: &mut dyn WriteBuffer) -> Result<(), Error>;
 
     #[cfg(feature = "alloc")]
     #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
     /// Perform a key exchange and return a new allocated buffer.
     fn key_exchange_bytes(&self, other: &Rhs) -> Result<SecretBytes, Error> {
         let mut buf = SecretBytes::with_capacity(128);
-        self.key_exchange_buffer(other, &mut buf)?;
+        self.write_key_exchange(other, &mut buf)?;
         Ok(buf)
     }
 }

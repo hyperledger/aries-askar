@@ -15,9 +15,12 @@ use crate::{
     repr::{KeyGen, KeyPublicBytes},
 };
 
-pub const CBOX_NONCE_SIZE: usize = NonceSize::<SalsaBox>::USIZE;
-pub const CBOX_KEY_SIZE: usize = crate::alg::x25519::PUBLIC_KEY_LENGTH;
-pub const CBOX_TAG_SIZE: usize = TagSize::<SalsaBox>::USIZE;
+/// The size of the salsa box nonce
+pub const CBOX_NONCE_LENGTH: usize = NonceSize::<SalsaBox>::USIZE;
+/// The size of the salsa box key size
+pub const CBOX_KEY_LENGTH: usize = crate::alg::x25519::PUBLIC_KEY_LENGTH;
+/// The size of the salsa box tag size
+pub const CBOX_TAG_LENGTH: usize = TagSize::<SalsaBox>::USIZE;
 
 type NonceSize<A> = <A as AeadInPlace>::NonceSize;
 
@@ -41,6 +44,7 @@ fn nonce_from(nonce: &[u8]) -> Result<&GenericArray<u8, NonceSize<SalsaBox>>, Er
     }
 }
 
+/// Encrypt a message into a crypto box with a given nonce
 pub fn crypto_box<B: ResizeBuffer>(
     recip_pk: &X25519KeyPair,
     sender_sk: &X25519KeyPair,
@@ -57,6 +61,7 @@ pub fn crypto_box<B: ResizeBuffer>(
     Ok(())
 }
 
+/// Unencrypt a crypto box
 pub fn crypto_box_open<B: ResizeBuffer>(
     recip_sk: &X25519KeyPair,
     sender_pk: &X25519KeyPair,
@@ -82,38 +87,41 @@ pub fn crypto_box_open<B: ResizeBuffer>(
     Ok(())
 }
 
+/// Construct a deterministic nonce for an ephemeral and recipient key
 pub fn crypto_box_seal_nonce(
     ephemeral_pk: &[u8],
     recip_pk: &[u8],
-) -> Result<[u8; CBOX_NONCE_SIZE], Error> {
-    let mut key_hash = VarBlake2b::new(CBOX_NONCE_SIZE).unwrap();
+) -> Result<[u8; CBOX_NONCE_LENGTH], Error> {
+    let mut key_hash = VarBlake2b::new(CBOX_NONCE_LENGTH).unwrap();
     key_hash.update(ephemeral_pk);
     key_hash.update(recip_pk);
-    let mut nonce = [0u8; CBOX_NONCE_SIZE];
+    let mut nonce = [0u8; CBOX_NONCE_LENGTH];
     key_hash.finalize_variable(|hash| nonce.copy_from_slice(hash));
     Ok(nonce)
 }
 
+/// Encrypt a message for a recipient using an ephemeral key and deterministic nonce
 // Could add a non-alloc version, if needed
 pub fn crypto_box_seal(recip_pk: &X25519KeyPair, message: &[u8]) -> Result<SecretBytes, Error> {
     let ephem_kp = X25519KeyPair::generate()?;
     let ephem_pk_bytes = ephem_kp.public.as_bytes();
-    let buf_len = CBOX_KEY_SIZE + message.len() + TagSize::<SalsaBox>::USIZE;
+    let buf_len = CBOX_KEY_LENGTH + message.len() + TagSize::<SalsaBox>::USIZE;
     let mut buffer = SecretBytes::with_capacity(buf_len);
     buffer.buffer_write(ephem_pk_bytes)?;
     buffer.buffer_write(message)?;
-    let mut writer = Writer::from_vec_skip(buffer.as_vec_mut(), CBOX_KEY_SIZE);
+    let mut writer = Writer::from_vec_skip(buffer.as_vec_mut(), CBOX_KEY_LENGTH);
     let nonce = crypto_box_seal_nonce(ephem_pk_bytes, recip_pk.public.as_bytes())?.to_vec();
     crypto_box(recip_pk, &ephem_kp, &mut writer, &nonce[..])?;
     Ok(buffer)
 }
 
+/// Unseal a sealed crypto box
 pub fn crypto_box_seal_open(
     recip_sk: &X25519KeyPair,
     ciphertext: &[u8],
 ) -> Result<SecretBytes, Error> {
-    let ephem_pk = X25519KeyPair::from_public_bytes(&ciphertext[..CBOX_KEY_SIZE])?;
-    let mut buffer = SecretBytes::from_slice(&ciphertext[CBOX_KEY_SIZE..]);
+    let ephem_pk = X25519KeyPair::from_public_bytes(&ciphertext[..CBOX_KEY_LENGTH])?;
+    let mut buffer = SecretBytes::from_slice(&ciphertext[CBOX_KEY_LENGTH..]);
     let nonce = crypto_box_seal_nonce(ephem_pk.public.as_bytes(), recip_sk.public.as_bytes())?;
     crypto_box_open(recip_sk, &ephem_pk, &mut buffer, &nonce)?;
     Ok(buffer)

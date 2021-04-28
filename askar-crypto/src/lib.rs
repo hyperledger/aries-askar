@@ -2,7 +2,7 @@
 
 #![no_std]
 #![deny(missing_debug_implementations)]
-// #![deny(missing_docs)]
+#![deny(missing_docs)]
 
 #[cfg(feature = "alloc")]
 extern crate alloc;

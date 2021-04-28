@@ -18,15 +18,21 @@ use crate::{
     repr::{KeyGen, KeyMeta, KeySecretBytes},
 };
 
+/// The 'kty' value of a symmetric key JWK
 pub static JWK_KEY_TYPE: &'static str = "oct";
 
+/// A common trait among supported AES-GCM sizes
 pub trait AesGcmType: 'static {
+    /// The AEAD implementation
     type Aead: NewAead + Aead + AeadInPlace;
 
+    /// The associated algorithm type
     const ALG_TYPE: AesTypes;
+    /// The associated JWK algorithm name
     const JWK_ALG: &'static str;
 }
 
+/// 128 bit AES-GCM
 #[derive(Debug)]
 pub struct A128GCM;
 
@@ -37,6 +43,7 @@ impl AesGcmType for A128GCM {
     const JWK_ALG: &'static str = "A128GCM";
 }
 
+/// 256 bit AES-GCM
 #[derive(Debug)]
 pub struct A256GCM;
 
@@ -53,6 +60,7 @@ type NonceSize<A> = <<A as AesGcmType>::Aead as Aead>::NonceSize;
 
 type TagSize<A> = <<A as AesGcmType>::Aead as Aead>::TagSize;
 
+/// An AES-GCM symmetric encryption key
 #[derive(Serialize, Deserialize, Zeroize)]
 #[serde(
     transparent,
@@ -65,8 +73,11 @@ type TagSize<A> = <<A as AesGcmType>::Aead as Aead>::TagSize;
 pub struct AesGcmKey<T: AesGcmType>(KeyType<T>);
 
 impl<T: AesGcmType> AesGcmKey<T> {
+    /// The length of the secret key in bytes
     pub const KEY_LENGTH: usize = KeyType::<T>::SIZE;
+    /// The length of the AEAD encryption nonce
     pub const NONCE_LENGTH: usize = NonceSize::<T>::USIZE;
+    /// The length of the AEAD encryption tag
     pub const TAG_LENGTH: usize = TagSize::<T>::USIZE;
 
     #[inline]
@@ -198,7 +209,7 @@ impl<T: AesGcmType> KeyAeadInPlace for AesGcmKey<T> {
 }
 
 impl<T: AesGcmType> ToJwk for AesGcmKey<T> {
-    fn to_jwk_encoder(&self, enc: &mut JwkEncoder<'_>) -> Result<(), Error> {
+    fn encode_jwk(&self, enc: &mut JwkEncoder<'_>) -> Result<(), Error> {
         if enc.is_public() {
             return Err(err_msg!(Unsupported, "Cannot export as a public key"));
         }
@@ -223,7 +234,7 @@ where
         // while it may be acceptable to just use the prefix if the output is longer?
         let mut key = Self::uninit();
         let mut buf = Writer::from_slice(key.0.as_mut());
-        lhs.key_exchange_buffer(rhs, &mut buf)?;
+        lhs.write_key_exchange(rhs, &mut buf)?;
         if buf.position() != Self::KEY_LENGTH {
             return Err(err_msg!(Usage, "Invalid length for key exchange output"));
         }

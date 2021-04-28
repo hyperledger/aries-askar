@@ -14,16 +14,25 @@ static OPS: &[KeyOps] = &[
     KeyOps::DeriveBits,
 ];
 
+/// Supported JWK key operations
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(usize)]
 pub enum KeyOps {
+    /// Allows encryption
     Encrypt = 1 << 0,
+    /// Allows decryption
     Decrypt = 1 << 1,
+    /// Allows signature creation
     Sign = 1 << 2,
+    /// Allows signature verification
     Verify = 1 << 3,
+    /// Allows key wrapping
     WrapKey = 1 << 4,
+    /// Allows key unwrapping
     UnwrapKey = 1 << 5,
+    /// Allows key derivation
     DeriveKey = 1 << 6,
+    /// Allows derivation of bytes
     DeriveBits = 1 << 7,
 }
 
@@ -34,6 +43,7 @@ impl Display for KeyOps {
 }
 
 impl KeyOps {
+    /// String representation of the key operation
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::Encrypt => "encrypt",
@@ -47,6 +57,7 @@ impl KeyOps {
         }
     }
 
+    /// Parse a key operation from a string reference
     pub fn from_str(key: &str) -> Option<Self> {
         match key {
             "sign" => Some(Self::Sign),
@@ -72,6 +83,7 @@ impl BitOr<Self> for KeyOps {
     }
 }
 
+/// A set of key operations
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(transparent)]
 pub struct KeyOpsSet {
@@ -79,10 +91,12 @@ pub struct KeyOpsSet {
 }
 
 impl KeyOpsSet {
+    /// Create a new, empty operation set
     pub const fn new() -> Self {
         Self { value: 0 }
     }
 
+    /// Check if an operation set is empty
     pub fn is_empty(&self) -> bool {
         self.value == 0
     }

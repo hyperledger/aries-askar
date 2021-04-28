@@ -304,18 +304,18 @@ fn convert_key_any<R: AllocKey>(key: &AnyKey, alg: KeyAlg) -> Result<R, Error> {
 }
 
 impl KeyExchange for AnyKey {
-    fn key_exchange_buffer(&self, other: &AnyKey, out: &mut dyn WriteBuffer) -> Result<(), Error> {
+    fn write_key_exchange(&self, other: &AnyKey, out: &mut dyn WriteBuffer) -> Result<(), Error> {
         match self.key_type_id() {
             s if s != other.key_type_id() => Err(err_msg!(Unsupported, "Unsupported key exchange")),
             s if s == TypeId::of::<X25519KeyPair>() => Ok(self
                 .assume::<X25519KeyPair>()
-                .key_exchange_buffer(other.assume::<X25519KeyPair>(), out)?),
+                .write_key_exchange(other.assume::<X25519KeyPair>(), out)?),
             s if s == TypeId::of::<K256KeyPair>() => Ok(self
                 .assume::<K256KeyPair>()
-                .key_exchange_buffer(other.assume::<K256KeyPair>(), out)?),
+                .write_key_exchange(other.assume::<K256KeyPair>(), out)?),
             s if s == TypeId::of::<P256KeyPair>() => Ok(self
                 .assume::<P256KeyPair>()
-                .key_exchange_buffer(other.assume::<P256KeyPair>(), out)?),
+                .write_key_exchange(other.assume::<P256KeyPair>(), out)?),
             #[allow(unreachable_patterns)]
             _ => return Err(err_msg!(Unsupported, "Unsupported key exchange")),
         }
@@ -461,7 +461,7 @@ impl KeyAeadInPlace for AnyKey {
 }
 
 impl ToJwk for AnyKey {
-    fn to_jwk_encoder(&self, enc: &mut JwkEncoder<'_>) -> Result<(), Error> {
+    fn encode_jwk(&self, enc: &mut JwkEncoder<'_>) -> Result<(), Error> {
         let key: &dyn ToJwk = match_key_types! {
             self,
             AesGcmKey<A128GCM>,
@@ -474,7 +474,7 @@ impl ToJwk for AnyKey {
             P256KeyPair;
             "JWK export is not supported for this key type"
         };
-        key.to_jwk_encoder(enc)
+        key.encode_jwk(enc)
     }
 }
 

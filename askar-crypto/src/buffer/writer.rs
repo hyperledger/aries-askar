@@ -5,6 +5,7 @@ use core::{fmt, ops::Range};
 use super::{ResizeBuffer, WriteBuffer};
 use crate::error::Error;
 
+/// A structure wrapping a mutable pointer to a buffer
 #[derive(Debug)]
 pub struct Writer<'w, B: ?Sized> {
     inner: &'w mut B,
@@ -12,12 +13,14 @@ pub struct Writer<'w, B: ?Sized> {
 }
 
 impl<B: ?Sized> Writer<'_, B> {
+    /// Accessor for the writer position
     pub fn position(&self) -> usize {
         self.pos
     }
 }
 
 impl<'w> Writer<'w, [u8]> {
+    /// Create a new writer from a mutable byte slice
     #[inline]
     pub fn from_slice(slice: &'w mut [u8]) -> Self {
         Writer {
@@ -26,6 +29,7 @@ impl<'w> Writer<'w, [u8]> {
         }
     }
 
+    /// Create a new writer from a mutable byte slice, skipping a prefix
     #[inline]
     pub fn from_slice_position(slice: &'w mut [u8], pos: usize) -> Self {
         Writer { inner: slice, pos }
@@ -113,11 +117,13 @@ impl ResizeBuffer for Writer<'_, [u8]> {
 #[cfg(feature = "alloc")]
 #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 impl<'w> Writer<'w, Vec<u8>> {
+    /// Create a new writer from a mutable Vec<u8> pointer
     #[inline]
     pub fn from_vec(vec: &'w mut Vec<u8>) -> Self {
         Writer { inner: vec, pos: 0 }
     }
 
+    /// Create a new writer from a mutable Vec<u8> pointer, skipping a prefix
     #[inline]
     pub fn from_vec_skip(vec: &'w mut Vec<u8>, pos: usize) -> Self {
         Writer { inner: vec, pos }
@@ -157,6 +163,7 @@ impl<B: ResizeBuffer + ?Sized> ResizeBuffer for Writer<'_, B> {
 }
 
 impl<'b, B: ?Sized> Writer<'b, B> {
+    /// Create a new writer from a pointer to a buffer implementation
     pub fn from_buffer(buf: &'b mut B) -> Writer<'b, B> {
         Writer { inner: buf, pos: 0 }
     }

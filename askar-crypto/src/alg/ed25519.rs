@@ -24,15 +24,22 @@ use crate::{
 // FIXME - check for low-order points when loading public keys?
 // https://github.com/tendermint/tmkms/pull/279
 
+/// The length of an EdDSA signature
 pub const EDDSA_SIGNATURE_LENGTH: usize = 64;
 
+/// The length of a public key in bytes
 pub const PUBLIC_KEY_LENGTH: usize = 32;
+/// The length of a secret key in bytes
 pub const SECRET_KEY_LENGTH: usize = 32;
+/// The length of a keypair in bytes
 pub const KEYPAIR_LENGTH: usize = SECRET_KEY_LENGTH + PUBLIC_KEY_LENGTH;
 
+/// The 'kty' value of an Ed25519 JWK
 pub static JWK_KEY_TYPE: &'static str = "OKP";
+/// The 'crv' value of an Ed25519 JWK
 pub static JWK_CURVE: &'static str = "Ed25519";
 
+/// An Ed25519 public key or keypair
 pub struct Ed25519KeyPair {
     // SECURITY: SecretKey zeroizes on drop
     secret: Option<SecretKey>,
@@ -49,12 +56,14 @@ impl Ed25519KeyPair {
         }
     }
 
+    /// Create a signing key from the secret key
     pub fn to_signing_key(&self) -> Option<Ed25519SigningKey<'_>> {
         self.secret
             .as_ref()
             .map(|sk| Ed25519SigningKey(ExpandedSecretKey::from(sk), &self.public))
     }
 
+    /// Convert this keypair to an X25519 keypair
     pub fn to_x25519_keypair(&self) -> X25519KeyPair {
         if let Some(secret) = self.secret.as_ref() {
             let hash = sha2::Sha512::digest(secret.as_bytes());
@@ -74,10 +83,12 @@ impl Ed25519KeyPair {
         }
     }
 
+    /// Sign a message with the secret key
     pub fn sign(&self, message: &[u8]) -> Option<[u8; EDDSA_SIGNATURE_LENGTH]> {
         self.to_signing_key().map(|sk| sk.sign(message))
     }
 
+    /// Verify a signature against the public key
     pub fn verify_signature(&self, message: &[u8], signature: &[u8]) -> bool {
         if let Ok(sig) = Signature::try_from(signature) {
             self.public.verify_strict(message, &sig).is_ok()
@@ -239,7 +250,7 @@ impl KeySigVerify for Ed25519KeyPair {
 }
 
 impl ToJwk for Ed25519KeyPair {
-    fn to_jwk_encoder(&self, enc: &mut JwkEncoder<'_>) -> Result<(), Error> {
+    fn encode_jwk(&self, enc: &mut JwkEncoder<'_>) -> Result<(), Error> {
         enc.add_str("crv", JWK_CURVE)?;
         enc.add_str("kty", JWK_KEY_TYPE)?;
         self.with_public_bytes(|buf| enc.add_as_base64("x", buf))?;
@@ -280,10 +291,12 @@ impl FromJwk for Ed25519KeyPair {
     }
 }
 
+/// An Ed25519 expanded secret key used for signing
 // SECURITY: ExpandedSecretKey zeroizes on drop
 pub struct Ed25519SigningKey<'p>(ExpandedSecretKey, &'p PublicKey);
 
 impl Ed25519SigningKey<'_> {
+    /// Sign a message with the secret key
     pub fn sign(&self, message: &[u8]) -> [u8; EDDSA_SIGNATURE_LENGTH] {
         self.0.sign(message, &self.1).to_bytes()
     }

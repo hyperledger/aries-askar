@@ -35,9 +35,12 @@ pub trait KeyAeadInPlace {
 
 /// For concrete key types with fixed nonce and tag sizes
 pub trait KeyAeadMeta {
+    /// The size of the AEAD nonce
     type NonceSize: ArrayLength<u8>;
+    /// The size of the AEAD tag
     type TagSize: ArrayLength<u8>;
 
+    /// Generate a new random nonce
     fn random_nonce() -> GenericArray<u8, Self::NonceSize> {
         let mut nonce = GenericArray::default();
         fill_random(nonce.as_mut_slice());
@@ -45,8 +48,11 @@ pub trait KeyAeadMeta {
     }
 }
 
+/// A structure combining the AEAD parameters
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct KeyAeadParams {
+    /// The length of the nonce
     pub nonce_length: usize,
+    /// The length of the tag
     pub tag_length: usize,
 }

@@ -7,13 +7,18 @@ use crate::{
 
 use super::ops::KeyOpsSet;
 
+/// Supported modes for JWK encoding
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum JwkEncoderMode {
+    /// Encoding a public key
     PublicKey,
+    /// Encoding a secret key
     SecretKey,
+    /// Encoding a public key thumbprint
     Thumbprint,
 }
 
+/// A helper structure which writes a JWK to a buffer
 #[derive(Debug)]
 pub struct JwkEncoder<'b> {
     buffer: &'b mut dyn WriteBuffer,
@@ -22,6 +27,7 @@ pub struct JwkEncoder<'b> {
 }
 
 impl<'b> JwkEncoder<'b> {
+    /// Create a new instance
     pub fn new<B: WriteBuffer>(buffer: &'b mut B, mode: JwkEncoderMode) -> Result<Self, Error> {
         Ok(Self {
             buffer,
@@ -45,6 +51,7 @@ impl JwkEncoder<'_> {
         Ok(())
     }
 
+    /// Add a string attribute
     pub fn add_str(&mut self, key: &str, value: &str) -> Result<(), Error> {
         self.start_attr(key)?;
         let buffer = &mut *self.buffer;
@@ -54,6 +61,7 @@ impl JwkEncoder<'_> {
         Ok(())
     }
 
+    /// Add a binary attribute to be encoded as unpadded base64-URL
     pub fn add_as_base64(&mut self, key: &str, value: &[u8]) -> Result<(), Error> {
         self.start_attr(key)?;
         let buffer = &mut *self.buffer;
@@ -68,6 +76,7 @@ impl JwkEncoder<'_> {
         Ok(())
     }
 
+    /// Add key operations to the JWK
     pub fn add_key_ops(&mut self, ops: impl Into<KeyOpsSet>) -> Result<(), Error> {
         self.start_attr("key_ops")?;
         let buffer = &mut *self.buffer;
@@ -84,22 +93,27 @@ impl JwkEncoder<'_> {
         Ok(())
     }
 
+    /// Accessor for the encoder mode
     pub fn mode(&self) -> JwkEncoderMode {
         self.mode
     }
 
+    /// Check if the mode is public
     pub fn is_public(&self) -> bool {
         matches!(self.mode, JwkEncoderMode::PublicKey)
     }
 
+    /// Check if the mode is secret
     pub fn is_secret(&self) -> bool {
         matches!(self.mode, JwkEncoderMode::SecretKey)
     }
 
+    /// Check if the mode is thumbprint
     pub fn is_thumbprint(&self) -> bool {
         matches!(self.mode, JwkEncoderMode::Thumbprint)
     }
 
+    /// Complete the JWK
     pub fn finalize(self) -> Result<(), Error> {
         if !self.empty {
             self.buffer.buffer_write(b"}")?;

@@ -19,15 +19,21 @@ use crate::{
     repr::{KeyGen, KeyMeta, KeySecretBytes},
 };
 
+/// The 'kty' value of a symmetric key JWK
 pub static JWK_KEY_TYPE: &'static str = "oct";
 
+/// A common trait among supported ChaCha20 key types
 pub trait Chacha20Type: 'static {
+    /// The AEAD implementation
     type Aead: NewAead + Aead + AeadInPlace;
 
+    /// The associated algorithm type
     const ALG_TYPE: Chacha20Types;
+    /// The associated JWK algorithm name
     const JWK_ALG: &'static str;
 }
 
+/// ChaCha20-Poly1305
 #[derive(Debug)]
 pub struct C20P;
 
@@ -38,6 +44,7 @@ impl Chacha20Type for C20P {
     const JWK_ALG: &'static str = "C20P";
 }
 
+/// XChaCha20-Poly1305
 #[derive(Debug)]
 pub struct XC20P;
 
@@ -54,6 +61,7 @@ type NonceSize<A> = <<A as Chacha20Type>::Aead as Aead>::NonceSize;
 
 type TagSize<A> = <<A as Chacha20Type>::Aead as Aead>::TagSize;
 
+/// A ChaCha20 symmetric encryption key
 #[derive(Serialize, Deserialize, Zeroize)]
 #[serde(
     transparent,
@@ -66,8 +74,11 @@ type TagSize<A> = <<A as Chacha20Type>::Aead as Aead>::TagSize;
 pub struct Chacha20Key<T: Chacha20Type>(KeyType<T>);
 
 impl<T: Chacha20Type> Chacha20Key<T> {
+    /// The length of the secret key in bytes
     pub const KEY_LENGTH: usize = KeyType::<T>::SIZE;
+    /// The length of the AEAD encryption nonce
     pub const NONCE_LENGTH: usize = NonceSize::<T>::USIZE;
+    /// The length of the AEAD encryption tag
     pub const TAG_LENGTH: usize = TagSize::<T>::USIZE;
 
     #[inline]
@@ -75,6 +86,7 @@ impl<T: Chacha20Type> Chacha20Key<T> {
         Self(KeyType::<T>::default())
     }
 
+    /// Construct a new ChaCha20 key from a seed value
     // this is consistent with Indy's wallet wrapping key generation
     // FIXME - move to aries_askar, use from_key_secret_bytes
     pub fn from_seed(seed: &[u8]) -> Result<Self, Error> {
@@ -207,7 +219,7 @@ impl<T: Chacha20Type> KeyAeadInPlace for Chacha20Key<T> {
 }
 
 impl<T: Chacha20Type> ToJwk for Chacha20Key<T> {
-    fn to_jwk_encoder(&self, enc: &mut JwkEncoder<'_>) -> Result<(), Error> {
+    fn encode_jwk(&self, enc: &mut JwkEncoder<'_>) -> Result<(), Error> {
         if enc.is_public() {
             return Err(err_msg!(Unsupported, "Cannot export as a public key"));
         }
@@ -232,7 +244,7 @@ where
         // while it may be acceptable to just use the prefix if the output is longer?
         let mut key = Self::uninit();
         let mut buf = Writer::from_slice(key.0.as_mut());
-        lhs.key_exchange_buffer(rhs, &mut buf)?;
+        lhs.write_key_exchange(rhs, &mut buf)?;
         if buf.position() != Self::KEY_LENGTH {
             return Err(err_msg!(Usage, "Invalid length for key exchange output"));
         }

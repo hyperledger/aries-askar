@@ -16,6 +16,7 @@ use crate::error::Error;
 pub struct SecretBytes(Vec<u8>);
 
 impl SecretBytes {
+    /// Create a new buffer using an initializer for the data
     pub fn new_with(len: usize, f: impl FnOnce(&mut [u8])) -> Self {
         let mut slf = Self::with_capacity(len);
         slf.0.resize(len, 0u8);
@@ -23,11 +24,13 @@ impl SecretBytes {
         slf
     }
 
+    /// Create a new, empty buffer with an initial capacity
     #[inline]
     pub fn with_capacity(max_len: usize) -> Self {
         Self(Vec::with_capacity(max_len))
     }
 
+    /// Create a new buffer from a slice
     #[inline]
     pub fn from_slice(data: &[u8]) -> Self {
         let mut v = Vec::with_capacity(data.len());
@@ -35,6 +38,7 @@ impl SecretBytes {
         Self(v)
     }
 
+    /// Create a new buffer from a slice, with extra space reserved
     #[inline]
     pub fn from_slice_reserve(data: &[u8], reserve: usize) -> Self {
         let mut v = Vec::with_capacity(data.len() + reserve);
@@ -42,6 +46,7 @@ impl SecretBytes {
         Self(v)
     }
 
+    /// Accessor for the length of the buffer contents
     #[inline]
     pub fn len(&self) -> usize {
         self.0.len()
@@ -52,6 +57,7 @@ impl SecretBytes {
         core::str::from_utf8(self.0.as_slice()).ok()
     }
 
+    /// Ensure that data can be appended to the buffer without resizing
     pub fn ensure_capacity(&mut self, min_cap: usize) {
         let cap = self.0.capacity();
         if cap == 0 {
@@ -66,17 +72,20 @@ impl SecretBytes {
         }
     }
 
+    /// Extend the buffer from a byte slice
     #[inline]
     pub fn extend_from_slice(&mut self, data: &[u8]) {
         self.reserve(data.len());
         self.0.extend_from_slice(data);
     }
 
+    /// Reserve extra space in the buffer
     #[inline]
     pub fn reserve(&mut self, extra: usize) {
         self.ensure_capacity(self.len() + extra)
     }
 
+    /// Convert this buffer into a boxed slice
     pub fn into_boxed_slice(mut self) -> Box<[u8]> {
         let len = self.0.len();
         if self.0.capacity() > len {
@@ -91,6 +100,7 @@ impl SecretBytes {
         }
     }
 
+    /// Unwrap this buffer into a Vec<u8>
     #[inline]
     pub fn into_vec(mut self) -> Vec<u8> {
         // FIXME zeroize extra capacity in case it was used previously?

@@ -23,17 +23,24 @@ use crate::{
     sign::{KeySigVerify, KeySign, SignatureType},
 };
 
+/// The length of an ES256 signature
 pub const ES256_SIGNATURE_LENGTH: usize = 64;
 
-pub const PUBLIC_KEY_LENGTH: usize = 33; // compressed size
+/// The length of a compressed public key in bytes
+pub const PUBLIC_KEY_LENGTH: usize = 33;
+/// The length of a secret key
 pub const SECRET_KEY_LENGTH: usize = 32;
+/// The length of a keypair in bytes
 pub const KEYPAIR_LENGTH: usize = SECRET_KEY_LENGTH + PUBLIC_KEY_LENGTH;
 
+/// The 'kty' value of an elliptic curve key JWK
 pub static JWK_KEY_TYPE: &'static str = "EC";
+/// The 'crv' value of a P-256 key JWK
 pub static JWK_CURVE: &'static str = "P-256";
 
 type FieldSize = <p256::NistP256 as Curve>::FieldSize;
 
+/// A P-256 (secp256r1) public key or keypair
 #[derive(Clone, Debug)]
 pub struct P256KeyPair {
     // SECURITY: SecretKey zeroizes on drop
@@ -55,6 +62,7 @@ impl P256KeyPair {
         self.secret.clone().map(SigningKey::from)
     }
 
+    /// Sign a message with the secret key
     pub fn sign(&self, message: &[u8]) -> Option<[u8; ES256_SIGNATURE_LENGTH]> {
         if let Some(skey) = self.to_signing_key() {
             let sig: Signature = skey.sign(message);
@@ -65,6 +73,7 @@ impl P256KeyPair {
         }
     }
 
+    /// Verify a signature with the public key
     pub fn verify_signature(&self, message: &[u8], signature: &[u8]) -> bool {
         if let Ok(sig) = Signature::try_from(signature) {
             let vk = VerifyingKey::from(&self.public);
@@ -200,7 +209,7 @@ impl KeySigVerify for P256KeyPair {
 }
 
 impl ToJwk for P256KeyPair {
-    fn to_jwk_encoder(&self, enc: &mut JwkEncoder<'_>) -> Result<(), Error> {
+    fn encode_jwk(&self, enc: &mut JwkEncoder<'_>) -> Result<(), Error> {
         let pk_enc = EncodedPoint::encode(self.public, false);
         let (x, y) = match pk_enc.coordinates() {
             Coordinates::Identity => {
@@ -261,7 +270,7 @@ impl FromJwk for P256KeyPair {
 }
 
 impl KeyExchange for P256KeyPair {
-    fn key_exchange_buffer(&self, other: &Self, out: &mut dyn WriteBuffer) -> Result<(), Error> {
+    fn write_key_exchange(&self, other: &Self, out: &mut dyn WriteBuffer) -> Result<(), Error> {
         match self.secret.as_ref() {
             Some(sk) => {
                 let xk = diffie_hellman(sk.secret_scalar(), other.public.as_affine());

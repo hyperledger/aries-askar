@@ -51,9 +51,8 @@ impl<Key: KeyExchange + ?Sized> KeyDerivation for Ecdh1PU<'_, Key> {
 
         // hash Zs and Ze directly into the KDF
         self.ephem_key
-            .key_exchange_buffer(self.recip_key, &mut kdf)?;
-        self.send_key
-            .key_exchange_buffer(self.recip_key, &mut kdf)?;
+            .write_key_exchange(self.recip_key, &mut kdf)?;
+        self.send_key.write_key_exchange(self.recip_key, &mut kdf)?;
 
         kdf.hash_params(ConcatKDFParams {
             alg: self.alg,

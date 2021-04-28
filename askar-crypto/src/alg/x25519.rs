@@ -19,13 +19,19 @@ use crate::{
     repr::{KeyGen, KeyMeta, KeyPublicBytes, KeySecretBytes, KeypairBytes, KeypairMeta},
 };
 
+/// The length of a public key in bytes
 pub const PUBLIC_KEY_LENGTH: usize = 32;
+/// The length of a secret key in bytes
 pub const SECRET_KEY_LENGTH: usize = 32;
+/// The length of a keypair in bytes
 pub const KEYPAIR_LENGTH: usize = SECRET_KEY_LENGTH + PUBLIC_KEY_LENGTH;
 
+/// The 'kty' value of an X25519 JWK
 pub static JWK_KEY_TYPE: &'static str = "OKP";
+/// The 'crv' value of an X25519 JWK
 pub static JWK_CURVE: &'static str = "X25519";
 
+/// An X25519 public key or keypair
 #[derive(Clone)]
 pub struct X25519KeyPair {
     // SECURITY: SecretKey (StaticSecret) zeroizes on drop
@@ -177,7 +183,7 @@ impl KeyPublicBytes for X25519KeyPair {
 }
 
 impl ToJwk for X25519KeyPair {
-    fn to_jwk_encoder(&self, enc: &mut JwkEncoder<'_>) -> Result<(), Error> {
+    fn encode_jwk(&self, enc: &mut JwkEncoder<'_>) -> Result<(), Error> {
         enc.add_str("crv", JWK_CURVE)?;
         enc.add_str("kty", JWK_KEY_TYPE)?;
         self.with_public_bytes(|buf| enc.add_as_base64("x", buf))?;
@@ -223,7 +229,7 @@ impl FromJwk for X25519KeyPair {
 }
 
 impl KeyExchange for X25519KeyPair {
-    fn key_exchange_buffer(&self, other: &Self, out: &mut dyn WriteBuffer) -> Result<(), Error> {
+    fn write_key_exchange(&self, other: &Self, out: &mut dyn WriteBuffer) -> Result<(), Error> {
         match self.secret.as_ref() {
             Some(sk) => {
                 let xk = sk.diffie_hellman(&other.public);

@@ -8,31 +8,34 @@ use serde::de::{Deserialize, Deserializer, MapAccess, SeqAccess, Visitor};
 use super::ops::{KeyOps, KeyOpsSet};
 use crate::error::Error;
 
+/// A parsed JWK
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct JwkParts<'a> {
-    // key type
+    /// Key type
     pub kty: &'a str,
-    // key ID
+    /// Key ID
     pub kid: OptAttr<'a>,
-    // curve type
+    /// Curve type
     pub crv: OptAttr<'a>,
-    // curve key public y coordinate
+    /// Curve key public x coordinate
     pub x: OptAttr<'a>,
-    // curve key public y coordinate
+    /// Curve key public y coordinate
     pub y: OptAttr<'a>,
-    // curve key private key bytes
+    /// Curve key private key bytes
     pub d: OptAttr<'a>,
-    // used by symmetric keys like AES
+    /// Used by symmetric keys like AES
     pub k: OptAttr<'a>,
-    // recognized key operations
+    /// Recognized key operations
     pub key_ops: Option<KeyOpsSet>,
 }
 
 impl<'de> JwkParts<'de> {
+    /// Parse a JWK from a string reference
     pub fn from_str(jwk: &'de str) -> Result<Self, Error> {
         serde_json::from_str(jwk).map_err(err_map!(InvalidData, "Error parsing JWK"))
     }
 
+    /// Parse a JWK from a byte slice
     pub fn from_slice(jwk: &'de [u8]) -> Result<Self, Error> {
         serde_json::from_slice(jwk).map_err(err_map!(InvalidData, "Error parsing JWK"))
     }

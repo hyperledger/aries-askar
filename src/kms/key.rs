@@ -173,11 +173,11 @@ impl LocalKey {
 }
 
 impl KeyExchange for LocalKey {
-    fn key_exchange_buffer(
+    fn write_key_exchange(
         &self,
         other: &LocalKey,
         out: &mut dyn WriteBuffer,
     ) -> Result<(), CryptoError> {
-        self.inner.key_exchange_buffer(&other.inner, out)
+        self.inner.write_key_exchange(&other.inner, out)
     }
 }
