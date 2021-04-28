@@ -1,3 +1,5 @@
+use askar_crypto::kdf::KeyDerivation;
+
 use crate::{
     crypto::{
         buffer::ArrayKey,
@@ -55,7 +57,7 @@ impl Level {
 
     pub fn derive_key(&self, password: &[u8], salt: &[u8]) -> Result<StoreKey, Error> {
         let mut key = ArrayKey::<<StoreKeyType as KeyMeta>::KeySize>::default();
-        Argon2::derive_key(password, salt, *self.params(), key.as_mut())?;
+        Argon2::new(password, salt, *self.params())?.derive_key_bytes(key.as_mut())?;
         Ok(StoreKey::from(StoreKeyType::from_secret_bytes(
             key.as_ref(),
         )?))

@@ -1,11 +1,12 @@
 //! Argon2 key derivation from a password
 
+pub use argon2::{Algorithm, Version};
+
+use super::KeyDerivation;
 use crate::{
     error::Error,
     generic_array::typenum::{Unsigned, U16},
 };
-
-pub use argon2::{Algorithm, Version};
 
 /// The size of the password salt
 pub type SaltSize = U16;
@@ -38,31 +39,45 @@ pub struct Params {
 }
 
 /// Struct wrapping the KDF functionality
-#[derive(Clone, Copy, Debug)]
-pub struct Argon2;
+#[derive(Debug)]
+pub struct Argon2<'a> {
+    password: &'a [u8],
+    salt: &'a [u8],
+    params: Params,
+}
 
-impl Argon2 {
-    /// Derive the key and write it to the provided buffer
-    pub fn derive_key(
-        password: &[u8],
-        salt: &[u8],
-        params: Params,
-        output: &mut [u8],
-    ) -> Result<(), Error> {
+impl<'a> Argon2<'a> {
+    /// Create a new Argon2 key derivation instance
+    pub fn new(password: &'a [u8], salt: &'a [u8], params: Params) -> Result<Self, Error> {
         if salt.len() < SALT_LENGTH {
             return Err(err_msg!(Usage, "Invalid salt for argon2i hash"));
         }
-        if output.len() > u32::MAX as usize {
+        Ok(Self {
+            password,
+            salt,
+            params,
+        })
+    }
+}
+
+impl KeyDerivation for Argon2<'_> {
+    fn derive_key_bytes(&mut self, key_output: &mut [u8]) -> Result<(), Error> {
+        if key_output.len() > u32::MAX as usize {
             return Err(err_msg!(
                 Usage,
                 "Output length exceeds max for argon2i hash"
             ));
         }
-        let context =
-            argon2::Argon2::new(None, params.time_cost, params.mem_cost, 1, params.version)
-                .map_err(|_| err_msg!(Unexpected, "Error creating hasher"))?;
+        let context = argon2::Argon2::new(
+            None,
+            self.params.time_cost,
+            self.params.mem_cost,
+            1,
+            self.params.version,
+        )
+        .map_err(|_| err_msg!(Unexpected, "Error creating hasher"))?;
         context
-            .hash_password_into(params.alg, password, salt, &[], output)
+            .hash_password_into(self.params.alg, self.password, self.salt, &[], key_output)
             .map_err(|_| err_msg!(Unexpected, "Error deriving key"))
     }
 }
@@ -76,7 +91,10 @@ mod tests {
         let pass = b"my password";
         let salt = b"long enough salt";
         let mut output = [0u8; 32];
-        Argon2::derive_key(pass, salt, PARAMS_INTERACTIVE, &mut output).unwrap();
+        Argon2::new(pass, salt, PARAMS_INTERACTIVE)
+            .unwrap()
+            .derive_key_bytes(&mut output)
+            .unwrap();
         assert_eq!(
             output,
             hex!("9ef87bcf828c46c0136a0d1d9e391d713f75b327c6dc190455bd36c1bae33259")
