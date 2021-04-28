@@ -119,11 +119,11 @@ class EntryListHandle(c_size_t):
         )
         return str(name)
 
-    def get_value(self, index: int) -> bytes:
+    def get_value(self, index: int) -> memoryview:
         """Get the entry value."""
         val = ByteBuffer()
         do_call("askar_entry_list_get_value", self, c_int32(index), byref(val))
-        return bytes(val)
+        return memoryview(val.raw)
 
     def get_tags(self, index: int) -> dict:
         """Get the entry tags."""

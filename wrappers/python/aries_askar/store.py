@@ -39,9 +39,14 @@ class Entry:
         """Accessor for the entry name."""
         return self._list.get_name(self._pos)
 
-    @cached_property
+    @property
     def value(self) -> bytes:
         """Accessor for the entry value."""
+        return bytes(self.raw_value)
+
+    @cached_property
+    def raw_value(self) -> memoryview:
+        """Accessor for the entry raw value."""
         return self._list.get_value(self._pos)
 
     @property
