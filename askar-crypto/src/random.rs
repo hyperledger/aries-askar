@@ -5,7 +5,7 @@ use chacha20::{
     cipher::{NewStreamCipher, SyncStreamCipher},
     ChaCha20,
 };
-use rand::{rngs::OsRng, RngCore};
+use rand::{CryptoRng, RngCore};
 
 #[cfg(feature = "alloc")]
 use crate::buffer::SecretBytes;
@@ -14,14 +14,17 @@ use crate::error::Error;
 /// The expected length of a seed for `fill_random_deterministic`
 pub const DETERMINISTIC_SEED_LENGTH: usize = <ChaCha20 as NewStreamCipher>::KeySize::USIZE;
 
-/// The type of the standard random number generator
-pub type StdRng = OsRng;
+/// Combined trait for CryptoRng and RngCore
+pub trait Rng: CryptoRng + RngCore {}
+
+impl<T: CryptoRng + RngCore> Rng for T {}
 
 /// Perform an operation with a reference to the random number generator
 #[inline(always)]
-pub fn with_rng<O>(f: impl FnOnce(&mut StdRng) -> O) -> O {
-    // may need to substitute another RNG depending on the platform
-    f(&mut OsRng)
+pub fn with_rng<O>(f: impl FnOnce(&mut dyn Rng) -> O) -> O {
+    // FIXME may wish to support platforms without 'getrandom' by adding
+    // a method to initialize with a custom RNG (or fill_bytes function)
+    f(&mut ::rand::rngs::OsRng)
 }
 
 /// Fill a mutable slice with random data using the

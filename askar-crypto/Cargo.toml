@@ -40,17 +40,13 @@ aes-gcm = { version = "0.8", default-features = false, features = ["aes"] }
 argon2 = { version = "0.1", default-features = false, features = ["password-hash"] }
 base64 = { version = "0.13", default-features = false }
 blake2 = { version = "0.9", default-features = false }
-# bls12_381 = { version = "0.4.0", path = "../../bls12_381" }
-bs58 = { version = "0.4", default-features = false }
-chacha20 = "0.6"  # should match version from chacha20poly1305
+chacha20 = "*"  # inherit from chacha20poly1305
 chacha20poly1305 = { version = "0.7", default-features = false, features = ["chacha20"] }
 crypto_box = { version = "0.5", default-features = false, features = ["u64_backend"] }
 curve25519-dalek = { version = "3.0", default-features = false, features = ["u64_backend"] }
 ed25519-dalek = { version = "1.0", default-features = false, features = ["u64_backend"] }
 digest = "0.9"
 group = "0.9"
-hex = { version = "0.4", default-features = false }
-hkdf = "0.10"
 k256 = { version = "0.7", default-features = false, features = ["arithmetic", "ecdsa", "ecdh", "sha256", "zeroize"] }
 p256 = { version = "0.7", default-features = false, features = ["arithmetic", "ecdsa", "ecdh", "zeroize"] }
 rand = { version = "0.7", default-features = false, features = ["getrandom"] }
