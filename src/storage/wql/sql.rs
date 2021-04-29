@@ -94,9 +94,7 @@ where
         is_plaintext: bool,
         negate: bool,
     ) -> Result<Option<Self::Clause>, Error> {
-        let args_in = std::iter::repeat("$$")
-            .take(enc_values.len())
-            .intersperse(", ")
+        let args_in = Itertools::intersperse(std::iter::repeat("$$").take(enc_values.len()), ", ")
             .collect::<String>();
         let query = format!(
             "i.id IN (SELECT item_id FROM items_tags WHERE name = $$ AND value {} ({}) AND plaintext = {})",

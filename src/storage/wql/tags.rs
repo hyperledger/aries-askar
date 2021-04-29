@@ -331,11 +331,8 @@ mod tests {
             negate: bool,
         ) -> Result<Option<Self::Clause>, Error> {
             let op = if negate { "NOT IN" } else { "IN" };
-            let value = values
-                .iter()
-                .map(|v| v.as_str())
-                .intersperse(", ")
-                .collect::<String>();
+            let value =
+                Itertools::intersperse(values.iter().map(|v| v.as_str()), ", ").collect::<String>();
             Ok(Some(format!("{} {} ({})", name, op, value)))
         }
 
@@ -346,12 +343,10 @@ mod tests {
         ) -> Result<Option<Self::Clause>, Error> {
             let mut r = String::new();
             r.push_str("(");
-            r.extend(
-                clauses
-                    .iter()
-                    .map(String::as_str)
-                    .intersperse(op.as_sql_str()),
-            );
+            r.extend(Itertools::intersperse(
+                clauses.iter().map(String::as_str),
+                op.as_sql_str(),
+            ));
             r.push_str(")");
             Ok(Some(r))
         }
