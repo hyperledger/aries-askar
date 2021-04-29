@@ -18,8 +18,6 @@ mod any;
 #[cfg_attr(docsrs, doc(cfg(feature = "any_key")))]
 pub use any::{AnyKey, AnyKeyCreate};
 
-// pub mod bls;
-
 pub mod aesgcm;
 
 pub mod chacha20;
@@ -44,8 +42,6 @@ pub enum KeyAlg {
     X25519,
     /// Elliptic Curve key for signing or key exchange
     EcCurve(EcCurves),
-    // /// BLS12-1381 signing key in group G1 or G2
-    // BLS12_1381(BlsGroup),
 }
 
 impl KeyAlg {
@@ -159,15 +155,6 @@ impl Display for KeyAlg {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         f.write_str(self.as_str())
     }
-}
-
-/// Supported BLS12-381 groups
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Zeroize)]
-pub enum BlsGroups {
-    /// A key or signature represented by an element from the BLS12-381 G1 group
-    G1,
-    /// A key or signature represented by an element from the BLS12-381 G2 group
-    G2,
 }
 
 /// Supported algorithms for AES

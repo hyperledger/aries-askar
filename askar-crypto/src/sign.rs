@@ -47,7 +47,6 @@ pub trait KeySigVerify {
 /// Supported signature types
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum SignatureType {
-    // Bls12_1381(BlsGroups),
     /// Standard signature output for ed25519
     EdDSA,
     /// Elliptic curve DSA using P-256 and SHA-256
@@ -73,11 +72,7 @@ impl SignatureType {
     /// Get the length of the signature output.
     pub const fn signature_length(&self) -> usize {
         match self {
-            // Self::Bls12_1381(BlsGroups::G1) => 48,
-            // Self::Bls12_1381(BlsGroups::G2) => 96,
-            Self::EdDSA => 64,
-            Self::ES256 => 64,
-            Self::ES256K => 64,
+            Self::EdDSA | Self::ES256 | Self::ES256K => 64,
         }
     }
 }
