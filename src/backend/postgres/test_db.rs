@@ -11,7 +11,7 @@ use super::PostgresStore;
 use crate::{
     backend::db_utils::{init_keys, random_profile_name},
     error::Error,
-    future::{block_on, unblock},
+    future::{block_on, sleep, timeout, unblock},
     protect::{generate_raw_store_key, KeyCache, StoreKeyMethod},
     storage::Store,
 };
@@ -55,7 +55,7 @@ impl TestDB {
                 break lock_txn;
             }
             lock_txn.close().await?;
-            async_std::task::sleep(Duration::from_millis(50)).await;
+            sleep(Duration::from_millis(50)).await;
         };
 
         let mut init_txn = conn_pool.begin().await?;
@@ -97,12 +97,9 @@ impl Drop for TestDB {
             block_on(lock_txn.close()).expect("Error closing database connection");
         }
         if let Some(inst) = self.inst.take() {
-            block_on(async_std::future::timeout(
-                Duration::from_secs(30),
-                inst.close(),
-            ))
-            .expect("Timed out waiting for the pool connection to close")
-            .expect("Error closing connection pool");
+            block_on(timeout(Duration::from_secs(30), inst.close()))
+                .expect("Timed out waiting for the pool connection to close")
+                .expect("Error closing connection pool");
         }
     }
 }

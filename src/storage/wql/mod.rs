@@ -1,4 +1,4 @@
-pub use indy_utils::wql::{AbstractQuery, Query};
+pub use indy_wql::{AbstractQuery, Query};
 
 pub mod sql;
 pub mod tags;

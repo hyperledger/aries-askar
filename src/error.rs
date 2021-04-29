@@ -70,14 +70,6 @@ impl Error {
         }
     }
 
-    pub(crate) fn from_opt_msg<T: Into<String>>(kind: ErrorKind, msg: Option<T>) -> Self {
-        Self {
-            kind,
-            cause: None,
-            message: msg.map(Into::into),
-        }
-    }
-
     /// Accessor for the error kind
     pub fn kind(&self) -> ErrorKind {
         self.kind
@@ -138,24 +130,6 @@ impl From<ErrorKind> for Error {
 impl From<sqlx::Error> for Error {
     fn from(err: sqlx::Error) -> Self {
         Error::from(ErrorKind::Backend).with_cause(err)
-    }
-}
-
-impl From<indy_utils::EncryptionError> for Error {
-    fn from(err: indy_utils::EncryptionError) -> Self {
-        Error::from_opt_msg(ErrorKind::Encryption, err.context)
-    }
-}
-
-impl From<indy_utils::UnexpectedError> for Error {
-    fn from(err: indy_utils::UnexpectedError) -> Self {
-        Error::from_opt_msg(ErrorKind::Unexpected, err.context)
-    }
-}
-
-impl From<indy_utils::ValidationError> for Error {
-    fn from(err: indy_utils::ValidationError) -> Self {
-        Error::from_opt_msg(ErrorKind::Input, err.context)
     }
 }
 

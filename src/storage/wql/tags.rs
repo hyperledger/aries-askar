@@ -5,9 +5,9 @@ pub type TagQuery = AbstractQuery<TagName, String>;
 
 pub fn tag_query(query: Query) -> Result<TagQuery, Error> {
     let result = query
-        .map_names(&mut |k| {
+        .map_names(|k| {
             if k.starts_with("~") {
-                Ok(TagName::Plaintext(k[1..].to_string()))
+                Result::<_, ()>::Ok(TagName::Plaintext(k[1..].to_string()))
             } else {
                 Ok(TagName::Encrypted(k))
             }
