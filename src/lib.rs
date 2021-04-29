@@ -38,11 +38,6 @@ pub use askar_crypto as crypto;
 #[doc(hidden)]
 pub mod future;
 
-#[cfg(feature = "indy_compat")]
-#[cfg_attr(docsrs, doc(cfg(feature = "indy_compat")))]
-/// Indy wallet compatibility support
-pub mod indy_compat;
-
 #[cfg(feature = "ffi")]
 #[macro_use]
 extern crate serde_json;
