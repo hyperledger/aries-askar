@@ -136,12 +136,21 @@ async def store_test():
         log("Inserted key")
 
         # Update keypair
-        await session.update_key(key_name, metadata="updated metadata")
+        await session.update_key(key_name, metadata="updated metadata", tags={"a": "b"})
         log("Updated key")
 
         # Fetch keypair
-        key = await session.fetch_key(key_name)
-        log("Fetched key:", key)
+        fetch_key = await session.fetch_key(key_name)
+        log("Fetched key:", fetch_key)
+        thumbprint = keypair.get_jwk_thumbprint()
+        assert fetch_key.key.get_jwk_thumbprint() == thumbprint
+
+        # Fetch with filters
+        keys = await session.fetch_all_keys(
+            alg=KeyAlg.ED25519, thumbprint=thumbprint, tag_filter={"a": "b"}, limit=1
+        )
+        log("Fetched keys:", keys)
+        assert len(keys) == 1
 
     async with store as session:
         # Remove rows by category and (optional) tag filter

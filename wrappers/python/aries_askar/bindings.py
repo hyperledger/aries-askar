@@ -699,15 +699,13 @@ async def session_fetch_all(
     for_update: bool = False,
 ) -> EntryListHandle:
     """Fetch all matching rows in the Store."""
-    category = encode_str(category)
     if isinstance(tag_filter, dict):
         tag_filter = json.dumps(tag_filter)
-    tag_filter = encode_str(tag_filter)
     return await do_call_async(
         "askar_session_fetch_all",
         handle,
-        category,
-        tag_filter,
+        encode_str(category),
+        encode_str(tag_filter),
         c_int64(limit if limit is not None else -1),
         c_int8(for_update),
         return_type=EntryListHandle,
@@ -720,16 +718,14 @@ async def session_remove_all(
     tag_filter: Union[str, dict] = None,
 ) -> int:
     """Remove all matching rows in the Store."""
-    category = encode_str(category)
     if isinstance(tag_filter, dict):
         tag_filter = json.dumps(tag_filter)
-    tag_filter = encode_str(tag_filter)
     return int(
         await do_call_async(
             "askar_session_remove_all",
             handle,
-            category,
-            tag_filter,
+            encode_str(category),
+            encode_str(tag_filter),
             return_type=c_int64,
         )
     )
@@ -790,6 +786,31 @@ async def session_fetch_key(
     )
     if ptr:
         return KeyEntryListHandle(ptr)
+
+
+async def session_fetch_all_keys(
+    handle: SessionHandle,
+    alg: Union[str, KeyAlg] = None,
+    thumbprint: str = None,
+    tag_filter: Union[str, dict] = None,
+    limit: int = None,
+    for_update: bool = False,
+) -> EntryListHandle:
+    """Fetch all matching keys in the Store."""
+    if isinstance(alg, KeyAlg):
+        alg = alg.value
+    if isinstance(tag_filter, dict):
+        tag_filter = json.dumps(tag_filter)
+    return await do_call_async(
+        "askar_session_fetch_all_keys",
+        handle,
+        encode_str(alg),
+        encode_str(thumbprint),
+        encode_str(tag_filter),
+        c_int64(limit if limit is not None else -1),
+        c_int8(for_update),
+        return_type=KeyEntryListHandle,
+    )
 
 
 async def session_update_key(

@@ -17,7 +17,7 @@ from .bindings import (
 )
 from .error import AskarError, AskarErrorCode
 from .key import Key
-from .types import EntryOperation
+from .types import EntryOperation, KeyAlg
 
 
 class Entry:
@@ -488,6 +488,24 @@ class Session:
             )
         result_handle = await bindings.session_fetch_key(self._handle, name, for_update)
         return next(KeyEntryList(result_handle, 1)) if result_handle else None
+
+    async def fetch_all_keys(
+        self,
+        *,
+        alg: Union[str, KeyAlg] = None,
+        thumbprint: str = None,
+        tag_filter: Union[str, dict] = None,
+        limit: int = None,
+        for_update: bool = False,
+    ) -> KeyEntryList:
+        if not self._handle:
+            raise AskarError(
+                AskarErrorCode.WRAPPER, "Cannot fetch key from closed session"
+            )
+        result_handle = await bindings.session_fetch_all_keys(
+            self._handle, alg, thumbprint, tag_filter, limit, for_update
+        )
+        return KeyEntryList(result_handle)
 
     async def update_key(
         self,

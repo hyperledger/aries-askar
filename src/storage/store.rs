@@ -324,6 +324,54 @@ impl<Q: QueryBackend> Session<Q> {
         )
     }
 
+    /// Retrieve all keys matching the given filters.
+    pub async fn fetch_all_keys(
+        &mut self,
+        algorithm: Option<&str>,
+        thumbprint: Option<&str>,
+        tag_filter: Option<TagFilter>,
+        limit: Option<i64>,
+        for_update: bool,
+    ) -> Result<Vec<KeyEntry>, Error> {
+        let mut query_parts = Vec::with_capacity(3);
+        if let Some(query) = tag_filter.map(|f| f.query) {
+            query_parts.push(TagFilter::from(
+                query
+                    .map_names(|mut k| {
+                        k.replace_range(0..0, "user:");
+                        Result::<_, ()>::Ok(k)
+                    })
+                    .unwrap(),
+            ));
+        }
+        if let Some(algorithm) = algorithm {
+            query_parts.push(TagFilter::is_eq("alg", algorithm));
+        }
+        if let Some(thumbprint) = thumbprint {
+            query_parts.push(TagFilter::is_eq("thumb", thumbprint));
+        }
+        let tag_filter = if query_parts.is_empty() {
+            None
+        } else {
+            Some(TagFilter::all_of(query_parts))
+        };
+        let rows = self
+            .0
+            .fetch_all(
+                EntryKind::Kms,
+                KmsCategory::CryptoKey.as_str(),
+                tag_filter,
+                limit,
+                for_update,
+            )
+            .await?;
+        let mut entries = Vec::with_capacity(rows.len());
+        for row in rows {
+            entries.push(KeyEntry::from_entry(row)?)
+        }
+        Ok(entries)
+    }
+
     /// Remove an existing key from the store
     pub async fn remove_key(&mut self, name: &str) -> Result<(), Error> {
         self.0

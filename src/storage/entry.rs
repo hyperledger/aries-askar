@@ -454,6 +454,12 @@ impl TagFilter {
     }
 }
 
+impl From<wql::Query> for TagFilter {
+    fn from(query: wql::Query) -> Self {
+        Self { query }
+    }
+}
+
 impl FromStr for TagFilter {
     type Err = Error;
 

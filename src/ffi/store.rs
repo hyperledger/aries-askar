@@ -828,6 +828,53 @@ pub extern "C" fn askar_session_fetch_key(
 }
 
 #[no_mangle]
+pub extern "C" fn askar_session_fetch_all_keys(
+    handle: SessionHandle,
+    alg: FfiStr<'_>,
+    thumbprint: FfiStr<'_>,
+    tag_filter: FfiStr<'_>,
+    limit: i64,
+    for_update: i8,
+    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, results: KeyEntryListHandle)>,
+    cb_id: CallbackId,
+) -> ErrorCode {
+    catch_err! {
+        trace!("Fetch all keys");
+        let cb = cb.ok_or_else(|| err_msg!("No callback provided"))?;
+        let alg = alg.into_opt_string();
+        let thumbprint = thumbprint.into_opt_string();
+        let tag_filter = tag_filter.as_opt_str().map(TagFilter::from_str).transpose()?;
+        let limit = if limit < 0 { None } else {Some(limit)};
+
+        let cb = EnsureCallback::new(move |result|
+            match result {
+                Ok(entries) => {
+                    let results = KeyEntryListHandle::create(FfiKeyEntryList::from(entries));
+                    cb(cb_id, ErrorCode::Success, results)
+                }
+                Err(err) => cb(cb_id, set_last_error(Some(err)), KeyEntryListHandle::invalid()),
+            }
+        );
+
+        spawn_ok(async move {
+            let result = async {
+                let mut session = handle.load().await?;
+                let key_entry = session.fetch_all_keys(
+                    alg.as_ref().map(String::as_str),
+                    thumbprint.as_ref().map(String::as_str),
+                    tag_filter,
+                    limit,
+                    for_update != 0
+                ).await?;
+                Ok(key_entry)
+            }.await;
+            cb.resolve(result);
+        });
+        Ok(ErrorCode::Success)
+    }
+}
+
+#[no_mangle]
 pub extern "C" fn askar_session_update_key(
     handle: SessionHandle,
     name: FfiStr<'_>,
