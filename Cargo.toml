@@ -78,7 +78,3 @@ codegen-units = 1
 
 [[test]]
 name = "backends"
-
-[[test]]
-name = "faber"
-required-features = ["indy_compat"]
