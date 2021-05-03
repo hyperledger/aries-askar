@@ -141,13 +141,14 @@ impl KeypairBytes for K256KeyPair {
     }
 
     fn with_keypair_bytes<O>(&self, f: impl FnOnce(Option<&[u8]>) -> O) -> O {
-        if let Some(sk) = self.secret.as_ref() {
-            let mut buf = ArrayKey::<<Self as KeypairMeta>::KeypairSize>::default();
-            let sk_b = k256::SecretBytes::from(sk.to_bytes());
-            let pk_enc = EncodedPoint::encode(self.public, true);
-            buf.as_mut()[..SECRET_KEY_LENGTH].copy_from_slice(&sk_b[..]);
-            buf.as_mut()[SECRET_KEY_LENGTH..].copy_from_slice(pk_enc.as_ref());
-            f(Some(buf.as_ref()))
+        if let Some(secret) = self.secret.as_ref() {
+            ArrayKey::<<Self as KeypairMeta>::KeypairSize>::temp(|arr| {
+                let sk_b = k256::SecretBytes::from(secret.to_bytes());
+                let pk_enc = EncodedPoint::encode(self.public, true);
+                arr[..SECRET_KEY_LENGTH].copy_from_slice(&sk_b[..]);
+                arr[SECRET_KEY_LENGTH..].copy_from_slice(pk_enc.as_ref());
+                f(Some(&*arr))
+            })
         } else {
             f(None)
         }
@@ -241,24 +242,31 @@ impl ToJwk for K256KeyPair {
 
 impl FromJwk for K256KeyPair {
     fn from_jwk_parts(jwk: JwkParts<'_>) -> Result<Self, Error> {
-        // SECURITY: ArrayKey zeroizes on drop
-        let mut pk_x = ArrayKey::<FieldSize>::default();
-        let mut pk_y = ArrayKey::<FieldSize>::default();
-        if jwk.x.decode_base64(pk_x.as_mut())? != pk_x.len() {
-            return Err(err_msg!(InvalidKeyData));
-        }
-        if jwk.y.decode_base64(pk_y.as_mut())? != pk_y.len() {
-            return Err(err_msg!(InvalidKeyData));
-        }
+        let pk_x = ArrayKey::<FieldSize>::try_new_with(|arr| {
+            if jwk.x.decode_base64(arr)? != arr.len() {
+                Err(err_msg!(InvalidKeyData))
+            } else {
+                Ok(())
+            }
+        })?;
+        let pk_y = ArrayKey::<FieldSize>::try_new_with(|arr| {
+            if jwk.y.decode_base64(arr)? != arr.len() {
+                Err(err_msg!(InvalidKeyData))
+            } else {
+                Ok(())
+            }
+        })?;
         let pk = EncodedPoint::from_affine_coordinates(pk_x.as_ref(), pk_y.as_ref(), false)
             .decode()
             .map_err(|_| err_msg!(InvalidKeyData))?;
         let sk = if jwk.d.is_some() {
-            let mut sk = ArrayKey::<FieldSize>::default();
-            if jwk.d.decode_base64(sk.as_mut())? != sk.len() {
-                return Err(err_msg!(InvalidKeyData));
-            }
-            Some(SecretKey::from_bytes(sk.as_ref()).map_err(|_| err_msg!(InvalidKeyData))?)
+            Some(ArrayKey::<FieldSize>::temp(|arr| {
+                if jwk.d.decode_base64(arr)? != arr.len() {
+                    Err(err_msg!(InvalidKeyData))
+                } else {
+                    SecretKey::from_bytes(&*arr).map_err(|_| err_msg!(InvalidKeyData))
+                }
+            })?)
         } else {
             None
         };

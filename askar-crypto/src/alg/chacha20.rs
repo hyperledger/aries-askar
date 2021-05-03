@@ -81,18 +81,13 @@ impl<T: Chacha20Type> Chacha20Key<T> {
     /// The length of the AEAD encryption tag
     pub const TAG_LENGTH: usize = TagSize::<T>::USIZE;
 
-    #[inline]
-    pub(crate) fn uninit() -> Self {
-        Self(KeyType::<T>::default())
-    }
-
     /// Construct a new ChaCha20 key from a seed value
     // this is consistent with Indy's wallet wrapping key generation
     // FIXME - move to aries_askar, use from_key_secret_bytes
     pub fn from_seed(seed: &[u8]) -> Result<Self, Error> {
-        let mut key = KeyType::<T>::default();
-        fill_random_deterministic(seed, key.as_mut())?;
-        Ok(Self(key))
+        Ok(Self(KeyType::<T>::try_new_with(|arr| {
+            fill_random_deterministic(seed, arr)
+        })?))
     }
 }
 
@@ -153,9 +148,9 @@ impl<T: Chacha20Type> FromKeyDerivation for Chacha20Key<T> {
     where
         Self: Sized,
     {
-        let mut key = KeyType::<T>::default();
-        derive.derive_key_bytes(key.as_mut())?;
-        Ok(Self(key))
+        Ok(Self(KeyType::<T>::try_new_with(|arr| {
+            derive.derive_key_bytes(arr)
+        })?))
     }
 }
 
@@ -240,15 +235,14 @@ where
     T: Chacha20Type,
 {
     fn from_key_exchange(lhs: &Lhs, rhs: &Rhs) -> Result<Self, Error> {
-        // NOTE: currently requires the exchange to produce a key of the same length,
-        // while it may be acceptable to just use the prefix if the output is longer?
-        let mut key = Self::uninit();
-        let mut buf = Writer::from_slice(key.0.as_mut());
-        lhs.write_key_exchange(rhs, &mut buf)?;
-        if buf.position() != Self::KEY_LENGTH {
-            return Err(err_msg!(Usage, "Invalid length for key exchange output"));
-        }
-        Ok(key)
+        Ok(Self(KeyType::<T>::try_new_with(|arr| {
+            let mut buf = Writer::from_slice(arr);
+            lhs.write_key_exchange(rhs, &mut buf)?;
+            if buf.position() != Self::KEY_LENGTH {
+                return Err(err_msg!(Usage, "Invalid length for key exchange output"));
+            }
+            Ok(())
+        })?))
     }
 }
 

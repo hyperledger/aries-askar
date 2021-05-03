@@ -15,7 +15,6 @@ use crate::{
     generic_array::typenum::{U32, U64},
     jwk::{FromJwk, JwkEncoder, JwkParts, ToJwk},
     kdf::KeyExchange,
-    random::fill_random,
     repr::{KeyGen, KeyMeta, KeyPublicBytes, KeySecretBytes, KeypairBytes, KeypairMeta},
 };
 
@@ -86,8 +85,7 @@ impl KeyMeta for X25519KeyPair {
 
 impl KeyGen for X25519KeyPair {
     fn generate() -> Result<Self, Error> {
-        let mut sk = ArrayKey::<U32>::default();
-        fill_random(sk.as_mut());
+        let sk = ArrayKey::<U32>::random();
         let sk = SecretKey::from(
             TryInto::<[u8; SECRET_KEY_LENGTH]>::try_into(&sk.as_ref()[..]).unwrap(),
         );
@@ -155,11 +153,12 @@ impl KeypairBytes for X25519KeyPair {
 
     fn with_keypair_bytes<O>(&self, f: impl FnOnce(Option<&[u8]>) -> O) -> O {
         if let Some(secret) = self.secret.as_ref() {
-            let mut buf = ArrayKey::<<Self as KeypairMeta>::KeypairSize>::default();
-            let b = Zeroizing::new(secret.to_bytes());
-            buf.as_mut()[..SECRET_KEY_LENGTH].copy_from_slice(&b[..]);
-            buf.as_mut()[SECRET_KEY_LENGTH..].copy_from_slice(self.public.as_bytes());
-            f(Some(buf.as_ref()))
+            ArrayKey::<<Self as KeypairMeta>::KeypairSize>::temp(|arr| {
+                let b = Zeroizing::new(secret.to_bytes());
+                arr[..SECRET_KEY_LENGTH].copy_from_slice(&b[..]);
+                arr[SECRET_KEY_LENGTH..].copy_from_slice(self.public.as_bytes());
+                f(Some(&*arr))
+            })
         } else {
             f(None)
         }
@@ -202,22 +201,25 @@ impl ToJwk for X25519KeyPair {
 
 impl FromJwk for X25519KeyPair {
     fn from_jwk_parts(jwk: JwkParts<'_>) -> Result<Self, Error> {
-        // SECURITY: ArrayKey zeroizes on drop
-        let mut pk = ArrayKey::<U32>::default();
-        if jwk.x.decode_base64(pk.as_mut())? != pk.len() {
-            return Err(err_msg!(InvalidKeyData));
-        }
-        let pk = PublicKey::from(
-            TryInto::<[u8; PUBLIC_KEY_LENGTH]>::try_into(&pk.as_ref()[..]).unwrap(),
-        );
-        let sk = if jwk.d.is_some() {
-            let mut sk = ArrayKey::<U32>::default();
-            if jwk.d.decode_base64(sk.as_mut())? != sk.len() {
-                return Err(err_msg!(InvalidKeyData));
+        let pk = ArrayKey::<U32>::temp(|arr| {
+            if jwk.x.decode_base64(arr)? != arr.len() {
+                Err(err_msg!(InvalidKeyData))
+            } else {
+                Ok(PublicKey::from(
+                    TryInto::<[u8; PUBLIC_KEY_LENGTH]>::try_into(&*arr).unwrap(),
+                ))
             }
-            Some(SecretKey::from(
-                TryInto::<[u8; SECRET_KEY_LENGTH]>::try_into(&sk.as_ref()[..]).unwrap(),
-            ))
+        })?;
+        let sk = if jwk.d.is_some() {
+            Some(ArrayKey::<U32>::temp(|arr| {
+                if jwk.d.decode_base64(arr)? != arr.len() {
+                    Err(err_msg!(InvalidKeyData))
+                } else {
+                    Ok(SecretKey::from(
+                        TryInto::<[u8; SECRET_KEY_LENGTH]>::try_into(&*arr).unwrap(),
+                    ))
+                }
+            })?)
         } else {
             None
         };

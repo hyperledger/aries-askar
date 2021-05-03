@@ -56,10 +56,9 @@ impl Level {
     }
 
     pub fn derive_key(&self, password: &[u8], salt: &[u8]) -> Result<StoreKey, Error> {
-        let mut key = ArrayKey::<<StoreKeyType as KeyMeta>::KeySize>::default();
-        Argon2::new(password, salt, *self.params())?.derive_key_bytes(key.as_mut())?;
-        Ok(StoreKey::from(StoreKeyType::from_secret_bytes(
-            key.as_ref(),
-        )?))
+        ArrayKey::<<StoreKeyType as KeyMeta>::KeySize>::temp(|key| {
+            Argon2::new(password, salt, *self.params())?.derive_key_bytes(key)?;
+            Ok(StoreKey::from(StoreKeyType::from_secret_bytes(&*key)?))
+        })
     }
 }

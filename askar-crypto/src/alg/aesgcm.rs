@@ -79,11 +79,6 @@ impl<T: AesGcmType> AesGcmKey<T> {
     pub const NONCE_LENGTH: usize = NonceSize::<T>::USIZE;
     /// The length of the AEAD encryption tag
     pub const TAG_LENGTH: usize = TagSize::<T>::USIZE;
-
-    #[inline]
-    pub(crate) fn uninit() -> Self {
-        Self(KeyType::<T>::default())
-    }
 }
 
 impl<T: AesGcmType> Clone for AesGcmKey<T> {
@@ -143,9 +138,9 @@ impl<T: AesGcmType> FromKeyDerivation for AesGcmKey<T> {
     where
         Self: Sized,
     {
-        let mut key = KeyType::<T>::default();
-        derive.derive_key_bytes(key.as_mut())?;
-        Ok(Self(key))
+        Ok(Self(KeyType::<T>::try_new_with(|arr| {
+            derive.derive_key_bytes(arr)
+        })?))
     }
 }
 
@@ -230,15 +225,14 @@ where
     T: AesGcmType,
 {
     fn from_key_exchange(lhs: &Lhs, rhs: &Rhs) -> Result<Self, Error> {
-        // NOTE: currently requires the exchange to produce a key of the same length,
-        // while it may be acceptable to just use the prefix if the output is longer?
-        let mut key = Self::uninit();
-        let mut buf = Writer::from_slice(key.0.as_mut());
-        lhs.write_key_exchange(rhs, &mut buf)?;
-        if buf.position() != Self::KEY_LENGTH {
-            return Err(err_msg!(Usage, "Invalid length for key exchange output"));
-        }
-        Ok(key)
+        Ok(Self(KeyType::<T>::try_new_with(|arr| {
+            let mut buf = Writer::from_slice(arr);
+            lhs.write_key_exchange(rhs, &mut buf)?;
+            if buf.position() != Self::KEY_LENGTH {
+                return Err(err_msg!(Usage, "Invalid length for key exchange output"));
+            }
+            Ok(())
+        })?))
     }
 }
 

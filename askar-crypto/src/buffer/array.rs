@@ -1,7 +1,7 @@
 use core::{
-    cmp::Ordering,
     fmt::{self, Debug, Formatter},
-    marker::PhantomData,
+    marker::{PhantomData, PhantomPinned},
+    ops::Deref,
 };
 
 use crate::generic_array::{ArrayLength, GenericArray};
@@ -12,16 +12,35 @@ use crate::random::fill_random;
 
 /// A secure representation for fixed-length keys
 #[derive(Clone, Hash)]
-pub struct ArrayKey<L: ArrayLength<u8>>(GenericArray<u8, L>);
+#[repr(transparent)]
+pub struct ArrayKey<L: ArrayLength<u8>>(
+    GenericArray<u8, L>,
+    // ensure that the type does not implement Unpin
+    PhantomPinned,
+);
 
 impl<L: ArrayLength<u8>> ArrayKey<L> {
     /// The array length in bytes
     pub const SIZE: usize = L::USIZE;
 
-    /// Copy from a slice of the same length as this array
-    #[inline]
-    pub fn copy_from_slice<D: AsRef<[u8]>>(&mut self, data: D) {
-        self.0[..].copy_from_slice(data.as_ref());
+    /// Create a new buffer using an initializer for the data
+    pub fn new_with(f: impl FnOnce(&mut [u8])) -> Self {
+        let mut slf = Self::default();
+        f(slf.0.as_mut());
+        slf
+    }
+
+    /// Create a new buffer using a fallible initializer for the data
+    pub fn try_new_with<E>(f: impl FnOnce(&mut [u8]) -> Result<(), E>) -> Result<Self, E> {
+        let mut slf = Self::default();
+        f(slf.0.as_mut())?;
+        Ok(slf)
+    }
+
+    /// Temporarily allocate and use a key
+    pub fn temp<R>(f: impl FnOnce(&mut [u8]) -> R) -> R {
+        let mut slf = Self::default();
+        f(slf.0.as_mut())
     }
 
     /// Convert this array to a non-zeroing GenericArray instance
@@ -35,7 +54,7 @@ impl<L: ArrayLength<u8>> ArrayKey<L> {
     /// is incorrect.
     #[inline]
     pub fn from_slice(data: &[u8]) -> Self {
-        Self(GenericArray::from_slice(data).clone())
+        Self::from(GenericArray::from_slice(data))
     }
 
     /// Get the length of the array
@@ -47,34 +66,44 @@ impl<L: ArrayLength<u8>> ArrayKey<L> {
     /// Create a new array of random bytes
     #[inline]
     pub fn random() -> Self {
-        let mut slf = GenericArray::default();
-        fill_random(&mut slf);
-        Self(slf)
+        Self::new_with(fill_random)
     }
 }
 
 impl<L: ArrayLength<u8>> AsRef<GenericArray<u8, L>> for ArrayKey<L> {
+    #[inline(always)]
     fn as_ref(&self) -> &GenericArray<u8, L> {
         &self.0
     }
 }
 
-impl<L: ArrayLength<u8>> AsMut<GenericArray<u8, L>> for ArrayKey<L> {
-    fn as_mut(&mut self) -> &mut GenericArray<u8, L> {
-        &mut self.0
+impl<L: ArrayLength<u8>> Deref for ArrayKey<L> {
+    type Target = [u8];
+
+    #[inline(always)]
+    fn deref(&self) -> &[u8] {
+        self.0.as_ref()
     }
 }
 
 impl<L: ArrayLength<u8>> Default for ArrayKey<L> {
-    #[inline]
+    #[inline(always)]
     fn default() -> Self {
-        Self(GenericArray::default())
+        Self(GenericArray::default(), PhantomPinned)
+    }
+}
+
+impl<L: ArrayLength<u8>> From<&GenericArray<u8, L>> for ArrayKey<L> {
+    #[inline(always)]
+    fn from(key: &GenericArray<u8, L>) -> Self {
+        Self(key.clone(), PhantomPinned)
     }
 }
 
 impl<L: ArrayLength<u8>> From<GenericArray<u8, L>> for ArrayKey<L> {
+    #[inline(always)]
     fn from(key: GenericArray<u8, L>) -> Self {
-        Self(key)
+        Self(key, PhantomPinned)
     }
 }
 
@@ -90,21 +119,11 @@ impl<L: ArrayLength<u8>> Debug for ArrayKey<L> {
 
 impl<L: ArrayLength<u8>> PartialEq for ArrayKey<L> {
     fn eq(&self, other: &Self) -> bool {
+        // FIXME implement constant-time equality?
         self.as_ref() == other.as_ref()
     }
 }
 impl<L: ArrayLength<u8>> Eq for ArrayKey<L> {}
-
-impl<L: ArrayLength<u8>> PartialOrd for ArrayKey<L> {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        self.0.partial_cmp(other.as_ref())
-    }
-}
-impl<L: ArrayLength<u8>> Ord for ArrayKey<L> {
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.0.cmp(other.as_ref())
-    }
-}
 
 impl<L: ArrayLength<u8>> Serialize for ArrayKey<L> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
@@ -154,8 +173,6 @@ impl<'de, L: ArrayLength<u8>> de::Visitor<'de> for KeyVisitor<L> {
         if value.len() != L::USIZE {
             return Err(E::invalid_length(value.len(), &self));
         }
-        let mut arr = ArrayKey::default();
-        arr.as_mut().copy_from_slice(value);
-        Ok(arr)
+        Ok(ArrayKey::from_slice(value))
     }
 }

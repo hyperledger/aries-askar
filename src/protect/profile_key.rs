@@ -86,11 +86,12 @@ where
         enc_key: &Key,
         hmac_key: &HmacKey,
     ) -> Result<Vec<u8>, Error> {
-        let mut nonce = ArrayKey::<Key::NonceSize>::default();
-        hmac_key.hmac_to(&[buffer.as_ref()], nonce.as_mut())?;
-        enc_key.encrypt_in_place(&mut buffer, nonce.as_ref(), &[])?;
-        buffer.buffer_insert(0, nonce.as_ref())?;
-        Ok(buffer.into_vec())
+        ArrayKey::<Key::NonceSize>::temp(|nonce| {
+            hmac_key.hmac_to(&[buffer.as_ref()], nonce)?;
+            enc_key.encrypt_in_place(&mut buffer, nonce.as_ref(), &[])?;
+            buffer.buffer_insert(0, nonce.as_ref())?;
+            Ok(buffer.into_vec())
+        })
     }
 
     pub fn encrypt(mut buffer: SecretBytes, enc_key: &Key) -> Result<Vec<u8>, Error> {
@@ -183,10 +184,11 @@ where
         name: &[u8],
         value: SecretBytes,
     ) -> Result<Vec<u8>, Error> {
-        let mut value_key = ArrayKey::<Key::KeySize>::default();
-        self.derive_value_key(category, name, value_key.as_mut())?;
-        let value_key = Key::from_secret_bytes(value_key.as_ref())?;
-        Self::encrypt(value, &value_key)
+        ArrayKey::<Key::KeySize>::temp(|value_key| {
+            self.derive_value_key(category, name, value_key)?;
+            let value_key = Key::from_secret_bytes(&*value_key)?;
+            Self::encrypt(value, &value_key)
+        })
     }
 
     fn decrypt_entry_category(&self, enc_category: Vec<u8>) -> Result<String, Error> {
@@ -203,10 +205,11 @@ where
         name: &[u8],
         enc_value: Vec<u8>,
     ) -> Result<SecretBytes, Error> {
-        let mut value_key = ArrayKey::<Key::KeySize>::default();
-        self.derive_value_key(category, name, value_key.as_mut())?;
-        let value_key = Key::from_secret_bytes(value_key.as_ref())?;
-        Self::decrypt(enc_value, &value_key)
+        ArrayKey::<Key::KeySize>::temp(|value_key| {
+            self.derive_value_key(category, name, value_key)?;
+            let value_key = Key::from_secret_bytes(&*value_key)?;
+            Self::decrypt(enc_value, &value_key)
+        })
     }
 
     fn encrypt_entry_tags(&self, tags: Vec<EntryTag>) -> Result<Vec<EncEntryTag>, Error> {

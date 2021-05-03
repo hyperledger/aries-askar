@@ -85,12 +85,9 @@ impl KdfMethod {
 fn parse_salt<L: ArrayLength<u8>>(detail: &str) -> Result<ArrayKey<L>, Error> {
     let opts = Options::parse_uri(detail)?;
     if let Some(salt) = opts.query.get("salt") {
-        let mut salt_arr = ArrayKey::<L>::default();
-        if hex::decode_to_slice(salt, salt_arr.as_mut()).is_ok() {
-            Ok(salt_arr)
-        } else {
-            Err(err_msg!(Input, "Invalid salt"))
-        }
+        ArrayKey::<L>::try_new_with(|arr| {
+            hex::decode_to_slice(salt, arr).map_err(|_| err_msg!(Input, "Invalid salt"))
+        })
     } else {
         Err(err_msg!(Input, "Missing salt"))
     }
