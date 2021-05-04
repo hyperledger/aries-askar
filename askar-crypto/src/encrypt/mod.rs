@@ -7,8 +7,8 @@ use crate::{
     random::fill_random,
 };
 
-#[cfg(feature = "alloc")] // FIXME - support non-alloc?
-#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
+#[cfg(feature = "crypto_box")] // FIXME - support non-alloc?
+#[cfg_attr(docsrs, doc(cfg(feature = "crypto_box")))]
 pub mod crypto_box;
 
 /// Trait for key types which perform AEAD encryption

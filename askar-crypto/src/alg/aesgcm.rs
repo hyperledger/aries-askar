@@ -8,6 +8,8 @@ use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
 use super::{AesTypes, HasKeyAlg, KeyAlg};
+#[cfg(feature = "chacha")]
+use crate::random::fill_random_deterministic;
 use crate::{
     buffer::{ArrayKey, ResizeBuffer, Writer},
     encrypt::{KeyAeadInPlace, KeyAeadMeta, KeyAeadParams},
@@ -15,7 +17,6 @@ use crate::{
     generic_array::{typenum::Unsigned, GenericArray},
     jwk::{JwkEncoder, ToJwk},
     kdf::{FromKeyDerivation, FromKeyExchange, KeyDerivation, KeyExchange},
-    random::fill_random_deterministic,
     repr::{KeyGen, KeyMeta, KeySecretBytes},
 };
 
@@ -81,6 +82,7 @@ impl<T: AesGcmType> AesGcmKey<T> {
     /// The length of the AEAD encryption tag
     pub const TAG_LENGTH: usize = TagSize::<T>::USIZE;
 
+    #[cfg(feature = "chacha")]
     /// Construct a new deterministic AES key from a seed value
     pub fn from_seed(seed: &[u8]) -> Result<Self, Error> {
         Ok(Self(KeyType::<T>::try_new_with(|arr| {

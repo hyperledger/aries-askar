@@ -1,27 +1,56 @@
 use alloc::{boxed::Box, sync::Arc};
+#[cfg(feature = "ed25519")]
+use core::convert::TryFrom;
 use core::{
     any::{Any, TypeId},
-    convert::TryFrom,
     fmt::Debug,
 };
 
-use super::aesgcm::{AesGcmKey, A128GCM, A256GCM};
-use super::bls::{BlsKeyPair, BlsPublicKeyType, G1, G1G2, G2};
-use super::chacha20::{Chacha20Key, C20P, XC20P};
+#[cfg(feature = "aes")]
+use super::{
+    aesgcm::{AesGcmKey, A128GCM, A256GCM},
+    AesTypes,
+};
+
+#[cfg(feature = "bls")]
+use super::{
+    bls::{BlsKeyPair, BlsPublicKeyType, G1, G1G2, G2},
+    BlsCurves,
+};
+
+#[cfg(feature = "chacha")]
+use super::{
+    chacha20::{Chacha20Key, C20P, XC20P},
+    Chacha20Types,
+};
+
+#[cfg(feature = "ed25519")]
 use super::ed25519::{self, Ed25519KeyPair};
-use super::k256::{self, K256KeyPair};
-use super::p256::{self, P256KeyPair};
+#[cfg(feature = "ed25519")]
 use super::x25519::{self, X25519KeyPair};
-use super::{AesTypes, BlsCurves, Chacha20Types, EcCurves, HasKeyAlg, KeyAlg};
+
+#[cfg(feature = "k256")]
+use super::k256::{self, K256KeyPair};
+
+#[cfg(feature = "p256")]
+use super::p256::{self, P256KeyPair};
+
+use super::{HasKeyAlg, KeyAlg};
 use crate::{
     buffer::{ResizeBuffer, WriteBuffer},
     encrypt::{KeyAeadInPlace, KeyAeadParams},
     error::Error,
     jwk::{FromJwk, JwkEncoder, JwkParts, ToJwk},
-    kdf::{FromKeyDerivation, FromKeyExchange, KeyDerivation, KeyExchange},
+    kdf::{KeyDerivation, KeyExchange},
     repr::{KeyGen, KeyPublicBytes, KeySecretBytes, ToPublicBytes, ToSecretBytes},
     sign::{KeySigVerify, KeySign, SignatureType},
 };
+
+#[cfg(any(feature = "k256", feature = "p256"))]
+use super::EcCurves;
+
+#[cfg(any(feature = "aes", feature = "chacha"))]
+use crate::kdf::{FromKeyDerivation, FromKeyExchange};
 
 #[derive(Debug)]
 pub struct KeyT<T: AnyKeyAlg + Send + Sync + ?Sized>(T);
@@ -155,18 +184,29 @@ impl AnyKeyCreate for Arc<AnyKey> {
 #[inline]
 fn generate_any<R: AllocKey>(alg: KeyAlg) -> Result<R, Error> {
     match alg {
+        #[cfg(feature = "aes")]
         KeyAlg::Aes(AesTypes::A128GCM) => AesGcmKey::<A128GCM>::generate().map(R::alloc_key),
+        #[cfg(feature = "aes")]
         KeyAlg::Aes(AesTypes::A256GCM) => AesGcmKey::<A256GCM>::generate().map(R::alloc_key),
+        #[cfg(feature = "bls")]
         KeyAlg::Bls12_381(BlsCurves::G1) => BlsKeyPair::<G1>::generate().map(R::alloc_key),
+        #[cfg(feature = "bls")]
         KeyAlg::Bls12_381(BlsCurves::G2) => BlsKeyPair::<G2>::generate().map(R::alloc_key),
+        #[cfg(feature = "bls")]
         KeyAlg::Bls12_381(BlsCurves::G1G2) => BlsKeyPair::<G1G2>::generate().map(R::alloc_key),
+        #[cfg(feature = "chacha")]
         KeyAlg::Chacha20(Chacha20Types::C20P) => Chacha20Key::<C20P>::generate().map(R::alloc_key),
+        #[cfg(feature = "chacha")]
         KeyAlg::Chacha20(Chacha20Types::XC20P) => {
             Chacha20Key::<XC20P>::generate().map(R::alloc_key)
         }
+        #[cfg(feature = "ed25519")]
         KeyAlg::Ed25519 => Ed25519KeyPair::generate().map(R::alloc_key),
+        #[cfg(feature = "ed25519")]
         KeyAlg::X25519 => X25519KeyPair::generate().map(R::alloc_key),
+        #[cfg(feature = "k256")]
         KeyAlg::EcCurve(EcCurves::Secp256k1) => K256KeyPair::generate().map(R::alloc_key),
+        #[cfg(feature = "p256")]
         KeyAlg::EcCurve(EcCurves::Secp256r1) => P256KeyPair::generate().map(R::alloc_key),
         #[allow(unreachable_patterns)]
         _ => {
@@ -181,20 +221,27 @@ fn generate_any<R: AllocKey>(alg: KeyAlg) -> Result<R, Error> {
 #[inline]
 fn from_public_bytes_any<R: AllocKey>(alg: KeyAlg, public: &[u8]) -> Result<R, Error> {
     match alg {
+        #[cfg(feature = "bls")]
         KeyAlg::Bls12_381(BlsCurves::G1) => {
             BlsKeyPair::<G1>::from_public_bytes(public).map(R::alloc_key)
         }
+        #[cfg(feature = "bls")]
         KeyAlg::Bls12_381(BlsCurves::G2) => {
             BlsKeyPair::<G2>::from_public_bytes(public).map(R::alloc_key)
         }
+        #[cfg(feature = "bls")]
         KeyAlg::Bls12_381(BlsCurves::G1G2) => {
             BlsKeyPair::<G1G2>::from_public_bytes(public).map(R::alloc_key)
         }
+        #[cfg(feature = "ed25519")]
         KeyAlg::Ed25519 => Ed25519KeyPair::from_public_bytes(public).map(R::alloc_key),
+        #[cfg(feature = "ed25519")]
         KeyAlg::X25519 => X25519KeyPair::from_public_bytes(public).map(R::alloc_key),
+        #[cfg(feature = "k256")]
         KeyAlg::EcCurve(EcCurves::Secp256k1) => {
             K256KeyPair::from_public_bytes(public).map(R::alloc_key)
         }
+        #[cfg(feature = "p256")]
         KeyAlg::EcCurve(EcCurves::Secp256r1) => {
             P256KeyPair::from_public_bytes(public).map(R::alloc_key)
         }
@@ -202,7 +249,7 @@ fn from_public_bytes_any<R: AllocKey>(alg: KeyAlg, public: &[u8]) -> Result<R, E
         _ => {
             return Err(err_msg!(
                 Unsupported,
-                "Unsupported algorithm for key import"
+                "Unsupported algorithm for public key import"
             ))
         }
     }
@@ -211,32 +258,43 @@ fn from_public_bytes_any<R: AllocKey>(alg: KeyAlg, public: &[u8]) -> Result<R, E
 #[inline]
 fn from_secret_bytes_any<R: AllocKey>(alg: KeyAlg, secret: &[u8]) -> Result<R, Error> {
     match alg {
+        #[cfg(feature = "aes")]
         KeyAlg::Aes(AesTypes::A128GCM) => {
             AesGcmKey::<A128GCM>::from_secret_bytes(secret).map(R::alloc_key)
         }
+        #[cfg(feature = "aes")]
         KeyAlg::Aes(AesTypes::A256GCM) => {
             AesGcmKey::<A256GCM>::from_secret_bytes(secret).map(R::alloc_key)
         }
+        #[cfg(feature = "bls")]
         KeyAlg::Bls12_381(BlsCurves::G1) => {
             BlsKeyPair::<G1>::from_secret_bytes(secret).map(R::alloc_key)
         }
+        #[cfg(feature = "bls")]
         KeyAlg::Bls12_381(BlsCurves::G2) => {
             BlsKeyPair::<G2>::from_secret_bytes(secret).map(R::alloc_key)
         }
+        #[cfg(feature = "bls")]
         KeyAlg::Bls12_381(BlsCurves::G1G2) => {
             BlsKeyPair::<G1G2>::from_secret_bytes(secret).map(R::alloc_key)
         }
+        #[cfg(feature = "chacha")]
         KeyAlg::Chacha20(Chacha20Types::C20P) => {
             Chacha20Key::<C20P>::from_secret_bytes(secret).map(R::alloc_key)
         }
+        #[cfg(feature = "chacha")]
         KeyAlg::Chacha20(Chacha20Types::XC20P) => {
             Chacha20Key::<XC20P>::from_secret_bytes(secret).map(R::alloc_key)
         }
+        #[cfg(feature = "ed25519")]
         KeyAlg::Ed25519 => Ed25519KeyPair::from_secret_bytes(secret).map(R::alloc_key),
+        #[cfg(feature = "ed25519")]
         KeyAlg::X25519 => X25519KeyPair::from_secret_bytes(secret).map(R::alloc_key),
+        #[cfg(feature = "k256")]
         KeyAlg::EcCurve(EcCurves::Secp256k1) => {
             K256KeyPair::from_secret_bytes(secret).map(R::alloc_key)
         }
+        #[cfg(feature = "p256")]
         KeyAlg::EcCurve(EcCurves::Secp256r1) => {
             P256KeyPair::from_secret_bytes(secret).map(R::alloc_key)
         }
@@ -244,12 +302,13 @@ fn from_secret_bytes_any<R: AllocKey>(alg: KeyAlg, secret: &[u8]) -> Result<R, E
         _ => {
             return Err(err_msg!(
                 Unsupported,
-                "Unsupported algorithm for key import"
+                "Unsupported algorithm for secret key import"
             ))
         }
     }
 }
 
+#[cfg(any(feature = "aes", feature = "chacha"))]
 #[inline]
 fn from_key_exchange_any<R, Sk, Pk>(alg: KeyAlg, secret: &Sk, public: &Pk) -> Result<R, Error>
 where
@@ -258,15 +317,19 @@ where
     Pk: ?Sized,
 {
     match alg {
+        #[cfg(feature = "aes")]
         KeyAlg::Aes(AesTypes::A128GCM) => {
             AesGcmKey::<A128GCM>::from_key_exchange(secret, public).map(R::alloc_key)
         }
+        #[cfg(feature = "aes")]
         KeyAlg::Aes(AesTypes::A256GCM) => {
             AesGcmKey::<A256GCM>::from_key_exchange(secret, public).map(R::alloc_key)
         }
+        #[cfg(feature = "chacha")]
         KeyAlg::Chacha20(Chacha20Types::C20P) => {
             Chacha20Key::<C20P>::from_key_exchange(secret, public).map(R::alloc_key)
         }
+        #[cfg(feature = "chacha")]
         KeyAlg::Chacha20(Chacha20Types::XC20P) => {
             Chacha20Key::<XC20P>::from_key_exchange(secret, public).map(R::alloc_key)
         }
@@ -274,27 +337,45 @@ where
         _ => {
             return Err(err_msg!(
                 Unsupported,
-                "Unsupported algorithm for key import"
-            ))
+                "Unsupported algorithm for key exchange"
+            ));
         }
     }
 }
 
+#[cfg(not(any(feature = "aes", feature = "chacha")))]
+#[inline]
+fn from_key_exchange_any<R, Sk: ?Sized, Pk: ?Sized>(
+    _alg: KeyAlg,
+    _secret: &Sk,
+    _public: &Pk,
+) -> Result<R, Error> {
+    return Err(err_msg!(
+        Unsupported,
+        "Unsupported algorithm for key exchange"
+    ));
+}
+
+#[cfg(any(feature = "aes", feature = "chacha"))]
 #[inline]
 fn from_key_derivation_any<R: AllocKey>(
     alg: KeyAlg,
     derive: impl KeyDerivation,
 ) -> Result<R, Error> {
     match alg {
+        #[cfg(feature = "aes")]
         KeyAlg::Aes(AesTypes::A128GCM) => {
             AesGcmKey::<A128GCM>::from_key_derivation(derive).map(R::alloc_key)
         }
+        #[cfg(feature = "aes")]
         KeyAlg::Aes(AesTypes::A256GCM) => {
             AesGcmKey::<A256GCM>::from_key_derivation(derive).map(R::alloc_key)
         }
+        #[cfg(feature = "chacha")]
         KeyAlg::Chacha20(Chacha20Types::C20P) => {
             Chacha20Key::<C20P>::from_key_derivation(derive).map(R::alloc_key)
         }
+        #[cfg(feature = "chacha")]
         KeyAlg::Chacha20(Chacha20Types::XC20P) => {
             Chacha20Key::<XC20P>::from_key_derivation(derive).map(R::alloc_key)
         }
@@ -302,21 +383,35 @@ fn from_key_derivation_any<R: AllocKey>(
         _ => {
             return Err(err_msg!(
                 Unsupported,
-                "Unsupported algorithm for key import"
-            ))
+                "Unsupported algorithm for key derivation"
+            ));
         }
     }
+}
+
+#[cfg(not(any(feature = "aes", feature = "chacha")))]
+fn from_key_derivation_any<R: AllocKey>(
+    _alg: KeyAlg,
+    _derive: impl KeyDerivation,
+) -> Result<R, Error> {
+    return Err(err_msg!(
+        Unsupported,
+        "Unsupported algorithm for key derivation"
+    ));
 }
 
 #[inline]
 fn convert_key_any<R: AllocKey>(key: &AnyKey, alg: KeyAlg) -> Result<R, Error> {
     match (key.algorithm(), alg) {
+        #[cfg(feature = "bls")]
         (KeyAlg::Bls12_381(BlsCurves::G1G2), KeyAlg::Bls12_381(BlsCurves::G1)) => Ok(R::alloc_key(
             BlsKeyPair::<G1>::from(key.assume::<BlsKeyPair<G1G2>>()),
         )),
+        #[cfg(feature = "bls")]
         (KeyAlg::Bls12_381(BlsCurves::G1G2), KeyAlg::Bls12_381(BlsCurves::G2)) => Ok(R::alloc_key(
             BlsKeyPair::<G2>::from(key.assume::<BlsKeyPair<G1G2>>()),
         )),
+        #[cfg(feature = "ed25519")]
         (KeyAlg::Ed25519, KeyAlg::X25519) => Ok(<X25519KeyPair as TryFrom<_>>::try_from(
             key.assume::<Ed25519KeyPair>(),
         )
@@ -346,18 +441,25 @@ impl FromJwk for Arc<AnyKey> {
 #[inline]
 fn from_jwk_any<R: AllocKey>(jwk: JwkParts<'_>) -> Result<R, Error> {
     match (jwk.kty, jwk.crv.as_ref()) {
+        #[cfg(feature = "ed25519")]
         ("OKP", c) if c == ed25519::JWK_CURVE => {
             Ed25519KeyPair::from_jwk_parts(jwk).map(R::alloc_key)
         }
+        #[cfg(feature = "ed25519")]
         ("OKP", c) if c == x25519::JWK_CURVE => {
             X25519KeyPair::from_jwk_parts(jwk).map(R::alloc_key)
         }
+        #[cfg(feature = "bls")]
         ("EC", c) if c == G1::JWK_CURVE => BlsKeyPair::<G1>::from_jwk_parts(jwk).map(R::alloc_key),
+        #[cfg(feature = "bls")]
         ("EC", c) if c == G2::JWK_CURVE => BlsKeyPair::<G2>::from_jwk_parts(jwk).map(R::alloc_key),
+        #[cfg(feature = "bls")]
         ("EC", c) if c == G1G2::JWK_CURVE => {
             BlsKeyPair::<G1G2>::from_jwk_parts(jwk).map(R::alloc_key)
         }
+        #[cfg(feature = "k256")]
         ("EC", c) if c == k256::JWK_CURVE => K256KeyPair::from_jwk_parts(jwk).map(R::alloc_key),
+        #[cfg(feature = "p256")]
         ("EC", c) if c == p256::JWK_CURVE => P256KeyPair::from_jwk_parts(jwk).map(R::alloc_key),
         // FIXME implement symmetric keys?
         _ => Err(err_msg!(Unsupported, "Unsupported JWK for key import")),
@@ -367,6 +469,7 @@ fn from_jwk_any<R: AllocKey>(jwk: JwkParts<'_>) -> Result<R, Error> {
 macro_rules! match_key_alg {
     ($slf:expr, $ty:ty, $($kty:ident),+ $(,$errmsg:literal)?) => {{
         fn matcher(key: &AnyKey) -> Result<$ty, Error> {
+            #[allow(unused_variables)]
             let alg = key.algorithm();
             match_key_alg!(@ $($kty)+ ; key, alg);
             return Err(err_msg!(Unsupported $(,$errmsg)?))
@@ -375,51 +478,60 @@ macro_rules! match_key_alg {
     }};
     (@ ; $key:ident, $alg:ident) => {()};
     (@ Aes $($rest:ident)*; $key:ident, $alg:ident) => {{
-        if $alg == KeyAlg::Aes(AesTypes::A128GCM) {
+        #[cfg(feature = "aes")]        if $alg == KeyAlg::Aes(AesTypes::A128GCM) {
             return Ok($key.assume::<AesGcmKey<A128GCM>>());
         }
-        if $alg == KeyAlg::Aes(AesTypes::A256GCM) {
+        #[cfg(feature = "aes")]        if $alg == KeyAlg::Aes(AesTypes::A256GCM) {
             return Ok($key.assume::<AesGcmKey<A256GCM>>());
         }
         match_key_alg!(@ $($rest)*; $key, $alg)
     }};
     (@ Bls $($rest:ident)*; $key:ident, $alg:ident) => {{
-        if $alg == KeyAlg::Bls12_381(BlsCurves::G1) {
+        #[cfg(feature = "bls")]        if $alg == KeyAlg::Bls12_381(BlsCurves::G1) {
             return Ok($key.assume::<BlsKeyPair<G1>>());
         }
-        if $alg == KeyAlg::Bls12_381(BlsCurves::G2) {
+        #[cfg(feature = "bls")]        if $alg == KeyAlg::Bls12_381(BlsCurves::G2) {
             return Ok($key.assume::<BlsKeyPair<G2>>());
         }
-        if $alg == KeyAlg::Bls12_381(BlsCurves::G1G2) {
+        #[cfg(feature = "bls")]        if $alg == KeyAlg::Bls12_381(BlsCurves::G1G2) {
             return Ok($key.assume::<BlsKeyPair<G1G2>>());
         }
         match_key_alg!(@ $($rest)*; $key, $alg)
     }};
     (@ Chacha $($rest:ident)*; $key:ident, $alg:ident) => {{
+        #[cfg(feature = "chacha")]
         if $alg == KeyAlg::Chacha20(Chacha20Types::C20P) {
             return Ok($key.assume::<Chacha20Key<C20P>>());
+        }
+        #[cfg(feature = "chacha")]
+        if $alg == KeyAlg::Chacha20(Chacha20Types::XC20P) {
+            return Ok($key.assume::<Chacha20Key<XC20P>>());
         }
         match_key_alg!(@ $($rest)*; $key, $alg)
     }};
     (@ Ed25519 $($rest:ident)*; $key:ident, $alg:ident) => {{
+        #[cfg(feature = "ed25519")]
         if $alg == KeyAlg::Ed25519 {
             return Ok($key.assume::<Ed25519KeyPair>())
         }
         match_key_alg!(@ $($rest)*; $key, $alg)
     }};
     (@ X25519 $($rest:ident)*; $key:ident, $alg:ident) => {{
+        #[cfg(feature = "ed25519")]
         if $alg == KeyAlg::X25519 {
             return Ok($key.assume::<X25519KeyPair>())
         }
         match_key_alg!(@ $($rest)*; $key, $alg)
     }};
     (@ K256 $($rest:ident)*; $key:ident, $alg:ident) => {{
+        #[cfg(feature = "k256")]
         if $alg == KeyAlg::EcCurve(EcCurves::Secp256k1) {
             return Ok($key.assume::<K256KeyPair>())
         }
         match_key_alg!(@ $($rest)*; $key, $alg)
     }};
     (@ P256 $($rest:ident)*; $key:ident, $alg:ident) => {{
+        #[cfg(feature = "p256")]
         if $alg == KeyAlg::EcCurve(EcCurves::Secp256r1) {
             return Ok($key.assume::<P256KeyPair>())
         }
@@ -467,17 +579,23 @@ impl KeyExchange for AnyKey {
             return Err(err_msg!(Unsupported, "Unsupported key exchange"));
         }
         match self.algorithm() {
+            #[cfg(feature = "ed25519")]
             KeyAlg::X25519 => Ok(self
                 .assume::<X25519KeyPair>()
                 .write_key_exchange(other.assume::<X25519KeyPair>(), out)?),
+            #[cfg(feature = "k256")]
             KeyAlg::EcCurve(EcCurves::Secp256k1) => Ok(self
                 .assume::<K256KeyPair>()
                 .write_key_exchange(other.assume::<K256KeyPair>(), out)?),
+            #[cfg(feature = "p256")]
             KeyAlg::EcCurve(EcCurves::Secp256r1) => Ok(self
                 .assume::<P256KeyPair>()
                 .write_key_exchange(other.assume::<P256KeyPair>(), out)?),
             #[allow(unreachable_patterns)]
-            _ => return Err(err_msg!(Unsupported, "Unsupported key exchange")),
+            _ => {
+                let _ = out;
+                return Err(err_msg!(Unsupported, "Unsupported key exchange"));
+            }
         }
     }
 }
@@ -610,10 +728,12 @@ impl<K: HasKeyAlg + Sized + 'static> AnyKeyAlg for K {
 
 #[cfg(test)]
 mod tests {
+    #[allow(unused_imports)]
     use super::*;
 
     // FIXME - add a custom key type for testing, to allow feature independence
 
+    #[cfg(feature = "ed25519")]
     #[test]
     fn ed25519_as_any() {
         let key = Box::<AnyKey>::generate(KeyAlg::Ed25519).unwrap();
@@ -622,6 +742,7 @@ mod tests {
         let _ = key.to_jwk_public(None).unwrap();
     }
 
+    #[cfg(feature = "aes")]
     #[test]
     fn key_exchange_any() {
         let alice = Box::<AnyKey>::generate(KeyAlg::X25519).unwrap();
@@ -635,6 +756,7 @@ mod tests {
                 .unwrap();
     }
 
+    #[cfg(feature = "chacha")]
     #[test]
     fn key_encrypt_any() {
         use crate::buffer::SecretBytes;

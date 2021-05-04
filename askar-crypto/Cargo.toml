@@ -15,10 +15,17 @@ features = ["std"]
 rustdoc-args = ["--cfg", "docsrs"]
 
 [features]
-default = ["alloc", "any_key"]
+default = ["alloc", "any_key", "all_keys", "crypto_box"]
 alloc = []
-any_key = ["alloc"]
 std = ["alloc"]
+all_keys = ["aes", "bls", "chacha", "ec_curves", "ed25519"]
+any_key = ["alloc"]
+aes = ["aes-gcm"]
+bls = ["bls12_381", "hkdf"]
+chacha = ["chacha20", "chacha20poly1305"]
+crypto_box = ["alloc", "crypto_box_rs", "ed25519"]
+ec_curves = ["k256", "p256"]
+ed25519 = ["curve25519-dalek", "ed25519-dalek", "x25519-dalek"]
 
 [dev-dependencies]
 base64 = { version = "*", default-features = false, features = ["alloc"] }
@@ -36,24 +43,24 @@ harness = false
 
 [dependencies]
 aead = "0.3"
-aes-gcm = { version = "0.8", default-features = false, features = ["aes"] }
+aes-gcm = { version = "0.8", default-features = false, features = ["aes"], optional = true }
 argon2 = { version = "0.1", default-features = false, features = ["password-hash"] }
 base64 = { version = "0.13", default-features = false }
 blake2 = { version = "0.9", default-features = false }
-bls12_381 = { version = "0.4", default-features = false, features = ["groups"] }
-chacha20 = "0.6"  # inherit from chacha20poly1305
-chacha20poly1305 = { version = "0.7", default-features = false, features = ["chacha20"] }
-crypto_box = { version = "0.5", default-features = false, features = ["u64_backend"] }
-curve25519-dalek = { version = "3.0", default-features = false, features = ["u64_backend"] }
-ed25519-dalek = { version = "1.0", default-features = false, features = ["u64_backend"] }
+bls12_381 = { version = "0.4", default-features = false, features = ["groups"], optional = true }
+chacha20 = { version = "0.6", optional = true }  # should match chacha20poly1305
+chacha20poly1305 = { version = "0.7", default-features = false, features = ["chacha20", "xchacha20poly1305"], optional = true }
+crypto_box_rs = { package = "crypto_box", version = "0.5", default-features = false, features = ["u64_backend"], optional = true }
+curve25519-dalek = { version = "3.0", default-features = false, features = ["u64_backend"], optional = true }
+ed25519-dalek = { version = "1.0", default-features = false, features = ["u64_backend"], optional = true }
 digest = "0.9"
 group = "0.9"
-hkdf = "0.11"
-k256 = { version = "0.8", default-features = false, features = ["arithmetic", "ecdsa", "ecdh", "sha256", "zeroize"] }
-p256 = { version = "0.8", default-features = false, features = ["arithmetic", "ecdsa", "ecdh", "zeroize"] }
+hkdf = { version = "0.11", optional = true }
+k256 = { version = "0.8", default-features = false, features = ["arithmetic", "ecdsa", "ecdh", "sha256", "zeroize"], optional = true }
+p256 = { version = "0.8", default-features = false, features = ["arithmetic", "ecdsa", "ecdh", "zeroize"], optional = true }
 rand = { version = "0.8", default-features = false, features = ["getrandom"] }
 serde = { version = "1.0", default-features = false, features = ["derive"] }
 serde_json = { version = "1.0", default-features = false }
 sha2 = { version = "0.9", default-features = false }
-x25519-dalek = { version = "1.1", default-features = false, features = ["u64_backend"] }
+x25519-dalek = { version = "1.1", default-features = false, features = ["u64_backend"], optional = true }
 zeroize = { version = "1.1.0", features = ["zeroize_derive"] }

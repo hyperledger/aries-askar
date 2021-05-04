@@ -72,8 +72,10 @@ impl<Key: KeyExchange + ?Sized> KeyDerivation for Ecdh1PU<'_, Key> {
 
 #[cfg(test)]
 mod tests {
+    #[allow(unused_imports)]
     use super::*;
 
+    #[cfg(feature = "p256")]
     #[test]
     // from RFC: https://tools.ietf.org/html/draft-madden-jose-ecdh-1pu-03#appendix-A
     fn expected_1pu_direct_output() {

@@ -110,6 +110,7 @@ impl SecretBytes {
         v
     }
 
+    #[cfg(feature = "crypto_box")]
     pub(crate) fn as_vec_mut(&mut self) -> &mut Vec<u8> {
         &mut self.0
     }

@@ -18,17 +18,24 @@ mod any;
 #[cfg_attr(docsrs, doc(cfg(feature = "any_key")))]
 pub use any::{AnyKey, AnyKeyCreate};
 
+#[cfg(feature = "aes")]
 pub mod aesgcm;
 
+#[cfg(feature = "bls")]
 pub mod bls;
 
+#[cfg(feature = "chacha")]
 pub mod chacha20;
 
+#[cfg(feature = "ed25519")]
 pub mod ed25519;
+#[cfg(feature = "ed25519")]
 pub mod x25519;
 
+#[cfg(feature = "k256")]
 pub mod k256;
 
+#[cfg(feature = "p256")]
 pub mod p256;
 
 /// Supported key algorithms

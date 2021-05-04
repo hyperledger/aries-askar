@@ -71,8 +71,10 @@ impl<Key: KeyExchange + ?Sized> KeyDerivation for EcdhEs<'_, Key> {
 
 #[cfg(test)]
 mod tests {
+    #[allow(unused_imports)]
     use super::*;
 
+    #[cfg(feature = "ed25519")]
     #[test]
     // based on RFC sample keys
     // https://tools.ietf.org/html/rfc8037#appendix-A.6

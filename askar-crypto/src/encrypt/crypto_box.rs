@@ -6,7 +6,7 @@ use crate::{
 };
 use aead::AeadInPlace;
 use blake2::{digest::Update, digest::VariableOutput, VarBlake2b};
-use crypto_box::{self as cbox, SalsaBox};
+use crypto_box_rs::{self as cbox, SalsaBox};
 
 use crate::{
     alg::x25519::X25519KeyPair,
