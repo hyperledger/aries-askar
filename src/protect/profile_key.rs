@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 
-use super::hmac_key::HmacOutput;
+use super::hmac_key::{HmacDerive, HmacKey};
 use super::EntryEncryptor;
 use crate::{
     crypto::{
@@ -9,13 +9,14 @@ use crate::{
         buffer::{ArrayKey, ResizeBuffer, SecretBytes, WriteBuffer},
         encrypt::{KeyAeadInPlace, KeyAeadMeta},
         generic_array::typenum::{Unsigned, U32},
+        kdf::KeyDerivation,
         repr::{KeyGen, KeyMeta, KeySecretBytes},
     },
     error::Error,
     storage::{EncEntryTag, EntryTag},
 };
 
-pub type ProfileKey = ProfileKeyImpl<Chacha20Key<C20P>, super::hmac_key::HmacKey<U32, Sha256>>;
+pub type ProfileKey = ProfileKeyImpl<Chacha20Key<C20P>, HmacKey<Sha256, U32>>;
 
 /// A record combining the keys required to encrypt and decrypt storage entries
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -74,7 +75,7 @@ where
 impl<Key, HmacKey> ProfileKeyImpl<Key, HmacKey>
 where
     Key: KeyGen + KeyMeta + KeyAeadInPlace + KeyAeadMeta + KeySecretBytes,
-    HmacKey: KeyGen + HmacOutput,
+    HmacKey: KeyGen + HmacDerive,
 {
     pub fn encrypted_size(len: usize) -> usize {
         len + Key::NonceSize::USIZE + Key::TagSize::USIZE
@@ -87,7 +88,9 @@ where
         hmac_key: &HmacKey,
     ) -> Result<Vec<u8>, Error> {
         ArrayKey::<Key::NonceSize>::temp(|nonce| {
-            hmac_key.hmac_to(&[buffer.as_ref()], nonce)?;
+            hmac_key
+                .hmac_deriver(&[buffer.as_ref()])
+                .derive_key_bytes(nonce)?;
             enc_key.encrypt_in_place(&mut buffer, nonce.as_ref(), &[])?;
             buffer.buffer_insert(0, nonce.as_ref())?;
             Ok(buffer.into_vec())
@@ -119,15 +122,15 @@ where
         name: &[u8],
         out: &mut [u8],
     ) -> Result<(), Error> {
-        self.item_hmac_key.hmac_to(
-            &[
+        Ok(self
+            .item_hmac_key
+            .hmac_deriver(&[
                 &(category.len() as u32).to_be_bytes(),
                 category,
                 &(name.len() as u32).to_be_bytes(),
                 name,
-            ],
-            out,
-        )
+            ])
+            .derive_key_bytes(out)?)
     }
 
     pub fn encrypt_tag_name(&self, name: SecretBytes) -> Result<Vec<u8>, Error> {
@@ -162,7 +165,7 @@ impl<Key: PartialEq, HmacKey: PartialEq> Eq for ProfileKeyImpl<Key, HmacKey> {}
 impl<Key, HmacKey> EntryEncryptor for ProfileKeyImpl<Key, HmacKey>
 where
     Key: KeyGen + KeyMeta + KeyAeadInPlace + KeyAeadMeta + KeySecretBytes,
-    HmacKey: KeyGen + HmacOutput,
+    HmacKey: KeyGen + HmacDerive,
 {
     fn prepare_input(input: &[u8]) -> SecretBytes {
         let mut buf = SecretBytes::with_capacity(Self::encrypted_size(input.len()));
@@ -309,7 +312,7 @@ mod tests {
     fn check_encrypt_searchable() {
         let input = SecretBytes::from(&b"hello"[..]);
         let key = Chacha20Key::<C20P>::generate().unwrap();
-        let hmac_key = crate::protect::hmac_key::HmacKey::<U32, Sha256>::generate().unwrap();
+        let hmac_key = HmacKey::generate().unwrap();
         let enc1 = ProfileKey::encrypt_searchable(input.clone(), &key, &hmac_key).unwrap();
         let enc2 = ProfileKey::encrypt_searchable(input.clone(), &key, &hmac_key).unwrap();
         let enc3 = ProfileKey::encrypt(input.clone(), &key).unwrap();

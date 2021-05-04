@@ -69,7 +69,8 @@ pub struct Error {
 }
 
 impl Error {
-    pub(crate) fn from_msg(kind: ErrorKind, msg: &'static str) -> Self {
+    /// Create a new error instance with message text
+    pub fn from_msg(kind: ErrorKind, msg: &'static str) -> Self {
         Self {
             kind,
             #[cfg(feature = "std")]
