@@ -79,6 +79,9 @@ def keys_test():
     derived = derive_key_ecdh_es("A256GCM", ephem, bob, "Alice", "Bob")
     log("Derived:", derived.get_jwk_thumbprint())
 
+    key = Key.generate(KeyAlg.BLS12_381_G1G2)
+    log("Created key:", key.get_jwk_public())
+
 
 async def store_test():
     if ENCRYPT:

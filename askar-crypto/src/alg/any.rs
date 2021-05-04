@@ -6,12 +6,13 @@ use core::{
 };
 
 use super::aesgcm::{AesGcmKey, A128GCM, A256GCM};
+use super::bls::{BlsKeyPair, BlsPublicKeyType, G1, G1G2, G2};
 use super::chacha20::{Chacha20Key, C20P, XC20P};
 use super::ed25519::{self, Ed25519KeyPair};
 use super::k256::{self, K256KeyPair};
 use super::p256::{self, P256KeyPair};
 use super::x25519::{self, X25519KeyPair};
-use super::{AesTypes, Chacha20Types, EcCurves, HasKeyAlg, KeyAlg};
+use super::{AesTypes, BlsTypes, Chacha20Types, EcCurves, HasKeyAlg, KeyAlg};
 use crate::{
     buffer::{ResizeBuffer, SecretBytes, WriteBuffer},
     encrypt::{KeyAeadInPlace, KeyAeadParams},
@@ -156,6 +157,9 @@ fn generate_any<R: AllocKey>(alg: KeyAlg) -> Result<R, Error> {
     match alg {
         KeyAlg::Aes(AesTypes::A128GCM) => AesGcmKey::<A128GCM>::generate().map(R::alloc_key),
         KeyAlg::Aes(AesTypes::A256GCM) => AesGcmKey::<A256GCM>::generate().map(R::alloc_key),
+        KeyAlg::Bls12_381(BlsTypes::G1) => BlsKeyPair::<G1>::generate().map(R::alloc_key),
+        KeyAlg::Bls12_381(BlsTypes::G2) => BlsKeyPair::<G2>::generate().map(R::alloc_key),
+        KeyAlg::Bls12_381(BlsTypes::G1G2) => BlsKeyPair::<G1G2>::generate().map(R::alloc_key),
         KeyAlg::Chacha20(Chacha20Types::C20P) => Chacha20Key::<C20P>::generate().map(R::alloc_key),
         KeyAlg::Chacha20(Chacha20Types::XC20P) => {
             Chacha20Key::<XC20P>::generate().map(R::alloc_key)
@@ -177,6 +181,15 @@ fn generate_any<R: AllocKey>(alg: KeyAlg) -> Result<R, Error> {
 #[inline]
 fn from_public_bytes_any<R: AllocKey>(alg: KeyAlg, public: &[u8]) -> Result<R, Error> {
     match alg {
+        KeyAlg::Bls12_381(BlsTypes::G1) => {
+            BlsKeyPair::<G1>::from_public_bytes(public).map(R::alloc_key)
+        }
+        KeyAlg::Bls12_381(BlsTypes::G2) => {
+            BlsKeyPair::<G2>::from_public_bytes(public).map(R::alloc_key)
+        }
+        KeyAlg::Bls12_381(BlsTypes::G1G2) => {
+            BlsKeyPair::<G1G2>::from_public_bytes(public).map(R::alloc_key)
+        }
         KeyAlg::Ed25519 => Ed25519KeyPair::from_public_bytes(public).map(R::alloc_key),
         KeyAlg::X25519 => X25519KeyPair::from_public_bytes(public).map(R::alloc_key),
         KeyAlg::EcCurve(EcCurves::Secp256k1) => {
@@ -203,6 +216,15 @@ fn from_secret_bytes_any<R: AllocKey>(alg: KeyAlg, secret: &[u8]) -> Result<R, E
         }
         KeyAlg::Aes(AesTypes::A256GCM) => {
             AesGcmKey::<A256GCM>::from_secret_bytes(secret).map(R::alloc_key)
+        }
+        KeyAlg::Bls12_381(BlsTypes::G1) => {
+            BlsKeyPair::<G1>::from_secret_bytes(secret).map(R::alloc_key)
+        }
+        KeyAlg::Bls12_381(BlsTypes::G2) => {
+            BlsKeyPair::<G2>::from_secret_bytes(secret).map(R::alloc_key)
+        }
+        KeyAlg::Bls12_381(BlsTypes::G1G2) => {
+            BlsKeyPair::<G1G2>::from_secret_bytes(secret).map(R::alloc_key)
         }
         KeyAlg::Chacha20(Chacha20Types::C20P) => {
             Chacha20Key::<C20P>::from_secret_bytes(secret).map(R::alloc_key)
@@ -289,6 +311,12 @@ fn from_key_derivation_any<R: AllocKey>(
 #[inline]
 fn convert_key_any<R: AllocKey>(key: &AnyKey, alg: KeyAlg) -> Result<R, Error> {
     match (key.algorithm(), alg) {
+        (KeyAlg::Bls12_381(BlsTypes::G1G2), KeyAlg::Bls12_381(BlsTypes::G1)) => Ok(R::alloc_key(
+            BlsKeyPair::<G1>::from(key.assume::<BlsKeyPair<G1G2>>()),
+        )),
+        (KeyAlg::Bls12_381(BlsTypes::G1G2), KeyAlg::Bls12_381(BlsTypes::G2)) => Ok(R::alloc_key(
+            BlsKeyPair::<G2>::from(key.assume::<BlsKeyPair<G1G2>>()),
+        )),
         (KeyAlg::Ed25519, KeyAlg::X25519) => Ok(<X25519KeyPair as TryFrom<_>>::try_from(
             key.assume::<Ed25519KeyPair>(),
         )
@@ -343,9 +371,14 @@ fn from_jwk_any<R: AllocKey>(jwk: JwkParts<'_>) -> Result<R, Error> {
         ("OKP", c) if c == x25519::JWK_CURVE => {
             X25519KeyPair::from_jwk_parts(jwk).map(R::alloc_key)
         }
+        ("EC", c) if c == G1::JWK_CURVE => BlsKeyPair::<G1>::from_jwk_parts(jwk).map(R::alloc_key),
+        ("EC", c) if c == G2::JWK_CURVE => BlsKeyPair::<G2>::from_jwk_parts(jwk).map(R::alloc_key),
+        ("EC", c) if c == G1G2::JWK_CURVE => {
+            BlsKeyPair::<G1G2>::from_jwk_parts(jwk).map(R::alloc_key)
+        }
         ("EC", c) if c == k256::JWK_CURVE => K256KeyPair::from_jwk_parts(jwk).map(R::alloc_key),
         ("EC", c) if c == p256::JWK_CURVE => P256KeyPair::from_jwk_parts(jwk).map(R::alloc_key),
-        // "oct"
+        // FIXME implement symmetric keys
         _ => Err(err_msg!(Unsupported, "Unsupported JWK for key import")),
     }
 }
@@ -353,6 +386,15 @@ fn from_jwk_any<R: AllocKey>(jwk: JwkParts<'_>) -> Result<R, Error> {
 impl AnyKey {
     pub fn to_public_bytes(&self) -> Result<SecretBytes, Error> {
         match self.key_type_id() {
+            s if s == TypeId::of::<BlsKeyPair<G1>>() => {
+                Ok(self.assume::<BlsKeyPair<G1>>().to_public_bytes()?)
+            }
+            s if s == TypeId::of::<BlsKeyPair<G2>>() => {
+                Ok(self.assume::<BlsKeyPair<G2>>().to_public_bytes()?)
+            }
+            s if s == TypeId::of::<BlsKeyPair<G1G2>>() => {
+                Ok(self.assume::<BlsKeyPair<G1G2>>().to_public_bytes()?)
+            }
             s if s == TypeId::of::<Ed25519KeyPair>() => {
                 Ok(self.assume::<Ed25519KeyPair>().to_public_bytes()?)
             }
@@ -377,6 +419,15 @@ impl AnyKey {
             }
             s if s == TypeId::of::<AesGcmKey<A256GCM>>() => {
                 Ok(self.assume::<AesGcmKey<A256GCM>>().to_secret_bytes()?)
+            }
+            s if s == TypeId::of::<BlsKeyPair<G1>>() => {
+                Ok(self.assume::<BlsKeyPair<G1>>().to_secret_bytes()?)
+            }
+            s if s == TypeId::of::<BlsKeyPair<G2>>() => {
+                Ok(self.assume::<BlsKeyPair<G2>>().to_secret_bytes()?)
+            }
+            s if s == TypeId::of::<BlsKeyPair<G1G2>>() => {
+                Ok(self.assume::<BlsKeyPair<G1G2>>().to_secret_bytes()?)
             }
             s if s == TypeId::of::<Chacha20Key<C20P>>() => {
                 Ok(self.assume::<Chacha20Key<C20P>>().to_secret_bytes()?)
@@ -466,6 +517,9 @@ impl ToJwk for AnyKey {
             self,
             AesGcmKey<A128GCM>,
             AesGcmKey<A256GCM>,
+            BlsKeyPair<G1>,
+            BlsKeyPair<G2>,
+            BlsKeyPair<G1G2>,
             Chacha20Key<C20P>,
             Chacha20Key<XC20P>,
             Ed25519KeyPair,
