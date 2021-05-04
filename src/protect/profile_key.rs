@@ -24,6 +24,7 @@ pub type ProfileKey = ProfileKeyImpl<Chacha20Key<C20P>, HmacKey<Sha256, U32>>;
     deserialize = "Key: for<'a> Deserialize<'a>, HmacKey: for<'a> Deserialize<'a>",
     serialize = "Key: Serialize, HmacKey: Serialize"
 ))]
+#[serde(tag = "ver", rename = "1")]
 pub struct ProfileKeyImpl<Key, HmacKey> {
     #[serde(rename = "ick")]
     pub category_key: Key,
@@ -126,19 +127,19 @@ where
         ))?)
     }
 
-    fn encrypt_tag_name(&self, name: SecretBytes) -> Result<Vec<u8>, Error> {
+    pub fn encrypt_tag_name(&self, name: SecretBytes) -> Result<Vec<u8>, Error> {
         Self::encrypt_searchable(name, &self.tag_name_key, &self.tags_hmac_key)
     }
 
-    fn encrypt_tag_value(&self, value: SecretBytes) -> Result<Vec<u8>, Error> {
+    pub fn encrypt_tag_value(&self, value: SecretBytes) -> Result<Vec<u8>, Error> {
         Self::encrypt_searchable(value, &self.tag_value_key, &self.tags_hmac_key)
     }
 
-    fn decrypt_tag_name(&self, enc_tag_name: Vec<u8>) -> Result<SecretBytes, Error> {
+    pub fn decrypt_tag_name(&self, enc_tag_name: Vec<u8>) -> Result<SecretBytes, Error> {
         Self::decrypt(enc_tag_name, &self.tag_name_key)
     }
 
-    fn decrypt_tag_value(&self, enc_tag_value: Vec<u8>) -> Result<SecretBytes, Error> {
+    pub fn decrypt_tag_value(&self, enc_tag_value: Vec<u8>) -> Result<SecretBytes, Error> {
         Self::decrypt(enc_tag_value, &self.tag_value_key)
     }
 }
