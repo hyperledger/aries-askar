@@ -12,7 +12,7 @@ use super::ed25519::{self, Ed25519KeyPair};
 use super::k256::{self, K256KeyPair};
 use super::p256::{self, P256KeyPair};
 use super::x25519::{self, X25519KeyPair};
-use super::{AesTypes, BlsTypes, Chacha20Types, EcCurves, HasKeyAlg, KeyAlg};
+use super::{AesTypes, BlsCurves, Chacha20Types, EcCurves, HasKeyAlg, KeyAlg};
 use crate::{
     buffer::{ResizeBuffer, SecretBytes, WriteBuffer},
     encrypt::{KeyAeadInPlace, KeyAeadParams},
@@ -157,9 +157,9 @@ fn generate_any<R: AllocKey>(alg: KeyAlg) -> Result<R, Error> {
     match alg {
         KeyAlg::Aes(AesTypes::A128GCM) => AesGcmKey::<A128GCM>::generate().map(R::alloc_key),
         KeyAlg::Aes(AesTypes::A256GCM) => AesGcmKey::<A256GCM>::generate().map(R::alloc_key),
-        KeyAlg::Bls12_381(BlsTypes::G1) => BlsKeyPair::<G1>::generate().map(R::alloc_key),
-        KeyAlg::Bls12_381(BlsTypes::G2) => BlsKeyPair::<G2>::generate().map(R::alloc_key),
-        KeyAlg::Bls12_381(BlsTypes::G1G2) => BlsKeyPair::<G1G2>::generate().map(R::alloc_key),
+        KeyAlg::Bls12_381(BlsCurves::G1) => BlsKeyPair::<G1>::generate().map(R::alloc_key),
+        KeyAlg::Bls12_381(BlsCurves::G2) => BlsKeyPair::<G2>::generate().map(R::alloc_key),
+        KeyAlg::Bls12_381(BlsCurves::G1G2) => BlsKeyPair::<G1G2>::generate().map(R::alloc_key),
         KeyAlg::Chacha20(Chacha20Types::C20P) => Chacha20Key::<C20P>::generate().map(R::alloc_key),
         KeyAlg::Chacha20(Chacha20Types::XC20P) => {
             Chacha20Key::<XC20P>::generate().map(R::alloc_key)
@@ -181,13 +181,13 @@ fn generate_any<R: AllocKey>(alg: KeyAlg) -> Result<R, Error> {
 #[inline]
 fn from_public_bytes_any<R: AllocKey>(alg: KeyAlg, public: &[u8]) -> Result<R, Error> {
     match alg {
-        KeyAlg::Bls12_381(BlsTypes::G1) => {
+        KeyAlg::Bls12_381(BlsCurves::G1) => {
             BlsKeyPair::<G1>::from_public_bytes(public).map(R::alloc_key)
         }
-        KeyAlg::Bls12_381(BlsTypes::G2) => {
+        KeyAlg::Bls12_381(BlsCurves::G2) => {
             BlsKeyPair::<G2>::from_public_bytes(public).map(R::alloc_key)
         }
-        KeyAlg::Bls12_381(BlsTypes::G1G2) => {
+        KeyAlg::Bls12_381(BlsCurves::G1G2) => {
             BlsKeyPair::<G1G2>::from_public_bytes(public).map(R::alloc_key)
         }
         KeyAlg::Ed25519 => Ed25519KeyPair::from_public_bytes(public).map(R::alloc_key),
@@ -217,13 +217,13 @@ fn from_secret_bytes_any<R: AllocKey>(alg: KeyAlg, secret: &[u8]) -> Result<R, E
         KeyAlg::Aes(AesTypes::A256GCM) => {
             AesGcmKey::<A256GCM>::from_secret_bytes(secret).map(R::alloc_key)
         }
-        KeyAlg::Bls12_381(BlsTypes::G1) => {
+        KeyAlg::Bls12_381(BlsCurves::G1) => {
             BlsKeyPair::<G1>::from_secret_bytes(secret).map(R::alloc_key)
         }
-        KeyAlg::Bls12_381(BlsTypes::G2) => {
+        KeyAlg::Bls12_381(BlsCurves::G2) => {
             BlsKeyPair::<G2>::from_secret_bytes(secret).map(R::alloc_key)
         }
-        KeyAlg::Bls12_381(BlsTypes::G1G2) => {
+        KeyAlg::Bls12_381(BlsCurves::G1G2) => {
             BlsKeyPair::<G1G2>::from_secret_bytes(secret).map(R::alloc_key)
         }
         KeyAlg::Chacha20(Chacha20Types::C20P) => {
@@ -311,10 +311,10 @@ fn from_key_derivation_any<R: AllocKey>(
 #[inline]
 fn convert_key_any<R: AllocKey>(key: &AnyKey, alg: KeyAlg) -> Result<R, Error> {
     match (key.algorithm(), alg) {
-        (KeyAlg::Bls12_381(BlsTypes::G1G2), KeyAlg::Bls12_381(BlsTypes::G1)) => Ok(R::alloc_key(
+        (KeyAlg::Bls12_381(BlsCurves::G1G2), KeyAlg::Bls12_381(BlsCurves::G1)) => Ok(R::alloc_key(
             BlsKeyPair::<G1>::from(key.assume::<BlsKeyPair<G1G2>>()),
         )),
-        (KeyAlg::Bls12_381(BlsTypes::G1G2), KeyAlg::Bls12_381(BlsTypes::G2)) => Ok(R::alloc_key(
+        (KeyAlg::Bls12_381(BlsCurves::G1G2), KeyAlg::Bls12_381(BlsCurves::G2)) => Ok(R::alloc_key(
             BlsKeyPair::<G2>::from(key.assume::<BlsKeyPair<G1G2>>()),
         )),
         (KeyAlg::Ed25519, KeyAlg::X25519) => Ok(<X25519KeyPair as TryFrom<_>>::try_from(
@@ -609,7 +609,7 @@ mod tests {
         let key = Box::<AnyKey>::generate(KeyAlg::Ed25519).unwrap();
         assert_eq!(key.algorithm(), KeyAlg::Ed25519);
         assert_eq!(key.key_type_id(), TypeId::of::<Ed25519KeyPair>());
-        let _ = key.to_jwk_public().unwrap();
+        let _ = key.to_jwk_public(None).unwrap();
     }
 
     #[test]

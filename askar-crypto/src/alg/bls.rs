@@ -17,7 +17,7 @@ use crate::generic_array::{
     ArrayLength,
 };
 
-use super::{BlsTypes, HasKeyAlg, KeyAlg};
+use super::{BlsCurves, HasKeyAlg, KeyAlg};
 use crate::{
     buffer::ArrayKey,
     error::Error,
@@ -126,15 +126,15 @@ impl<Pk: BlsPublicKeyType> KeyPublicBytes for BlsKeyPair<Pk> {
     }
 
     fn with_public_bytes<O>(&self, f: impl FnOnce(&[u8]) -> O) -> O {
-        Pk::with_bytes(&self.public, f)
+        Pk::with_bytes(&self.public, None, f)
     }
 }
 
 impl<Pk: BlsPublicKeyType> ToJwk for BlsKeyPair<Pk> {
     fn encode_jwk(&self, enc: &mut JwkEncoder<'_>) -> Result<(), Error> {
-        enc.add_str("crv", Pk::JWK_CURVE)?;
+        enc.add_str("crv", Pk::get_jwk_curve(enc.alg()))?;
         enc.add_str("kty", JWK_KEY_TYPE)?;
-        self.with_public_bytes(|buf| enc.add_as_base64("x", buf))?;
+        Pk::with_bytes(&self.public, enc.alg(), |buf| enc.add_as_base64("x", buf))?;
         if enc.is_secret() {
             self.with_secret_bytes(|buf| {
                 if let Some(sk) = buf {
@@ -232,9 +232,14 @@ pub trait BlsPublicKeyType: 'static {
     type BufferSize: ArrayLength<u8>;
 
     /// The associated algorithm type
-    const ALG_TYPE: BlsTypes;
+    const ALG_TYPE: BlsCurves;
     /// The associated JWK curve name
     const JWK_CURVE: &'static str;
+
+    /// Get the JWK curve for a specific key algorithm
+    fn get_jwk_curve(_alg: Option<KeyAlg>) -> &'static str {
+        Self::JWK_CURVE
+    }
 
     /// Initialize from the secret scalar
     fn from_secret_scalar(secret: &Scalar) -> Self::Buffer;
@@ -243,7 +248,7 @@ pub trait BlsPublicKeyType: 'static {
     fn from_public_bytes(key: &[u8]) -> Result<Self::Buffer, Error>;
 
     /// Access the bytes of the public key
-    fn with_bytes<O>(buf: &Self::Buffer, f: impl FnOnce(&[u8]) -> O) -> O;
+    fn with_bytes<O>(buf: &Self::Buffer, alg: Option<KeyAlg>, f: impl FnOnce(&[u8]) -> O) -> O;
 }
 
 /// G1 curve
@@ -254,7 +259,7 @@ impl BlsPublicKeyType for G1 {
     type Buffer = G1Affine;
     type BufferSize = U48;
 
-    const ALG_TYPE: BlsTypes = BlsTypes::G1;
+    const ALG_TYPE: BlsCurves = BlsCurves::G1;
     const JWK_CURVE: &'static str = "BLS12381_G1";
 
     #[inline]
@@ -270,7 +275,7 @@ impl BlsPublicKeyType for G1 {
         buf.ok_or_else(|| err_msg!(InvalidKeyData))
     }
 
-    fn with_bytes<O>(buf: &Self::Buffer, f: impl FnOnce(&[u8]) -> O) -> O {
+    fn with_bytes<O>(buf: &Self::Buffer, _alg: Option<KeyAlg>, f: impl FnOnce(&[u8]) -> O) -> O {
         f(buf.to_bytes().as_ref())
     }
 }
@@ -283,7 +288,7 @@ impl BlsPublicKeyType for G2 {
     type Buffer = G2Affine;
     type BufferSize = U96;
 
-    const ALG_TYPE: BlsTypes = BlsTypes::G2;
+    const ALG_TYPE: BlsCurves = BlsCurves::G2;
     const JWK_CURVE: &'static str = "BLS12381_G2";
 
     #[inline]
@@ -299,7 +304,7 @@ impl BlsPublicKeyType for G2 {
         buf.ok_or_else(|| err_msg!(InvalidKeyData))
     }
 
-    fn with_bytes<O>(buf: &Self::Buffer, f: impl FnOnce(&[u8]) -> O) -> O {
+    fn with_bytes<O>(buf: &Self::Buffer, _alg: Option<KeyAlg>, f: impl FnOnce(&[u8]) -> O) -> O {
         f(buf.to_bytes().as_ref())
     }
 }
@@ -312,8 +317,18 @@ impl BlsPublicKeyType for G1G2 {
     type Buffer = (G1Affine, G2Affine);
     type BufferSize = U144;
 
-    const ALG_TYPE: BlsTypes = BlsTypes::G1G2;
+    const ALG_TYPE: BlsCurves = BlsCurves::G1G2;
     const JWK_CURVE: &'static str = "BLS12381_G1G2";
+
+    fn get_jwk_curve(alg: Option<KeyAlg>) -> &'static str {
+        if alg == Some(KeyAlg::Bls12_381(BlsCurves::G1)) {
+            G1::JWK_CURVE
+        } else if alg == Some(KeyAlg::Bls12_381(BlsCurves::G2)) {
+            G2::JWK_CURVE
+        } else {
+            Self::JWK_CURVE
+        }
+    }
 
     #[inline]
     fn from_secret_scalar(secret: &Scalar) -> Self::Buffer {
@@ -338,12 +353,24 @@ impl BlsPublicKeyType for G1G2 {
         }
     }
 
-    fn with_bytes<O>(buf: &Self::Buffer, f: impl FnOnce(&[u8]) -> O) -> O {
-        ArrayKey::<U144>::temp(|arr| {
-            arr[0..48].copy_from_slice(buf.0.to_bytes().as_ref());
-            arr[48..].copy_from_slice(buf.1.to_bytes().as_ref());
-            f(&arr[..])
-        })
+    fn with_bytes<O>(buf: &Self::Buffer, alg: Option<KeyAlg>, f: impl FnOnce(&[u8]) -> O) -> O {
+        if alg == Some(KeyAlg::Bls12_381(BlsCurves::G1)) {
+            ArrayKey::<U48>::temp(|arr| {
+                arr.copy_from_slice(buf.0.to_bytes().as_ref());
+                f(&arr[..])
+            })
+        } else if alg == Some(KeyAlg::Bls12_381(BlsCurves::G2)) {
+            ArrayKey::<U96>::temp(|arr| {
+                arr.copy_from_slice(buf.1.to_bytes().as_ref());
+                f(&arr[..])
+            })
+        } else {
+            ArrayKey::<U144>::temp(|arr| {
+                arr[0..48].copy_from_slice(buf.0.to_bytes().as_ref());
+                arr[48..].copy_from_slice(buf.1.to_bytes().as_ref());
+                f(&arr[..])
+            })
+        }
     }
 }
 
@@ -447,7 +474,7 @@ mod tests {
         let test_pub_g1 = &hex!("a2c975348667926acf12f3eecb005044e08a7a9b7d95f30bd281b55445107367a2e5d0558be7943c8bd13f9a1a7036fb");
         let kp = BlsKeyPair::<G1>::from_secret_bytes(&test_pvt[..]).expect("Error creating key");
 
-        let jwk = kp.to_jwk_public().expect("Error converting key to JWK");
+        let jwk = kp.to_jwk_public(None).expect("Error converting key to JWK");
         let jwk = JwkParts::from_str(&jwk).expect("Error parsing JWK");
         assert_eq!(jwk.kty, "EC");
         assert_eq!(jwk.crv, G1::JWK_CURVE);

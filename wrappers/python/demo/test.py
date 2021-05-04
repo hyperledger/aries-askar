@@ -80,7 +80,9 @@ def keys_test():
     log("Derived:", derived.get_jwk_thumbprint())
 
     key = Key.generate(KeyAlg.BLS12_381_G1G2)
-    log("Created key:", key.get_jwk_public())
+    log("BLS key G1:", key.get_jwk_public(KeyAlg.BLS12_381_G1))
+    log("BLS key G2:", key.get_jwk_public(KeyAlg.BLS12_381_G2))
+    log("BLS key G1G2:", key.get_jwk_public())
 
 
 async def store_test():

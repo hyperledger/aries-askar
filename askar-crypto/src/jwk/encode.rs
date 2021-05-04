@@ -1,11 +1,11 @@
 use core::fmt::Write;
 
+use super::ops::KeyOpsSet;
 use crate::{
+    alg::KeyAlg,
     buffer::{WriteBuffer, Writer},
     error::Error,
 };
-
-use super::ops::KeyOpsSet;
 
 /// Supported modes for JWK encoding
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -21,6 +21,7 @@ pub enum JwkEncoderMode {
 /// A helper structure which writes a JWK to a buffer
 #[derive(Debug)]
 pub struct JwkEncoder<'b> {
+    alg: Option<KeyAlg>,
     buffer: &'b mut dyn WriteBuffer,
     empty: bool,
     mode: JwkEncoderMode,
@@ -28,8 +29,13 @@ pub struct JwkEncoder<'b> {
 
 impl<'b> JwkEncoder<'b> {
     /// Create a new instance
-    pub fn new<B: WriteBuffer>(buffer: &'b mut B, mode: JwkEncoderMode) -> Result<Self, Error> {
+    pub fn new<B: WriteBuffer>(
+        alg: Option<KeyAlg>,
+        buffer: &'b mut B,
+        mode: JwkEncoderMode,
+    ) -> Result<Self, Error> {
         Ok(Self {
+            alg,
             buffer,
             empty: true,
             mode,
@@ -38,6 +44,11 @@ impl<'b> JwkEncoder<'b> {
 }
 
 impl JwkEncoder<'_> {
+    /// Get the requested algorithm for the JWK
+    pub fn alg(&self) -> Option<KeyAlg> {
+        self.alg
+    }
+
     fn start_attr(&mut self, key: &str) -> Result<(), Error> {
         let buffer = &mut *self.buffer;
         if self.empty {

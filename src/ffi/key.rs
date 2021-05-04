@@ -173,13 +173,15 @@ pub extern "C" fn askar_key_get_ephemeral(handle: LocalKeyHandle, out: *mut i8) 
 #[no_mangle]
 pub extern "C" fn askar_key_get_jwk_public(
     handle: LocalKeyHandle,
+    alg: FfiStr<'_>,
     out: *mut *const c_char,
 ) -> ErrorCode {
     catch_err! {
         trace!("Get key JWK public: {}", handle);
         check_useful_c_ptr!(out);
         let key = handle.load()?;
-        let jwk = key.to_jwk_public()?;
+        let alg = alg.as_opt_str().map(KeyAlg::from_str).transpose()?;
+        let jwk = key.to_jwk_public(alg)?;
         unsafe { *out = rust_string_to_c(jwk) };
         Ok(ErrorCode::Success)
     }
@@ -203,19 +205,19 @@ pub extern "C" fn askar_key_get_jwk_secret(
 #[no_mangle]
 pub extern "C" fn askar_key_get_jwk_thumbprint(
     handle: LocalKeyHandle,
+    alg: FfiStr<'_>,
     out: *mut *const c_char,
 ) -> ErrorCode {
     catch_err! {
         trace!("Get key JWK thumbprint: {}", handle);
         check_useful_c_ptr!(out);
         let key = handle.load()?;
-        let thumb = key.to_jwk_thumbprint()?;
+        let alg = alg.as_opt_str().map(KeyAlg::from_str).transpose()?;
+        let thumb = key.to_jwk_thumbprint(alg)?;
         unsafe { *out = rust_string_to_c(thumb) };
         Ok(ErrorCode::Success)
     }
 }
-
-// key_aead_get_params (nonce len, tag len)
 
 #[no_mangle]
 pub extern "C" fn askar_key_aead_random_nonce(

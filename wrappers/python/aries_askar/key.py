@@ -51,14 +51,14 @@ class Key:
     def get_secret_bytes(self) -> bytes:
         return bytes(bindings.key_get_secret_bytes(self._handle))
 
-    def get_jwk_public(self) -> str:
-        return bindings.key_get_jwk_public(self._handle)
+    def get_jwk_public(self, alg: Union[str, KeyAlg] = None) -> str:
+        return bindings.key_get_jwk_public(self._handle, alg)
 
     def get_jwk_secret(self) -> str:
         return bindings.key_get_jwk_secret(self._handle)
 
-    def get_jwk_thumbprint(self) -> str:
-        return bindings.key_get_jwk_thumbprint(self._handle)
+    def get_jwk_thumbprint(self, alg: Union[str, KeyAlg] = None) -> str:
+        return bindings.key_get_jwk_thumbprint(self._handle, alg)
 
     def aead_params(self) -> bindings.AeadParams:
         return bindings.key_aead_get_params(self._handle)

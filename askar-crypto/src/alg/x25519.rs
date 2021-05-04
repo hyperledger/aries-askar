@@ -269,7 +269,7 @@ mod tests {
         let kp =
             X25519KeyPair::from_secret_bytes(&test_pvt).expect("Error creating x25519 keypair");
         let jwk = kp
-            .to_jwk_public()
+            .to_jwk_public(None)
             .expect("Error converting public key to JWK");
         let jwk = JwkParts::from_str(&jwk).expect("Error parsing JWK output");
         assert_eq!(jwk.kty, "OKP");

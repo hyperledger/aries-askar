@@ -313,7 +313,7 @@ mod tests {
         let test_pvt = base64::decode_config(test_pvt_b64, base64::URL_SAFE).unwrap();
         let sk = K256KeyPair::from_secret_bytes(&test_pvt).expect("Error creating signing key");
 
-        let jwk = sk.to_jwk_public().expect("Error converting key to JWK");
+        let jwk = sk.to_jwk_public(None).expect("Error converting key to JWK");
         let jwk = JwkParts::from_str(&jwk).expect("Error parsing JWK");
         assert_eq!(jwk.kty, "EC");
         assert_eq!(jwk.crv, JWK_CURVE);

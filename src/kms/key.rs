@@ -7,7 +7,7 @@ pub use crate::crypto::{
 };
 use crate::{
     crypto::{
-        alg::{AnyKey, AnyKeyCreate},
+        alg::{AnyKey, AnyKeyCreate, BlsCurves},
         encrypt::KeyAeadInPlace,
         jwk::{FromJwk, ToJwk},
         kdf::{KeyDerivation, KeyExchange},
@@ -99,8 +99,8 @@ impl LocalKey {
     }
 
     /// Get the public JWK representation for this key or keypair
-    pub fn to_jwk_public(&self) -> Result<String, Error> {
-        Ok(self.inner.to_jwk_public()?)
+    pub fn to_jwk_public(&self, alg: Option<KeyAlg>) -> Result<String, Error> {
+        Ok(self.inner.to_jwk_public(alg)?)
     }
 
     /// Get the JWK representation for this private key or keypair
@@ -109,9 +109,22 @@ impl LocalKey {
     }
 
     /// Get the JWK thumbprint for this key or keypair
-    pub fn to_jwk_thumbprint(&self) -> Result<String, Error> {
-        // FIXME add special case for BLS G1+G2 (two prints)
-        Ok(self.inner.to_jwk_thumbprint()?)
+    pub fn to_jwk_thumbprint(&self, alg: Option<KeyAlg>) -> Result<String, Error> {
+        Ok(self.inner.to_jwk_thumbprint(alg)?)
+    }
+
+    /// Get the set of indexed JWK thumbprints for this key or keypair
+    pub fn to_jwk_thumbprints(&self) -> Result<Vec<String>, Error> {
+        if self.inner.algorithm() == KeyAlg::Bls12_381(BlsCurves::G1G2) {
+            return Ok(vec![
+                self.inner
+                    .to_jwk_thumbprint(Some(KeyAlg::Bls12_381(BlsCurves::G1)))?,
+                self.inner
+                    .to_jwk_thumbprint(Some(KeyAlg::Bls12_381(BlsCurves::G2)))?,
+            ]);
+        } else {
+            Ok(vec![self.inner.to_jwk_thumbprint(None)?])
+        }
     }
 
     /// Map this key or keypair to its equivalent for another key algorithm

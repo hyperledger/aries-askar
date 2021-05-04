@@ -37,7 +37,7 @@ pub enum KeyAlg {
     /// AES
     Aes(AesTypes),
     /// BLS12-381
-    Bls12_381(BlsTypes),
+    Bls12_381(BlsCurves),
     /// (X)ChaCha20-Poly1305
     Chacha20(Chacha20Types),
     /// Curve25519 signing key
@@ -54,9 +54,9 @@ impl KeyAlg {
         match self {
             Self::Aes(AesTypes::A128GCM) => "a128gcm",
             Self::Aes(AesTypes::A256GCM) => "a256gcm",
-            Self::Bls12_381(BlsTypes::G1) => "bls12381g1",
-            Self::Bls12_381(BlsTypes::G2) => "bls12381g2",
-            Self::Bls12_381(BlsTypes::G1G2) => "bls12381g1g2",
+            Self::Bls12_381(BlsCurves::G1) => "bls12381g1",
+            Self::Bls12_381(BlsCurves::G2) => "bls12381g2",
+            Self::Bls12_381(BlsCurves::G1G2) => "bls12381g1g2",
             Self::Chacha20(Chacha20Types::C20P) => "c20p",
             Self::Chacha20(Chacha20Types::XC20P) => "xc20p",
             Self::Ed25519 => "ed25519",
@@ -80,9 +80,9 @@ impl FromStr for KeyAlg {
         match normalize_alg(s)? {
             a if a == "a128gcm" || a == "aes128gcm" => Ok(Self::Aes(AesTypes::A128GCM)),
             a if a == "a256gcm" || a == "aes256gcm" => Ok(Self::Aes(AesTypes::A256GCM)),
-            a if a == "bls12381g1" => Ok(Self::Bls12_381(BlsTypes::G1)),
-            a if a == "bls12381g2" => Ok(Self::Bls12_381(BlsTypes::G2)),
-            a if a == "bls12381g1g2" => Ok(Self::Bls12_381(BlsTypes::G1G2)),
+            a if a == "bls12381g1" => Ok(Self::Bls12_381(BlsCurves::G1)),
+            a if a == "bls12381g2" => Ok(Self::Bls12_381(BlsCurves::G2)),
+            a if a == "bls12381g1g2" => Ok(Self::Bls12_381(BlsCurves::G1G2)),
             a if a == "c20p" || a == "chacha20poly1305" => Ok(Self::Chacha20(Chacha20Types::C20P)),
             a if a == "xc20p" || a == "xchacha20poly1305" => {
                 Ok(Self::Chacha20(Chacha20Types::XC20P))
@@ -178,7 +178,7 @@ pub enum AesTypes {
 
 /// Supported public key types for Bls12_381
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Zeroize)]
-pub enum BlsTypes {
+pub enum BlsCurves {
     /// G1 curve
     G1,
     /// G2 curve

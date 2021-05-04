@@ -274,8 +274,8 @@ impl<Q: QueryBackend> Session<Q> {
         if !alg.is_empty() {
             ins_tags.push(EntryTag::Encrypted("alg".to_string(), alg.to_string()));
         }
-        let thumb = key.to_jwk_thumbprint()?;
-        if !thumb.is_empty() {
+        let thumbs = key.to_jwk_thumbprints()?;
+        for thumb in thumbs {
             ins_tags.push(EntryTag::Encrypted("thumb".to_string(), thumb));
         }
         if let Some(tags) = tags {

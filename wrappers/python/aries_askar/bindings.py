@@ -975,9 +975,11 @@ def key_get_ephemeral(handle: LocalKeyHandle) -> bool:
     return eph.value != 0
 
 
-def key_get_jwk_public(handle: LocalKeyHandle) -> str:
+def key_get_jwk_public(handle: LocalKeyHandle, alg: Union[str, KeyAlg] = None) -> str:
     jwk = StrBuffer()
-    do_call("askar_key_get_jwk_public", handle, byref(jwk))
+    if isinstance(alg, KeyAlg):
+        alg = alg.value
+    do_call("askar_key_get_jwk_public", handle, encode_str(alg), byref(jwk))
     return str(jwk)
 
 
@@ -987,9 +989,13 @@ def key_get_jwk_secret(handle: LocalKeyHandle) -> ByteBuffer:
     return sec
 
 
-def key_get_jwk_thumbprint(handle: LocalKeyHandle) -> str:
+def key_get_jwk_thumbprint(
+    handle: LocalKeyHandle, alg: Union[str, KeyAlg] = None
+) -> str:
     thumb = StrBuffer()
-    do_call("askar_key_get_jwk_thumbprint", handle, byref(thumb))
+    if isinstance(alg, KeyAlg):
+        alg = alg.value
+    do_call("askar_key_get_jwk_thumbprint", handle, encode_str(alg), byref(thumb))
     return str(thumb)
 
 
