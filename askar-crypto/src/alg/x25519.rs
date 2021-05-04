@@ -254,6 +254,7 @@ impl TryFrom<&Ed25519KeyPair> for X25519KeyPair {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::repr::ToPublicBytes;
 
     #[test]
     fn jwk_expected() {

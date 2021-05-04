@@ -21,9 +21,28 @@ pub trait KeySecretBytes {
 
     /// Access a temporary slice of the key secret bytes, if any.
     fn with_secret_bytes<O>(&self, f: impl FnOnce(Option<&[u8]>) -> O) -> O;
+}
 
+/// Object-safe trait for exporting key secret bytes
+pub trait ToSecretBytes {
     /// Write the key secret bytes to a buffer.
-    fn to_secret_bytes_buffer<B: WriteBuffer>(&self, out: &mut B) -> Result<(), Error> {
+    fn write_secret_bytes(&self, out: &mut dyn WriteBuffer) -> Result<(), Error>;
+
+    #[cfg(feature = "alloc")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
+    /// Write the key secret bytes to a new allocated buffer.
+    fn to_secret_bytes(&self) -> Result<SecretBytes, Error> {
+        let mut buf = SecretBytes::with_capacity(128);
+        self.write_secret_bytes(&mut buf)?;
+        Ok(buf)
+    }
+}
+
+impl<K> ToSecretBytes for K
+where
+    K: KeySecretBytes,
+{
+    fn write_secret_bytes(&self, out: &mut dyn WriteBuffer) -> Result<(), Error> {
         self.with_secret_bytes(|buf| {
             if let Some(buf) = buf {
                 out.buffer_write(buf)
@@ -31,15 +50,6 @@ pub trait KeySecretBytes {
                 Err(err_msg!(MissingSecretKey))
             }
         })
-    }
-
-    #[cfg(feature = "alloc")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
-    /// Write the key secret bytes to a new allocated buffer.
-    fn to_secret_bytes(&self) -> Result<SecretBytes, Error> {
-        let mut buf = SecretBytes::with_capacity(128);
-        self.to_secret_bytes_buffer(&mut buf)?;
-        Ok(buf)
     }
 }
 
@@ -52,19 +62,29 @@ pub trait KeyPublicBytes {
 
     /// Access a temporary slice of the key public bytes.
     fn with_public_bytes<O>(&self, f: impl FnOnce(&[u8]) -> O) -> O;
+}
 
+/// Object-safe trait for exporting key public bytes
+pub trait ToPublicBytes {
     /// Write the key public bytes to a buffer.
-    fn to_public_bytes_buffer<B: WriteBuffer>(&self, out: &mut B) -> Result<(), Error> {
-        self.with_public_bytes(|buf| out.buffer_write(buf))
-    }
+    fn write_public_bytes(&self, out: &mut dyn WriteBuffer) -> Result<(), Error>;
 
     #[cfg(feature = "alloc")]
     #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
     /// Write the key public bytes to a new allocated buffer.
     fn to_public_bytes(&self) -> Result<SecretBytes, Error> {
         let mut buf = SecretBytes::with_capacity(128);
-        self.to_public_bytes_buffer(&mut buf)?;
+        self.write_public_bytes(&mut buf)?;
         Ok(buf)
+    }
+}
+
+impl<K> ToPublicBytes for K
+where
+    K: KeyPublicBytes,
+{
+    fn write_public_bytes(&self, out: &mut dyn WriteBuffer) -> Result<(), Error> {
+        self.with_public_bytes(|buf| out.buffer_write(buf))
     }
 }
 

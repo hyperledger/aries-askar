@@ -316,6 +316,7 @@ impl Debug for Ed25519SigningKey<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::repr::{ToPublicBytes, ToSecretBytes};
 
     #[test]
     fn expand_keypair() {

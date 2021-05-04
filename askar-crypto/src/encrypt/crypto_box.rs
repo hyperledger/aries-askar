@@ -128,7 +128,7 @@ pub fn crypto_box_seal_open(
 mod tests {
     use super::*;
     use crate::buffer::SecretBytes;
-    use crate::repr::KeySecretBytes;
+    use crate::repr::{KeySecretBytes, ToPublicBytes};
 
     #[test]
     fn crypto_box_round_trip_expected() {

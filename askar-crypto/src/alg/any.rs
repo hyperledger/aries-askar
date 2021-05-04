@@ -14,12 +14,12 @@ use super::p256::{self, P256KeyPair};
 use super::x25519::{self, X25519KeyPair};
 use super::{AesTypes, BlsCurves, Chacha20Types, EcCurves, HasKeyAlg, KeyAlg};
 use crate::{
-    buffer::{ResizeBuffer, SecretBytes, WriteBuffer},
+    buffer::{ResizeBuffer, WriteBuffer},
     encrypt::{KeyAeadInPlace, KeyAeadParams},
     error::Error,
     jwk::{FromJwk, JwkEncoder, JwkParts, ToJwk},
     kdf::{FromKeyDerivation, FromKeyExchange, KeyDerivation, KeyExchange},
-    repr::{KeyGen, KeyPublicBytes, KeySecretBytes},
+    repr::{KeyGen, KeyPublicBytes, KeySecretBytes, ToPublicBytes, ToSecretBytes},
     sign::{KeySigVerify, KeySign, SignatureType},
 };
 
@@ -331,25 +331,6 @@ fn convert_key_any<R: AllocKey>(key: &AnyKey, alg: KeyAlg) -> Result<R, Error> {
     }
 }
 
-impl KeyExchange for AnyKey {
-    fn write_key_exchange(&self, other: &AnyKey, out: &mut dyn WriteBuffer) -> Result<(), Error> {
-        match self.key_type_id() {
-            s if s != other.key_type_id() => Err(err_msg!(Unsupported, "Unsupported key exchange")),
-            s if s == TypeId::of::<X25519KeyPair>() => Ok(self
-                .assume::<X25519KeyPair>()
-                .write_key_exchange(other.assume::<X25519KeyPair>(), out)?),
-            s if s == TypeId::of::<K256KeyPair>() => Ok(self
-                .assume::<K256KeyPair>()
-                .write_key_exchange(other.assume::<K256KeyPair>(), out)?),
-            s if s == TypeId::of::<P256KeyPair>() => Ok(self
-                .assume::<P256KeyPair>()
-                .write_key_exchange(other.assume::<P256KeyPair>(), out)?),
-            #[allow(unreachable_patterns)]
-            _ => return Err(err_msg!(Unsupported, "Unsupported key exchange")),
-        }
-    }
-}
-
 impl FromJwk for Box<AnyKey> {
     fn from_jwk_parts(jwk: JwkParts<'_>) -> Result<Self, Error> {
         from_jwk_any(jwk)
@@ -378,108 +359,138 @@ fn from_jwk_any<R: AllocKey>(jwk: JwkParts<'_>) -> Result<R, Error> {
         }
         ("EC", c) if c == k256::JWK_CURVE => K256KeyPair::from_jwk_parts(jwk).map(R::alloc_key),
         ("EC", c) if c == p256::JWK_CURVE => P256KeyPair::from_jwk_parts(jwk).map(R::alloc_key),
-        // FIXME implement symmetric keys
+        // FIXME implement symmetric keys?
         _ => Err(err_msg!(Unsupported, "Unsupported JWK for key import")),
     }
 }
 
-impl AnyKey {
-    pub fn to_public_bytes(&self) -> Result<SecretBytes, Error> {
-        match self.key_type_id() {
-            s if s == TypeId::of::<BlsKeyPair<G1>>() => {
-                Ok(self.assume::<BlsKeyPair<G1>>().to_public_bytes()?)
-            }
-            s if s == TypeId::of::<BlsKeyPair<G2>>() => {
-                Ok(self.assume::<BlsKeyPair<G2>>().to_public_bytes()?)
-            }
-            s if s == TypeId::of::<BlsKeyPair<G1G2>>() => {
-                Ok(self.assume::<BlsKeyPair<G1G2>>().to_public_bytes()?)
-            }
-            s if s == TypeId::of::<Ed25519KeyPair>() => {
-                Ok(self.assume::<Ed25519KeyPair>().to_public_bytes()?)
-            }
-            s if s == TypeId::of::<X25519KeyPair>() => {
-                Ok(self.assume::<X25519KeyPair>().to_public_bytes()?)
-            }
-            s if s == TypeId::of::<K256KeyPair>() => {
-                Ok(self.assume::<K256KeyPair>().to_public_bytes()?)
-            }
-            s if s == TypeId::of::<P256KeyPair>() => {
-                Ok(self.assume::<P256KeyPair>().to_public_bytes()?)
-            }
-            #[allow(unreachable_patterns)]
-            _ => return Err(err_msg!(Unsupported, "Unsupported key exchange")),
+macro_rules! match_key_alg {
+    ($slf:expr, $ty:ty, $($kty:ident),+ $(,$errmsg:literal)?) => {{
+        fn matcher(key: &AnyKey) -> Result<$ty, Error> {
+            let alg = key.algorithm();
+            match_key_alg!(@ $($kty)+ ; key, alg);
+            return Err(err_msg!(Unsupported $(,$errmsg)?))
         }
-    }
+        matcher($slf)
+    }};
+    (@ ; $key:ident, $alg:ident) => {()};
+    (@ Aes $($rest:ident)*; $key:ident, $alg:ident) => {{
+        if $alg == KeyAlg::Aes(AesTypes::A128GCM) {
+            return Ok($key.assume::<AesGcmKey<A128GCM>>());
+        }
+        if $alg == KeyAlg::Aes(AesTypes::A256GCM) {
+            return Ok($key.assume::<AesGcmKey<A256GCM>>());
+        }
+        match_key_alg!(@ $($rest)*; $key, $alg)
+    }};
+    (@ Bls $($rest:ident)*; $key:ident, $alg:ident) => {{
+        if $alg == KeyAlg::Bls12_381(BlsCurves::G1) {
+            return Ok($key.assume::<BlsKeyPair<G1>>());
+        }
+        if $alg == KeyAlg::Bls12_381(BlsCurves::G2) {
+            return Ok($key.assume::<BlsKeyPair<G2>>());
+        }
+        if $alg == KeyAlg::Bls12_381(BlsCurves::G1G2) {
+            return Ok($key.assume::<BlsKeyPair<G1G2>>());
+        }
+        match_key_alg!(@ $($rest)*; $key, $alg)
+    }};
+    (@ Chacha $($rest:ident)*; $key:ident, $alg:ident) => {{
+        if $alg == KeyAlg::Chacha20(Chacha20Types::C20P) {
+            return Ok($key.assume::<Chacha20Key<C20P>>());
+        }
+        match_key_alg!(@ $($rest)*; $key, $alg)
+    }};
+    (@ Ed25519 $($rest:ident)*; $key:ident, $alg:ident) => {{
+        if $alg == KeyAlg::Ed25519 {
+            return Ok($key.assume::<Ed25519KeyPair>())
+        }
+        match_key_alg!(@ $($rest)*; $key, $alg)
+    }};
+    (@ X25519 $($rest:ident)*; $key:ident, $alg:ident) => {{
+        if $alg == KeyAlg::X25519 {
+            return Ok($key.assume::<X25519KeyPair>())
+        }
+        match_key_alg!(@ $($rest)*; $key, $alg)
+    }};
+    (@ K256 $($rest:ident)*; $key:ident, $alg:ident) => {{
+        if $alg == KeyAlg::EcCurve(EcCurves::Secp256k1) {
+            return Ok($key.assume::<K256KeyPair>())
+        }
+        match_key_alg!(@ $($rest)*; $key, $alg)
+    }};
+    (@ P256 $($rest:ident)*; $key:ident, $alg:ident) => {{
+        if $alg == KeyAlg::EcCurve(EcCurves::Secp256r1) {
+            return Ok($key.assume::<P256KeyPair>())
+        }
+        match_key_alg!(@ $($rest)*; $key, $alg)
+    }};
+}
 
-    pub fn to_secret_bytes(&self) -> Result<SecretBytes, Error> {
-        match self.key_type_id() {
-            s if s == TypeId::of::<AesGcmKey<A128GCM>>() => {
-                Ok(self.assume::<AesGcmKey<A128GCM>>().to_secret_bytes()?)
-            }
-            s if s == TypeId::of::<AesGcmKey<A256GCM>>() => {
-                Ok(self.assume::<AesGcmKey<A256GCM>>().to_secret_bytes()?)
-            }
-            s if s == TypeId::of::<BlsKeyPair<G1>>() => {
-                Ok(self.assume::<BlsKeyPair<G1>>().to_secret_bytes()?)
-            }
-            s if s == TypeId::of::<BlsKeyPair<G2>>() => {
-                Ok(self.assume::<BlsKeyPair<G2>>().to_secret_bytes()?)
-            }
-            s if s == TypeId::of::<BlsKeyPair<G1G2>>() => {
-                Ok(self.assume::<BlsKeyPair<G1G2>>().to_secret_bytes()?)
-            }
-            s if s == TypeId::of::<Chacha20Key<C20P>>() => {
-                Ok(self.assume::<Chacha20Key<C20P>>().to_secret_bytes()?)
-            }
-            s if s == TypeId::of::<Chacha20Key<XC20P>>() => {
-                Ok(self.assume::<Chacha20Key<XC20P>>().to_secret_bytes()?)
-            }
-            s if s == TypeId::of::<Ed25519KeyPair>() => {
-                Ok(self.assume::<Ed25519KeyPair>().to_secret_bytes()?)
-            }
-            s if s == TypeId::of::<X25519KeyPair>() => {
-                Ok(self.assume::<X25519KeyPair>().to_secret_bytes()?)
-            }
-            s if s == TypeId::of::<K256KeyPair>() => {
-                Ok(self.assume::<K256KeyPair>().to_secret_bytes()?)
-            }
-            s if s == TypeId::of::<P256KeyPair>() => {
-                Ok(self.assume::<P256KeyPair>().to_secret_bytes()?)
-            }
-            #[allow(unreachable_patterns)]
-            _ => return Err(err_msg!(Unsupported, "Unsupported key exchange")),
-        }
+impl ToPublicBytes for AnyKey {
+    fn write_public_bytes(&self, out: &mut dyn WriteBuffer) -> Result<(), Error> {
+        let key = match_key_alg! {
+            self,
+            &dyn ToPublicBytes,
+            Bls,
+            Ed25519,
+            K256,
+            P256,
+            X25519,
+            "Public key export is not supported for this key type"
+        }?;
+        key.write_public_bytes(out)
     }
 }
 
-macro_rules! match_key_types {
-    ($slf:expr, $( $t:ty ),+; $errmsg:expr) => {
-        match $slf.key_type_id() {
-            $(
-                t if t == TypeId::of::<$t>() => $slf.assume::<$t>(),
-            )+
-            #[allow(unreachable_patterns)]
-            _ => {
-                return Err(err_msg!(
-                    Unsupported,
-                    $errmsg
-                ))
-            }
+impl ToSecretBytes for AnyKey {
+    fn write_secret_bytes(&self, out: &mut dyn WriteBuffer) -> Result<(), Error> {
+        let key = match_key_alg! {
+            self,
+            &dyn ToSecretBytes,
+            Aes,
+            Bls,
+            Chacha,
+            Ed25519,
+            K256,
+            P256,
+            X25519,
+            "Secret key export is not supported for this key type"
+        }?;
+        key.write_secret_bytes(out)
+    }
+}
+
+impl KeyExchange for AnyKey {
+    fn write_key_exchange(&self, other: &AnyKey, out: &mut dyn WriteBuffer) -> Result<(), Error> {
+        if self.key_type_id() != other.key_type_id() {
+            return Err(err_msg!(Unsupported, "Unsupported key exchange"));
         }
-    };
+        match self.algorithm() {
+            KeyAlg::X25519 => Ok(self
+                .assume::<X25519KeyPair>()
+                .write_key_exchange(other.assume::<X25519KeyPair>(), out)?),
+            KeyAlg::EcCurve(EcCurves::Secp256k1) => Ok(self
+                .assume::<K256KeyPair>()
+                .write_key_exchange(other.assume::<K256KeyPair>(), out)?),
+            KeyAlg::EcCurve(EcCurves::Secp256r1) => Ok(self
+                .assume::<P256KeyPair>()
+                .write_key_exchange(other.assume::<P256KeyPair>(), out)?),
+            #[allow(unreachable_patterns)]
+            _ => return Err(err_msg!(Unsupported, "Unsupported key exchange")),
+        }
+    }
 }
 
 impl AnyKey {
     fn key_as_aead(&self) -> Result<&dyn KeyAeadInPlace, Error> {
-        Ok(match_key_types! {
+        match_key_alg! {
             self,
-            AesGcmKey<A128GCM>,
-            AesGcmKey<A256GCM>,
-            Chacha20Key<C20P>,
-            Chacha20Key<XC20P>;
+            &dyn KeyAeadInPlace,
+            Aes,
+            Chacha,
             "AEAD is not supported for this key type"
-        })
+        }
     }
 }
 
@@ -513,21 +524,18 @@ impl KeyAeadInPlace for AnyKey {
 
 impl ToJwk for AnyKey {
     fn encode_jwk(&self, enc: &mut JwkEncoder<'_>) -> Result<(), Error> {
-        let key: &dyn ToJwk = match_key_types! {
+        let key = match_key_alg! {
             self,
-            AesGcmKey<A128GCM>,
-            AesGcmKey<A256GCM>,
-            BlsKeyPair<G1>,
-            BlsKeyPair<G2>,
-            BlsKeyPair<G1G2>,
-            Chacha20Key<C20P>,
-            Chacha20Key<XC20P>,
-            Ed25519KeyPair,
-            X25519KeyPair,
-            K256KeyPair,
-            P256KeyPair;
+            &dyn ToJwk,
+            Aes,
+            Bls,
+            Chacha,
+            Ed25519,
+            K256,
+            P256,
+            X25519,
             "JWK export is not supported for this key type"
-        };
+        }?;
         key.encode_jwk(enc)
     }
 }
@@ -539,13 +547,14 @@ impl KeySign for AnyKey {
         sig_type: Option<SignatureType>,
         out: &mut dyn WriteBuffer,
     ) -> Result<(), Error> {
-        let key: &dyn KeySign = match_key_types! {
+        let key = match_key_alg! {
             self,
-            Ed25519KeyPair,
-            K256KeyPair,
-            P256KeyPair;
+            &dyn KeySign,
+            Ed25519,
+            K256,
+            P256,
             "Signing is not supported for this key type"
-        };
+        }?;
         key.write_signature(message, sig_type, out)
     }
 }
@@ -557,13 +566,14 @@ impl KeySigVerify for AnyKey {
         signature: &[u8],
         sig_type: Option<SignatureType>,
     ) -> Result<bool, Error> {
-        let key: &dyn KeySigVerify = match_key_types! {
+        let key = match_key_alg! {
             self,
-            Ed25519KeyPair,
-            K256KeyPair,
-            P256KeyPair;
+            &dyn KeySigVerify,
+            Ed25519,
+            K256,
+            P256,
             "Signature verification is not supported for this key type"
-        };
+        }?;
         key.verify_signature(message, signature, sig_type)
     }
 }

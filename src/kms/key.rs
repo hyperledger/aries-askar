@@ -12,6 +12,7 @@ use crate::{
         jwk::{FromJwk, ToJwk},
         kdf::{KeyDerivation, KeyExchange},
         random::fill_random,
+        repr::{ToPublicBytes, ToSecretBytes},
         sign::{KeySigVerify, KeySign, SignatureType},
         Error as CryptoError,
     },

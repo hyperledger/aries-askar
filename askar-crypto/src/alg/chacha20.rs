@@ -248,6 +248,7 @@ where
 mod tests {
     use super::*;
     use crate::buffer::SecretBytes;
+    use crate::repr::ToSecretBytes;
 
     #[test]
     fn encrypt_round_trip() {

@@ -293,6 +293,7 @@ impl KeyExchange for K256KeyPair {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::repr::ToPublicBytes;
 
     #[test]
     fn jwk_expected() {

@@ -395,6 +395,7 @@ impl From<&BlsKeyPair<G1G2>> for BlsKeyPair<G2> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::repr::{ToPublicBytes, ToSecretBytes};
     use std::string::ToString;
 
     // test against EIP-2333 (updated for signatures draft 4)
