@@ -8,7 +8,7 @@ use core::{
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 use zeroize::Zeroize;
 
-use super::{string::MaybeStr, ResizeBuffer, WriteBuffer};
+use super::{string::MaybeStr, HexRepr, ResizeBuffer, WriteBuffer};
 use crate::error::Error;
 
 /// A heap-allocated, zeroized byte buffer
@@ -127,6 +127,11 @@ impl SecretBytes {
         }
         self.0.splice(range, iter);
         Ok(())
+    }
+
+    /// Get a hex formatter for the secret data
+    pub fn as_hex(&self) -> HexRepr<&[u8]> {
+        HexRepr(self.0.as_ref())
     }
 }
 

@@ -10,6 +10,8 @@ use zeroize::Zeroize;
 
 use crate::random::fill_random;
 
+use super::HexRepr;
+
 /// A secure representation for fixed-length keys
 #[derive(Clone, Hash)]
 #[repr(transparent)]
@@ -67,6 +69,11 @@ impl<L: ArrayLength<u8>> ArrayKey<L> {
     #[inline]
     pub fn random() -> Self {
         Self::new_with(fill_random)
+    }
+
+    /// Get a hex formatter for the key data
+    pub fn as_hex(&self) -> HexRepr<&[u8]> {
+        HexRepr(self.0.as_ref())
     }
 }
 

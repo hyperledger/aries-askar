@@ -1,9 +1,6 @@
 use super::store_key::{StoreKey, PREFIX_KDF};
 use crate::{
-    crypto::{
-        buffer::{ArrayKey, HexRepr},
-        generic_array::ArrayLength,
-    },
+    crypto::{buffer::ArrayKey, generic_array::ArrayLength},
     error::Error,
     storage::Options,
 };
@@ -65,7 +62,7 @@ impl KdfMethod {
             Self::Argon2i(level) => {
                 let salt = level.generate_salt();
                 let key = level.derive_key(password.as_bytes(), salt.as_ref())?;
-                let detail = format!("?salt={}", HexRepr(salt.as_ref()));
+                let detail = format!("?salt={}", salt.as_hex());
                 Ok((key.into(), detail))
             }
         }

@@ -20,6 +20,8 @@ pub use any::{AnyKey, AnyKeyCreate};
 
 pub mod aesgcm;
 
+pub mod bls;
+
 pub mod chacha20;
 
 pub mod ed25519;
@@ -34,6 +36,8 @@ pub mod p256;
 pub enum KeyAlg {
     /// AES
     Aes(AesTypes),
+    /// BLS12-381
+    Bls12_381(BlsTypes),
     /// (X)ChaCha20-Poly1305
     Chacha20(Chacha20Types),
     /// Curve25519 signing key
@@ -50,6 +54,9 @@ impl KeyAlg {
         match self {
             Self::Aes(AesTypes::A128GCM) => "a128gcm",
             Self::Aes(AesTypes::A256GCM) => "a256gcm",
+            Self::Bls12_381(BlsTypes::G1) => "bls12381g1",
+            Self::Bls12_381(BlsTypes::G2) => "bls12381g2",
+            Self::Bls12_381(BlsTypes::G1G2) => "bls12381g1g2",
             Self::Chacha20(Chacha20Types::C20P) => "c20p",
             Self::Chacha20(Chacha20Types::XC20P) => "xc20p",
             Self::Ed25519 => "ed25519",
@@ -164,6 +171,17 @@ pub enum AesTypes {
     A128GCM,
     /// AES 256-bit GCM
     A256GCM,
+}
+
+/// Supported public key types for Bls12_381
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Zeroize)]
+pub enum BlsTypes {
+    /// G1 curve
+    G1,
+    /// G2 curve
+    G2,
+    /// G1 + G2 curves
+    G1G2,
 }
 
 /// Supported algorithms for (X)ChaCha20-Poly1305
