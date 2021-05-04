@@ -37,6 +37,11 @@ pub struct BlsKeyPair<Pk: BlsPublicKeyType> {
 }
 
 impl<Pk: BlsPublicKeyType> BlsKeyPair<Pk> {
+    /// Create a new deterministic BLS keypair according to the KeyGen algorithm
+    pub fn from_seed(ikm: &[u8]) -> Result<Self, Error> {
+        Ok(Self::from_secret_key(BlsSecretKey::from_seed(ikm)?))
+    }
+
     #[inline]
     fn from_secret_key(sk: BlsSecretKey) -> Self {
         let public = Pk::from_secret_scalar(&sk.0);
@@ -181,8 +186,7 @@ impl BlsSecretKey {
         Ok(Self(Scalar::from_bytes_wide(&secret)))
     }
 
-    // FIXME - this is the draft 7 version,
-    // draft 10 hashes the salt and loops until a non-zero SK is found
+    // bls-signatures draft 4 version (incompatible with earlier)
     pub fn from_seed(ikm: &[u8]) -> Result<Self, Error> {
         const SALT: &[u8] = b"BLS-SIG-KEYGEN-SALT-";
 
@@ -214,15 +218,6 @@ impl BlsSecretKey {
         let result: Option<Scalar> = Scalar::from_bytes(&skb).into();
         Ok(Self(result.ok_or_else(|| err_msg!(InvalidKeyData))?))
     }
-
-    // pub fn to_bytes(&self) -> SecretBytes {
-    //     let mut skb = self.0.to_bytes();
-    //     // turn into big-endian format
-    //     skb.reverse();
-    //     let v = skb.to_vec();
-    //     skb.zeroize();
-    //     SecretBytes::from(v)
-    // }
 }
 
 /// A common trait among supported ChaCha20 key types

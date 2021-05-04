@@ -15,6 +15,7 @@ use crate::{
     generic_array::{typenum::Unsigned, GenericArray},
     jwk::{JwkEncoder, ToJwk},
     kdf::{FromKeyDerivation, FromKeyExchange, KeyDerivation, KeyExchange},
+    random::fill_random_deterministic,
     repr::{KeyGen, KeyMeta, KeySecretBytes},
 };
 
@@ -79,6 +80,13 @@ impl<T: AesGcmType> AesGcmKey<T> {
     pub const NONCE_LENGTH: usize = NonceSize::<T>::USIZE;
     /// The length of the AEAD encryption tag
     pub const TAG_LENGTH: usize = TagSize::<T>::USIZE;
+
+    /// Construct a new deterministic AES key from a seed value
+    pub fn from_seed(seed: &[u8]) -> Result<Self, Error> {
+        Ok(Self(KeyType::<T>::try_new_with(|arr| {
+            fill_random_deterministic(seed, arr)
+        })?))
+    }
 }
 
 impl<T: AesGcmType> Clone for AesGcmKey<T> {

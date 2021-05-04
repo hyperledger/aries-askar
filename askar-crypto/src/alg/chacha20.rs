@@ -81,9 +81,7 @@ impl<T: Chacha20Type> Chacha20Key<T> {
     /// The length of the AEAD encryption tag
     pub const TAG_LENGTH: usize = TagSize::<T>::USIZE;
 
-    /// Construct a new ChaCha20 key from a seed value
-    // this is consistent with Indy's wallet wrapping key generation
-    // FIXME - move to aries_askar, use from_key_secret_bytes
+    /// Construct a new deterministic ChaCha20 key from a seed value
     pub fn from_seed(seed: &[u8]) -> Result<Self, Error> {
         Ok(Self(KeyType::<T>::try_new_with(|arr| {
             fill_random_deterministic(seed, arr)
