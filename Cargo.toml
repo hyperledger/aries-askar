@@ -38,7 +38,7 @@ pg_test = ["postgres"]
 hex-literal = "0.3"
 
 [dependencies]
-askar-crypto = { version = "0.2", path = "./askar-crypto", features = ["std"] }
+askar-crypto = { version = "0.2", path = "./askar-crypto", features = ["argon2", "std"] }
 async-mutex = "1.4"
 async-stream = "0.3"
 bs58 = "0.4"
