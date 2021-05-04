@@ -4,6 +4,8 @@
 use crate::buffer::SecretBytes;
 use crate::{buffer::WriteBuffer, error::Error};
 
+#[cfg(feature = "argon2")]
+#[cfg_attr(docsrs, doc(cfg(feature = "argon2")))]
 pub mod argon2;
 
 pub mod concat;
