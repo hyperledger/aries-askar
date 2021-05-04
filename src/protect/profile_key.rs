@@ -9,8 +9,8 @@ use crate::{
         buffer::{ArrayKey, ResizeBuffer, SecretBytes, WriteBuffer},
         encrypt::{KeyAeadInPlace, KeyAeadMeta},
         generic_array::typenum::{Unsigned, U32},
-        kdf::KeyDerivation,
-        repr::{KeyGen, KeyMeta, KeySecretBytes},
+        kdf::FromKeyDerivation,
+        repr::KeyGen,
     },
     error::Error,
     storage::{EncEntryTag, EntryTag},
@@ -74,37 +74,35 @@ where
 
 impl<Key, HmacKey> ProfileKeyImpl<Key, HmacKey>
 where
-    Key: KeyGen + KeyMeta + KeyAeadInPlace + KeyAeadMeta + KeySecretBytes,
-    HmacKey: KeyGen + HmacDerive,
+    Key: KeyAeadInPlace + KeyAeadMeta + FromKeyDerivation,
+    HmacKey: HmacDerive,
 {
-    pub fn encrypted_size(len: usize) -> usize {
+    fn encrypted_size(len: usize) -> usize {
         len + Key::NonceSize::USIZE + Key::TagSize::USIZE
     }
 
     /// Encrypt a value with a predictable nonce, making it searchable
-    pub fn encrypt_searchable(
+    fn encrypt_searchable(
         mut buffer: SecretBytes,
         enc_key: &Key,
         hmac_key: &HmacKey,
     ) -> Result<Vec<u8>, Error> {
-        ArrayKey::<Key::NonceSize>::temp(|nonce| {
-            hmac_key
-                .hmac_deriver(&[buffer.as_ref()])
-                .derive_key_bytes(nonce)?;
-            enc_key.encrypt_in_place(&mut buffer, nonce.as_ref(), &[])?;
-            buffer.buffer_insert(0, nonce.as_ref())?;
-            Ok(buffer.into_vec())
-        })
+        let nonce = ArrayKey::<Key::NonceSize>::from_key_derivation(
+            hmac_key.hmac_deriver(&[buffer.as_ref()]),
+        )?;
+        enc_key.encrypt_in_place(&mut buffer, nonce.as_ref(), &[])?;
+        buffer.buffer_insert(0, nonce.as_ref())?;
+        Ok(buffer.into_vec())
     }
 
-    pub fn encrypt(mut buffer: SecretBytes, enc_key: &Key) -> Result<Vec<u8>, Error> {
+    fn encrypt(mut buffer: SecretBytes, enc_key: &Key) -> Result<Vec<u8>, Error> {
         let nonce = ArrayKey::<Key::NonceSize>::random();
         enc_key.encrypt_in_place(&mut buffer, nonce.as_ref(), &[])?;
         buffer.buffer_insert(0, nonce.as_ref())?;
         Ok(buffer.into_vec())
     }
 
-    pub fn decrypt(ciphertext: Vec<u8>, enc_key: &Key) -> Result<SecretBytes, Error> {
+    fn decrypt(ciphertext: Vec<u8>, enc_key: &Key) -> Result<SecretBytes, Error> {
         let nonce_len = Key::NonceSize::USIZE;
         if ciphertext.len() < nonce_len {
             return Err(err_msg!(Encryption, "invalid encrypted value"));
@@ -116,36 +114,31 @@ where
         Ok(buffer)
     }
 
-    pub fn derive_value_key(
-        &self,
-        category: &[u8],
-        name: &[u8],
-        out: &mut [u8],
-    ) -> Result<(), Error> {
-        Ok(self
-            .item_hmac_key
-            .hmac_deriver(&[
+    #[inline]
+    fn derive_value_key(&self, category: &[u8], name: &[u8]) -> Result<Key, Error> {
+        Ok(Key::from_key_derivation(self.item_hmac_key.hmac_deriver(
+            &[
                 &(category.len() as u32).to_be_bytes(),
                 category,
                 &(name.len() as u32).to_be_bytes(),
                 name,
-            ])
-            .derive_key_bytes(out)?)
+            ],
+        ))?)
     }
 
-    pub fn encrypt_tag_name(&self, name: SecretBytes) -> Result<Vec<u8>, Error> {
+    fn encrypt_tag_name(&self, name: SecretBytes) -> Result<Vec<u8>, Error> {
         Self::encrypt_searchable(name, &self.tag_name_key, &self.tags_hmac_key)
     }
 
-    pub fn encrypt_tag_value(&self, value: SecretBytes) -> Result<Vec<u8>, Error> {
+    fn encrypt_tag_value(&self, value: SecretBytes) -> Result<Vec<u8>, Error> {
         Self::encrypt_searchable(value, &self.tag_value_key, &self.tags_hmac_key)
     }
 
-    pub fn decrypt_tag_name(&self, enc_tag_name: Vec<u8>) -> Result<SecretBytes, Error> {
+    fn decrypt_tag_name(&self, enc_tag_name: Vec<u8>) -> Result<SecretBytes, Error> {
         Self::decrypt(enc_tag_name, &self.tag_name_key)
     }
 
-    pub fn decrypt_tag_value(&self, enc_tag_value: Vec<u8>) -> Result<SecretBytes, Error> {
+    fn decrypt_tag_value(&self, enc_tag_value: Vec<u8>) -> Result<SecretBytes, Error> {
         Self::decrypt(enc_tag_value, &self.tag_value_key)
     }
 }
@@ -164,8 +157,8 @@ impl<Key: PartialEq, HmacKey: PartialEq> Eq for ProfileKeyImpl<Key, HmacKey> {}
 
 impl<Key, HmacKey> EntryEncryptor for ProfileKeyImpl<Key, HmacKey>
 where
-    Key: KeyGen + KeyMeta + KeyAeadInPlace + KeyAeadMeta + KeySecretBytes,
-    HmacKey: KeyGen + HmacDerive,
+    Key: KeyAeadInPlace + KeyAeadMeta + FromKeyDerivation,
+    HmacKey: HmacDerive,
 {
     fn prepare_input(input: &[u8]) -> SecretBytes {
         let mut buf = SecretBytes::with_capacity(Self::encrypted_size(input.len()));
@@ -187,11 +180,8 @@ where
         name: &[u8],
         value: SecretBytes,
     ) -> Result<Vec<u8>, Error> {
-        ArrayKey::<Key::KeySize>::temp(|value_key| {
-            self.derive_value_key(category, name, value_key)?;
-            let value_key = Key::from_secret_bytes(&*value_key)?;
-            Self::encrypt(value, &value_key)
-        })
+        let value_key = self.derive_value_key(category, name)?;
+        Self::encrypt(value, &value_key)
     }
 
     fn decrypt_entry_category(&self, enc_category: Vec<u8>) -> Result<String, Error> {
@@ -208,11 +198,8 @@ where
         name: &[u8],
         enc_value: Vec<u8>,
     ) -> Result<SecretBytes, Error> {
-        ArrayKey::<Key::KeySize>::temp(|value_key| {
-            self.derive_value_key(category, name, value_key)?;
-            let value_key = Key::from_secret_bytes(&*value_key)?;
-            Self::decrypt(enc_value, &value_key)
-        })
+        let value_key = self.derive_value_key(category, name)?;
+        Self::decrypt(enc_value, &value_key)
     }
 
     fn encrypt_entry_tags(&self, tags: Vec<EntryTag>) -> Result<Vec<EncEntryTag>, Error> {
