@@ -347,6 +347,24 @@ impl BlsPublicKeyType for G1G2 {
     }
 }
 
+impl From<&BlsKeyPair<G1G2>> for BlsKeyPair<G1> {
+    fn from(kp: &BlsKeyPair<G1G2>) -> Self {
+        BlsKeyPair {
+            secret: kp.secret.clone(),
+            public: kp.public.0.clone(),
+        }
+    }
+}
+
+impl From<&BlsKeyPair<G1G2>> for BlsKeyPair<G2> {
+    fn from(kp: &BlsKeyPair<G1G2>) -> Self {
+        BlsKeyPair {
+            secret: kp.secret.clone(),
+            public: kp.public.1.clone(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
