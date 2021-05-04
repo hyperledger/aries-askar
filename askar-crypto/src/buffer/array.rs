@@ -8,9 +8,12 @@ use crate::generic_array::{ArrayLength, GenericArray};
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 use zeroize::Zeroize;
 
-use crate::random::fill_random;
-
 use super::HexRepr;
+use crate::{
+    error::Error,
+    kdf::{FromKeyDerivation, KeyDerivation},
+    random::fill_random,
+};
 
 /// A secure representation for fixed-length keys
 #[derive(Clone, Hash)]
@@ -181,5 +184,14 @@ impl<'de, L: ArrayLength<u8>> de::Visitor<'de> for KeyVisitor<L> {
             return Err(E::invalid_length(value.len(), &self));
         }
         Ok(ArrayKey::from_slice(value))
+    }
+}
+
+impl<L: ArrayLength<u8>> FromKeyDerivation for ArrayKey<L> {
+    fn from_key_derivation<D: KeyDerivation>(mut derive: D) -> Result<Self, Error>
+    where
+        Self: Sized,
+    {
+        Self::try_new_with(|buf| derive.derive_key_bytes(buf))
     }
 }
