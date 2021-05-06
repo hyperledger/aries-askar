@@ -1,8 +1,6 @@
 //! Support for random number generation
 
-#[cfg(feature = "chacha")]
 use aead::generic_array::{typenum::Unsigned, GenericArray};
-#[cfg(feature = "chacha")]
 use chacha20::{
     cipher::{NewStreamCipher, SyncStreamCipher},
     ChaCha20,
@@ -11,10 +9,8 @@ use rand::{CryptoRng, RngCore};
 
 #[cfg(feature = "alloc")]
 use crate::buffer::SecretBytes;
-#[cfg(feature = "chacha")]
 use crate::error::Error;
 
-#[cfg(feature = "chacha")]
 /// The expected length of a seed for `fill_random_deterministic`
 pub const DETERMINISTIC_SEED_LENGTH: usize = <ChaCha20 as NewStreamCipher>::KeySize::USIZE;
 
@@ -38,7 +34,6 @@ pub fn fill_random(value: &mut [u8]) {
     with_rng(|rng| rng.fill_bytes(value));
 }
 
-#[cfg(feature = "chacha")]
 /// Written to be compatible with randombytes_deterministic in libsodium,
 /// used to generate a deterministic symmetric encryption key
 pub fn fill_random_deterministic(seed: &[u8], output: &mut [u8]) -> Result<(), Error> {
@@ -59,4 +54,22 @@ pub fn fill_random_deterministic(seed: &[u8], output: &mut [u8]) -> Result<(), E
 #[inline(always)]
 pub fn random_secret(len: usize) -> SecretBytes {
     SecretBytes::new_with(len, fill_random)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::buffer::HexRepr;
+    use std::string::ToString;
+
+    #[test]
+    fn fill_random_det_expected() {
+        let seed = b"testseed000000000000000000000001";
+        let mut output = [0u8; 32];
+        fill_random_deterministic(seed, &mut output).unwrap();
+        assert_eq!(
+            HexRepr(output).to_string(),
+            "b1923a011cd1adbe89552db9862470c29512a8f51d184dfd778bfe7f845390d1"
+        );
+    }
 }

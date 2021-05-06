@@ -19,6 +19,12 @@ class Key:
         return cls(bindings.key_generate(alg, ephemeral))
 
     @classmethod
+    def from_seed(
+        cls, alg: Union[str, KeyAlg], seed: Union[str, bytes], *, method: str = None
+    ) -> "Key":
+        return cls(bindings.key_from_seed(alg, seed, method))
+
+    @classmethod
     def from_secret_bytes(cls, alg: Union[str, KeyAlg], secret: bytes) -> "Key":
         return cls(bindings.key_from_secret_bytes(alg, secret))
 

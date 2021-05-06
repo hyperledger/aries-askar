@@ -8,8 +8,6 @@ use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
 use super::{AesTypes, HasKeyAlg, KeyAlg};
-#[cfg(feature = "chacha")]
-use crate::random::fill_random_deterministic;
 use crate::{
     buffer::{ArrayKey, ResizeBuffer, Writer},
     encrypt::{KeyAeadInPlace, KeyAeadMeta, KeyAeadParams},
@@ -17,7 +15,8 @@ use crate::{
     generic_array::{typenum::Unsigned, GenericArray},
     jwk::{JwkEncoder, ToJwk},
     kdf::{FromKeyDerivation, FromKeyExchange, KeyDerivation, KeyExchange},
-    repr::{KeyGen, KeyMeta, KeySecretBytes},
+    random::fill_random_deterministic,
+    repr::{KeyGen, KeyMeta, KeySecretBytes, Seed, SeedMethod},
 };
 
 /// The 'kty' value of a symmetric key JWK
@@ -81,14 +80,6 @@ impl<T: AesGcmType> AesGcmKey<T> {
     pub const NONCE_LENGTH: usize = NonceSize::<T>::USIZE;
     /// The length of the AEAD encryption tag
     pub const TAG_LENGTH: usize = TagSize::<T>::USIZE;
-
-    #[cfg(feature = "chacha")]
-    /// Construct a new deterministic AES key from a seed value
-    pub fn from_seed(seed: &[u8]) -> Result<Self, Error> {
-        Ok(Self(KeyType::<T>::try_new_with(|arr| {
-            fill_random_deterministic(seed, arr)
-        })?))
-    }
 }
 
 impl<T: AesGcmType> Clone for AesGcmKey<T> {
@@ -127,6 +118,21 @@ impl<T: AesGcmType> KeyMeta for AesGcmKey<T> {
 impl<T: AesGcmType> KeyGen for AesGcmKey<T> {
     fn generate() -> Result<Self, Error> {
         Ok(AesGcmKey(KeyType::<T>::random()))
+    }
+
+    fn from_seed(seed: Seed<'_>) -> Result<Self, Error>
+    where
+        Self: Sized,
+    {
+        match seed {
+            Seed::Bytes(ikm, SeedMethod::Preferred) | Seed::Bytes(ikm, SeedMethod::RandomDet) => {
+                Ok(Self(KeyType::<T>::try_new_with(|arr| {
+                    fill_random_deterministic(ikm, arr)
+                })?))
+            }
+            #[allow(unreachable_patterns)]
+            _ => Err(err_msg!(Unsupported)),
+        }
     }
 }
 

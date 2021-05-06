@@ -26,6 +26,7 @@ pub use self::key::{KeyAlg, LocalKey};
 pub(crate) enum KmsCategory {
     /// A stored key or keypair
     CryptoKey,
+    // future options: Mnemonic, Entropy
 }
 
 impl KmsCategory {

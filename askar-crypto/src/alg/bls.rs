@@ -23,7 +23,7 @@ use crate::{
     error::Error,
     jwk::{FromJwk, JwkEncoder, JwkParts, ToJwk},
     random::fill_random,
-    repr::{KeyGen, KeyMeta, KeyPublicBytes, KeySecretBytes, KeypairMeta},
+    repr::{KeyGen, KeyMeta, KeyPublicBytes, KeySecretBytes, KeypairMeta, Seed, SeedMethod},
 };
 
 /// The 'kty' value of a BLS key JWK
@@ -37,11 +37,6 @@ pub struct BlsKeyPair<Pk: BlsPublicKeyType> {
 }
 
 impl<Pk: BlsPublicKeyType> BlsKeyPair<Pk> {
-    /// Create a new deterministic BLS keypair according to the KeyGen algorithm
-    pub fn from_seed(ikm: &[u8]) -> Result<Self, Error> {
-        Ok(Self::from_secret_key(BlsSecretKey::from_seed(ikm)?))
-    }
-
     #[inline]
     fn from_secret_key(sk: BlsSecretKey) -> Self {
         let public = Pk::from_secret_scalar(&sk.0);
@@ -94,6 +89,20 @@ impl<Pk: BlsPublicKeyType> KeyGen for BlsKeyPair<Pk> {
     fn generate() -> Result<Self, Error> {
         let secret = BlsSecretKey::generate()?;
         Ok(Self::from_secret_key(secret))
+    }
+
+    fn from_seed(seed: Seed<'_>) -> Result<Self, Error>
+    where
+        Self: Sized,
+    {
+        match seed {
+            Seed::Bytes(ikm, SeedMethod::Preferred)
+            | Seed::Bytes(ikm, SeedMethod::BlsKeyGenDraft4) => {
+                Ok(Self::from_secret_key(BlsSecretKey::from_seed(ikm)?))
+            }
+            #[allow(unreachable_patterns)]
+            _ => Err(err_msg!(Unsupported, "Unsupported seed method for BLS key")),
+        }
     }
 }
 
@@ -189,6 +198,9 @@ impl BlsSecretKey {
     // bls-signatures draft 4 version (incompatible with earlier)
     pub fn from_seed(ikm: &[u8]) -> Result<Self, Error> {
         const SALT: &[u8] = b"BLS-SIG-KEYGEN-SALT-";
+        if ikm.len() < 32 {
+            return Err(err_msg!(Usage, "Insufficient length for seed"));
+        }
 
         let mut salt = Sha256::digest(SALT);
         Ok(Self(loop {

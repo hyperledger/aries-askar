@@ -16,7 +16,7 @@ use crate::{
     jwk::{JwkEncoder, ToJwk},
     kdf::{FromKeyDerivation, FromKeyExchange, KeyDerivation, KeyExchange},
     random::fill_random_deterministic,
-    repr::{KeyGen, KeyMeta, KeySecretBytes},
+    repr::{KeyGen, KeyMeta, KeySecretBytes, Seed, SeedMethod},
 };
 
 /// The 'kty' value of a symmetric key JWK
@@ -80,13 +80,6 @@ impl<T: Chacha20Type> Chacha20Key<T> {
     pub const NONCE_LENGTH: usize = NonceSize::<T>::USIZE;
     /// The length of the AEAD encryption tag
     pub const TAG_LENGTH: usize = TagSize::<T>::USIZE;
-
-    /// Construct a new deterministic ChaCha20 key from a seed value
-    pub fn from_seed(seed: &[u8]) -> Result<Self, Error> {
-        Ok(Self(KeyType::<T>::try_new_with(|arr| {
-            fill_random_deterministic(seed, arr)
-        })?))
-    }
 }
 
 impl<T: Chacha20Type> Clone for Chacha20Key<T> {
@@ -125,6 +118,21 @@ impl<T: Chacha20Type> KeyMeta for Chacha20Key<T> {
 impl<T: Chacha20Type> KeyGen for Chacha20Key<T> {
     fn generate() -> Result<Self, Error> {
         Ok(Chacha20Key(KeyType::<T>::random()))
+    }
+
+    fn from_seed(seed: Seed<'_>) -> Result<Self, Error>
+    where
+        Self: Sized,
+    {
+        match seed {
+            Seed::Bytes(ikm, SeedMethod::Preferred) | Seed::Bytes(ikm, SeedMethod::RandomDet) => {
+                Ok(Self(KeyType::<T>::try_new_with(|arr| {
+                    fill_random_deterministic(ikm, arr)
+                })?))
+            }
+            #[allow(unreachable_patterns)]
+            _ => Err(err_msg!(Unsupported)),
+        }
     }
 }
 

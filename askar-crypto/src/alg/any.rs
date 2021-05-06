@@ -42,7 +42,7 @@ use crate::{
     error::Error,
     jwk::{FromJwk, JwkEncoder, JwkParts, ToJwk},
     kdf::{KeyDerivation, KeyExchange},
-    repr::{KeyGen, KeyPublicBytes, KeySecretBytes, ToPublicBytes, ToSecretBytes},
+    repr::{KeyGen, KeyPublicBytes, KeySecretBytes, Seed, ToPublicBytes, ToSecretBytes},
     sign::{KeySigVerify, KeySign, SignatureType},
 };
 
@@ -86,8 +86,11 @@ impl std::panic::RefUnwindSafe for AnyKey {}
 
 /// Create `AnyKey` instances from various sources
 pub trait AnyKeyCreate: Sized {
-    /// Generate a new key for the given key algorithm.
+    /// Generate a new random key for the given key algorithm.
     fn generate(alg: KeyAlg) -> Result<Self, Error>;
+
+    /// Generate a new deterministic key for the given key algorithm.
+    fn from_seed(alg: KeyAlg, seed: Seed<'_>) -> Result<Self, Error>;
 
     /// Load a public key from its byte representation
     fn from_public_bytes(alg: KeyAlg, public: &[u8]) -> Result<Self, Error>;
@@ -114,6 +117,10 @@ pub trait AnyKeyCreate: Sized {
 impl AnyKeyCreate for Box<AnyKey> {
     fn generate(alg: KeyAlg) -> Result<Self, Error> {
         generate_any(alg)
+    }
+
+    fn from_seed(alg: KeyAlg, seed: Seed<'_>) -> Result<Self, Error> {
+        from_seed_any(alg, seed)
     }
 
     fn from_public_bytes(alg: KeyAlg, public: &[u8]) -> Result<Self, Error> {
@@ -149,6 +156,10 @@ impl AnyKeyCreate for Box<AnyKey> {
 impl AnyKeyCreate for Arc<AnyKey> {
     fn generate(alg: KeyAlg) -> Result<Self, Error> {
         generate_any(alg)
+    }
+
+    fn from_seed(alg: KeyAlg, seed: Seed<'_>) -> Result<Self, Error> {
+        from_seed_any(alg, seed)
     }
 
     fn from_public_bytes(alg: KeyAlg, public: &[u8]) -> Result<Self, Error> {
@@ -213,6 +224,37 @@ fn generate_any<R: AllocKey>(alg: KeyAlg) -> Result<R, Error> {
             return Err(err_msg!(
                 Unsupported,
                 "Unsupported algorithm for key generation"
+            ))
+        }
+    }
+}
+
+#[inline]
+fn from_seed_any<R: AllocKey>(alg: KeyAlg, seed: Seed<'_>) -> Result<R, Error> {
+    match alg {
+        #[cfg(feature = "aes")]
+        KeyAlg::Aes(AesTypes::A128GCM) => AesGcmKey::<A128GCM>::from_seed(seed).map(R::alloc_key),
+        #[cfg(feature = "aes")]
+        KeyAlg::Aes(AesTypes::A256GCM) => AesGcmKey::<A256GCM>::from_seed(seed).map(R::alloc_key),
+        #[cfg(feature = "bls")]
+        KeyAlg::Bls12_381(BlsCurves::G1) => BlsKeyPair::<G1>::from_seed(seed).map(R::alloc_key),
+        #[cfg(feature = "bls")]
+        KeyAlg::Bls12_381(BlsCurves::G2) => BlsKeyPair::<G2>::from_seed(seed).map(R::alloc_key),
+        #[cfg(feature = "bls")]
+        KeyAlg::Bls12_381(BlsCurves::G1G2) => BlsKeyPair::<G1G2>::from_seed(seed).map(R::alloc_key),
+        #[cfg(feature = "chacha")]
+        KeyAlg::Chacha20(Chacha20Types::C20P) => {
+            Chacha20Key::<C20P>::from_seed(seed).map(R::alloc_key)
+        }
+        #[cfg(feature = "chacha")]
+        KeyAlg::Chacha20(Chacha20Types::XC20P) => {
+            Chacha20Key::<XC20P>::from_seed(seed).map(R::alloc_key)
+        }
+        #[allow(unreachable_patterns)]
+        _ => {
+            return Err(err_msg!(
+                Unsupported,
+                "Unsupported algorithm for public key import"
             ))
         }
     }

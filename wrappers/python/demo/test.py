@@ -79,7 +79,7 @@ def keys_test():
     derived = derive_key_ecdh_es("A256GCM", ephem, bob, "Alice", "Bob")
     log("Derived:", derived.get_jwk_thumbprint())
 
-    key = Key.generate(KeyAlg.BLS12_381_G1G2)
+    key = Key.from_seed(KeyAlg.BLS12_381_G1G2, b"testseed000000000000000000000001")
     log("BLS key G1:", key.get_jwk_public(KeyAlg.BLS12_381_G1))
     log("BLS key G2:", key.get_jwk_public(KeyAlg.BLS12_381_G2))
     log("BLS key G1G2:", key.get_jwk_public())

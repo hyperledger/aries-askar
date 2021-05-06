@@ -22,7 +22,7 @@ type StoreKeyNonce = ArrayKey<<StoreKeyType as KeyAeadMeta>::NonceSize>;
 /// Create a new raw (non-derived) store key
 pub fn generate_raw_store_key(seed: Option<&[u8]>) -> Result<PassKey<'static>, Error> {
     let key = if let Some(seed) = seed {
-        StoreKey::from(StoreKeyType::from_seed(seed)?)
+        StoreKey::from(StoreKeyType::from_seed(seed.into())?)
     } else {
         StoreKey::from(StoreKeyType::generate()?)
     };

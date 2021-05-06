@@ -887,6 +887,22 @@ def key_generate(alg: Union[str, KeyAlg], ephemeral: bool = False) -> LocalKeyHa
     return handle
 
 
+def key_from_seed(
+    alg: Union[str, KeyAlg], seed: Union[str, bytes, ByteBuffer], method: str = None
+) -> LocalKeyHandle:
+    handle = LocalKeyHandle()
+    if isinstance(alg, KeyAlg):
+        alg = alg.value
+    do_call(
+        "askar_key_from_seed",
+        encode_str(alg),
+        encode_bytes(seed),
+        encode_str(method),
+        byref(handle),
+    )
+    return handle
+
+
 def key_from_public_bytes(
     alg: Union[str, KeyAlg], public: Union[bytes, ByteBuffer]
 ) -> LocalKeyHandle:
