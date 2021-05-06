@@ -1,7 +1,7 @@
 import json as _json
 
 from enum import Enum
-from typing import Mapping, Union
+from typing import Mapping, Optional, Union
 
 
 def _make_binary(value: Union[str, bytes]) -> bytes:
@@ -68,6 +68,15 @@ class KeyAlg(Enum):
     X25519 = "x25519"
     K256 = "k256"
     P256 = "p256"
+
+    @classmethod
+    def from_key_alg(cls, alg: str) -> Optional["KeyAlg"]:
+        """Get KeyAlg instance from the algorithm identifier."""
+        for cmp_alg in KeyAlg:
+            if cmp_alg.value == alg:
+                return cmp_alg
+
+        return None
 
 
 class EntryOperation(Enum):

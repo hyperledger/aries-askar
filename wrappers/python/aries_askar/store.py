@@ -27,7 +27,6 @@ class Entry:
         """Initialize the EntryHandle."""
         self._list = lst
         self._pos = pos
-        self._cache = dict()
 
     @cached_property
     def category(self) -> str:
@@ -114,21 +113,20 @@ class KeyEntry:
         """Initialize the KeyEntryHandle."""
         self._list = lst
         self._pos = pos
-        self._cache = dict()
 
     @cached_property
     def algorithm(self) -> str:
-        """Accessor for the entry algorithm."""
+        """Accessor for the key entry algorithm."""
         return self._list.get_algorithm(self._pos)
 
     @cached_property
     def name(self) -> str:
-        """Accessor for the entry name."""
+        """Accessor for the key entry name."""
         return self._list.get_name(self._pos)
 
     @cached_property
     def metadata(self) -> str:
-        """Accessor for the entry metadata."""
+        """Accessor for the key entry metadata."""
         return self._list.get_metadata(self._pos)
 
     @cached_property

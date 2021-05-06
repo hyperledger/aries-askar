@@ -38,8 +38,9 @@ class Key:
         return self._handle
 
     @property
-    def algorithm(self) -> str:
-        return bindings.key_get_algorithm(self._handle)
+    def algorithm(self) -> KeyAlg:
+        alg = bindings.key_get_algorithm(self._handle)
+        return KeyAlg.from_key_alg(alg)
 
     @property
     def ephemeral(self) -> "Key":
