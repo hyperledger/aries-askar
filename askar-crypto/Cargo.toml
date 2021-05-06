@@ -5,10 +5,10 @@ authors = ["Hyperledger Aries Contributors <aries@lists.hyperledger.org>"]
 edition = "2018"
 description = "Hyperledger Aries Askar cryptography"
 license = "MIT OR Apache-2.0"
-readme = "../README.md"
+readme = "README.md"
 repository = "https://github.com/hyperledger/aries-askar/"
-categories = ["cryptography", "database"]
-keywords = ["hyperledger", "aries", "ssi", "verifiable", "credentials"]
+categories = ["cryptography", "no-std"]
+keywords = ["hyperledger", "aries", "didcomm", "ssi"]
 
 [package.metadata.docs.rs]
 features = ["argon2", "std"]
