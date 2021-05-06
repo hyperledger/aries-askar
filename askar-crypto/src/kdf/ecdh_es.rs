@@ -45,7 +45,9 @@ impl<Key: KeyExchange + ?Sized> KeyDerivation for EcdhEs<'_, Key> {
     fn derive_key_bytes(&mut self, key_output: &mut [u8]) -> Result<(), Error> {
         let output_len = key_output.len();
         // one-pass KDF only produces 256 bits of output
-        assert!(output_len <= 32);
+        if output_len > 32 {
+            return Err(err_msg!(Unsupported, "Exceeded maximum output length"));
+        }
         let mut kdf = ConcatKDFHash::<Sha256>::new();
         kdf.start_pass();
 
@@ -57,7 +59,7 @@ impl<Key: KeyExchange + ?Sized> KeyDerivation for EcdhEs<'_, Key> {
             alg: self.alg,
             apu: self.apu,
             apv: self.apv,
-            pub_info: &(output_len * 8).to_be_bytes(), // output length in bits
+            pub_info: &((output_len as u32) * 8).to_be_bytes(), // output length in bits
             prv_info: &[],
         });
 

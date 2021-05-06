@@ -4,7 +4,7 @@ use core::{fmt::Debug, marker::PhantomData};
 
 use digest::Digest;
 
-use crate::generic_array::GenericArray;
+use crate::generic_array::{typenum::Unsigned, GenericArray};
 
 use crate::{buffer::WriteBuffer, error::Error};
 
@@ -38,8 +38,7 @@ where
         mut output: &mut [u8],
     ) -> Result<(), Error> {
         let output_len = output.len();
-        if output_len > u32::MAX as usize / 8 {
-            // output_len is used as SuppPubInfo later
+        if output_len > H::OutputSize::USIZE * (u32::MAX as usize) - 1 {
             return Err(err_msg!(Usage, "Exceeded max output size for concat KDF"));
         }
         let mut hasher = ConcatKDFHash::<H>::new();
