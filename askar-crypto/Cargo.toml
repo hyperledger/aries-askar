@@ -5,7 +5,7 @@ authors = ["Hyperledger Aries Contributors <aries@lists.hyperledger.org>"]
 edition = "2018"
 description = "Hyperledger Aries Askar cryptography"
 license = "MIT OR Apache-2.0"
-readme = "README.md"
+readme = "../README.md"
 repository = "https://github.com/hyperledger/aries-askar/"
 categories = ["cryptography", "database"]
 keywords = ["hyperledger", "aries", "ssi", "verifiable", "credentials"]
@@ -28,7 +28,7 @@ ec_curves = ["k256", "p256"]
 ed25519 = ["curve25519-dalek", "ed25519-dalek", "x25519-dalek"]
 
 [dev-dependencies]
-base64 = { version = "*", default-features = false, features = ["alloc"] }
+base64 = { version = "0.13", default-features = false, features = ["alloc"] }
 criterion = "0.3"
 hex-literal = "0.3"
 serde_cbor = "0.11"
