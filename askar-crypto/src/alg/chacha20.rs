@@ -22,7 +22,7 @@ use crate::{
 /// The 'kty' value of a symmetric key JWK
 pub static JWK_KEY_TYPE: &'static str = "oct";
 
-/// A common trait among supported ChaCha20 key types
+/// Trait implemented by supported ChaCha20 algorithms
 pub trait Chacha20Type: 'static {
     /// The AEAD implementation
     type Aead: NewAead + Aead + AeadInPlace;

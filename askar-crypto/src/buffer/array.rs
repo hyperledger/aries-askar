@@ -64,8 +64,8 @@ impl<L: ArrayLength<u8>> ArrayKey<L> {
 
     /// Get the length of the array
     #[inline]
-    pub fn len(&self) -> usize {
-        self.0.len()
+    pub fn len() -> usize {
+        Self::SIZE
     }
 
     /// Create a new array of random bytes

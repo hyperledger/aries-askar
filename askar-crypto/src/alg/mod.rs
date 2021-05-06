@@ -219,8 +219,8 @@ pub enum EcCurves {
     Secp256k1,
 }
 
-/// A common trait for accessing the algorithm of a key,
-/// used when converting to generic `AnyKey` instances.
+/// A trait for accessing the algorithm of a key, used when
+/// converting to generic `AnyKey` instances.
 pub trait HasKeyAlg: Debug {
     /// Get the corresponding key algorithm.
     fn algorithm(&self) -> KeyAlg;

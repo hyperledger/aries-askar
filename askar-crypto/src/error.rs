@@ -114,6 +114,8 @@ impl Display for Error {
 #[cfg(feature = "std")]
 impl StdError for Error {
     fn source(&self) -> Option<&(dyn StdError + 'static)> {
+        // the transmute operation here is only removing Send and Sync markers
+        #[allow(unsafe_code)]
         self.cause
             .as_ref()
             .map(|err| unsafe { std::mem::transmute(&**err) })

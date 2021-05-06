@@ -232,11 +232,8 @@ impl BlsSecretKey {
     }
 }
 
-/// A common trait among supported ChaCha20 key types
+/// Trait implemented by supported BLS public key types
 pub trait BlsPublicKeyType: 'static {
-    // /// The AEAD implementation
-    // type Aead: NewAead + Aead + AeadInPlace;
-
     /// The concrete key representation
     type Buffer: Clone + Debug + PartialEq + Sized;
 
@@ -410,7 +407,7 @@ mod tests {
     use crate::repr::{ToPublicBytes, ToSecretBytes};
     use std::string::ToString;
 
-    // test against EIP-2333 (updated for signatures draft 4)
+    // test against EIP-2333 (as updated for signatures draft 4)
     #[test]
     fn key_gen_expected() {
         let seed = &hex!(

@@ -1,4 +1,4 @@
-//! AES-GCM (Advanced Encryption Standard, Galois Counter Mode) key support
+//! AES-GCM key representations with AEAD support
 
 use core::fmt::{self, Debug, Formatter};
 
@@ -22,7 +22,7 @@ use crate::{
 /// The 'kty' value of a symmetric key JWK
 pub static JWK_KEY_TYPE: &'static str = "oct";
 
-/// A common trait among supported AES-GCM sizes
+/// Trait implemented by supported AES-GCM algorithms
 pub trait AesGcmType: 'static {
     /// The AEAD implementation
     type Aead: NewAead + Aead + AeadInPlace;
