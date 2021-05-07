@@ -1,10 +1,13 @@
+[workspace]
+members = ["askar-crypto"]
+
 [package]
 name = "aries-askar"
-version = "0.1.3"
+version = "0.2.0-pre.2"
 authors = ["Hyperledger Aries Contributors <aries@lists.hyperledger.org>"]
 edition = "2018"
 description = "Hyperledger Aries Askar secure storage"
-license = "MIT/Apache-2.0"
+license = "MIT OR Apache-2.0"
 readme = "README.md"
 repository = "https://github.com/hyperledger/aries-askar/"
 categories = ["cryptography", "database"]
@@ -16,67 +19,58 @@ path = "src/lib.rs"
 crate-type = ["staticlib", "rlib", "cdylib"]
 
 [package.metadata.docs.rs]
-features = ["all"]
+features = ["all_backends"]
 no-default-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [features]
-default = ["all", "ffi", "logger"]
-all = ["any", "postgres", "sqlite"]
+default = ["all_backends", "ffi", "logger"]
+all_backends = ["any", "postgres", "sqlite"]
 any = []
 ffi = ["any", "ffi-support", "logger"]
-indy_compat = ["sqlx", "sqlx/sqlite"]
 jemalloc = ["jemallocator"]
 logger = ["env_logger", "log"]
 postgres = ["sqlx", "sqlx/postgres", "sqlx/tls"]
 sqlite = ["num_cpus", "sqlx", "sqlx/sqlite"]
 pg_test = ["postgres"]
 
+[dev-dependencies]
+hex-literal = "0.3"
+
 [dependencies]
-aead = "0.3"
-async-global-executor = { version = "1.4", features = ["async-io"] }
+askar-crypto = { version = "0.2.0-pre.2", path = "./askar-crypto", features = ["argon2", "std"] }
 async-mutex = "1.4"
 async-stream = "0.3"
-async-std = "1.7"  # temporary addition to encourage common dependencies with sqlx
-blocking = "1.0"
-chacha20poly1305 = { version = "0.7", default-features = false, features = ["alloc", "chacha20"] }
+bs58 = "0.4"
 chrono = "0.4"
+digest = "0.9"
 env_logger = { version = "0.7", optional = true }
 ffi-support = { version = "0.4", optional = true }
 futures-lite = "1.7"
 hex = "0.4"
 hmac = "0.10"
+indy-wql = "0.4"
 itertools = "0.9"
 jemallocator = { version = "0.3", optional = true }
 log = { version = "0.4", optional = true }
 num_cpus = { version = "1.0", optional = true }
 once_cell = "1.5"
 percent-encoding = "2.0"
-rand = "0.7"
-rmp-serde = "0.14"
-rust-argon2 = "0.8"
 serde = { version = "1.0", features = ["derive"] }
 serde_bytes = "0.11"
+serde_cbor = "0.11"
 serde_json = "1.0"
 sha2 = "0.9"
+tokio = { version = "1.5", features = ["time"] }
 url = { version = "2.1", default-features = false }
 uuid = { version = "0.8", features = ["v4"] }
-zeroize = { version = "1.1.0", features = ["zeroize_derive"] }
-
-[dependencies.indy-utils]
-version = "=0.3.9"
-default-features = false
-features = ["ed25519", "pack", "serde_support", "wql"]
+zeroize = "1.1"
 
 [dependencies.sqlx]
-version = "0.5.1"
+version = "=0.5.1"
 default-features = false
-features = ["chrono", "runtime-async-std-rustls"]
+features = ["chrono", "runtime-tokio-rustls"]
 optional = true
-
-# [target.'cfg(target_os = "macos")'.dependencies]
-# keychain-services = { path = "../keychain-services.rs" }
-# keychain-services = { git = "https://github.com/iqlusioninc/keychain-services.rs", rev = "7410fb8baf4ecdf04cdcd7d06d02658f4f158d77" }
 
 [profile.release]
 lto = true
@@ -84,7 +78,3 @@ codegen-units = 1
 
 [[test]]
 name = "backends"
-
-[[test]]
-name = "faber"
-required-features = ["indy_compat"]

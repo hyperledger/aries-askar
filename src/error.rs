@@ -1,7 +1,7 @@
 use std::error::Error as StdError;
 use std::fmt::{self, Display, Formatter};
 
-pub type Result<T> = std::result::Result<T, Error>;
+use crate::crypto::{Error as CryptoError, ErrorKind as CryptoErrorKind};
 
 /// The possible kinds of error produced by the crate
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -70,17 +70,14 @@ impl Error {
         }
     }
 
-    pub(crate) fn from_opt_msg<T: Into<String>>(kind: ErrorKind, msg: Option<T>) -> Self {
-        Self {
-            kind,
-            cause: None,
-            message: msg.map(Into::into),
-        }
-    }
-
     /// Accessor for the error kind
     pub fn kind(&self) -> ErrorKind {
         self.kind
+    }
+
+    /// Accessor for the error message
+    pub fn message(&self) -> Option<&str> {
+        self.message.as_ref().map(String::as_str)
     }
 
     pub(crate) fn with_cause<T: Into<Box<dyn StdError + Send + Sync>>>(mut self, err: T) -> Self {
@@ -136,21 +133,19 @@ impl From<sqlx::Error> for Error {
     }
 }
 
-impl From<indy_utils::EncryptionError> for Error {
-    fn from(err: indy_utils::EncryptionError) -> Self {
-        Error::from_opt_msg(ErrorKind::Encryption, err.context)
-    }
-}
-
-impl From<indy_utils::UnexpectedError> for Error {
-    fn from(err: indy_utils::UnexpectedError) -> Self {
-        Error::from_opt_msg(ErrorKind::Unexpected, err.context)
-    }
-}
-
-impl From<indy_utils::ValidationError> for Error {
-    fn from(err: indy_utils::ValidationError) -> Self {
-        Error::from_opt_msg(ErrorKind::Input, err.context)
+impl From<CryptoError> for Error {
+    fn from(err: CryptoError) -> Self {
+        let kind = match err.kind() {
+            CryptoErrorKind::Encryption => ErrorKind::Encryption,
+            CryptoErrorKind::ExceededBuffer | CryptoErrorKind::Unexpected => ErrorKind::Unexpected,
+            CryptoErrorKind::InvalidData
+            | CryptoErrorKind::InvalidKeyData
+            | CryptoErrorKind::InvalidNonce
+            | CryptoErrorKind::MissingSecretKey
+            | CryptoErrorKind::Usage => ErrorKind::Input,
+            CryptoErrorKind::Unsupported => ErrorKind::Unsupported,
+        };
+        Error::from_msg(kind, err.message())
     }
 }
 

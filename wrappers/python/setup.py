@@ -22,6 +22,7 @@ if __name__ == "__main__":
         long_description_content_type="text/markdown",
         url="https://github.com/hyperledger/aries-askar",
         packages=find_packages(),
+        install_requires=["cached_property~=1.5"],
         include_package_data=True,
         package_data={
             "": [

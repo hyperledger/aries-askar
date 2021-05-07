@@ -1,10 +1,15 @@
 # aries-askar
 
-Aries-Askar, secure storage designed for Hyperledger Aries agents.
+[![Unit Tests](https://github.com/hyperledger/aries-askar/workflows/Aries-Askar/badge.svg)](https://github.com/hyperledger/aries-askar/actions)
+[![Rust Crate](https://img.shields.io/crates/v/aries-askar.svg)](https://crates.io/crates/aries-askar)
+[![Rust Documentation](https://docs.rs/aries-askar/badge.svg)](https://docs.rs/aries-askar)
+[![Python Package](https://img.shields.io/pypi/v/aries_askar)](https://pypi.org/project/aries-askar/)
+
+Secure storage and cryptographic support designed for Hyperledger Aries agents.
 
 ## Credit
 
-The initial implementation of `aries-askar` was developed by the Verifiable Organizations Network (VON) team based at the Province of British Columbia. The database structure derives largely from the wallet design within [Hyperledger Indy-SDK](https://github.com/hyperledger/indy-sdk). To learn more about VON and what's happening with decentralized identity in British Columbia, please go to [https://vonx.io](https://vonx.io).
+The initial implementation of `aries-askar` was developed by the Verifiable Organizations Network (VON) team based at the Province of British Columbia, and inspired by the wallet design within [Hyperledger Indy-SDK](https://github.com/hyperledger/indy-sdk). To learn more about VON and what's happening with decentralized identity in British Columbia, please go to [https://vonx.io](https://vonx.io).
 
 ## Contributing
 

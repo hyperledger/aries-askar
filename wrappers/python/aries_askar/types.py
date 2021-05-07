@@ -1,10 +1,10 @@
 import json as _json
 
 from enum import Enum
-from typing import Mapping
+from typing import Mapping, Optional, Union
 
 
-def _make_binary(value: [str, bytes]) -> bytes:
+def _make_binary(value: Union[str, bytes]) -> bytes:
     if isinstance(value, str):
         return value.encode("utf-8")
     else:
@@ -16,7 +16,7 @@ class Entry:
         self,
         category: str,
         name: str,
-        value: [str, bytes],
+        value: Union[str, bytes],
         tags: Mapping[str, str] = None,
     ) -> "Entry":
         self.category = category
@@ -56,28 +56,29 @@ class Entry:
         )
 
 
-class KeyEntry:
-    def __init__(
-        self,
-        category: str,
-        ident: str,
-        params: dict,
-        tags: Mapping[str, str] = None,
-    ) -> "Entry":
-        self.category = category
-        self.ident = ident
-        self.params = params
-        self.tags = dict(tags) if tags else {}
-
-    def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__name__}(category={repr(self.category)}, "
-            f"ident={repr(self.ident)}, params=.., tags={self.tags})"
-        )
-
-
 class KeyAlg(Enum):
+    A128GCM = "a128gcm"
+    A256GCM = "a256gcm"
+    A128CBC_HS256 = "a128cbchs256"
+    A256CBC_HS512 = "a256cbchs512"
+    BLS12_381_G1 = "bls12381g1"
+    BLS12_381_G2 = "bls12381g2"
+    BLS12_381_G1G2 = "bls12381g1g2"
+    C20P = "c20p"
+    XC20P = "xc20p"
     ED25519 = "ed25519"
+    X25519 = "x25519"
+    K256 = "k256"
+    P256 = "p256"
+
+    @classmethod
+    def from_key_alg(cls, alg: str) -> Optional["KeyAlg"]:
+        """Get KeyAlg instance from the algorithm identifier."""
+        for cmp_alg in KeyAlg:
+            if cmp_alg.value == alg:
+                return cmp_alg
+
+        return None
 
 
 class EntryOperation(Enum):

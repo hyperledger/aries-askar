@@ -1,11 +1,15 @@
 //! Secure storage designed for Hyperledger Aries agents
 
 #![cfg_attr(docsrs, feature(doc_cfg))]
-#![warn(missing_docs, missing_debug_implementations, rust_2018_idioms)]
+#![deny(missing_docs, missing_debug_implementations, rust_2018_idioms)]
 
 #[macro_use]
 mod error;
 pub use self::error::{Error, ErrorKind};
+
+#[cfg(test)]
+#[macro_use]
+extern crate hex_literal;
 
 #[macro_use]
 mod macros;
@@ -17,18 +21,22 @@ extern crate log;
 #[macro_use]
 extern crate serde;
 
-#[cfg(any(feature = "postgres", feature = "sqlite"))]
-mod db_utils;
+pub mod backend;
+pub use self::backend::{Backend, ManageBackend};
+
+#[cfg(feature = "any")]
+pub use self::backend::any;
+
+#[cfg(feature = "postgres")]
+pub use self::backend::postgres;
+
+#[cfg(feature = "sqlite")]
+pub use self::backend::sqlite;
+
+pub use askar_crypto as crypto;
 
 #[doc(hidden)]
 pub mod future;
-
-#[cfg(feature = "indy_compat")]
-#[cfg_attr(docsrs, doc(cfg(feature = "indy_compat")))]
-/// Indy wallet compatibility support
-pub mod indy_compat;
-
-mod options;
 
 #[cfg(feature = "ffi")]
 #[macro_use]
@@ -37,35 +45,10 @@ extern crate serde_json;
 #[cfg(feature = "ffi")]
 mod ffi;
 
-#[cfg(feature = "postgres")]
-#[cfg_attr(docsrs, doc(cfg(feature = "postgres")))]
-/// Postgres database support
-pub mod postgres;
+pub mod kms;
 
-#[macro_use]
-pub(crate) mod serde_utils;
+mod protect;
+pub use protect::{generate_raw_store_key, PassKey, StoreKeyMethod};
 
-#[cfg(feature = "sqlite")]
-#[cfg_attr(docsrs, doc(cfg(feature = "sqlite")))]
-/// Sqlite database support
-pub mod sqlite;
-
-#[cfg(feature = "any")]
-#[cfg_attr(docsrs, doc(cfg(feature = "any")))]
-/// Generic backend (from URI) support
-pub mod any;
-
-mod keys;
-pub use self::keys::{
-    derive_verkey, verify_signature,
-    wrap::{generate_raw_wrap_key, WrapKeyMethod},
-    KeyAlg, KeyCategory, KeyEntry, KeyParams, PassKey,
-};
-
-mod store;
-pub use self::store::{Backend, ManageBackend, QueryBackend, Scan, Session, Store};
-
-mod types;
-pub use self::types::{Entry, EntryOperation, EntryTag, SecretBytes, TagFilter};
-
-mod wql;
+mod storage;
+pub use storage::{Entry, EntryTag, Scan, Store, TagFilter};

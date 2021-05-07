@@ -1,6 +1,4 @@
-use aries_askar::{
-    verify_signature, Backend, Entry, EntryTag, ErrorKind, KeyAlg, Store, TagFilter,
-};
+use aries_askar::{Backend, Entry, EntryTag, ErrorKind, Store, TagFilter};
 
 const ERR_PROFILE: &'static str = "Error creating profile";
 const ERR_SESSION: &'static str = "Error starting session";
@@ -15,12 +13,10 @@ const ERR_REPLACE: &'static str = "Error replacing test row";
 const ERR_REMOVE_ALL: &'static str = "Error removing test rows";
 const ERR_SCAN: &'static str = "Error starting scan";
 const ERR_SCAN_NEXT: &'static str = "Error fetching scan rows";
-const ERR_CREATE_KEYPAIR: &'static str = "Error creating keypair";
-const ERR_FETCH_KEY: &'static str = "Error fetching key";
-const ERR_SIGN: &'static str = "Error signing message";
-const ERR_VERIFY: &'static str = "Error verifying signature";
-const ERR_PACK: &'static str = "Error packing message";
-const ERR_UNPACK: &'static str = "Error unpacking message";
+// const ERR_CREATE_KEYPAIR: &'static str = "Error creating keypair";
+// const ERR_FETCH_KEY: &'static str = "Error fetching key";
+// const ERR_SIGN: &'static str = "Error signing message";
+// const ERR_VERIFY: &'static str = "Error verifying signature";
 
 pub async fn db_create_remove_profile<DB: Backend>(db: &Store<DB>) {
     let profile = db.create_profile(None).await.expect(ERR_PROFILE);
@@ -49,10 +45,10 @@ pub async fn db_insert_fetch<DB: Backend>(db: &Store<DB>) {
         "category",
         "name",
         "value",
-        Some(vec![
+        vec![
             EntryTag::Encrypted("t1".to_string(), "v1".to_string()),
             EntryTag::Plaintext("t2".to_string(), "v2".to_string()),
-        ]),
+        ],
     );
 
     let mut conn = db.session(None).await.expect(ERR_SESSION);
@@ -61,7 +57,7 @@ pub async fn db_insert_fetch<DB: Backend>(db: &Store<DB>) {
         &test_row.category,
         &test_row.name,
         &test_row.value,
-        test_row.tags.as_ref().map(|t| t.as_slice()),
+        Some(test_row.tags.as_slice()),
         None,
     )
     .await
@@ -83,7 +79,7 @@ pub async fn db_insert_fetch<DB: Backend>(db: &Store<DB>) {
 }
 
 pub async fn db_insert_duplicate<DB: Backend>(db: &Store<DB>) {
-    let test_row = Entry::new("category", "name", "value", None);
+    let test_row = Entry::new("category", "name", "value", Vec::new());
 
     let mut conn = db.session(None).await.expect(ERR_SESSION);
 
@@ -91,7 +87,7 @@ pub async fn db_insert_duplicate<DB: Backend>(db: &Store<DB>) {
         &test_row.category,
         &test_row.name,
         &test_row.value,
-        test_row.tags.as_ref().map(|t| t.as_slice()),
+        Some(test_row.tags.as_slice()),
         None,
     )
     .await
@@ -102,7 +98,7 @@ pub async fn db_insert_duplicate<DB: Backend>(db: &Store<DB>) {
             &test_row.category,
             &test_row.name,
             &test_row.value,
-            test_row.tags.as_ref().map(|t| t.as_slice()),
+            Some(test_row.tags.as_slice()),
             None,
         )
         .await
@@ -111,7 +107,7 @@ pub async fn db_insert_duplicate<DB: Backend>(db: &Store<DB>) {
 }
 
 pub async fn db_insert_remove<DB: Backend>(db: &Store<DB>) {
-    let test_row = Entry::new("category", "name", "value", None);
+    let test_row = Entry::new("category", "name", "value", Vec::new());
 
     let mut conn = db.session(None).await.expect(ERR_SESSION);
 
@@ -119,7 +115,7 @@ pub async fn db_insert_remove<DB: Backend>(db: &Store<DB>) {
         &test_row.category,
         &test_row.name,
         &test_row.value,
-        test_row.tags.as_ref().map(|t| t.as_slice()),
+        Some(test_row.tags.as_slice()),
         None,
     )
     .await
@@ -138,7 +134,7 @@ pub async fn db_remove_missing<DB: Backend>(db: &Store<DB>) {
 }
 
 pub async fn db_replace_fetch<DB: Backend>(db: &Store<DB>) {
-    let test_row = Entry::new("category", "name", "value", None);
+    let test_row = Entry::new("category", "name", "value", Vec::new());
 
     let mut conn = db.session(None).await.expect(ERR_SESSION);
 
@@ -146,7 +142,7 @@ pub async fn db_replace_fetch<DB: Backend>(db: &Store<DB>) {
         &test_row.category,
         &test_row.name,
         &test_row.value,
-        test_row.tags.as_ref().map(|t| t.as_slice()),
+        Some(test_row.tags.as_slice()),
         None,
     )
     .await
@@ -158,7 +154,7 @@ pub async fn db_replace_fetch<DB: Backend>(db: &Store<DB>) {
         &replace_row.category,
         &replace_row.name,
         &replace_row.value,
-        replace_row.tags.as_ref().map(|t| t.as_slice()),
+        Some(replace_row.tags.as_slice()),
         None,
     )
     .await
@@ -173,7 +169,7 @@ pub async fn db_replace_fetch<DB: Backend>(db: &Store<DB>) {
 }
 
 pub async fn db_replace_missing<DB: Backend>(db: &Store<DB>) {
-    let test_row = Entry::new("category", "name", "value", None);
+    let test_row = Entry::new("category", "name", "value", Vec::new());
 
     let mut conn = db.session(None).await.expect(ERR_SESSION);
 
@@ -182,7 +178,7 @@ pub async fn db_replace_missing<DB: Backend>(db: &Store<DB>) {
             &test_row.category,
             &test_row.name,
             &test_row.value,
-            test_row.tags.as_ref().map(|t| t.as_slice()),
+            Some(test_row.tags.as_slice()),
             None,
         )
         .await
@@ -192,7 +188,7 @@ pub async fn db_replace_missing<DB: Backend>(db: &Store<DB>) {
 
 pub async fn db_count<DB: Backend>(db: &Store<DB>) {
     let category = "category".to_string();
-    let test_rows = vec![Entry::new(&category, "name", "value", None)];
+    let test_rows = vec![Entry::new(&category, "name", "value", Vec::new())];
 
     let mut conn = db.session(None).await.expect(ERR_SESSION);
 
@@ -201,7 +197,7 @@ pub async fn db_count<DB: Backend>(db: &Store<DB>) {
             &upd.category,
             &upd.name,
             &upd.value,
-            upd.tags.as_ref().map(|t| t.as_slice()),
+            Some(upd.tags.as_slice()),
             None,
         )
         .await
@@ -222,10 +218,10 @@ pub async fn db_count_exist<DB: Backend>(db: &Store<DB>) {
         "category",
         "name",
         "value",
-        Some(vec![
+        vec![
             EntryTag::Encrypted("enc".to_string(), "v1".to_string()),
             EntryTag::Plaintext("plain".to_string(), "v2".to_string()),
-        ]),
+        ],
     );
 
     let mut conn = db.session(None).await.expect(ERR_SESSION);
@@ -234,7 +230,7 @@ pub async fn db_count_exist<DB: Backend>(db: &Store<DB>) {
         &test_row.category,
         &test_row.name,
         &test_row.value,
-        test_row.tags.as_ref().map(|t| t.as_slice()),
+        Some(test_row.tags.as_slice()),
         None,
     )
     .await
@@ -362,10 +358,10 @@ pub async fn db_scan<DB: Backend>(db: &Store<DB>) {
         &category,
         "name",
         "value",
-        Some(vec![
+        vec![
             EntryTag::Encrypted("t1".to_string(), "v1".to_string()),
             EntryTag::Plaintext("t2".to_string(), "v2".to_string()),
-        ]),
+        ],
     )];
 
     let mut conn = db.session(None).await.expect(ERR_SESSION);
@@ -375,7 +371,7 @@ pub async fn db_scan<DB: Backend>(db: &Store<DB>) {
             &upd.category,
             &upd.name,
             &upd.value,
-            upd.tags.as_ref().map(|t| t.as_slice()),
+            Some(upd.tags.as_slice()),
             None,
         )
         .await
@@ -410,28 +406,28 @@ pub async fn db_remove_all<DB: Backend>(db: &Store<DB>) {
             "category",
             "item1",
             "value",
-            Some(vec![
+            vec![
                 EntryTag::Encrypted("t1".to_string(), "del".to_string()),
                 EntryTag::Plaintext("t2".to_string(), "del".to_string()),
-            ]),
+            ],
         ),
         Entry::new(
             "category",
             "item2",
             "value",
-            Some(vec![
+            vec![
                 EntryTag::Encrypted("t1".to_string(), "del".to_string()),
                 EntryTag::Plaintext("t2".to_string(), "del".to_string()),
-            ]),
+            ],
         ),
         Entry::new(
             "category",
             "item3",
             "value",
-            Some(vec![
+            vec![
                 EntryTag::Encrypted("t1".to_string(), "keep".to_string()),
                 EntryTag::Plaintext("t2".to_string(), "keep".to_string()),
-            ]),
+            ],
         ),
     ];
 
@@ -442,7 +438,7 @@ pub async fn db_remove_all<DB: Backend>(db: &Store<DB>) {
             &test_row.category,
             &test_row.name,
             &test_row.value,
-            test_row.tags.as_ref().map(|t| t.as_slice()),
+            Some(test_row.tags.as_slice()),
             None,
         )
         .await
@@ -464,108 +460,118 @@ pub async fn db_remove_all<DB: Backend>(db: &Store<DB>) {
     assert_eq!(removed, 2);
 }
 
-pub async fn db_keypair_create_fetch<DB: Backend>(db: &Store<DB>) {
-    let mut conn = db.session(None).await.expect(ERR_SESSION);
+// pub async fn db_keypair_create_fetch<DB: Backend>(db: &Store<DB>) {
+//     let mut conn = db.session(None).await.expect(ERR_SESSION);
 
-    let metadata = "meta".to_owned();
-    let key_info = conn
-        .create_keypair(KeyAlg::ED25519, Some(&metadata), None, None)
-        .await
-        .expect(ERR_CREATE_KEYPAIR);
-    assert_eq!(key_info.params.metadata, Some(metadata));
+//     let metadata = "meta".to_owned();
+//     let key_info = conn
+//         .create_keypair(KeyAlg::Ed25519, Some(&metadata), None, None)
+//         .await
+//         .expect(ERR_CREATE_KEYPAIR);
+//     assert_eq!(key_info.params.metadata, Some(metadata));
 
-    let found = conn
-        .fetch_key(key_info.category.clone(), &key_info.ident, false)
-        .await
-        .expect(ERR_FETCH_KEY);
-    assert_eq!(Some(key_info), found);
-}
+//     let found = conn
+//         .fetch_key(key_info.category.clone(), &key_info.ident, false)
+//         .await
+//         .expect(ERR_FETCH_KEY);
+//     assert_eq!(Some(key_info), found);
+// }
 
-pub async fn db_keypair_sign_verify<DB: Backend>(db: &Store<DB>) {
-    let mut conn = db.session(None).await.expect(ERR_SESSION);
+// pub async fn db_keypair_sign_verify<DB: Backend>(db: &Store<DB>) {
+//     let mut conn = db.session(None).await.expect(ERR_SESSION);
 
-    let key_info = conn
-        .create_keypair(KeyAlg::ED25519, None, None, None)
-        .await
-        .expect(ERR_CREATE_KEYPAIR);
+//     let key_info = conn
+//         .create_keypair(KeyAlg::Ed25519, None, None, None)
+//         .await
+//         .expect(ERR_CREATE_KEYPAIR);
 
-    let message = b"message".to_vec();
-    let sig = conn
-        .sign_message(&key_info.ident, &message)
-        .await
-        .expect(ERR_SIGN);
+//     let message = b"message".to_vec();
+//     let sig = conn
+//         .sign_message(&key_info.ident, &message)
+//         .await
+//         .expect(ERR_SIGN);
 
-    assert_eq!(
-        verify_signature(&key_info.ident, &message, &sig).expect(ERR_VERIFY),
-        true
-    );
+//     assert_eq!(
+//         verify_signature(&key_info.ident, &message, &sig).expect(ERR_VERIFY),
+//         true
+//     );
 
-    assert_eq!(
-        verify_signature(&key_info.ident, b"bad input", &sig).expect(ERR_VERIFY),
-        false
-    );
+//     assert_eq!(
+//         verify_signature(&key_info.ident, b"bad input", &sig).expect(ERR_VERIFY),
+//         false
+//     );
 
-    assert_eq!(
-        verify_signature(&key_info.ident, &message, b"bad sig").expect(ERR_VERIFY),
-        false
-    );
+//     assert_eq!(
+//         verify_signature(
+//             &key_info.ident,
+//             // [0u8; 64]
+//             b"xt19s1sp2UZCGhy9rNyb1FtxdKiDGZZPNFnc1KiM9jYYEuHxuwNeFf1oQKsn8zv6yvYBGhXa83288eF4MqN1oDq",
+//             &sig
+//         ).expect(ERR_VERIFY),
+//         false
+//     );
 
-    let err = verify_signature("not a key", &message, &sig).expect_err(ERR_REQ_ERR);
-    assert_eq!(err.kind(), ErrorKind::Input);
-}
+//     assert_eq!(
+//         verify_signature(&key_info.ident, &message, b"bad sig").is_err(),
+//         true
+//     );
 
-pub async fn db_keypair_pack_unpack_anon<DB: Backend>(db: &Store<DB>) {
-    let mut conn = db.session(None).await.expect(ERR_SESSION);
+//     let err = verify_signature("not a key", &message, &sig).expect_err(ERR_REQ_ERR);
+//     assert_eq!(err.kind(), ErrorKind::Input);
+// }
 
-    let recip_key = conn
-        .create_keypair(KeyAlg::ED25519, None, None, None)
-        .await
-        .expect(ERR_CREATE_KEYPAIR);
+// pub async fn db_keypair_pack_unpack_anon<DB: Backend>(db: &Store<DB>) {
+//     let mut conn = db.session(None).await.expect(ERR_SESSION);
 
-    let msg = b"message".to_vec();
+//     let recip_key = conn
+//         .create_keypair(KeyAlg::Ed25519, None, None, None)
+//         .await
+//         .expect(ERR_CREATE_KEYPAIR);
 
-    let packed = conn
-        .pack_message(vec![recip_key.ident.as_str()], None, &msg)
-        .await
-        .expect(ERR_PACK);
+//     let msg = b"message".to_vec();
 
-    let (unpacked, p_recip, p_send) = conn.unpack_message(&packed).await.expect(ERR_UNPACK);
-    assert_eq!(unpacked, msg);
-    assert_eq!(p_recip, recip_key.encoded_verkey().unwrap());
-    assert_eq!(p_send, None);
-}
+//     let packed = conn
+//         .pack_message(vec![recip_key.ident.as_str()], None, &msg)
+//         .await
+//         .expect(ERR_PACK);
 
-pub async fn db_keypair_pack_unpack_auth<DB: Backend>(db: &Store<DB>) {
-    let mut conn = db.session(None).await.expect(ERR_SESSION);
+//     let (unpacked, p_recip, p_send) = conn.unpack_message(&packed).await.expect(ERR_UNPACK);
+//     assert_eq!(unpacked, msg);
+//     assert_eq!(p_recip.to_string(), recip_key.ident);
+//     assert_eq!(p_send, None);
+// }
 
-    let sender_key = conn
-        .create_keypair(KeyAlg::ED25519, None, None, None)
-        .await
-        .expect(ERR_CREATE_KEYPAIR);
-    let recip_key = conn
-        .create_keypair(KeyAlg::ED25519, None, None, None)
-        .await
-        .expect(ERR_CREATE_KEYPAIR);
+// pub async fn db_keypair_pack_unpack_auth<DB: Backend>(db: &Store<DB>) {
+//     let mut conn = db.session(None).await.expect(ERR_SESSION);
 
-    let msg = b"message".to_vec();
+//     let sender_key = conn
+//         .create_keypair(KeyAlg::Ed25519, None, None, None)
+//         .await
+//         .expect(ERR_CREATE_KEYPAIR);
+//     let recip_key = conn
+//         .create_keypair(KeyAlg::Ed25519, None, None, None)
+//         .await
+//         .expect(ERR_CREATE_KEYPAIR);
 
-    let packed = conn
-        .pack_message(
-            vec![recip_key.ident.as_str()],
-            Some(&sender_key.ident),
-            &msg,
-        )
-        .await
-        .expect(ERR_PACK);
+//     let msg = b"message".to_vec();
 
-    let (unpacked, p_recip, p_send) = conn.unpack_message(&packed).await.expect(ERR_UNPACK);
-    assert_eq!(unpacked, msg);
-    assert_eq!(p_recip, recip_key.encoded_verkey().unwrap());
-    assert_eq!(p_send, Some(sender_key.encoded_verkey().unwrap()));
-}
+//     let packed = conn
+//         .pack_message(
+//             vec![recip_key.ident.as_str()],
+//             Some(&sender_key.ident),
+//             &msg,
+//         )
+//         .await
+//         .expect(ERR_PACK);
+
+//     let (unpacked, p_recip, p_send) = conn.unpack_message(&packed).await.expect(ERR_UNPACK);
+//     assert_eq!(unpacked, msg);
+//     assert_eq!(p_recip.to_string(), recip_key.ident);
+//     assert_eq!(p_send.map(|k| k.to_string()), Some(sender_key.ident));
+// }
 
 pub async fn db_txn_rollback<DB: Backend>(db: &Store<DB>) {
-    let test_row = Entry::new("category", "name", "value", None);
+    let test_row = Entry::new("category", "name", "value", Vec::new());
 
     let mut conn = db.transaction(None).await.expect(ERR_TRANSACTION);
 
@@ -573,7 +579,7 @@ pub async fn db_txn_rollback<DB: Backend>(db: &Store<DB>) {
         &test_row.category,
         &test_row.name,
         &test_row.value,
-        test_row.tags.as_ref().map(|t| t.as_slice()),
+        Some(test_row.tags.as_slice()),
         None,
     )
     .await
@@ -593,7 +599,7 @@ pub async fn db_txn_rollback<DB: Backend>(db: &Store<DB>) {
 }
 
 pub async fn db_txn_drop<DB: Backend>(db: &Store<DB>) {
-    let test_row = Entry::new("category", "name", "value", None);
+    let test_row = Entry::new("category", "name", "value", Vec::new());
 
     let mut conn = db
         .transaction(None)
@@ -604,7 +610,7 @@ pub async fn db_txn_drop<DB: Backend>(db: &Store<DB>) {
         &test_row.category,
         &test_row.name,
         &test_row.value,
-        test_row.tags.as_ref().map(|t| t.as_slice()),
+        Some(test_row.tags.as_slice()),
         None,
     )
     .await
@@ -623,7 +629,7 @@ pub async fn db_txn_drop<DB: Backend>(db: &Store<DB>) {
 
 // test that session does NOT have transaction rollback behaviour
 pub async fn db_session_drop<DB: Backend>(db: &Store<DB>) {
-    let test_row = Entry::new("category", "name", "value", None);
+    let test_row = Entry::new("category", "name", "value", Vec::new());
 
     let mut conn = db.session(None).await.expect(ERR_SESSION);
 
@@ -631,7 +637,7 @@ pub async fn db_session_drop<DB: Backend>(db: &Store<DB>) {
         &test_row.category,
         &test_row.name,
         &test_row.value,
-        test_row.tags.as_ref().map(|t| t.as_slice()),
+        Some(test_row.tags.as_slice()),
         None,
     )
     .await
@@ -649,7 +655,7 @@ pub async fn db_session_drop<DB: Backend>(db: &Store<DB>) {
 }
 
 pub async fn db_txn_commit<DB: Backend>(db: &Store<DB>) {
-    let test_row = Entry::new("category", "name", "value", None);
+    let test_row = Entry::new("category", "name", "value", Vec::new());
 
     let mut conn = db.transaction(None).await.expect(ERR_TRANSACTION);
 
@@ -657,7 +663,7 @@ pub async fn db_txn_commit<DB: Backend>(db: &Store<DB>) {
         &test_row.category,
         &test_row.name,
         &test_row.value,
-        test_row.tags.as_ref().map(|t| t.as_slice()),
+        Some(test_row.tags.as_slice()),
         None,
     )
     .await
@@ -675,7 +681,7 @@ pub async fn db_txn_commit<DB: Backend>(db: &Store<DB>) {
 }
 
 pub async fn db_txn_fetch_for_update<DB: Backend>(db: &Store<DB>) {
-    let test_row = Entry::new("category", "name", "value", None);
+    let test_row = Entry::new("category", "name", "value", Vec::new());
 
     let mut conn = db.transaction(None).await.expect(ERR_TRANSACTION);
 
@@ -683,7 +689,7 @@ pub async fn db_txn_fetch_for_update<DB: Backend>(db: &Store<DB>) {
         &test_row.category,
         &test_row.name,
         &test_row.value,
-        test_row.tags.as_ref().map(|t| t.as_slice()),
+        Some(test_row.tags.as_slice()),
         None,
     )
     .await

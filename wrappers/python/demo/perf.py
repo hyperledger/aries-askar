@@ -15,7 +15,7 @@ logging.basicConfig(level=os.getenv("LOG_LEVEL", "").upper() or None)
 if len(sys.argv) > 1:
     REPO_URI = sys.argv[1]
     if REPO_URI == "postgres":
-        REPO_URI = "postgres://postgres:pgpass@localhost:5432/askar-test"
+        REPO_URI = "postgres://postgres:mysecretpassword@localhost:5432/askar-test"
 else:
     REPO_URI = "sqlite://:memory:"
 
@@ -27,7 +27,7 @@ def log(*args):
 
 
 async def perf_test():
-    key = await generate_raw_key()
+    key = generate_raw_key()
 
     store = await Store.provision(REPO_URI, "raw", key, recreate=True)
 

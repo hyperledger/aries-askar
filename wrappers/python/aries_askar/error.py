@@ -3,7 +3,7 @@
 from enum import IntEnum
 
 
-class StoreErrorCode(IntEnum):
+class AskarErrorCode(IntEnum):
     SUCCESS = 0
     BACKEND = 1
     BUSY = 2
@@ -16,8 +16,8 @@ class StoreErrorCode(IntEnum):
     WRAPPER = 99
 
 
-class StoreError(Exception):
-    def __init__(self, code: StoreErrorCode, message: str, extra: str = None):
+class AskarError(Exception):
+    def __init__(self, code: AskarErrorCode, message: str, extra: str = None):
         super().__init__(message)
         self.code = code
         self.extra = extra

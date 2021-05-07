@@ -1,4 +1,4 @@
-use crate::error::{Error, ErrorKind, Result};
+use crate::error::{Error, ErrorKind};
 
 use std::os::raw::c_char;
 use std::sync::RwLock;
@@ -38,8 +38,8 @@ impl From<ErrorKind> for ErrorCode {
     }
 }
 
-impl<T> From<Result<T>> for ErrorCode {
-    fn from(result: Result<T>) -> ErrorCode {
+impl<T> From<Result<T, Error>> for ErrorCode {
+    fn from(result: Result<T, Error>) -> ErrorCode {
         match result {
             Ok(_) => ErrorCode::Success,
             Err(err) => ErrorCode::from(err.kind()),
