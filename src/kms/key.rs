@@ -35,7 +35,6 @@ impl LocalKey {
 
     /// Create a new deterministic key or keypair
     pub fn from_seed(alg: KeyAlg, seed: &[u8], _method: Option<&str>) -> Result<Self, Error> {
-        // FIXME - method is just a placeholder
         let inner = Box::<AnyKey>::from_seed(alg, seed.into())?;
         Ok(Self {
             inner,

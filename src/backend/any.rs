@@ -91,7 +91,6 @@ impl Backend for AnyBackend {
 
             #[cfg(feature = "sqlite")]
             Self::Sqlite(store) => {
-                // FIXME - avoid double boxed futures by exposing public method
                 let session = store.session(profile, transaction)?;
                 Ok(AnyQueryBackend::SqliteSession(session))
             }

@@ -132,7 +132,6 @@ impl KeypairBytes for P256KeyPair {
         let pk = EncodedPoint::from_bytes(&kp[SECRET_KEY_LENGTH..])
             .and_then(|pt| pt.decode())
             .map_err(|_| err_msg!(InvalidKeyData))?;
-        // FIXME: derive pk from sk and check value?
 
         Ok(Self {
             secret: Some(sk),

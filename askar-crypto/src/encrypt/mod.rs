@@ -7,7 +7,7 @@ use crate::{
     random::fill_random,
 };
 
-#[cfg(feature = "crypto_box")] // FIXME - support non-alloc?
+#[cfg(feature = "crypto_box")]
 #[cfg_attr(docsrs, doc(cfg(feature = "crypto_box")))]
 pub mod crypto_box;
 

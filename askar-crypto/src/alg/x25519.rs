@@ -143,7 +143,6 @@ impl KeypairBytes for X25519KeyPair {
         let pk = PublicKey::from(
             TryInto::<[u8; PUBLIC_KEY_LENGTH]>::try_into(&kp[SECRET_KEY_LENGTH..]).unwrap(),
         );
-        // FIXME: derive pk from sk and check value?
 
         Ok(Self {
             secret: Some(sk),

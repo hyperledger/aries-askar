@@ -173,7 +173,6 @@ impl KeypairBytes for Ed25519KeyPair {
         let sk = SecretKey::from_bytes(&kp[..SECRET_KEY_LENGTH]).unwrap();
         let pk = PublicKey::from_bytes(&kp[SECRET_KEY_LENGTH..])
             .map_err(|_| err_msg!(InvalidKeyData))?;
-        // FIXME: derive pk from sk and check value?
 
         Ok(Self {
             secret: Some(sk),

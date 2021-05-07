@@ -377,8 +377,6 @@ where
         nonce: &GenericArray<u8, Self::NonceSize>,
         aad: &[u8],
     ) -> Result<(), Error> {
-        // FIXME validate maximum input length
-
         // this should be optimized unless it matters
         if Self::TagSize::USIZE > D::OutputSize::USIZE {
             return Err(err_msg!(
@@ -482,7 +480,7 @@ mod tests {
             assert_eq!(&dec[..], input);
 
             // test tag validation
-            buffer.as_mut()[enc_len - 1] += 1;
+            buffer.as_mut()[enc_len - 1] = buffer.as_mut()[enc_len - 1].wrapping_add(1);
             assert!(key.decrypt_in_place(&mut buffer, &nonce, &[]).is_err());
         }
         test_encrypt::<A128Gcm>();
