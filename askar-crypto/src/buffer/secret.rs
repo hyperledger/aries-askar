@@ -6,13 +6,14 @@ use core::{
 };
 
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
+use subtle::{Choice, ConstantTimeEq};
 use zeroize::Zeroize;
 
 use super::{string::MaybeStr, HexRepr, ResizeBuffer, WriteBuffer};
 use crate::error::Error;
 
 /// A heap-allocated, zeroized byte buffer
-#[derive(Clone, Default, Hash, PartialEq, Eq, PartialOrd, Ord, Zeroize)]
+#[derive(Clone, Default, Hash, Zeroize)]
 pub struct SecretBytes(Vec<u8>);
 
 impl SecretBytes {
@@ -173,6 +174,20 @@ impl Drop for SecretBytes {
         self.zeroize();
     }
 }
+
+impl ConstantTimeEq for SecretBytes {
+    fn ct_eq(&self, other: &Self) -> Choice {
+        ConstantTimeEq::ct_eq(self.0.as_slice(), other.0.as_slice())
+    }
+}
+
+impl PartialEq for SecretBytes {
+    #[inline]
+    fn eq(&self, other: &Self) -> bool {
+        self.ct_eq(other).unwrap_u8() == 1
+    }
+}
+impl Eq for SecretBytes {}
 
 impl From<&[u8]> for SecretBytes {
     fn from(inner: &[u8]) -> Self {
