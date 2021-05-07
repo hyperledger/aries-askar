@@ -6,6 +6,7 @@ use core::{
 
 use crate::generic_array::{ArrayLength, GenericArray};
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
+use subtle::{Choice, ConstantTimeEq};
 use zeroize::Zeroize;
 
 use super::HexRepr;
@@ -127,10 +128,16 @@ impl<L: ArrayLength<u8>> Debug for ArrayKey<L> {
     }
 }
 
+impl<L: ArrayLength<u8>> ConstantTimeEq for ArrayKey<L> {
+    fn ct_eq(&self, other: &Self) -> Choice {
+        ConstantTimeEq::ct_eq(self.0.as_ref(), other.0.as_ref())
+    }
+}
+
 impl<L: ArrayLength<u8>> PartialEq for ArrayKey<L> {
+    #[inline]
     fn eq(&self, other: &Self) -> bool {
-        // FIXME implement constant-time equality?
-        self.as_ref() == other.as_ref()
+        self.ct_eq(other).unwrap_u8() == 1
     }
 }
 impl<L: ArrayLength<u8>> Eq for ArrayKey<L> {}

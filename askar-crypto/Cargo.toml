@@ -20,7 +20,7 @@ alloc = []
 std = ["alloc"]
 all_keys = ["aes", "bls", "chacha", "ec_curves", "ed25519"]
 any_key = ["alloc"]
-aes = ["aes-gcm"]
+aes = ["aes-core", "aes-gcm", "block-modes", "hmac"]
 bls = ["bls12_381", "hkdf"]
 chacha = ["chacha20poly1305"]
 crypto_box = ["alloc", "crypto_box_rs", "ed25519"]
@@ -43,10 +43,12 @@ harness = false
 
 [dependencies]
 aead = "0.3"
+aes-core = { package = "aes", version = "0.6", default-features = false, optional = true }
 aes-gcm = { version = "0.8", default-features = false, features = ["aes"], optional = true }
 argon2 = { version = "0.1", default-features = false, features = ["password-hash"], optional = true }
 base64 = { version = "0.13", default-features = false }
 blake2 = { version = "0.9", default-features = false }
+block-modes = { version = "0.7", default-features = false, optional = true }
 bls12_381 = { version = "0.4", default-features = false, features = ["groups"], optional = true }
 chacha20 = { version = "0.6" }  # should match chacha20poly1305
 chacha20poly1305 = { version = "0.7", default-features = false, features = ["chacha20", "xchacha20poly1305"], optional = true }
@@ -56,11 +58,13 @@ ed25519-dalek = { version = "1.0", default-features = false, features = ["u64_ba
 digest = "0.9"
 group = "0.9"
 hkdf = { version = "0.11", optional = true }
+hmac = { version = "0.11", optional = true }
 k256 = { version = "0.8", default-features = false, features = ["arithmetic", "ecdsa", "ecdh", "sha256", "zeroize"], optional = true }
 p256 = { version = "0.8", default-features = false, features = ["arithmetic", "ecdsa", "ecdh", "zeroize"], optional = true }
 rand = { version = "0.8", default-features = false, features = ["getrandom"] }
 serde = { version = "1.0", default-features = false, features = ["derive"] }
 serde_json = { version = "1.0", default-features = false }
+subtle = "2.4"
 sha2 = { version = "0.9", default-features = false }
 x25519-dalek = { version = "1.1", default-features = false, features = ["u64_backend"], optional = true }
 zeroize = { version = "1.1.0", features = ["zeroize_derive"] }

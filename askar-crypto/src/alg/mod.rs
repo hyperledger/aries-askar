@@ -20,7 +20,7 @@ pub use any::{AnyKey, AnyKeyCreate};
 
 #[cfg(feature = "aes")]
 #[cfg_attr(docsrs, doc(cfg(feature = "aes")))]
-pub mod aesgcm;
+pub mod aes;
 
 #[cfg(feature = "bls")]
 #[cfg_attr(docsrs, doc(cfg(feature = "bls")))]
@@ -66,8 +66,10 @@ impl KeyAlg {
     /// Get a reference to a string representing the `KeyAlg`
     pub fn as_str(&self) -> &'static str {
         match self {
-            Self::Aes(AesTypes::A128GCM) => "a128gcm",
-            Self::Aes(AesTypes::A256GCM) => "a256gcm",
+            Self::Aes(AesTypes::A128Gcm) => "a128gcm",
+            Self::Aes(AesTypes::A256Gcm) => "a256gcm",
+            Self::Aes(AesTypes::A128CbcHs256) => "a128cbchs256",
+            Self::Aes(AesTypes::A256CbcHs512) => "a256cbchs512",
             Self::Bls12_381(BlsCurves::G1) => "bls12381g1",
             Self::Bls12_381(BlsCurves::G2) => "bls12381g2",
             Self::Bls12_381(BlsCurves::G1G2) => "bls12381g1g2",
@@ -92,8 +94,14 @@ impl FromStr for KeyAlg {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match normalize_alg(s)? {
-            a if a == "a128gcm" || a == "aes128gcm" => Ok(Self::Aes(AesTypes::A128GCM)),
-            a if a == "a256gcm" || a == "aes256gcm" => Ok(Self::Aes(AesTypes::A256GCM)),
+            a if a == "a128gcm" || a == "aes128gcm" => Ok(Self::Aes(AesTypes::A128Gcm)),
+            a if a == "a256gcm" || a == "aes256gcm" => Ok(Self::Aes(AesTypes::A256Gcm)),
+            a if a == "a128cbchs256" || a == "aes128cbchs256" => {
+                Ok(Self::Aes(AesTypes::A128CbcHs256))
+            }
+            a if a == "a256cbchs512" || a == "aes256cbchs512" => {
+                Ok(Self::Aes(AesTypes::A256CbcHs512))
+            }
             a if a == "bls12381g1" => Ok(Self::Bls12_381(BlsCurves::G1)),
             a if a == "bls12381g2" => Ok(Self::Bls12_381(BlsCurves::G2)),
             a if a == "bls12381g1g2" => Ok(Self::Bls12_381(BlsCurves::G1G2)),
@@ -184,10 +192,14 @@ impl Display for KeyAlg {
 /// Supported algorithms for AES
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Zeroize)]
 pub enum AesTypes {
-    /// AES 128-bit GCM
-    A128GCM,
-    /// AES 256-bit GCM
-    A256GCM,
+    /// 128-bit AES-GCM
+    A128Gcm,
+    /// 256-bit AES-GCM
+    A256Gcm,
+    /// 128-bit AES-CBC with HMAC-256
+    A128CbcHs256,
+    /// 256-bit AES-CBC with HMAC-512
+    A256CbcHs512,
 }
 
 /// Supported public key types for Bls12_381

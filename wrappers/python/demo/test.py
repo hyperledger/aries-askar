@@ -59,7 +59,7 @@ def keys_test():
     jwk = key.get_jwk_public()
     log("JWK:", jwk)
 
-    key = Key.generate(KeyAlg.AES128GCM)
+    key = Key.generate(KeyAlg.A128GCM)
     log("Key algorithm:", key.algorithm)
 
     data = b"test message"

@@ -57,8 +57,10 @@ class Entry:
 
 
 class KeyAlg(Enum):
-    AES128GCM = "a128gcm"
-    AES256GCM = "a256gcm"
+    A128GCM = "a128gcm"
+    A256GCM = "a256gcm"
+    A128CBC_HS256 = "a128cbchs256"
+    A256CBC_HS512 = "a256cbchs512"
     BLS12_381_G1 = "bls12381g1"
     BLS12_381_G2 = "bls12381g2"
     BLS12_381_G1G2 = "bls12381g1g2"
