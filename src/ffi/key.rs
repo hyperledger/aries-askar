@@ -445,7 +445,13 @@ pub extern "C" fn askar_key_derive_ecdh_es(
         check_useful_c_ptr!(out);
         let ephem_key = ephem_key.load()?;
         let recip_key = recip_key.load()?;
-        let key = derive_key_ecdh_es(&ephem_key, &recip_key, alg.as_str(), apu.as_slice(), apv.as_slice())?;
+        let key = derive_key_ecdh_es(
+            &ephem_key,
+            &recip_key,
+            alg.as_str(),
+            apu.as_slice(),
+            apv.as_slice(),
+        )?;
         unsafe { *out = LocalKeyHandle::create(key) };
         Ok(ErrorCode::Success)
     }
@@ -459,6 +465,7 @@ pub extern "C" fn askar_key_derive_ecdh_1pu(
     recip_key: LocalKeyHandle,
     apu: ByteBuffer,
     apv: ByteBuffer,
+    cc_tag: ByteBuffer,
     out: *mut LocalKeyHandle,
 ) -> ErrorCode {
     catch_err! {
@@ -467,7 +474,15 @@ pub extern "C" fn askar_key_derive_ecdh_1pu(
         let ephem_key = ephem_key.load()?;
         let sender_key = sender_key.load()?;
         let recip_key = recip_key.load()?;
-        let key = derive_key_ecdh_1pu(&ephem_key, &sender_key, &recip_key, alg.as_str(), apu.as_slice(), apv.as_slice())?;
+        let key = derive_key_ecdh_1pu(
+            &ephem_key,
+            &sender_key,
+            &recip_key,
+            alg.as_str(),
+            apu.as_slice(),
+            apv.as_slice(),
+            cc_tag.as_slice(),
+        )?;
         unsafe { *out = LocalKeyHandle::create(key) };
         Ok(ErrorCode::Success)
     }

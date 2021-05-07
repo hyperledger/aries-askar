@@ -84,6 +84,7 @@ pub fn derive_key_ecdh_1pu(
     alg: &str,
     apu: &[u8],
     apv: &[u8],
+    cc_tag: &[u8],
 ) -> Result<LocalKey, Error> {
     let key_alg = KeyAlg::from_str(alg)?;
     let derive = Ecdh1PU::new(
@@ -93,6 +94,7 @@ pub fn derive_key_ecdh_1pu(
         alg.as_bytes(),
         apu,
         apv,
+        cc_tag,
     );
     LocalKey::from_key_derivation(key_alg, derive)
 }

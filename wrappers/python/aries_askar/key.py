@@ -145,10 +145,17 @@ def derive_key_ecdh_1pu(
     recip_key: Key,
     apu: Union[bytes, str],
     apv: Union[bytes, str],
+    cc_tag: bytes = None,
 ) -> Key:
     return Key(
         bindings.key_derive_ecdh_1pu(
-            alg, ephem_key._handle, sender_key._handle, recip_key._handle, apu, apv
+            alg,
+            ephem_key._handle,
+            sender_key._handle,
+            recip_key._handle,
+            apu,
+            apv,
+            cc_tag,
         )
     )
 

@@ -1199,6 +1199,7 @@ def key_derive_ecdh_1pu(
     recip_key: LocalKeyHandle,
     apu: Union[bytes, str, ByteBuffer],
     apv: Union[bytes, str, ByteBuffer],
+    cc_tag: Optional[Union[bytes, ByteBuffer]],
 ) -> LocalKeyHandle:
     key = LocalKeyHandle()
     if isinstance(alg, KeyAlg):
@@ -1211,6 +1212,7 @@ def key_derive_ecdh_1pu(
         recip_key,
         encode_bytes(apu),
         encode_bytes(apv),
+        encode_bytes(cc_tag),
         byref(key),
     )
     return key
