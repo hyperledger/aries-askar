@@ -1,7 +1,7 @@
 # askar-crypto
 
 [![Rust Crate](https://img.shields.io/crates/v/askar-crypto.svg)](https://crates.io/crates/askar-crypto)
-[![Rust Documentation](https://docs.rs/aries-askar/badge.svg)](https://docs.rs/aries-askar)
+[![Rust Documentation](https://docs.rs/askar-crypto/badge.svg)](https://docs.rs/askar-crypto)
 
 The `askar-crypto` crate provides the basic key representations and cryptographic operations used by [`aries-askar`](https://github.com/hyperledger/aries-askar).
 
@@ -24,7 +24,7 @@ The `any_key` feature (which depends on `alloc`) provides a generic interface fo
 
 ## JOSE Authenticated Encryption
 
-This crate provides implementations of the [ECDH-ES](https://tools.ietf.org/html/rfc7518#section-4.6) and [ECDH-1PU (draft 3)](https://tools.ietf.org/html/draft-madden-jose-ecdh-1pu-03) key agreement operations, for use in deriving the CEK or key wrapping key when producing or consuming JWE envelopes using these protection algorithms.
+This crate provides implementations of the [ECDH-ES](https://tools.ietf.org/html/rfc7518#section-4.6) and [ECDH-1PU (draft 4)](https://tools.ietf.org/html/draft-madden-jose-ecdh-1pu-04) key agreement operations, for use in deriving the CEK or key wrapping key when producing or consuming JWE envelopes using these protection algorithms.
 
 ## no-std
 
