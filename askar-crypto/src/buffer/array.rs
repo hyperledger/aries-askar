@@ -137,7 +137,7 @@ impl<L: ArrayLength<u8>> ConstantTimeEq for ArrayKey<L> {
 impl<L: ArrayLength<u8>> PartialEq for ArrayKey<L> {
     #[inline]
     fn eq(&self, other: &Self) -> bool {
-        self.ct_eq(other).unwrap_u8() == 1
+        self.ct_eq(other).into()
     }
 }
 impl<L: ArrayLength<u8>> Eq for ArrayKey<L> {}
