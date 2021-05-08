@@ -8,6 +8,7 @@ use core::{
 use curve25519_dalek::edwards::CompressedEdwardsY;
 use ed25519_dalek::{ExpandedSecretKey, PublicKey, SecretKey, Signature};
 use sha2::{self, Digest};
+use subtle::ConstantTimeEq;
 use x25519_dalek::{PublicKey as XPublicKey, StaticSecret as XSecretKey};
 
 use super::{x25519::X25519KeyPair, HasKeyAlg, KeyAlg};
@@ -19,9 +20,6 @@ use crate::{
     repr::{KeyGen, KeyMeta, KeyPublicBytes, KeySecretBytes, KeypairBytes, KeypairMeta},
     sign::{KeySigVerify, KeySign, SignatureType},
 };
-
-// FIXME - check for low-order points when loading public keys?
-// https://github.com/tendermint/tmkms/pull/279
 
 /// The length of an EdDSA signature
 pub const EDDSA_SIGNATURE_LENGTH: usize = 64;
@@ -52,6 +50,14 @@ impl Ed25519KeyPair {
         Self {
             secret: Some(sk),
             public,
+        }
+    }
+
+    pub(crate) fn check_public_bytes(&self, pk: &[u8]) -> Result<(), Error> {
+        if self.public.as_bytes().ct_eq(pk).into() {
+            Ok(())
+        } else {
+            Err(err_msg!(InvalidKeyData, "invalid ed25519 keypair"))
         }
     }
 
@@ -170,14 +176,9 @@ impl KeypairBytes for Ed25519KeyPair {
             return Err(err_msg!(InvalidKeyData));
         }
         // NB: this is infallible if the slice is the right length
-        let sk = SecretKey::from_bytes(&kp[..SECRET_KEY_LENGTH]).unwrap();
-        let pk = PublicKey::from_bytes(&kp[SECRET_KEY_LENGTH..])
-            .map_err(|_| err_msg!(InvalidKeyData))?;
-
-        Ok(Self {
-            secret: Some(sk),
-            public: pk,
-        })
+        let result = Ed25519KeyPair::from_secret_bytes(&kp[..SECRET_KEY_LENGTH])?;
+        result.check_public_bytes(&kp[SECRET_KEY_LENGTH..])?;
+        Ok(result)
     }
 
     fn with_keypair_bytes<O>(&self, f: impl FnOnce(Option<&[u8]>) -> O) -> O {
@@ -267,27 +268,24 @@ impl ToJwk for Ed25519KeyPair {
 
 impl FromJwk for Ed25519KeyPair {
     fn from_jwk_parts(jwk: JwkParts<'_>) -> Result<Self, Error> {
-        let pk = ArrayKey::<U32>::temp(|arr| {
-            if jwk.x.decode_base64(arr)? != arr.len() {
+        ArrayKey::<U32>::temp(|pk_arr| {
+            if jwk.x.decode_base64(pk_arr)? != pk_arr.len() {
                 Err(err_msg!(InvalidKeyData))
             } else {
-                PublicKey::from_bytes(&*arr).map_err(|_| err_msg!(InvalidKeyData))
-            }
-        })?;
-        let sk = if jwk.d.is_some() {
-            Some(ArrayKey::<U32>::temp(|arr| {
-                if jwk.d.decode_base64(arr)? != arr.len() {
-                    Err(err_msg!(InvalidKeyData))
+                if jwk.d.is_some() {
+                    ArrayKey::<U32>::temp(|sk_arr| {
+                        if jwk.d.decode_base64(sk_arr)? != sk_arr.len() {
+                            Err(err_msg!(InvalidKeyData))
+                        } else {
+                            let kp = Ed25519KeyPair::from_secret_bytes(sk_arr)?;
+                            kp.check_public_bytes(pk_arr)?;
+                            Ok(kp)
+                        }
+                    })
                 } else {
-                    SecretKey::from_bytes(&*arr).map_err(|_| err_msg!(InvalidKeyData))
+                    Ed25519KeyPair::from_public_bytes(pk_arr)
                 }
-            })?)
-        } else {
-            None
-        };
-        Ok(Self {
-            secret: sk,
-            public: pk,
+            }
         })
     }
 }

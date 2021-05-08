@@ -5,6 +5,7 @@ use core::{
     fmt::{self, Debug, Formatter},
 };
 
+use subtle::ConstantTimeEq;
 use x25519_dalek::{PublicKey, StaticSecret as SecretKey};
 use zeroize::Zeroizing;
 
@@ -17,6 +18,10 @@ use crate::{
     kdf::KeyExchange,
     repr::{KeyGen, KeyMeta, KeyPublicBytes, KeySecretBytes, KeypairBytes, KeypairMeta},
 };
+
+// FIXME: reject low-order points?
+// <https://github.com/tendermint/tmkms/pull/279>
+// vs. <https://cr.yp.to/ecdh.html> which indicates that all points are safe for normal D-H.
 
 /// The length of a public key in bytes
 pub const PUBLIC_KEY_LENGTH: usize = 32;
@@ -53,6 +58,14 @@ impl X25519KeyPair {
         Self {
             secret: Some(sk),
             public,
+        }
+    }
+
+    pub(crate) fn check_public_bytes(&self, pk: &[u8]) -> Result<(), Error> {
+        if self.public.as_bytes().ct_eq(pk).into() {
+            Ok(())
+        } else {
+            Err(err_msg!(InvalidKeyData, "invalid x25519 keypair"))
         }
     }
 }
@@ -99,22 +112,9 @@ impl KeySecretBytes for X25519KeyPair {
         if key.len() != SECRET_KEY_LENGTH {
             return Err(err_msg!(InvalidKeyData));
         }
-
-        // pre-check key to ensure that clamping has no effect
-        if key[0] & 7 != 0 || (key[31] & 127 | 64) != key[31] {
-            return Err(err_msg!(InvalidKeyData));
-        }
-
-        let sk = SecretKey::from(TryInto::<[u8; SECRET_KEY_LENGTH]>::try_into(key).unwrap());
-
-        // post-check key
-        // let mut check = sk.to_bytes();
-        // if &check[..] != key {
-        //     return Err(err_msg!("invalid x25519 secret key"));
-        // }
-        // check.zeroize();
-
-        Ok(Self::from_secret_key(sk))
+        Ok(Self::from_secret_key(SecretKey::from(
+            TryInto::<[u8; SECRET_KEY_LENGTH]>::try_into(key).unwrap(),
+        )))
     }
 
     fn with_secret_bytes<O>(&self, f: impl FnOnce(Option<&[u8]>) -> O) -> O {
@@ -137,17 +137,9 @@ impl KeypairBytes for X25519KeyPair {
         if kp.len() != KEYPAIR_LENGTH {
             return Err(err_msg!(InvalidKeyData));
         }
-        let sk = SecretKey::from(
-            TryInto::<[u8; SECRET_KEY_LENGTH]>::try_into(&kp[..SECRET_KEY_LENGTH]).unwrap(),
-        );
-        let pk = PublicKey::from(
-            TryInto::<[u8; PUBLIC_KEY_LENGTH]>::try_into(&kp[SECRET_KEY_LENGTH..]).unwrap(),
-        );
-
-        Ok(Self {
-            secret: Some(sk),
-            public: pk,
-        })
+        let result = Self::from_secret_bytes(&kp[..SECRET_KEY_LENGTH])?;
+        result.check_public_bytes(&kp[SECRET_KEY_LENGTH..])?;
+        Ok(result)
     }
 
     fn with_keypair_bytes<O>(&self, f: impl FnOnce(Option<&[u8]>) -> O) -> O {
@@ -200,31 +192,24 @@ impl ToJwk for X25519KeyPair {
 
 impl FromJwk for X25519KeyPair {
     fn from_jwk_parts(jwk: JwkParts<'_>) -> Result<Self, Error> {
-        let pk = ArrayKey::<U32>::temp(|arr| {
-            if jwk.x.decode_base64(arr)? != arr.len() {
+        ArrayKey::<U32>::temp(|pk_arr| {
+            if jwk.x.decode_base64(pk_arr)? != pk_arr.len() {
                 Err(err_msg!(InvalidKeyData))
             } else {
-                Ok(PublicKey::from(
-                    TryInto::<[u8; PUBLIC_KEY_LENGTH]>::try_into(&*arr).unwrap(),
-                ))
-            }
-        })?;
-        let sk = if jwk.d.is_some() {
-            Some(ArrayKey::<U32>::temp(|arr| {
-                if jwk.d.decode_base64(arr)? != arr.len() {
-                    Err(err_msg!(InvalidKeyData))
+                if jwk.d.is_some() {
+                    ArrayKey::<U32>::temp(|sk_arr| {
+                        if jwk.d.decode_base64(sk_arr)? != sk_arr.len() {
+                            Err(err_msg!(InvalidKeyData))
+                        } else {
+                            let kp = X25519KeyPair::from_secret_bytes(sk_arr)?;
+                            kp.check_public_bytes(pk_arr)?;
+                            Ok(kp)
+                        }
+                    })
                 } else {
-                    Ok(SecretKey::from(
-                        TryInto::<[u8; SECRET_KEY_LENGTH]>::try_into(&*arr).unwrap(),
-                    ))
+                    X25519KeyPair::from_public_bytes(pk_arr)
                 }
-            })?)
-        } else {
-            None
-        };
-        Ok(Self {
-            secret: sk,
-            public: pk,
+            }
         })
     }
 }

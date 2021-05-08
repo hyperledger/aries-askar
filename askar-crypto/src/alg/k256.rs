@@ -10,6 +10,7 @@ use k256::{
     elliptic_curve::{ecdh::diffie_hellman, sec1::Coordinates, Curve},
     EncodedPoint, PublicKey, SecretKey,
 };
+use subtle::ConstantTimeEq;
 
 use super::{EcCurves, HasKeyAlg, KeyAlg};
 use crate::{
@@ -22,6 +23,14 @@ use crate::{
     repr::{KeyGen, KeyMeta, KeyPublicBytes, KeySecretBytes, KeypairBytes, KeypairMeta},
     sign::{KeySigVerify, KeySign, SignatureType},
 };
+
+// SECURITY: PublicKey contains a k256::AffinePoint, which is always checked
+// to be on the curve when loaded:
+// <https://github.com/RustCrypto/elliptic-curves/blob/a38df18d221a4ca27851c4523f90ceded6bbd361/k256/src/arithmetic/affine.rs#L96>
+// The identity point is rejected when converting into a k256::PublicKey.
+// This satisfies 5.6.2.3.4 ECC Partial Public-Key Validation Routine from
+// NIST SP 800-56A: _Recommendation for Pair-Wise Key-Establishment Schemes
+// Using Discrete Logarithm Cryptography_.
 
 /// The length of an ES256K signature
 pub const ES256K_SIGNATURE_LENGTH: usize = 64;
@@ -55,6 +64,14 @@ impl K256KeyPair {
         Self {
             secret: Some(sk),
             public: pk,
+        }
+    }
+
+    pub(crate) fn check_public_bytes(&self, pk: &[u8]) -> Result<(), Error> {
+        if self.with_public_bytes(|slf| slf.ct_eq(pk)).into() {
+            Ok(())
+        } else {
+            Err(err_msg!(InvalidKeyData, "invalid k256 keypair"))
         }
     }
 
@@ -127,16 +144,10 @@ impl KeypairBytes for K256KeyPair {
         if kp.len() != KEYPAIR_LENGTH {
             return Err(err_msg!(InvalidKeyData));
         }
-        let sk = SecretKey::from_bytes(&kp[..SECRET_KEY_LENGTH])
+        let result = K256KeyPair::from_secret_bytes(&kp[..SECRET_KEY_LENGTH])
             .map_err(|_| err_msg!(InvalidKeyData))?;
-        let pk = EncodedPoint::from_bytes(&kp[SECRET_KEY_LENGTH..])
-            .and_then(|pt| pt.decode())
-            .map_err(|_| err_msg!(InvalidKeyData))?;
-
-        Ok(Self {
-            secret: Some(sk),
-            public: pk,
-        })
+        result.check_public_bytes(&kp[SECRET_KEY_LENGTH..])?;
+        Ok(result)
     }
 
     fn with_keypair_bytes<O>(&self, f: impl FnOnce(Option<&[u8]>) -> O) -> O {
@@ -258,21 +269,25 @@ impl FromJwk for K256KeyPair {
         let pk = EncodedPoint::from_affine_coordinates(pk_x.as_ref(), pk_y.as_ref(), false)
             .decode()
             .map_err(|_| err_msg!(InvalidKeyData))?;
-        let sk = if jwk.d.is_some() {
-            Some(ArrayKey::<FieldSize>::temp(|arr| {
+        if jwk.d.is_some() {
+            ArrayKey::<FieldSize>::temp(|arr| {
                 if jwk.d.decode_base64(arr)? != arr.len() {
                     Err(err_msg!(InvalidKeyData))
                 } else {
-                    SecretKey::from_bytes(&*arr).map_err(|_| err_msg!(InvalidKeyData))
+                    let kp = K256KeyPair::from_secret_bytes(arr)?;
+                    if kp.public != pk {
+                        Err(err_msg!(InvalidKeyData))
+                    } else {
+                        Ok(kp)
+                    }
                 }
-            })?)
+            })
         } else {
-            None
-        };
-        Ok(Self {
-            secret: sk,
-            public: pk,
-        })
+            Ok(Self {
+                secret: None,
+                public: pk,
+            })
+        }
     }
 }
 
