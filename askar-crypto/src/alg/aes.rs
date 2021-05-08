@@ -408,7 +408,8 @@ where
         hmac.update(&buffer.as_ref()[..ctext_end]);
         hmac.update(&((aad.len() as u64) * 8).to_be_bytes());
         let mac = hmac.finalize().into_bytes();
-        buffer.as_mut()[ctext_end..].copy_from_slice(&mac[..Self::TagSize::USIZE]);
+        buffer.as_mut()[ctext_end..(ctext_end + Self::TagSize::USIZE)]
+            .copy_from_slice(&mac[..Self::TagSize::USIZE]);
 
         Ok(())
     }
@@ -487,6 +488,17 @@ mod tests {
         test_encrypt::<A256Gcm>();
         test_encrypt::<A128CbcHs256>();
         test_encrypt::<A256CbcHs512>();
+    }
+
+    #[test]
+    fn test_random() {
+        let key = AesKey::<A128CbcHs256>::generate().unwrap();
+        let nonce = AesKey::<A128CbcHs256>::random_nonce();
+        let message = b"hello there";
+        let mut buffer = [0u8; 255];
+        buffer[0..message.len()].copy_from_slice(&message[..]);
+        let mut writer = Writer::from_slice_position(&mut buffer, message.len());
+        key.encrypt_in_place(&mut writer, &nonce, &[]).unwrap();
     }
 
     #[test]
