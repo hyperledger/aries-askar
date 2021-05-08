@@ -32,12 +32,16 @@ pub struct JwkParts<'a> {
 impl<'de> JwkParts<'de> {
     /// Parse a JWK from a string reference
     pub fn from_str(jwk: &'de str) -> Result<Self, Error> {
-        serde_json::from_str(jwk).map_err(err_map!(InvalidData, "Error parsing JWK"))
+        let (parts, _read) =
+            serde_json_core::from_str(jwk).map_err(err_map!(InvalidData, "Error parsing JWK"))?;
+        Ok(parts)
     }
 
     /// Parse a JWK from a byte slice
     pub fn from_slice(jwk: &'de [u8]) -> Result<Self, Error> {
-        serde_json::from_slice(jwk).map_err(err_map!(InvalidData, "Error parsing JWK"))
+        let (parts, _read) =
+            serde_json_core::from_slice(jwk).map_err(err_map!(InvalidData, "Error parsing JWK"))?;
+        Ok(parts)
     }
 }
 
@@ -239,7 +243,7 @@ mod tests {
             "key_ops": ["sign", "verify"],
             "kid": "FdFYFzERwC2uCBB46pZQi4GG85LujR8obt-KWRBICVQ"
         }"#;
-        let parts = serde_json::from_str::<JwkParts<'_>>(jwk).unwrap();
+        let parts = JwkParts::from_str(jwk).unwrap();
         assert_eq!(parts.kty, "OKP");
         assert_eq!(
             parts.kid,

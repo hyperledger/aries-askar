@@ -5,6 +5,8 @@ use core::{
     str::FromStr,
 };
 
+#[cfg(feature = "arbitrary")]
+use arbitrary::Arbitrary;
 use zeroize::Zeroize;
 
 use crate::{
@@ -47,6 +49,7 @@ pub mod p256;
 
 /// Supported key algorithms
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Zeroize)]
+#[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
 pub enum KeyAlg {
     /// AES
     Aes(AesTypes),
@@ -191,6 +194,7 @@ impl Display for KeyAlg {
 
 /// Supported algorithms for AES
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Zeroize)]
+#[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
 pub enum AesTypes {
     /// 128-bit AES-GCM
     A128Gcm,
@@ -204,6 +208,7 @@ pub enum AesTypes {
 
 /// Supported public key types for Bls12_381
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Zeroize)]
+#[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
 pub enum BlsCurves {
     /// G1 curve
     G1,
@@ -215,6 +220,7 @@ pub enum BlsCurves {
 
 /// Supported algorithms for (X)ChaCha20-Poly1305
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Zeroize)]
+#[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
 pub enum Chacha20Types {
     /// ChaCha20-Poly1305
     C20P,
@@ -224,6 +230,7 @@ pub enum Chacha20Types {
 
 /// Supported curves for ECC operations
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Zeroize)]
+#[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
 pub enum EcCurves {
     /// NIST P-256 curve
     Secp256r1,

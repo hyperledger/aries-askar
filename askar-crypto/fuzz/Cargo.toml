@@ -1,0 +1,33 @@
+
+[package]
+name = "askar-crypto-fuzz"
+version = "0.0.0"
+authors = ["Automatically generated"]
+publish = false
+edition = "2018"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+
+[dependencies.askar-crypto]
+path = ".."
+features = ["arbitrary"]
+
+# Prevent this from interfering with workspaces
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "from_jwk"
+path = "fuzz_targets/from_jwk.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "from_public_bytes"
+path = "fuzz_targets/from_public_bytes.rs"
+test = false
+doc = false
