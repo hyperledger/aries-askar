@@ -73,8 +73,6 @@ impl<Key: KeyExchange + ?Sized> KeyDerivation for Ecdh1PU<'_, Key> {
             pub_w.buffer_write(&(self.cc_tag.len() as u32).to_be_bytes())?;
             pub_w.buffer_write(&self.cc_tag)?;
         }
-        #[cfg(test)]
-        println!("w: {:?}", pub_w.as_ref());
 
         kdf.hash_params(ConcatKDFParams {
             alg: self.alg,
