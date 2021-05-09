@@ -31,3 +31,9 @@ name = "from_public_bytes"
 path = "fuzz_targets/from_public_bytes.rs"
 test = false
 doc = false
+
+[[bin]]
+name = "parse_jwk"
+path = "fuzz_targets/parse_jwk.rs"
+test = false
+doc = false

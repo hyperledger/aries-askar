@@ -3,6 +3,9 @@ use core::{
     ops::{BitAnd, BitOr},
 };
 
+#[cfg(feature = "arbitrary")]
+use arbitrary::Arbitrary;
+
 static OPS: &[KeyOps] = &[
     KeyOps::Encrypt,
     KeyOps::Decrypt,
@@ -16,6 +19,7 @@ static OPS: &[KeyOps] = &[
 
 /// Supported JWK key operations
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
 #[repr(usize)]
 pub enum KeyOps {
     /// Allows encryption
@@ -86,6 +90,7 @@ impl BitOr<Self> for KeyOps {
 /// A set of key operations
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(transparent)]
+#[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
 pub struct KeyOpsSet {
     value: usize,
 }

@@ -3,6 +3,8 @@ use core::{
     marker::PhantomData,
 };
 
+#[cfg(feature = "arbitrary")]
+use arbitrary::Arbitrary;
 use serde::de::{Deserialize, Deserializer, MapAccess, SeqAccess, Visitor};
 
 use super::ops::{KeyOps, KeyOpsSet};
@@ -10,6 +12,7 @@ use crate::error::Error;
 
 /// A parsed JWK
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
 pub struct JwkParts<'a> {
     /// Key type
     pub kty: &'a str,
@@ -46,6 +49,7 @@ impl<'de> JwkParts<'de> {
 }
 
 #[derive(Copy, Clone, Default, PartialEq, Eq)]
+#[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
 #[repr(transparent)]
 pub struct OptAttr<'a>(Option<&'a str>);
 
