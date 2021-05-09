@@ -114,11 +114,11 @@ impl Display for Error {
 #[cfg(feature = "std")]
 impl StdError for Error {
     fn source(&self) -> Option<&(dyn StdError + 'static)> {
-        // the transmute operation here is only removing Send and Sync markers
-        #[allow(unsafe_code)]
-        self.cause
-            .as_ref()
-            .map(|err| unsafe { std::mem::transmute(&**err) })
+        self.cause.as_ref().map(|err| {
+            // &<Error + ?Sized> implements Error, which lets us
+            // create a new trait object
+            (&**err) as &dyn StdError
+        })
     }
 }
 
@@ -160,4 +160,26 @@ macro_rules! err_map {
     ($($params:tt)*) => {
         |_| err_msg!($($params)*)
     };
+}
+
+#[cfg(all(test, feature = "std"))]
+mod tests {
+    use super::*;
+
+    #[test]
+    // ensure that the source can still be downcast
+    fn downcast_err() {
+        #[derive(Debug)]
+        struct E;
+        impl Display for E {
+            fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+                write!(f, "E")
+            }
+        }
+        impl StdError for E {}
+
+        let err = Error::from(ErrorKind::Unexpected).with_cause(E);
+        let e = err.source().unwrap().downcast_ref::<E>();
+        assert!(e.is_some());
+    }
 }
