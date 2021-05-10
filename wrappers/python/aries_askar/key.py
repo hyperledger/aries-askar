@@ -139,20 +139,22 @@ def crypto_box_seal_open(
 
 
 def derive_key_ecdh_1pu(
-    alg: str,
+    key_alg: Union[str, KeyAlg],
     ephem_key: Key,
     sender_key: Key,
     recip_key: Key,
+    alg_id: Union[bytes, str],
     apu: Union[bytes, str],
     apv: Union[bytes, str],
     cc_tag: bytes = None,
 ) -> Key:
     return Key(
         bindings.key_derive_ecdh_1pu(
-            alg,
+            key_alg,
             ephem_key._handle,
             sender_key._handle,
             recip_key._handle,
+            alg_id,
             apu,
             apv,
             cc_tag,
@@ -161,12 +163,15 @@ def derive_key_ecdh_1pu(
 
 
 def derive_key_ecdh_es(
-    alg: str,
+    key_alg: Union[str, KeyAlg],
     ephem_key: Key,
     recip_key: Key,
+    alg_id: Union[bytes, str],
     apu: Union[bytes, str],
     apv: Union[bytes, str],
 ) -> Key:
     return Key(
-        bindings.key_derive_ecdh_es(alg, ephem_key._handle, recip_key._handle, apu, apv)
+        bindings.key_derive_ecdh_es(
+            key_alg, ephem_key._handle, recip_key._handle, alg_id, apu, apv
+        )
     )

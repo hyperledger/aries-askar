@@ -74,9 +74,11 @@ def keys_test():
     ephem = Key.generate(KeyAlg.P256, ephemeral=True)
     alice = Key.generate(KeyAlg.P256)
     bob = Key.generate(KeyAlg.P256)
-    derived = derive_key_ecdh_1pu("A256GCM", ephem, alice, bob, "Alice", "Bob")
+    derived = derive_key_ecdh_1pu(
+        KeyAlg.A256GCM, ephem, alice, bob, "A256GCM", "Alice", "Bob"
+    )
     log("Derived:", derived.get_jwk_thumbprint())
-    derived = derive_key_ecdh_es("A256GCM", ephem, bob, "Alice", "Bob")
+    derived = derive_key_ecdh_es(KeyAlg.A256GCM, ephem, bob, "A256GCM", "Alice", "Bob")
     log("Derived:", derived.get_jwk_thumbprint())
 
     key = Key.from_seed(KeyAlg.BLS12_381_G1G2, b"testseed000000000000000000000001")

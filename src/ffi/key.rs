@@ -436,6 +436,7 @@ pub extern "C" fn askar_key_derive_ecdh_es(
     alg: FfiStr<'_>,
     ephem_key: LocalKeyHandle,
     recip_key: LocalKeyHandle,
+    alg_id: ByteBuffer,
     apu: ByteBuffer,
     apv: ByteBuffer,
     out: *mut LocalKeyHandle,
@@ -443,12 +444,14 @@ pub extern "C" fn askar_key_derive_ecdh_es(
     catch_err! {
         trace!("ECDH-ES: {}", alg.as_str());
         check_useful_c_ptr!(out);
+        let alg = KeyAlg::from_str(alg.as_str())?;
         let ephem_key = ephem_key.load()?;
         let recip_key = recip_key.load()?;
         let key = derive_key_ecdh_es(
+            alg,
             &ephem_key,
             &recip_key,
-            alg.as_str(),
+            alg_id.as_slice(),
             apu.as_slice(),
             apv.as_slice(),
         )?;
@@ -463,6 +466,7 @@ pub extern "C" fn askar_key_derive_ecdh_1pu(
     ephem_key: LocalKeyHandle,
     sender_key: LocalKeyHandle,
     recip_key: LocalKeyHandle,
+    alg_id: ByteBuffer,
     apu: ByteBuffer,
     apv: ByteBuffer,
     cc_tag: ByteBuffer,
@@ -471,14 +475,16 @@ pub extern "C" fn askar_key_derive_ecdh_1pu(
     catch_err! {
         trace!("ECDH-1PU: {}", alg.as_str());
         check_useful_c_ptr!(out);
+        let alg = KeyAlg::from_str(alg.as_str())?;
         let ephem_key = ephem_key.load()?;
         let sender_key = sender_key.load()?;
         let recip_key = recip_key.load()?;
         let key = derive_key_ecdh_1pu(
+            alg,
             &ephem_key,
             &sender_key,
             &recip_key,
-            alg.as_str(),
+            alg_id.as_slice(),
             apu.as_slice(),
             apv.as_slice(),
             cc_tag.as_slice(),

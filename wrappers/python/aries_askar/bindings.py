@@ -1171,20 +1171,22 @@ def key_crypto_box_seal_open(
 
 
 def key_derive_ecdh_es(
-    alg: Union[str, KeyAlg],
+    key_alg: Union[str, KeyAlg],
     ephem_key: LocalKeyHandle,
     recip_key: LocalKeyHandle,
+    alg_id: Union[bytes, str, ByteBuffer],
     apu: Union[bytes, str, ByteBuffer],
     apv: Union[bytes, str, ByteBuffer],
 ) -> LocalKeyHandle:
     key = LocalKeyHandle()
-    if isinstance(alg, KeyAlg):
-        alg = alg.value
+    if isinstance(key_alg, KeyAlg):
+        key_alg = key_alg.value
     do_call(
         "askar_key_derive_ecdh_es",
-        encode_str(alg),
+        encode_str(key_alg),
         ephem_key,
         recip_key,
+        encode_bytes(alg_id),
         encode_bytes(apu),
         encode_bytes(apv),
         byref(key),
@@ -1193,23 +1195,25 @@ def key_derive_ecdh_es(
 
 
 def key_derive_ecdh_1pu(
-    alg: Union[str, KeyAlg],
+    key_alg: Union[str, KeyAlg],
     ephem_key: LocalKeyHandle,
     sender_key: LocalKeyHandle,
     recip_key: LocalKeyHandle,
+    alg_id: Union[bytes, str, ByteBuffer],
     apu: Union[bytes, str, ByteBuffer],
     apv: Union[bytes, str, ByteBuffer],
     cc_tag: Optional[Union[bytes, ByteBuffer]],
 ) -> LocalKeyHandle:
     key = LocalKeyHandle()
-    if isinstance(alg, KeyAlg):
-        alg = alg.value
+    if isinstance(key_alg, KeyAlg):
+        key_alg = key_alg.value
     do_call(
         "askar_key_derive_ecdh_1pu",
-        encode_str(alg),
+        encode_str(key_alg),
         ephem_key,
         sender_key,
         recip_key,
+        encode_bytes(alg_id),
         encode_bytes(apu),
         encode_bytes(apv),
         encode_bytes(cc_tag),
