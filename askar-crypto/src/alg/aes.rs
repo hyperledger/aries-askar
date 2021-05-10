@@ -1,6 +1,7 @@
 //! AES-GCM key representations with AEAD support
 
 use core::{
+    convert::TryInto,
     fmt::{self, Debug, Formatter},
     marker::PhantomData,
 };
@@ -15,6 +16,7 @@ use block_modes::{
 use digest::{BlockInput, FixedOutput, Reset, Update};
 use hmac::{Hmac, Mac, NewMac};
 use serde::{Deserialize, Serialize};
+use subtle::ConstantTimeEq;
 use zeroize::Zeroize;
 
 use super::{AesTypes, HasKeyAlg, KeyAlg};
@@ -23,7 +25,7 @@ use crate::{
     encrypt::{KeyAeadInPlace, KeyAeadMeta, KeyAeadParams},
     error::Error,
     generic_array::{
-        typenum::{self, Unsigned},
+        typenum::{consts, Unsigned},
         GenericArray,
     },
     jwk::{JwkEncoder, ToJwk},
@@ -323,7 +325,7 @@ where
 pub type A128CbcHs256 = AesCbcHmac<aes_core::Aes128, sha2::Sha256>;
 
 impl AesType for A128CbcHs256 {
-    type KeySize = typenum::U32;
+    type KeySize = consts::U32;
     const ALG_TYPE: AesTypes = AesTypes::A128CbcHs256;
     const JWK_ALG: &'static str = "A128CBC-HS256";
 }
@@ -332,7 +334,7 @@ impl AesType for A128CbcHs256 {
 pub type A256CbcHs512 = AesCbcHmac<aes_core::Aes256, sha2::Sha512>;
 
 impl AesType for A256CbcHs512 {
-    type KeySize = typenum::U64;
+    type KeySize = consts::U64;
     const ALG_TYPE: AesTypes = AesTypes::A256CbcHs512;
     const JWK_ALG: &'static str = "A256CBC-HS512";
 }
@@ -347,8 +349,8 @@ where
     AesCbcHmac<C, D>: AesType,
     C: BlockCipher + NewBlockCipher,
     D: Update + BlockInput + FixedOutput + Reset + Default + Clone,
-    C::KeySize: core::ops::Shl<typenum::B1>,
-    <C::KeySize as core::ops::Shl<typenum::B1>>::Output: ArrayLength<u8>,
+    C::KeySize: core::ops::Shl<consts::B1>,
+    <C::KeySize as core::ops::Shl<consts::B1>>::Output: ArrayLength<u8>,
 {
     type NonceSize = C::BlockSize;
     type TagSize = C::KeySize;
@@ -436,6 +438,95 @@ where
     #[inline]
     fn aes_padding_length(len: usize) -> usize {
         Self::NonceSize::USIZE - (len % Self::NonceSize::USIZE)
+    }
+}
+
+/// AES Key Wrap implementation
+#[derive(Debug)]
+pub struct AesKeyWrap<K>(PhantomData<K>);
+
+impl<K> AesKeyWrap<K>
+where
+    K: NewBlockCipher + BlockCipher<BlockSize = consts::U16>,
+{
+    const DEFAULT_IV: [u8; 8] = [166, 166, 166, 166, 166, 166, 166, 166];
+
+    /// wrap
+    pub fn wrap_in_place(
+        key: &GenericArray<u8, <K as NewBlockCipher>::KeySize>,
+        data: &mut dyn ResizeBuffer,
+    ) -> Result<(), Error> {
+        if data.as_ref().len() % 8 != 0 {
+            return Err(err_msg!(
+                Unsupported,
+                "Data length must be a multiple of 8 bytes"
+            ));
+        }
+        let blocks = data.as_ref().len() / 8;
+
+        data.buffer_insert(0, &[0u8; 8])?;
+
+        let aes = K::new(key);
+        let mut iv = Self::DEFAULT_IV;
+        let mut block = GenericArray::default();
+        for j in 0..6 {
+            for (i, chunk) in data.as_mut()[8..].chunks_exact_mut(8).enumerate() {
+                block[0..8].copy_from_slice(iv.as_ref());
+                block[8..16].copy_from_slice(chunk);
+                aes.encrypt_block(&mut block);
+                let t = (((blocks * j) + i + 1) as u64).to_be_bytes();
+                iv.copy_from_slice(&block[0..8]);
+                for (a, t) in iv.as_mut().iter_mut().zip(&t[..]) {
+                    *a ^= t;
+                }
+                chunk.copy_from_slice(&block[8..16]);
+            }
+        }
+        data.as_mut()[0..8].copy_from_slice(&iv[..]);
+        Ok(())
+    }
+
+    /// wrap
+    pub fn unwrap_in_place(
+        key: &GenericArray<u8, <K as NewBlockCipher>::KeySize>,
+        data: &mut dyn ResizeBuffer,
+    ) -> Result<(), Error> {
+        if data.as_ref().len() % 8 != 0 {
+            return Err(err_msg!(
+                Encryption,
+                "Data length must be a multiple of 8 bytes"
+            ));
+        }
+        let mut blocks = data.as_ref().len() / 8;
+        if blocks < 1 {
+            return Err(err_msg!(Encryption));
+        }
+        blocks -= 1;
+
+        let aes = K::new(key);
+        let mut iv = *TryInto::<&[u8; 8]>::try_into(&data.as_ref()[0..8]).unwrap();
+        data.buffer_remove(0..8)?;
+
+        let mut block = GenericArray::default();
+        for j in (0..6).into_iter().rev() {
+            for (i, chunk) in data.as_mut().chunks_exact_mut(8).enumerate().rev() {
+                block[0..8].copy_from_slice(iv.as_ref());
+                let t = (((blocks * j) + i + 1) as u64).to_be_bytes();
+                for (a, t) in block[0..8].iter_mut().zip(&t[..]) {
+                    *a ^= t;
+                }
+                block[8..16].copy_from_slice(chunk);
+                aes.decrypt_block(&mut block);
+                iv.copy_from_slice(&block[0..8]);
+                chunk.copy_from_slice(&block[8..16]);
+            }
+        }
+
+        if iv.ct_eq(&Self::DEFAULT_IV).unwrap_u8() == 1 {
+            Ok(())
+        } else {
+            Err(err_msg!(Encryption))
+        }
     }
 }
 
@@ -567,5 +658,53 @@ mod tests {
         let tag = base64::encode_config(&buffer.as_ref()[ct_len..], base64::URL_SAFE_NO_PAD);
         assert_eq!(ctext, "Az2IWsISEMDJvyc5XRL-3-d-RgNBOGolCsxFFoUXFYw");
         assert_eq!(tag, "HLb4fTlm8spGmij3RyOs2gJ4DpHM4hhVRwdF_hGb3WQ");
+    }
+
+    #[test]
+    // from RFC 3394 test vectors
+    fn key_wrap_128_expected() {
+        let key_data = &hex!("000102030405060708090a0b0c0d0e0f");
+        let input = &hex!("00112233445566778899aabbccddeeff");
+        let mut buffer = SecretBytes::from_slice(input);
+        AesKeyWrap::<aes_core::Aes128>::wrap_in_place(
+            GenericArray::from_slice(key_data),
+            &mut buffer,
+        )
+        .unwrap();
+        assert_eq!(
+            buffer.as_hex().to_string(),
+            "1fa68b0a8112b447aef34bd8fb5a7b829d3e862371d2cfe5"
+        );
+
+        AesKeyWrap::<aes_core::Aes128>::unwrap_in_place(
+            GenericArray::from_slice(key_data),
+            &mut buffer,
+        )
+        .unwrap();
+        assert_eq!(buffer, &input[..]);
+    }
+
+    #[test]
+    // from RFC 3394 test vectors
+    fn key_wrap_256_expected() {
+        let key_data = &hex!("000102030405060708090A0B0C0D0E0F101112131415161718191A1B1C1D1E1F");
+        let input = &hex!("00112233445566778899aabbccddeeff");
+        let mut buffer = SecretBytes::from_slice(input);
+        AesKeyWrap::<aes_core::Aes256>::wrap_in_place(
+            GenericArray::from_slice(key_data),
+            &mut buffer,
+        )
+        .unwrap();
+        assert_eq!(
+            buffer.as_hex().to_string(),
+            "64e8c3f9ce0f5ba263e9777905818a2a93c8191e7d6e8ae7"
+        );
+
+        AesKeyWrap::<aes_core::Aes256>::unwrap_in_place(
+            GenericArray::from_slice(key_data),
+            &mut buffer,
+        )
+        .unwrap();
+        assert_eq!(buffer, &input[..]);
     }
 }
