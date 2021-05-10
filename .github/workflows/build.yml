@@ -181,8 +181,8 @@ jobs:
         shell: sh
         run: |
           python setup.py bdist_wheel --python-tag=py3 --plat-name=${{ matrix.plat-name }}
-          pip install dist/*
-          python -m demo.test
+          pip install pyunit pyunit-asyncio dist/*
+          python -m pyunit
         working-directory: wrappers/python
 
       - if: "runner.os == 'Linux'"

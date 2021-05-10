@@ -134,7 +134,14 @@ class EntryListHandle(c_size_t):
             c_int32(index),
             byref(tags),
         )
-        return json.loads(tags.value) if tags else None
+        if tags:
+            tags = json.loads(tags.value)
+            for t in tags:
+                if isinstance(tags[t], list):
+                    tags[t] = set(tags[t])
+        else:
+            tags = dict()
+        return tags
 
     def __repr__(self) -> str:
         """Format entry list handle as a string."""
@@ -515,6 +522,18 @@ def encode_bytes(
     return buf
 
 
+def encode_tags(tags: Optional[dict]) -> c_char_p:
+    """Encode the tags as a JSON string."""
+    if tags:
+        tags = json.dumps(
+            {
+                name: (list(value) if isinstance(value, set) else value)
+                for name, value in tags.items()
+            }
+        )
+    return encode_str(tags)
+
+
 def get_current_error(expect: bool = False) -> Optional[AskarError]:
     """
     Get the error result from the previous failed API method.
@@ -749,7 +768,7 @@ async def session_update(
         encode_str(category),
         encode_str(name),
         encode_bytes(value),
-        encode_str(None if tags is None else json.dumps(tags)),
+        encode_tags(tags),
         c_int64(-1 if expiry_ms is None else expiry_ms),
     )
 
@@ -768,7 +787,7 @@ async def session_insert_key(
         key_handle,
         encode_str(name),
         encode_str(metadata),
-        encode_str(None if tags is None else json.dumps(tags)),
+        encode_tags(tags),
         c_int64(-1 if expiry_ms is None else expiry_ms),
         return_type=c_void_p,
     )
@@ -825,7 +844,7 @@ async def session_update_key(
         handle,
         encode_str(name),
         encode_str(metadata),
-        encode_str(None if tags is None else json.dumps(tags)),
+        encode_tags(tags),
         c_int64(-1 if expiry_ms is None else expiry_ms),
     )
 
@@ -953,9 +972,9 @@ def key_get_secret_bytes(handle: LocalKeyHandle) -> ByteBuffer:
     return buf
 
 
-def key_from_jwk(jwk: str) -> LocalKeyHandle:
+def key_from_jwk(jwk: Union[str, bytes]) -> LocalKeyHandle:
     handle = LocalKeyHandle()
-    do_call("askar_key_from_jwk", encode_str(jwk), byref(handle))
+    do_call("askar_key_from_jwk", encode_bytes(jwk), byref(handle))
     return handle
 
 

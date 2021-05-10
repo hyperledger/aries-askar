@@ -32,6 +32,10 @@ class Key:
     def from_public_bytes(cls, alg: Union[str, KeyAlg], public: bytes) -> "Key":
         return cls(bindings.key_from_public_bytes(alg, public))
 
+    @classmethod
+    def from_jwk(cls, jwk: Union[str, bytes]) -> "Key":
+        return cls(bindings.key_from_jwk(jwk))
+
     @property
     def handle(self) -> bindings.LocalKeyHandle:
         """Accessor for the key handle."""

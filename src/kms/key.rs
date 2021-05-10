@@ -42,6 +42,15 @@ impl LocalKey {
         })
     }
 
+    /// Import a key or keypair from a JWK in binary format
+    pub fn from_jwk_slice(jwk: &[u8]) -> Result<Self, Error> {
+        let inner = Box::<AnyKey>::from_jwk_slice(jwk)?;
+        Ok(Self {
+            inner,
+            ephemeral: false,
+        })
+    }
+
     /// Import a key or keypair from a JWK
     pub fn from_jwk(jwk: &str) -> Result<Self, Error> {
         let inner = Box::<AnyKey>::from_jwk(jwk)?;

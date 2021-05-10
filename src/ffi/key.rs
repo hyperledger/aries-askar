@@ -50,11 +50,11 @@ pub extern "C" fn askar_key_from_seed(
 }
 
 #[no_mangle]
-pub extern "C" fn askar_key_from_jwk(jwk: FfiStr<'_>, out: *mut LocalKeyHandle) -> ErrorCode {
+pub extern "C" fn askar_key_from_jwk(jwk: ByteBuffer, out: *mut LocalKeyHandle) -> ErrorCode {
     catch_err! {
         trace!("Load key from JWK");
         check_useful_c_ptr!(out);
-        let key = LocalKey::from_jwk(jwk.as_str())?;
+        let key = LocalKey::from_jwk_slice(jwk.as_slice())?;
         unsafe { *out = LocalKeyHandle::create(key) };
         Ok(ErrorCode::Success)
     }

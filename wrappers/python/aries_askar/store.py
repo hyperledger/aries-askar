@@ -2,7 +2,7 @@
 
 import json
 
-from typing import Optional, Union
+from typing import Optional, Sequence, Union
 
 from cached_property import cached_property
 
@@ -22,6 +22,8 @@ from .types import EntryOperation, KeyAlg
 
 class Entry:
     """A single result from a store query."""
+
+    _KEYS = ("name", "category", "value", "tags")
 
     def __init__(self, lst: EntryListHandle, pos: int):
         """Initialize the EntryHandle."""
@@ -57,6 +59,16 @@ class Entry:
     def tags(self) -> dict:
         """Accessor for the entry tags."""
         return self._list.get_tags(self._pos)
+
+    def keys(self):
+        """Mapping keys."""
+        return Entry._KEYS
+
+    def __getitem__(self, key):
+        """Accessor for mapping value."""
+        if key in Entry._KEYS:
+            return getattr(self, key)
+        return KeyError
 
     def __repr__(self) -> str:
         """Format entry handle as a string."""
@@ -236,6 +248,12 @@ class Scan:
                 return row
             list_handle = await bindings.scan_next(self._handle)
             self._buffer = EntryList(list_handle) if list_handle else None
+
+    async def fetch_all(self) -> Sequence[Entry]:
+        rows = []
+        async for row in self:
+            rows.append(row)
+        return rows
 
     def __repr__(self) -> str:
         return f"<Scan(handle={self._handle})>"
