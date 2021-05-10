@@ -7,6 +7,7 @@ use core::{
 };
 
 use aead::{generic_array::ArrayLength, AeadInPlace, NewAead};
+use aes_core::{Aes128, Aes256};
 use aes_gcm::{Aes128Gcm, Aes256Gcm};
 use block_modes::{
     block_padding::Pkcs7,
@@ -322,7 +323,7 @@ where
 }
 
 /// 128 bit AES-CBC with HMAC-256
-pub type A128CbcHs256 = AesCbcHmac<aes_core::Aes128, sha2::Sha256>;
+pub type A128CbcHs256 = AesCbcHmac<Aes128, sha2::Sha256>;
 
 impl AesType for A128CbcHs256 {
     type KeySize = consts::U32;
@@ -439,6 +440,24 @@ where
     fn aes_padding_length(len: usize) -> usize {
         Self::NonceSize::USIZE - (len % Self::NonceSize::USIZE)
     }
+}
+
+/// 128 bit AES Key Wrap
+pub type A128Kw = AesKeyWrap<Aes128>;
+
+impl AesType for A128Kw {
+    type KeySize = <Aes128 as NewBlockCipher>::KeySize;
+    const ALG_TYPE: AesTypes = AesTypes::A128Kw;
+    const JWK_ALG: &'static str = "A128KW";
+}
+
+/// 256 bit AES Key Wrap
+pub type A256Kw = AesKeyWrap<Aes256>;
+
+impl AesType for A256Kw {
+    type KeySize = <Aes256 as NewBlockCipher>::KeySize;
+    const ALG_TYPE: AesTypes = AesTypes::A256Kw;
+    const JWK_ALG: &'static str = "A256KW";
 }
 
 /// AES Key Wrap implementation
@@ -666,21 +685,13 @@ mod tests {
         let key_data = &hex!("000102030405060708090a0b0c0d0e0f");
         let input = &hex!("00112233445566778899aabbccddeeff");
         let mut buffer = SecretBytes::from_slice(input);
-        AesKeyWrap::<aes_core::Aes128>::wrap_in_place(
-            GenericArray::from_slice(key_data),
-            &mut buffer,
-        )
-        .unwrap();
+        A128Kw::wrap_in_place(GenericArray::from_slice(key_data), &mut buffer).unwrap();
         assert_eq!(
             buffer.as_hex().to_string(),
             "1fa68b0a8112b447aef34bd8fb5a7b829d3e862371d2cfe5"
         );
 
-        AesKeyWrap::<aes_core::Aes128>::unwrap_in_place(
-            GenericArray::from_slice(key_data),
-            &mut buffer,
-        )
-        .unwrap();
+        A128Kw::unwrap_in_place(GenericArray::from_slice(key_data), &mut buffer).unwrap();
         assert_eq!(buffer, &input[..]);
     }
 
@@ -690,21 +701,13 @@ mod tests {
         let key_data = &hex!("000102030405060708090A0B0C0D0E0F101112131415161718191A1B1C1D1E1F");
         let input = &hex!("00112233445566778899aabbccddeeff");
         let mut buffer = SecretBytes::from_slice(input);
-        AesKeyWrap::<aes_core::Aes256>::wrap_in_place(
-            GenericArray::from_slice(key_data),
-            &mut buffer,
-        )
-        .unwrap();
+        A256Kw::wrap_in_place(GenericArray::from_slice(key_data), &mut buffer).unwrap();
         assert_eq!(
             buffer.as_hex().to_string(),
             "64e8c3f9ce0f5ba263e9777905818a2a93c8191e7d6e8ae7"
         );
 
-        AesKeyWrap::<aes_core::Aes256>::unwrap_in_place(
-            GenericArray::from_slice(key_data),
-            &mut buffer,
-        )
-        .unwrap();
+        A256Kw::unwrap_in_place(GenericArray::from_slice(key_data), &mut buffer).unwrap();
         assert_eq!(buffer, &input[..]);
     }
 }

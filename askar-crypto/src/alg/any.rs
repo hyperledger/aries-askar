@@ -8,7 +8,7 @@ use core::{
 
 #[cfg(feature = "aes")]
 use super::{
-    aes::{A128CbcHs256, A128Gcm, A256CbcHs512, A256Gcm, AesKey},
+    aes::{A128CbcHs256, A128Gcm, A128Kw, A256CbcHs512, A256Gcm, A256Kw, AesKey},
     AesTypes,
 };
 
@@ -203,6 +203,10 @@ fn generate_any<R: AllocKey>(alg: KeyAlg) -> Result<R, Error> {
         KeyAlg::Aes(AesTypes::A128CbcHs256) => AesKey::<A128CbcHs256>::generate().map(R::alloc_key),
         #[cfg(feature = "aes")]
         KeyAlg::Aes(AesTypes::A256CbcHs512) => AesKey::<A256CbcHs512>::generate().map(R::alloc_key),
+        #[cfg(feature = "aes")]
+        KeyAlg::Aes(AesTypes::A128Kw) => AesKey::<A128Kw>::generate().map(R::alloc_key),
+        #[cfg(feature = "aes")]
+        KeyAlg::Aes(AesTypes::A256Kw) => AesKey::<A256Kw>::generate().map(R::alloc_key),
         #[cfg(feature = "bls")]
         KeyAlg::Bls12_381(BlsCurves::G1) => BlsKeyPair::<G1>::generate().map(R::alloc_key),
         #[cfg(feature = "bls")]
@@ -248,6 +252,10 @@ fn from_seed_any<R: AllocKey>(alg: KeyAlg, seed: Seed<'_>) -> Result<R, Error> {
         KeyAlg::Aes(AesTypes::A256CbcHs512) => {
             AesKey::<A256CbcHs512>::from_seed(seed).map(R::alloc_key)
         }
+        #[cfg(feature = "aes")]
+        KeyAlg::Aes(AesTypes::A128Kw) => AesKey::<A128Kw>::from_seed(seed).map(R::alloc_key),
+        #[cfg(feature = "aes")]
+        KeyAlg::Aes(AesTypes::A256Kw) => AesKey::<A256Kw>::from_seed(seed).map(R::alloc_key),
         #[cfg(feature = "bls")]
         KeyAlg::Bls12_381(BlsCurves::G1) => BlsKeyPair::<G1>::from_seed(seed).map(R::alloc_key),
         #[cfg(feature = "bls")]
@@ -328,6 +336,14 @@ fn from_secret_bytes_any<R: AllocKey>(alg: KeyAlg, secret: &[u8]) -> Result<R, E
         KeyAlg::Aes(AesTypes::A256CbcHs512) => {
             AesKey::<A256CbcHs512>::from_secret_bytes(secret).map(R::alloc_key)
         }
+        #[cfg(feature = "aes")]
+        KeyAlg::Aes(AesTypes::A128Kw) => {
+            AesKey::<A128Kw>::from_secret_bytes(secret).map(R::alloc_key)
+        }
+        #[cfg(feature = "aes")]
+        KeyAlg::Aes(AesTypes::A256Kw) => {
+            AesKey::<A256Kw>::from_secret_bytes(secret).map(R::alloc_key)
+        }
         #[cfg(feature = "bls")]
         KeyAlg::Bls12_381(BlsCurves::G1) => {
             BlsKeyPair::<G1>::from_secret_bytes(secret).map(R::alloc_key)
@@ -395,6 +411,14 @@ where
         KeyAlg::Aes(AesTypes::A256CbcHs512) => {
             AesKey::<A256CbcHs512>::from_key_exchange(secret, public).map(R::alloc_key)
         }
+        #[cfg(feature = "aes")]
+        KeyAlg::Aes(AesTypes::A128Kw) => {
+            AesKey::<A128Kw>::from_key_exchange(secret, public).map(R::alloc_key)
+        }
+        #[cfg(feature = "aes")]
+        KeyAlg::Aes(AesTypes::A256Kw) => {
+            AesKey::<A256Kw>::from_key_exchange(secret, public).map(R::alloc_key)
+        }
         #[cfg(feature = "chacha")]
         KeyAlg::Chacha20(Chacha20Types::C20P) => {
             Chacha20Key::<C20P>::from_key_exchange(secret, public).map(R::alloc_key)
@@ -448,6 +472,14 @@ fn from_key_derivation_any<R: AllocKey>(
         #[cfg(feature = "aes")]
         KeyAlg::Aes(AesTypes::A256CbcHs512) => {
             AesKey::<A256CbcHs512>::from_key_derivation(derive).map(R::alloc_key)
+        }
+        #[cfg(feature = "aes")]
+        KeyAlg::Aes(AesTypes::A128Kw) => {
+            AesKey::<A128Kw>::from_key_derivation(derive).map(R::alloc_key)
+        }
+        #[cfg(feature = "aes")]
+        KeyAlg::Aes(AesTypes::A256Kw) => {
+            AesKey::<A256Kw>::from_key_derivation(derive).map(R::alloc_key)
         }
         #[cfg(feature = "chacha")]
         KeyAlg::Chacha20(Chacha20Types::C20P) => {
@@ -555,7 +587,7 @@ macro_rules! match_key_alg {
         matcher($slf)
     }};
     (@ ; $key:ident, $alg:ident) => {()};
-    (@ Aes $($rest:ident)*; $key:ident, $alg:ident) => {{
+    (@ AesAead $($rest:ident)*; $key:ident, $alg:ident) => {{
         #[cfg(feature = "aes")]
         if $alg == KeyAlg::Aes(AesTypes::A128Gcm) {
             return Ok($key.assume::<AesKey<A128Gcm>>());
@@ -571,6 +603,17 @@ macro_rules! match_key_alg {
         #[cfg(feature = "aes")]
         if $alg == KeyAlg::Aes(AesTypes::A256CbcHs512) {
             return Ok($key.assume::<AesKey<A256CbcHs512>>());
+        }
+        match_key_alg!(@ $($rest)*; $key, $alg)
+    }};
+    (@ AesKw $($rest:ident)*; $key:ident, $alg:ident) => {{
+        #[cfg(feature = "aes")]
+        if $alg == KeyAlg::Aes(AesTypes::A128Kw) {
+            return Ok($key.assume::<AesKey<A128Kw>>());
+        }
+        #[cfg(feature = "aes")]
+        if $alg == KeyAlg::Aes(AesTypes::A256Kw) {
+            return Ok($key.assume::<AesKey<A256Kw>>());
         }
         match_key_alg!(@ $($rest)*; $key, $alg)
     }};
@@ -651,7 +694,8 @@ impl ToSecretBytes for AnyKey {
         let key = match_key_alg! {
             self,
             &dyn ToSecretBytes,
-            Aes,
+            AesAead,
+            AesKw,
             Bls,
             Chacha,
             Ed25519,
@@ -696,7 +740,7 @@ impl AnyKey {
         match_key_alg! {
             self,
             &dyn KeyAeadInPlace,
-            Aes,
+            AesAead,
             Chacha,
             "AEAD is not supported for this key type"
         }
@@ -736,7 +780,8 @@ impl ToJwk for AnyKey {
         let key = match_key_alg! {
             self,
             &dyn ToJwk,
-            Aes,
+            AesAead,
+            AesKw,
             Bls,
             Chacha,
             Ed25519,

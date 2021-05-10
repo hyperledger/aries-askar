@@ -88,7 +88,7 @@ def test_ecdh_1pu_wrapped_expected():
     assert b64_url(tag) == b"HLb4fTlm8spGmij3RyOs2gJ4DpHM4hhVRwdF_hGb3WQ"
 
     derived = derive_key_ecdh_1pu(
-        KeyAlg.A128GCM,
+        KeyAlg.A128KW,
         ephem,
         sender_key=alice,
         recip_key=bob,
@@ -97,7 +97,7 @@ def test_ecdh_1pu_wrapped_expected():
         apv="Bob and Charlie",
         cc_tag=tag,
     )
-    assert derived.algorithm == KeyAlg.A128GCM
+    assert derived.algorithm == KeyAlg.A128KW
     assert derived.get_secret_bytes() == bytes.fromhex(
         "df4c37a0668306a11e3d6b0074b5d8df"
     )
