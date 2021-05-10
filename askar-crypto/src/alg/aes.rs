@@ -37,8 +37,8 @@ pub static JWK_KEY_TYPE: &'static str = "oct";
 
 /// Trait implemented by supported AES authenticated encryption algorithms
 pub trait AesType: 'static {
-    /// The AEAD implementation
-    type Aead: AesAead;
+    /// The size of the key secret bytes
+    type KeySize: ArrayLength<u8>;
 
     /// The associated algorithm type
     const ALG_TYPE: AesTypes;
@@ -46,11 +46,11 @@ pub trait AesType: 'static {
     const JWK_ALG: &'static str;
 }
 
-type KeyType<A> = ArrayKey<<<A as AesType>::Aead as AesAead>::KeySize>;
+type KeyType<A> = ArrayKey<<A as AesType>::KeySize>;
 
-type NonceSize<A> = <<A as AesType>::Aead as AesAead>::NonceSize;
+type NonceSize<A> = <A as AesAead>::NonceSize;
 
-type TagSize<A> = <<A as AesType>::Aead as AesAead>::TagSize;
+type TagSize<A> = <A as AesAead>::TagSize;
 
 /// An AES-GCM symmetric encryption key
 #[derive(Serialize, Deserialize, Zeroize)]
@@ -63,15 +63,6 @@ type TagSize<A> = <<A as AesType>::Aead as AesAead>::TagSize;
 )]
 // SECURITY: ArrayKey is zeroized on drop
 pub struct AesKey<T: AesType>(KeyType<T>);
-
-impl<T: AesType> AesKey<T> {
-    /// The length of the secret key in bytes
-    pub const KEY_LENGTH: usize = KeyType::<T>::SIZE;
-    /// The length of the AEAD encryption nonce
-    pub const NONCE_LENGTH: usize = NonceSize::<T>::USIZE;
-    /// The length of the AEAD encryption tag
-    pub const TAG_LENGTH: usize = TagSize::<T>::USIZE;
-}
 
 impl<T: AesType> Clone for AesKey<T> {
     fn clone(&self) -> Self {
@@ -103,7 +94,7 @@ impl<T: AesType> HasKeyAlg for AesKey<T> {
 }
 
 impl<T: AesType> KeyMeta for AesKey<T> {
-    type KeySize = <T::Aead as AesAead>::KeySize;
+    type KeySize = T::KeySize;
 }
 
 impl<T: AesType> KeyGen for AesKey<T> {
@@ -151,12 +142,12 @@ impl<T: AesType> FromKeyDerivation for AesKey<T> {
     }
 }
 
-impl<T: AesType> KeyAeadMeta for AesKey<T> {
+impl<T: AesAead> KeyAeadMeta for AesKey<T> {
     type NonceSize = NonceSize<T>;
     type TagSize = TagSize<T>;
 }
 
-impl<T: AesType> KeyAeadInPlace for AesKey<T> {
+impl<T: AesAead> KeyAeadInPlace for AesKey<T> {
     /// Encrypt a secret value in place, appending the verification tag
     fn encrypt_in_place(
         &self,
@@ -167,7 +158,7 @@ impl<T: AesType> KeyAeadInPlace for AesKey<T> {
         if nonce.len() != NonceSize::<T>::USIZE {
             return Err(err_msg!(InvalidNonce));
         }
-        T::Aead::aes_encrypt_in_place(
+        T::aes_encrypt_in_place(
             self.0.as_ref(),
             buffer,
             GenericArray::from_slice(nonce),
@@ -185,7 +176,7 @@ impl<T: AesType> KeyAeadInPlace for AesKey<T> {
         if nonce.len() != NonceSize::<T>::USIZE {
             return Err(err_msg!(InvalidNonce));
         }
-        T::Aead::aes_decrypt_in_place(
+        T::aes_decrypt_in_place(
             self.0.as_ref(),
             buffer,
             GenericArray::from_slice(nonce),
@@ -226,7 +217,7 @@ where
         Ok(Self(KeyType::<T>::try_new_with(|arr| {
             let mut buf = Writer::from_slice(arr);
             lhs.write_key_exchange(rhs, &mut buf)?;
-            if buf.position() != Self::KEY_LENGTH {
+            if buf.position() != T::KeySize::USIZE {
                 return Err(err_msg!(Usage, "Invalid length for key exchange output"));
             }
             Ok(())
@@ -235,31 +226,27 @@ where
 }
 
 /// 128 bit AES-GCM
-#[derive(Debug)]
-pub struct A128Gcm;
+pub type A128Gcm = Aes128Gcm;
 
 impl AesType for A128Gcm {
-    type Aead = Aes128Gcm;
+    type KeySize = <Self as NewAead>::KeySize;
 
     const ALG_TYPE: AesTypes = AesTypes::A128Gcm;
     const JWK_ALG: &'static str = "A128GCM";
 }
 
 /// 256 bit AES-GCM
-#[derive(Debug)]
-pub struct A256Gcm;
+pub type A256Gcm = Aes256Gcm;
 
 impl AesType for A256Gcm {
-    type Aead = Aes256Gcm;
+    type KeySize = <Self as NewAead>::KeySize;
 
     const ALG_TYPE: AesTypes = AesTypes::A256Gcm;
     const JWK_ALG: &'static str = "A256GCM";
 }
 
 /// Specialized trait for performing AEAD encryption
-pub trait AesAead {
-    /// The size of the associated key
-    type KeySize: ArrayLength<u8>;
+pub trait AesAead: AesType {
     /// The size of the nonce
     type NonceSize: ArrayLength<u8>;
     /// The size of the authentication tag
@@ -288,9 +275,8 @@ pub trait AesAead {
 // Generic implementation for AesGcm<Aes, NonceSize>
 impl<T> AesAead for T
 where
-    T: NewAead + AeadInPlace,
+    T: NewAead + AeadInPlace + AesType<KeySize = <T as NewAead>::KeySize>,
 {
-    type KeySize = T::KeySize;
     type NonceSize = T::NonceSize;
     type TagSize = T::TagSize;
 
@@ -334,23 +320,19 @@ where
 }
 
 /// 128 bit AES-CBC with HMAC-256
-#[derive(Debug)]
-pub struct A128CbcHs256;
+pub type A128CbcHs256 = AesCbcHmac<aes_core::Aes128, sha2::Sha256>;
 
 impl AesType for A128CbcHs256 {
-    type Aead = AesCbcHmac<aes_core::Aes128, sha2::Sha256>;
-
+    type KeySize = typenum::U32;
     const ALG_TYPE: AesTypes = AesTypes::A128CbcHs256;
     const JWK_ALG: &'static str = "A128CBC-HS256";
 }
 
 /// 256 bit AES-CBC with HMAC-512
-#[derive(Debug)]
-pub struct A256CbcHs512;
+pub type A256CbcHs512 = AesCbcHmac<aes_core::Aes256, sha2::Sha512>;
 
 impl AesType for A256CbcHs512 {
-    type Aead = AesCbcHmac<aes_core::Aes256, sha2::Sha512>;
-
+    type KeySize = typenum::U64;
     const ALG_TYPE: AesTypes = AesTypes::A256CbcHs512;
     const JWK_ALG: &'static str = "A256CBC-HS512";
 }
@@ -362,12 +344,12 @@ pub struct AesCbcHmac<C, D>(PhantomData<(C, D)>);
 // Specific implementation, cannot implement normal AeadInPlace trait
 impl<C, D> AesAead for AesCbcHmac<C, D>
 where
+    AesCbcHmac<C, D>: AesType,
     C: BlockCipher + NewBlockCipher,
     D: Update + BlockInput + FixedOutput + Reset + Default + Clone,
     C::KeySize: core::ops::Shl<typenum::B1>,
     <C::KeySize as core::ops::Shl<typenum::B1>>::Output: ArrayLength<u8>,
 {
-    type KeySize = typenum::Double<C::KeySize>;
     type NonceSize = C::BlockSize;
     type TagSize = C::KeySize;
 
@@ -466,15 +448,15 @@ mod tests {
 
     #[test]
     fn encrypt_round_trip() {
-        fn test_encrypt<T: AesType>() {
+        fn test_encrypt<T: AesAead>() {
             let input = b"hello";
             let key = AesKey::<T>::generate().unwrap();
             let mut buffer = SecretBytes::from_slice(input);
-            let pad_len = T::Aead::aes_padding_length(input.len());
+            let pad_len = T::aes_padding_length(input.len());
             let nonce = AesKey::<T>::random_nonce();
             key.encrypt_in_place(&mut buffer, &nonce, &[]).unwrap();
             let enc_len = buffer.len();
-            assert_eq!(enc_len, input.len() + pad_len + AesKey::<T>::TAG_LENGTH);
+            assert_eq!(enc_len, input.len() + pad_len + T::TagSize::USIZE);
             assert_ne!(&buffer[..], input);
             let mut dec = buffer.clone();
             key.decrypt_in_place(&mut dec, &nonce, &[]).unwrap();
