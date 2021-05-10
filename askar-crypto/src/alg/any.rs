@@ -587,7 +587,7 @@ macro_rules! match_key_alg {
         matcher($slf)
     }};
     (@ ; $key:ident, $alg:ident) => {()};
-    (@ AesAead $($rest:ident)*; $key:ident, $alg:ident) => {{
+    (@ Aes $($rest:ident)*; $key:ident, $alg:ident) => {{
         #[cfg(feature = "aes")]
         if $alg == KeyAlg::Aes(AesTypes::A128Gcm) {
             return Ok($key.assume::<AesKey<A128Gcm>>());
@@ -604,9 +604,6 @@ macro_rules! match_key_alg {
         if $alg == KeyAlg::Aes(AesTypes::A256CbcHs512) {
             return Ok($key.assume::<AesKey<A256CbcHs512>>());
         }
-        match_key_alg!(@ $($rest)*; $key, $alg)
-    }};
-    (@ AesKw $($rest:ident)*; $key:ident, $alg:ident) => {{
         #[cfg(feature = "aes")]
         if $alg == KeyAlg::Aes(AesTypes::A128Kw) {
             return Ok($key.assume::<AesKey<A128Kw>>());
@@ -694,8 +691,7 @@ impl ToSecretBytes for AnyKey {
         let key = match_key_alg! {
             self,
             &dyn ToSecretBytes,
-            AesAead,
-            AesKw,
+            Aes,
             Bls,
             Chacha,
             Ed25519,
@@ -740,7 +736,7 @@ impl AnyKey {
         match_key_alg! {
             self,
             &dyn KeyAeadInPlace,
-            AesAead,
+            Aes,
             Chacha,
             "AEAD is not supported for this key type"
         }
@@ -780,8 +776,7 @@ impl ToJwk for AnyKey {
         let key = match_key_alg! {
             self,
             &dyn ToJwk,
-            AesAead,
-            AesKw,
+            Aes,
             Bls,
             Chacha,
             Ed25519,

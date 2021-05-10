@@ -55,6 +55,8 @@ type NonceSize<A> = <A as AesAead>::NonceSize;
 
 type TagSize<A> = <A as AesAead>::TagSize;
 
+const AES_KW_DEFAULT_IV: [u8; 8] = [166, 166, 166, 166, 166, 166, 166, 166];
+
 /// An AES-GCM symmetric encryption key
 #[derive(Serialize, Deserialize, Zeroize)]
 #[serde(
@@ -259,7 +261,7 @@ pub trait AesAead: AesType {
     fn aes_encrypt_in_place(
         key: &GenericArray<u8, Self::KeySize>,
         buffer: &mut dyn ResizeBuffer,
-        key: &GenericArray<u8, Self::NonceSize>,
+        nonce: &GenericArray<u8, Self::NonceSize>,
         aad: &[u8],
     ) -> Result<(), Error>;
 
@@ -344,10 +346,9 @@ impl AesType for A256CbcHs512 {
 #[derive(Debug)]
 pub struct AesCbcHmac<C, D>(PhantomData<(C, D)>);
 
-// Specific implementation, cannot implement normal AeadInPlace trait
 impl<C, D> AesAead for AesCbcHmac<C, D>
 where
-    AesCbcHmac<C, D>: AesType,
+    Self: AesType,
     C: BlockCipher + NewBlockCipher,
     D: Update + BlockInput + FixedOutput + Reset + Default + Clone,
     C::KeySize: core::ops::Shl<consts::B1>,
@@ -464,32 +465,38 @@ impl AesType for A256Kw {
 #[derive(Debug)]
 pub struct AesKeyWrap<K>(PhantomData<K>);
 
-impl<K> AesKeyWrap<K>
+impl<K> AesAead for AesKeyWrap<K>
 where
-    K: NewBlockCipher + BlockCipher<BlockSize = consts::U16>,
+    Self: AesType,
+    K: NewBlockCipher<KeySize = Self::KeySize> + BlockCipher<BlockSize = consts::U16>,
 {
-    const DEFAULT_IV: [u8; 8] = [166, 166, 166, 166, 166, 166, 166, 166];
+    type NonceSize = consts::U0;
+    type TagSize = consts::U0;
 
-    /// wrap
-    pub fn wrap_in_place(
-        key: &GenericArray<u8, <K as NewBlockCipher>::KeySize>,
-        data: &mut dyn ResizeBuffer,
+    fn aes_encrypt_in_place(
+        key: &GenericArray<u8, Self::KeySize>,
+        buffer: &mut dyn ResizeBuffer,
+        _nonce: &GenericArray<u8, Self::NonceSize>,
+        aad: &[u8],
     ) -> Result<(), Error> {
-        if data.as_ref().len() % 8 != 0 {
+        if aad.len() != 0 {
+            return Err(err_msg!(Unsupported, "AAD not supported"));
+        }
+        if buffer.as_ref().len() % 8 != 0 {
             return Err(err_msg!(
                 Unsupported,
                 "Data length must be a multiple of 8 bytes"
             ));
         }
-        let blocks = data.as_ref().len() / 8;
+        let blocks = buffer.as_ref().len() / 8;
 
-        data.buffer_insert(0, &[0u8; 8])?;
+        buffer.buffer_insert(0, &[0u8; 8])?;
 
         let aes = K::new(key);
-        let mut iv = Self::DEFAULT_IV;
+        let mut iv = AES_KW_DEFAULT_IV;
         let mut block = GenericArray::default();
         for j in 0..6 {
-            for (i, chunk) in data.as_mut()[8..].chunks_exact_mut(8).enumerate() {
+            for (i, chunk) in buffer.as_mut()[8..].chunks_exact_mut(8).enumerate() {
                 block[0..8].copy_from_slice(iv.as_ref());
                 block[8..16].copy_from_slice(chunk);
                 aes.encrypt_block(&mut block);
@@ -501,34 +508,38 @@ where
                 chunk.copy_from_slice(&block[8..16]);
             }
         }
-        data.as_mut()[0..8].copy_from_slice(&iv[..]);
+        buffer.as_mut()[0..8].copy_from_slice(&iv[..]);
         Ok(())
     }
 
-    /// wrap
-    pub fn unwrap_in_place(
-        key: &GenericArray<u8, <K as NewBlockCipher>::KeySize>,
-        data: &mut dyn ResizeBuffer,
+    fn aes_decrypt_in_place(
+        key: &GenericArray<u8, Self::KeySize>,
+        buffer: &mut dyn ResizeBuffer,
+        _nonce: &GenericArray<u8, Self::NonceSize>,
+        aad: &[u8],
     ) -> Result<(), Error> {
-        if data.as_ref().len() % 8 != 0 {
+        if aad.len() != 0 {
+            return Err(err_msg!(Unsupported, "AAD not supported"));
+        }
+        if buffer.as_ref().len() % 8 != 0 {
             return Err(err_msg!(
                 Encryption,
                 "Data length must be a multiple of 8 bytes"
             ));
         }
-        let mut blocks = data.as_ref().len() / 8;
+        let mut blocks = buffer.as_ref().len() / 8;
         if blocks < 1 {
             return Err(err_msg!(Encryption));
         }
         blocks -= 1;
 
         let aes = K::new(key);
-        let mut iv = *TryInto::<&[u8; 8]>::try_into(&data.as_ref()[0..8]).unwrap();
-        data.buffer_remove(0..8)?;
+        let mut iv = *TryInto::<&[u8; 8]>::try_into(&buffer.as_ref()[0..8]).unwrap();
+        buffer.buffer_remove(0..8)?;
 
         let mut block = GenericArray::default();
         for j in (0..6).into_iter().rev() {
-            for (i, chunk) in data.as_mut().chunks_exact_mut(8).enumerate().rev() {
+            for (i, chunk) in buffer.as_mut().chunks_exact_mut(8).enumerate().rev() {
                 block[0..8].copy_from_slice(iv.as_ref());
                 let t = (((blocks * j) + i + 1) as u64).to_be_bytes();
                 for (a, t) in block[0..8].iter_mut().zip(&t[..]) {
@@ -541,11 +552,15 @@ where
             }
         }
 
-        if iv.ct_eq(&Self::DEFAULT_IV).unwrap_u8() == 1 {
+        if iv.ct_eq(&AES_KW_DEFAULT_IV).unwrap_u8() == 1 {
             Ok(())
         } else {
             Err(err_msg!(Encryption))
         }
+    }
+
+    fn aes_padding_length(_len: usize) -> usize {
+        0
     }
 }
 
@@ -685,13 +700,25 @@ mod tests {
         let key_data = &hex!("000102030405060708090a0b0c0d0e0f");
         let input = &hex!("00112233445566778899aabbccddeeff");
         let mut buffer = SecretBytes::from_slice(input);
-        A128Kw::wrap_in_place(GenericArray::from_slice(key_data), &mut buffer).unwrap();
+        A128Kw::aes_encrypt_in_place(
+            GenericArray::from_slice(key_data),
+            &mut buffer,
+            GenericArray::from_slice(&[]),
+            &[],
+        )
+        .unwrap();
         assert_eq!(
             buffer.as_hex().to_string(),
             "1fa68b0a8112b447aef34bd8fb5a7b829d3e862371d2cfe5"
         );
 
-        A128Kw::unwrap_in_place(GenericArray::from_slice(key_data), &mut buffer).unwrap();
+        A128Kw::aes_decrypt_in_place(
+            GenericArray::from_slice(key_data),
+            &mut buffer,
+            GenericArray::from_slice(&[]),
+            &[],
+        )
+        .unwrap();
         assert_eq!(buffer, &input[..]);
     }
 
@@ -701,13 +728,25 @@ mod tests {
         let key_data = &hex!("000102030405060708090A0B0C0D0E0F101112131415161718191A1B1C1D1E1F");
         let input = &hex!("00112233445566778899aabbccddeeff");
         let mut buffer = SecretBytes::from_slice(input);
-        A256Kw::wrap_in_place(GenericArray::from_slice(key_data), &mut buffer).unwrap();
+        A256Kw::aes_encrypt_in_place(
+            GenericArray::from_slice(key_data),
+            &mut buffer,
+            GenericArray::from_slice(&[]),
+            &[],
+        )
+        .unwrap();
         assert_eq!(
             buffer.as_hex().to_string(),
             "64e8c3f9ce0f5ba263e9777905818a2a93c8191e7d6e8ae7"
         );
 
-        A256Kw::unwrap_in_place(GenericArray::from_slice(key_data), &mut buffer).unwrap();
+        A256Kw::aes_decrypt_in_place(
+            GenericArray::from_slice(key_data),
+            &mut buffer,
+            GenericArray::from_slice(&[]),
+            &[],
+        )
+        .unwrap();
         assert_eq!(buffer, &input[..]);
     }
 }

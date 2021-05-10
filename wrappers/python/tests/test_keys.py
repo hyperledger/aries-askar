@@ -21,8 +21,8 @@ def test_aes():
 def test_bls():
     key = Key.from_seed(KeyAlg.BLS12_381_G1G2, b"testseed000000000000000000000001")
     assert key.get_jwk_public(KeyAlg.BLS12_381_G1) == (
-        '{"crv":"BLS12381_G1","kty":"EC",'
-        '"x":"h56eYI8Qkq5hitICb-ik8wRTzcn6Fd4iY8aDNVc9q1xoPS3lh4DB_B4wNtar1HrV"}'
+        '{"crv":"BLS12381_G1","kty":"EC","x":'
+        '"h56eYI8Qkq5hitICb-ik8wRTzcn6Fd4iY8aDNVc9q1xoPS3lh4DB_B4wNtar1HrV"}'
     )
     assert key.get_jwk_public(KeyAlg.BLS12_381_G2) == (
         '{"crv":"BLS12381_G2","kty":"EC",'

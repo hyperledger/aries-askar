@@ -513,12 +513,14 @@ def encode_bytes(
             buf.value = (c_ubyte * buf.len).from_buffer_copy(arg.obj)
     elif isinstance(arg, bytearray):
         buf.len = len(arg)
-        buf.value = (c_ubyte * buf.len).from_buffer(arg)
+        if buf.len > 0:
+            buf.value = (c_ubyte * buf.len).from_buffer(arg)
     elif arg is not None:
         if isinstance(arg, str):
             arg = arg.encode("utf-8")
         buf.len = len(arg)
-        buf.value = (c_ubyte * buf.len).from_buffer_copy(arg)
+        if buf.len > 0:
+            buf.value = (c_ubyte * buf.len).from_buffer_copy(arg)
     return buf
 
 

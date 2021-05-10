@@ -11,6 +11,7 @@ The `askar-crypto` crate provides the basic key representations and cryptographi
 | -------------------- | --------- | ------------------------------------------------------------------------------------------------------------------------------ | ------------------------------- |
 | AES-GCM              | `aes`     | AEAD encryption<br>JWK export                                                                                                  | A128GCM and A256GCM             |
 | AES-CBC-HMAC-SHA2    | `aes`     | AEAD encryption<br>JWK export                                                                                                  | A128CBC-HS256 and A256CBC-HS512 |
+| AES Key Wrap         | `aes`     | AEAD encryption<br>JWK export                                                                                                  | A128KW and A256KW               |
 | (X)ChaCha20-Poly1305 | `chacha`  | AEAD encryption<br>JWK export                                                                                                  | aka C20P, XC20P                 |
 | BLS12-381            | `bls`     | [`bls-signature`](https://tools.ietf.org/html/draft-irtf-cfrg-bls-signature-04)-compatible key generation<br>JWK import/export | G1, G2, and G1G2 key types      |
 | Ed25519              | `ed25519` | EdDSA signatures<br>JWK import/export                                                                                          |                                 |
