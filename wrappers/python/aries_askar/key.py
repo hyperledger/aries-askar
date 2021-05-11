@@ -1,6 +1,6 @@
 """Handling of Key instances."""
 
-from typing import Union
+from typing import Optional, Union
 
 from . import bindings
 
@@ -154,22 +154,24 @@ def derive_key_ecdh_1pu(
     key_alg: Union[str, KeyAlg],
     ephem_key: Key,
     sender_key: Key,
-    recip_key: Key,
+    receiver_key: Key,
     alg_id: Union[bytes, str],
     apu: Union[bytes, str],
     apv: Union[bytes, str],
-    cc_tag: bytes = None,
+    cc_tag: Optional[bytes],
+    receive: bool,
 ) -> Key:
     return Key(
         bindings.key_derive_ecdh_1pu(
             key_alg,
             ephem_key._handle,
             sender_key._handle,
-            recip_key._handle,
+            receiver_key._handle,
             alg_id,
             apu,
             apv,
             cc_tag,
+            receive,
         )
     )
 
@@ -177,13 +179,14 @@ def derive_key_ecdh_1pu(
 def derive_key_ecdh_es(
     key_alg: Union[str, KeyAlg],
     ephem_key: Key,
-    recip_key: Key,
+    receiver_key: Key,
     alg_id: Union[bytes, str],
     apu: Union[bytes, str],
     apv: Union[bytes, str],
+    receive: bool,
 ) -> Key:
     return Key(
         bindings.key_derive_ecdh_es(
-            key_alg, ephem_key._handle, recip_key._handle, alg_id, apu, apv
+            key_alg, ephem_key._handle, receiver_key._handle, alg_id, apu, apv, receive
         )
     )

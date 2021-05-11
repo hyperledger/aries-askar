@@ -22,6 +22,7 @@ pub struct Ecdh1PU<'d, Key: KeyExchange + ?Sized> {
     apu: &'d [u8],
     apv: &'d [u8],
     cc_tag: &'d [u8],
+    receive: bool,
 }
 
 impl<'d, Key: KeyExchange + ?Sized> Ecdh1PU<'d, Key> {
@@ -34,6 +35,7 @@ impl<'d, Key: KeyExchange + ?Sized> Ecdh1PU<'d, Key> {
         apu: &'d [u8],
         apv: &'d [u8],
         cc_tag: &'d [u8],
+        receive: bool,
     ) -> Self {
         Self {
             ephem_key,
@@ -43,6 +45,7 @@ impl<'d, Key: KeyExchange + ?Sized> Ecdh1PU<'d, Key> {
             apu,
             apv,
             cc_tag,
+            receive,
         }
     }
 }
@@ -61,9 +64,15 @@ impl<Key: KeyExchange + ?Sized> KeyDerivation for Ecdh1PU<'_, Key> {
         kdf.start_pass();
 
         // hash Zs and Ze directly into the KDF
-        self.ephem_key
-            .write_key_exchange(self.recip_key, &mut kdf)?;
-        self.send_key.write_key_exchange(self.recip_key, &mut kdf)?;
+        if self.receive {
+            self.recip_key
+                .write_key_exchange(self.ephem_key, &mut kdf)?;
+            self.recip_key.write_key_exchange(self.send_key, &mut kdf)?;
+        } else {
+            self.ephem_key
+                .write_key_exchange(self.recip_key, &mut kdf)?;
+            self.send_key.write_key_exchange(self.recip_key, &mut kdf)?;
+        }
 
         // the authentication tag is appended to pub_info, if any.
         let mut pub_info = [0u8; 132];
@@ -137,6 +146,7 @@ mod tests {
             b"Alice",
             b"Bob",
             &[],
+            false,
         )
         .derive_key_bytes(&mut key_output)
         .unwrap();
@@ -189,6 +199,7 @@ mod tests {
                 "1cb6f87d3966f2ca469a28f74723acda
                 02780e91cce21855470745fe119bdd64"
             ),
+            false,
         )
         .derive_key_bytes(&mut key_output)
         .unwrap();

@@ -476,6 +476,7 @@ pub extern "C" fn askar_key_derive_ecdh_es(
     alg_id: ByteBuffer,
     apu: ByteBuffer,
     apv: ByteBuffer,
+    receive: i8,
     out: *mut LocalKeyHandle,
 ) -> ErrorCode {
     catch_err! {
@@ -491,6 +492,7 @@ pub extern "C" fn askar_key_derive_ecdh_es(
             alg_id.as_slice(),
             apu.as_slice(),
             apv.as_slice(),
+            receive == 1
         )?;
         unsafe { *out = LocalKeyHandle::create(key) };
         Ok(ErrorCode::Success)
@@ -507,6 +509,7 @@ pub extern "C" fn askar_key_derive_ecdh_1pu(
     apu: ByteBuffer,
     apv: ByteBuffer,
     cc_tag: ByteBuffer,
+    receive: i8,
     out: *mut LocalKeyHandle,
 ) -> ErrorCode {
     catch_err! {
@@ -525,6 +528,7 @@ pub extern "C" fn askar_key_derive_ecdh_1pu(
             apu.as_slice(),
             apv.as_slice(),
             cc_tag.as_slice(),
+            receive == 1
         )?;
         unsafe { *out = LocalKeyHandle::create(key) };
         Ok(ErrorCode::Success)

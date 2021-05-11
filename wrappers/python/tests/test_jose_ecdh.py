@@ -19,7 +19,9 @@ def b64_url(val: Union[str, bytes]) -> bytes:
 def test_ecdh_es_direct():
     ephem = Key.generate(KeyAlg.P256, ephemeral=True)
     bob = Key.generate(KeyAlg.P256)
-    derived = derive_key_ecdh_es(KeyAlg.A256GCM, ephem, bob, "A256GCM", "Alice", "Bob")
+    derived = derive_key_ecdh_es(
+        KeyAlg.A256GCM, ephem, bob, "A256GCM", "Alice", "Bob", receive=False
+    )
     assert derived.algorithm == KeyAlg.A256GCM
 
 
@@ -28,7 +30,15 @@ def test_ecdh_1pu_direct():
     alice = Key.generate(KeyAlg.P256)
     bob = Key.generate(KeyAlg.P256)
     derived = derive_key_ecdh_1pu(
-        KeyAlg.A256GCM, ephem, alice, bob, "A256GCM", "Alice", "Bob"
+        KeyAlg.A256GCM,
+        ephem,
+        alice,
+        bob,
+        "A256GCM",
+        "Alice",
+        "Bob",
+        cc_tag=None,
+        receive=False,
     )
     assert derived.algorithm == KeyAlg.A256GCM
 
@@ -92,11 +102,12 @@ def test_ecdh_1pu_wrapped_expected():
         KeyAlg.A128KW,
         ephem,
         sender_key=alice,
-        recip_key=bob,
+        receiver_key=bob,
         alg_id="ECDH-1PU+A128KW",
         apu="Alice",
         apv="Bob and Charlie",
         cc_tag=tag,
+        receive=False,
     )
     assert derived.algorithm == KeyAlg.A128KW
     assert derived.get_secret_bytes() == bytes.fromhex(
@@ -109,5 +120,21 @@ def test_ecdh_1pu_wrapped_expected():
         b"sjNXH8-LIRLycq8CHJQbDwvQeU1cSl55cQ0hGezJu2N9IY0QN"
     )
 
-    k = derived.unwrap_key(KeyAlg.A256CBC_HS512, encrypted_key)
-    assert k.get_jwk_secret() == cek.get_jwk_secret()
+    # Skipping key derivation for Charlie.
+    # Assemble encrypted_key, iv, cc_tag, ciphertext, and headers into a JWE envelope here.
+    # Receiver disassembles envelope and..
+
+    derived_recv = derive_key_ecdh_1pu(
+        KeyAlg.A128KW,
+        ephem,
+        sender_key=alice,
+        receiver_key=bob,
+        alg_id="ECDH-1PU+A128KW",
+        apu="Alice",
+        apv="Bob and Charlie",
+        cc_tag=tag,
+        receive=True,
+    )
+
+    cek_recv = derived_recv.unwrap_key(KeyAlg.A256CBC_HS512, encrypted_key)
+    assert cek_recv.get_jwk_secret() == cek.get_jwk_secret()

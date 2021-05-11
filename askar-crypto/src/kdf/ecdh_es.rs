@@ -20,6 +20,7 @@ where
     alg: &'d [u8],
     apu: &'d [u8],
     apv: &'d [u8],
+    receive: bool,
 }
 
 impl<'d, Key: KeyExchange + ?Sized> EcdhEs<'d, Key> {
@@ -30,6 +31,7 @@ impl<'d, Key: KeyExchange + ?Sized> EcdhEs<'d, Key> {
         alg: &'d [u8],
         apu: &'d [u8],
         apv: &'d [u8],
+        receive: bool,
     ) -> Self {
         Self {
             ephem_key,
@@ -37,6 +39,7 @@ impl<'d, Key: KeyExchange + ?Sized> EcdhEs<'d, Key> {
             alg,
             apu,
             apv,
+            receive,
         }
     }
 }
@@ -52,8 +55,13 @@ impl<Key: KeyExchange + ?Sized> KeyDerivation for EcdhEs<'_, Key> {
         kdf.start_pass();
 
         // hash Z directly into the KDF
-        self.ephem_key
-            .write_key_exchange(self.recip_key, &mut kdf)?;
+        if self.receive {
+            self.recip_key
+                .write_key_exchange(self.ephem_key, &mut kdf)?;
+        } else {
+            self.ephem_key
+                .write_key_exchange(self.recip_key, &mut kdf)?;
+        }
 
         kdf.hash_params(ConcatKDFParams {
             alg: self.alg,
@@ -105,7 +113,7 @@ mod tests {
 
         let mut key_output = [0u8; 32];
 
-        EcdhEs::new(&ephem_sk, &bob_pk, b"A256GCM", b"Alice", b"Bob")
+        EcdhEs::new(&ephem_sk, &bob_pk, b"A256GCM", b"Alice", b"Bob", false)
             .derive_key_bytes(&mut key_output)
             .unwrap();
 
