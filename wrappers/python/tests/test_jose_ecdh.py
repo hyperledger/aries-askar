@@ -7,7 +7,6 @@ from aries_askar import (
     derive_key_ecdh_es,
     derive_key_ecdh_1pu,
 )
-import aries_askar
 
 
 def b64_url(val: Union[str, bytes]) -> bytes:
@@ -69,7 +68,7 @@ def test_ecdh_1pu_wrapped_expected():
          "d": "1gDirl_r_Y3-qUa3WXHgEXrrEHngWThU3c9zj9A2uBg"}
     """
     )
-    protected = b64_url(
+    protected_b64 = b64_url(
         '{"alg":"ECDH-1PU+A128KW",'
         '"enc":"A256CBC-HS512",'
         '"apu":"QWxpY2U",'  # Alice
@@ -92,9 +91,9 @@ def test_ecdh_1pu_wrapped_expected():
     iv = bytes.fromhex("000102030405060708090a0b0c0d0e0f")
     message = b"Three is a magic number."
 
-    enc = cek.aead_encrypt(message, iv, aad=protected)
+    enc = cek.aead_encrypt(message, iv, aad=protected_b64)
     ciphertext = enc[:-32]
-    tag = enc[32:]
+    tag = enc[-32:]
     assert b64_url(ciphertext) == b"Az2IWsISEMDJvyc5XRL-3-d-RgNBOGolCsxFFoUXFYw"
     assert b64_url(tag) == b"HLb4fTlm8spGmij3RyOs2gJ4DpHM4hhVRwdF_hGb3WQ"
 
@@ -138,3 +137,7 @@ def test_ecdh_1pu_wrapped_expected():
 
     cek_recv = derived_recv.unwrap_key(KeyAlg.A256CBC_HS512, encrypted_key)
     assert cek_recv.get_jwk_secret() == cek.get_jwk_secret()
+
+    enc = ciphertext + tag
+    message_recv = cek_recv.aead_decrypt(enc, iv, aad=protected_b64)
+    assert message_recv == message

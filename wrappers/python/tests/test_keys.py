@@ -4,7 +4,21 @@ from aries_askar import (
 )
 
 
-def test_aes():
+def test_aes_cbc_hmac():
+    key = Key.generate(KeyAlg.A128CBC_HS256)
+    assert key.algorithm == KeyAlg.A128CBC_HS256
+
+    data = b"test message"
+    nonce = key.aead_random_nonce()
+    params = key.aead_params()
+    assert params.nonce_length == 16
+    assert params.tag_length == 16
+    enc = key.aead_encrypt(data, nonce, b"aad")
+    dec = key.aead_decrypt(enc, nonce, b"aad")
+    assert data == bytes(dec)
+
+
+def test_aes_gcm():
     key = Key.generate(KeyAlg.A128GCM)
     assert key.algorithm == KeyAlg.A128GCM
 

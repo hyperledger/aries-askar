@@ -2,13 +2,11 @@ import os
 
 from pytest import fixture, mark
 
-from aries_askar.bindings import (
-    generate_raw_key,
-)
 from aries_askar import (
     KeyAlg,
     Key,
     Store,
+    generate_raw_key,
 )
 
 

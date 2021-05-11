@@ -367,18 +367,17 @@ where
         nonce: &GenericArray<u8, Self::NonceSize>,
         aad: &[u8],
     ) -> Result<(), Error> {
-        // this should be optimized unless it matters
+        // this should be optimized away except when the error is thrown
         if Self::TagSize::USIZE > D::OutputSize::USIZE {
             return Err(err_msg!(
                 Encryption,
                 "AES-CBC-HMAC tag size exceeds maximum supported"
             ));
         }
-
         if aad.len() as u64 > u64::MAX / 8 {
             return Err(err_msg!(
                 Encryption,
-                "AES-CBC-HMAC aad size exceeds maximum supported"
+                "AES-CBC-HMAC AAD size exceeds maximum supported"
             ));
         }
 
@@ -410,6 +409,12 @@ where
         nonce: &GenericArray<u8, Self::NonceSize>,
         aad: &[u8],
     ) -> Result<(), Error> {
+        if aad.len() as u64 > u64::MAX / 8 {
+            return Err(err_msg!(
+                Encryption,
+                "AES-CBC-HMAC AAD size exceeds maximum supported"
+            ));
+        }
         let buf_len = buffer.as_ref().len();
         if buf_len < Self::TagSize::USIZE {
             return Err(err_msg!(Encryption, "Invalid size for encrypted data"));
@@ -422,7 +427,7 @@ where
         hmac.update(aad);
         hmac.update(nonce.as_ref());
         hmac.update(&buffer.as_ref()[..ctext_end]);
-        hmac.update(&(aad.len() as u64).to_be_bytes());
+        hmac.update(&((aad.len() as u64) * 8).to_be_bytes());
         let mac = hmac.finalize().into_bytes();
         let tag_match =
             subtle::ConstantTimeEq::ct_eq(tag.as_ref(), &mac[..Self::TagSize::USIZE]).unwrap_u8();
@@ -580,21 +585,22 @@ mod tests {
     fn encrypt_round_trip() {
         fn test_encrypt<T: AesAead>() {
             let input = b"hello";
+            let aad = b"additional data";
             let key = AesKey::<T>::generate().unwrap();
             let mut buffer = SecretBytes::from_slice(input);
             let pad_len = T::aes_padding_length(input.len());
             let nonce = AesKey::<T>::random_nonce();
-            key.encrypt_in_place(&mut buffer, &nonce, &[]).unwrap();
+            key.encrypt_in_place(&mut buffer, &nonce, aad).unwrap();
             let enc_len = buffer.len();
             assert_eq!(enc_len, input.len() + pad_len + T::TagSize::USIZE);
             assert_ne!(&buffer[..], input);
             let mut dec = buffer.clone();
-            key.decrypt_in_place(&mut dec, &nonce, &[]).unwrap();
+            key.decrypt_in_place(&mut dec, &nonce, aad).unwrap();
             assert_eq!(&dec[..], input);
 
             // test tag validation
             buffer.as_mut()[enc_len - 1] = buffer.as_mut()[enc_len - 1].wrapping_add(1);
-            assert!(key.decrypt_in_place(&mut buffer, &nonce, &[]).is_err());
+            assert!(key.decrypt_in_place(&mut buffer, &nonce, aad).is_err());
         }
         test_encrypt::<A128Gcm>();
         test_encrypt::<A256Gcm>();
@@ -626,6 +632,8 @@ mod tests {
         test_serialize::<A256Gcm>();
         test_serialize::<A128CbcHs256>();
         test_serialize::<A256CbcHs512>();
+        test_serialize::<A128Kw>();
+        test_serialize::<A256Kw>();
     }
 
     #[test]
@@ -647,7 +655,10 @@ mod tests {
             384c486f3a54c51078158ee5d79de59fbd34d848b3d69550a67646344427ade5\
             4b8851ffb598f7f80074b9473c82e2db\
             652c3fa36b0a7c5b3219fab3a30bc1c4"
-        )
+        );
+        key.decrypt_in_place(&mut buffer, &nonce[..], &aad[..])
+            .unwrap();
+        assert_eq!(buffer, &input[..]);
     }
 
     #[test]
@@ -672,7 +683,10 @@ mod tests {
             a3b75e662a2594410ae496b2e2e6609e31e6e02cc837f053d21f37ff4f51950b\
             be2638d09dd7a4930930806d0703b1f6\
             4dd3b4c088a7f45c216839645b2012bf2e6269a8c56a816dbc1b267761955bc5"
-        )
+        );
+        key.decrypt_in_place(&mut buffer, &nonce[..], &aad[..])
+            .unwrap();
+        assert_eq!(buffer, &input[..]);
     }
 
     #[test]
@@ -697,61 +711,42 @@ mod tests {
         let tag = base64::encode_config(&buffer.as_ref()[ct_len..], base64::URL_SAFE_NO_PAD);
         assert_eq!(ctext, "Az2IWsISEMDJvyc5XRL-3-d-RgNBOGolCsxFFoUXFYw");
         assert_eq!(tag, "HLb4fTlm8spGmij3RyOs2gJ4DpHM4hhVRwdF_hGb3WQ");
+        key.decrypt_in_place(&mut buffer, &nonce[..], aad.as_bytes())
+            .unwrap();
+        assert_eq!(buffer, &input[..]);
     }
 
     #[test]
     // from RFC 3394 test vectors
     fn key_wrap_128_expected() {
-        let key_data = &hex!("000102030405060708090a0b0c0d0e0f");
+        let key =
+            AesKey::<A128Kw>::from_secret_bytes(&hex!("000102030405060708090a0b0c0d0e0f")).unwrap();
         let input = &hex!("00112233445566778899aabbccddeeff");
         let mut buffer = SecretBytes::from_slice(input);
-        A128Kw::aes_encrypt_in_place(
-            GenericArray::from_slice(key_data),
-            &mut buffer,
-            GenericArray::from_slice(&[]),
-            &[],
-        )
-        .unwrap();
+        key.encrypt_in_place(&mut buffer, &[], &[]).unwrap();
         assert_eq!(
             buffer.as_hex().to_string(),
             "1fa68b0a8112b447aef34bd8fb5a7b829d3e862371d2cfe5"
         );
-
-        A128Kw::aes_decrypt_in_place(
-            GenericArray::from_slice(key_data),
-            &mut buffer,
-            GenericArray::from_slice(&[]),
-            &[],
-        )
-        .unwrap();
+        key.decrypt_in_place(&mut buffer, &[], &[]).unwrap();
         assert_eq!(buffer, &input[..]);
     }
 
     #[test]
     // from RFC 3394 test vectors
     fn key_wrap_256_expected() {
-        let key_data = &hex!("000102030405060708090A0B0C0D0E0F101112131415161718191A1B1C1D1E1F");
+        let key = AesKey::<A256Kw>::from_secret_bytes(&hex!(
+            "000102030405060708090A0B0C0D0E0F101112131415161718191A1B1C1D1E1F"
+        ))
+        .unwrap();
         let input = &hex!("00112233445566778899aabbccddeeff");
         let mut buffer = SecretBytes::from_slice(input);
-        A256Kw::aes_encrypt_in_place(
-            GenericArray::from_slice(key_data),
-            &mut buffer,
-            GenericArray::from_slice(&[]),
-            &[],
-        )
-        .unwrap();
+        key.encrypt_in_place(&mut buffer, &[], &[]).unwrap();
         assert_eq!(
             buffer.as_hex().to_string(),
             "64e8c3f9ce0f5ba263e9777905818a2a93c8191e7d6e8ae7"
         );
-
-        A256Kw::aes_decrypt_in_place(
-            GenericArray::from_slice(key_data),
-            &mut buffer,
-            GenericArray::from_slice(&[]),
-            &[],
-        )
-        .unwrap();
+        key.decrypt_in_place(&mut buffer, &[], &[]).unwrap();
         assert_eq!(buffer, &input[..]);
     }
 }
