@@ -12,8 +12,8 @@ from .key import (
     derive_key_ecdh_1pu,
     derive_key_ecdh_es,
 )
-from .store import Session, Store
-from .types import Entry, KeyAlg
+from .store import Entry, EntryList, KeyEntry, KeyEntryList, Session, Store
+from .types import KeyAlg
 
 __all__ = (
     "crypto_box",
@@ -28,8 +28,11 @@ __all__ = (
     "AskarError",
     "AskarErrorCode",
     "Entry",
+    "EntryList",
     "Key",
     "KeyAlg",
+    "KeyEntry",
+    "KeyEntryList",
     "Session",
     "Store",
 )

@@ -134,7 +134,14 @@ class EntryListHandle(c_size_t):
             c_int32(index),
             byref(tags),
         )
-        return json.loads(tags.value) if tags else None
+        if tags:
+            tags = json.loads(tags.value)
+            for t in tags:
+                if isinstance(tags[t], list):
+                    tags[t] = set(tags[t])
+        else:
+            tags = dict()
+        return tags
 
     def __repr__(self) -> str:
         """Format entry list handle as a string."""
@@ -506,13 +513,27 @@ def encode_bytes(
             buf.value = (c_ubyte * buf.len).from_buffer_copy(arg.obj)
     elif isinstance(arg, bytearray):
         buf.len = len(arg)
-        buf.value = (c_ubyte * buf.len).from_buffer(arg)
+        if buf.len > 0:
+            buf.value = (c_ubyte * buf.len).from_buffer(arg)
     elif arg is not None:
         if isinstance(arg, str):
             arg = arg.encode("utf-8")
         buf.len = len(arg)
-        buf.value = (c_ubyte * buf.len).from_buffer_copy(arg)
+        if buf.len > 0:
+            buf.value = (c_ubyte * buf.len).from_buffer_copy(arg)
     return buf
+
+
+def encode_tags(tags: Optional[dict]) -> c_char_p:
+    """Encode the tags as a JSON string."""
+    if tags:
+        tags = json.dumps(
+            {
+                name: (list(value) if isinstance(value, set) else value)
+                for name, value in tags.items()
+            }
+        )
+    return encode_str(tags)
 
 
 def get_current_error(expect: bool = False) -> Optional[AskarError]:
@@ -749,7 +770,7 @@ async def session_update(
         encode_str(category),
         encode_str(name),
         encode_bytes(value),
-        encode_str(None if tags is None else json.dumps(tags)),
+        encode_tags(tags),
         c_int64(-1 if expiry_ms is None else expiry_ms),
     )
 
@@ -768,7 +789,7 @@ async def session_insert_key(
         key_handle,
         encode_str(name),
         encode_str(metadata),
-        encode_str(None if tags is None else json.dumps(tags)),
+        encode_tags(tags),
         c_int64(-1 if expiry_ms is None else expiry_ms),
         return_type=c_void_p,
     )
@@ -825,7 +846,7 @@ async def session_update_key(
         handle,
         encode_str(name),
         encode_str(metadata),
-        encode_str(None if tags is None else json.dumps(tags)),
+        encode_tags(tags),
         c_int64(-1 if expiry_ms is None else expiry_ms),
     )
 
@@ -953,9 +974,9 @@ def key_get_secret_bytes(handle: LocalKeyHandle) -> ByteBuffer:
     return buf
 
 
-def key_from_jwk(jwk: str) -> LocalKeyHandle:
+def key_from_jwk(jwk: Union[str, bytes]) -> LocalKeyHandle:
     handle = LocalKeyHandle()
-    do_call("askar_key_from_jwk", encode_str(jwk), byref(handle))
+    do_call("askar_key_from_jwk", encode_bytes(jwk), byref(handle))
     return handle
 
 
@@ -1001,7 +1022,7 @@ def key_get_jwk_public(handle: LocalKeyHandle, alg: Union[str, KeyAlg] = None) -
 
 def key_get_jwk_secret(handle: LocalKeyHandle) -> ByteBuffer:
     sec = ByteBuffer()
-    do_call("askar_key_get_jwk_public", handle, byref(sec))
+    do_call("askar_key_get_jwk_secret", handle, byref(sec))
     return sec
 
 
@@ -1097,6 +1118,42 @@ def key_verify_signature(
     return verify.value != 0
 
 
+def key_wrap_key(
+    handle: LocalKeyHandle,
+    other: LocalKeyHandle,
+    nonce: Union[bytes, ByteBuffer],
+) -> ByteBuffer:
+    wrapped = ByteBuffer()
+    do_call(
+        "askar_key_wrap_key",
+        handle,
+        other,
+        encode_bytes(nonce),
+        byref(wrapped),
+    )
+    return wrapped
+
+
+def key_unwrap_key(
+    handle: LocalKeyHandle,
+    alg: Union[str, KeyAlg],
+    ciphertext: Union[bytes, ByteBuffer],
+    nonce: Union[bytes, ByteBuffer],
+) -> LocalKeyHandle:
+    result = LocalKeyHandle()
+    if isinstance(alg, KeyAlg):
+        alg = alg.value
+    do_call(
+        "askar_key_unwrap_key",
+        handle,
+        encode_str(alg),
+        encode_bytes(ciphertext),
+        encode_bytes(nonce),
+        byref(result),
+    )
+    return result
+
+
 def key_crypto_box_random_nonce() -> ByteBuffer:
     buf = ByteBuffer()
     do_call(
@@ -1171,48 +1228,56 @@ def key_crypto_box_seal_open(
 
 
 def key_derive_ecdh_es(
-    alg: Union[str, KeyAlg],
+    key_alg: Union[str, KeyAlg],
     ephem_key: LocalKeyHandle,
-    recip_key: LocalKeyHandle,
+    receiver_key: LocalKeyHandle,
+    alg_id: Union[bytes, str, ByteBuffer],
     apu: Union[bytes, str, ByteBuffer],
     apv: Union[bytes, str, ByteBuffer],
+    receive: bool,
 ) -> LocalKeyHandle:
     key = LocalKeyHandle()
-    if isinstance(alg, KeyAlg):
-        alg = alg.value
+    if isinstance(key_alg, KeyAlg):
+        key_alg = key_alg.value
     do_call(
         "askar_key_derive_ecdh_es",
-        encode_str(alg),
+        encode_str(key_alg),
         ephem_key,
-        recip_key,
+        receiver_key,
+        encode_bytes(alg_id),
         encode_bytes(apu),
         encode_bytes(apv),
+        c_int8(receive),
         byref(key),
     )
     return key
 
 
 def key_derive_ecdh_1pu(
-    alg: Union[str, KeyAlg],
+    key_alg: Union[str, KeyAlg],
     ephem_key: LocalKeyHandle,
     sender_key: LocalKeyHandle,
-    recip_key: LocalKeyHandle,
+    receiver_key: LocalKeyHandle,
+    alg_id: Union[bytes, str, ByteBuffer],
     apu: Union[bytes, str, ByteBuffer],
     apv: Union[bytes, str, ByteBuffer],
     cc_tag: Optional[Union[bytes, ByteBuffer]],
+    receive: bool,
 ) -> LocalKeyHandle:
     key = LocalKeyHandle()
-    if isinstance(alg, KeyAlg):
-        alg = alg.value
+    if isinstance(key_alg, KeyAlg):
+        key_alg = key_alg.value
     do_call(
         "askar_key_derive_ecdh_1pu",
-        encode_str(alg),
+        encode_str(key_alg),
         ephem_key,
         sender_key,
-        recip_key,
+        receiver_key,
+        encode_bytes(alg_id),
         encode_bytes(apu),
         encode_bytes(apv),
         encode_bytes(cc_tag),
+        c_int8(receive),
         byref(key),
     )
     return key

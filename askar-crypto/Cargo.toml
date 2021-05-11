@@ -1,6 +1,6 @@
 [package]
 name = "askar-crypto"
-version = "0.2.0-pre.2"
+version = "0.2.0-pre.3"
 authors = ["Hyperledger Aries Contributors <aries@lists.hyperledger.org>"]
 edition = "2018"
 description = "Hyperledger Aries Askar cryptography"
@@ -17,7 +17,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 [features]
 default = ["alloc", "any_key", "all_keys", "crypto_box"]
 alloc = []
-std = ["alloc"]
+std = ["alloc", "serde/std", "serde-json-core/std"]
 all_keys = ["aes", "bls", "chacha", "ec_curves", "ed25519"]
 any_key = ["alloc"]
 aes = ["aes-core", "aes-gcm", "block-modes", "hmac"]
@@ -32,6 +32,7 @@ base64 = { version = "0.13", default-features = false, features = ["alloc"] }
 criterion = "0.3"
 hex-literal = "0.3"
 serde_cbor = "0.11"
+serde-json-core = { version = "0.4", default-features = false, features = ["std"] }
 
 [[bench]]
 name = "enc"
@@ -45,6 +46,7 @@ harness = false
 aead = "0.3"
 aes-core = { package = "aes", version = "0.6", default-features = false, optional = true }
 aes-gcm = { version = "0.8", default-features = false, features = ["aes"], optional = true }
+arbitrary = { version = "1.0", optional = true, features = ["derive"] }
 argon2 = { version = "0.1", default-features = false, features = ["password-hash"], optional = true }
 base64 = { version = "0.13", default-features = false }
 blake2 = { version = "0.9", default-features = false }
@@ -63,7 +65,7 @@ k256 = { version = "0.8", default-features = false, features = ["arithmetic", "e
 p256 = { version = "0.8", default-features = false, features = ["arithmetic", "ecdsa", "ecdh", "zeroize"], optional = true }
 rand = { version = "0.8", default-features = false, features = ["getrandom"] }
 serde = { version = "1.0", default-features = false, features = ["derive"] }
-serde_json = { version = "1.0", default-features = false }
+serde-json-core = { version = "0.4", default-features = false }
 subtle = "2.4"
 sha2 = { version = "0.9", default-features = false }
 x25519-dalek = { version = "1.1", default-features = false, features = ["u64_backend"], optional = true }

@@ -10,6 +10,7 @@ use blake2::Digest;
 use bls12_381::{G1Affine, G1Projective, G2Affine, G2Projective, Scalar};
 use group::GroupEncoding;
 use sha2::Sha256;
+use subtle::ConstantTimeEq;
 use zeroize::Zeroizing;
 
 use crate::generic_array::{
@@ -43,6 +44,14 @@ impl<Pk: BlsPublicKeyType> BlsKeyPair<Pk> {
         Self {
             secret: Some(sk),
             public,
+        }
+    }
+
+    pub(crate) fn check_public_bytes(&self, pk: &[u8]) -> Result<(), Error> {
+        if Pk::with_bytes(&self.public, None, |slf| slf.ct_eq(pk)).into() {
+            Ok(())
+        } else {
+            Err(err_msg!(InvalidKeyData, "invalid BLS keypair"))
         }
     }
 }
@@ -126,7 +135,10 @@ impl<Pk: BlsPublicKeyType> KeySecretBytes for BlsKeyPair<Pk> {
     }
 }
 
-impl<Pk: BlsPublicKeyType> KeyPublicBytes for BlsKeyPair<Pk> {
+impl<Pk: BlsPublicKeyType> KeyPublicBytes for BlsKeyPair<Pk>
+where
+    Self: KeypairMeta,
+{
     fn from_public_bytes(key: &[u8]) -> Result<Self, Error> {
         Ok(Self {
             secret: None,
@@ -159,27 +171,28 @@ impl<Pk: BlsPublicKeyType> ToJwk for BlsKeyPair<Pk> {
 
 impl<Pk: BlsPublicKeyType> FromJwk for BlsKeyPair<Pk> {
     fn from_jwk_parts(jwk: JwkParts<'_>) -> Result<Self, Error> {
-        let pk = ArrayKey::<Pk::BufferSize>::temp(|arr| {
-            if jwk.x.decode_base64(arr)? != arr.len() {
+        ArrayKey::<Pk::BufferSize>::temp(|pk_arr| {
+            if jwk.x.decode_base64(pk_arr)? != pk_arr.len() {
                 Err(err_msg!(InvalidKeyData))
             } else {
-                Pk::from_public_bytes(arr)
-            }
-        })?;
-        let sk = if jwk.d.is_some() {
-            Some(ArrayKey::<U32>::temp(|arr| {
-                if jwk.d.decode_base64(arr)? != arr.len() {
-                    Err(err_msg!(InvalidKeyData))
+                if jwk.d.is_some() {
+                    ArrayKey::<U32>::temp(|sk_arr| {
+                        if jwk.d.decode_base64(sk_arr)? != sk_arr.len() {
+                            Err(err_msg!(InvalidKeyData))
+                        } else {
+                            let result =
+                                BlsKeyPair::from_secret_key(BlsSecretKey::from_bytes(sk_arr)?);
+                            result.check_public_bytes(pk_arr)?;
+                            Ok(result)
+                        }
+                    })
                 } else {
-                    BlsSecretKey::from_bytes(arr)
+                    Ok(Self {
+                        secret: None,
+                        public: Pk::from_public_bytes(pk_arr)?,
+                    })
                 }
-            })?)
-        } else {
-            None
-        };
-        Ok(Self {
-            secret: sk,
-            public: pk,
+            }
         })
     }
 }
@@ -479,7 +492,7 @@ mod tests {
     }
 
     #[test]
-    fn jwk_expected() {
+    fn g1_jwk_expected() {
         let test_pvt = &hex!("0d7359d57963ab8fbbde1852dcf553fedbc31f464d80ee7d40ae683122b45070");
         let test_pub_g1 = &hex!("a2c975348667926acf12f3eecb005044e08a7a9b7d95f30bd281b55445107367a2e5d0558be7943c8bd13f9a1a7036fb");
         let kp = BlsKeyPair::<G1>::from_secret_bytes(&test_pvt[..]).expect("Error creating key");

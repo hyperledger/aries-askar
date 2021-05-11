@@ -5,6 +5,8 @@ use core::{
     str::FromStr,
 };
 
+#[cfg(feature = "arbitrary")]
+use arbitrary::Arbitrary;
 use zeroize::Zeroize;
 
 use crate::{
@@ -47,6 +49,7 @@ pub mod p256;
 
 /// Supported key algorithms
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Zeroize)]
+#[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
 pub enum KeyAlg {
     /// AES
     Aes(AesTypes),
@@ -70,6 +73,8 @@ impl KeyAlg {
             Self::Aes(AesTypes::A256Gcm) => "a256gcm",
             Self::Aes(AesTypes::A128CbcHs256) => "a128cbchs256",
             Self::Aes(AesTypes::A256CbcHs512) => "a256cbchs512",
+            Self::Aes(AesTypes::A128Kw) => "a128kw",
+            Self::Aes(AesTypes::A256Kw) => "a256kw",
             Self::Bls12_381(BlsCurves::G1) => "bls12381g1",
             Self::Bls12_381(BlsCurves::G2) => "bls12381g2",
             Self::Bls12_381(BlsCurves::G1G2) => "bls12381g1g2",
@@ -102,6 +107,8 @@ impl FromStr for KeyAlg {
             a if a == "a256cbchs512" || a == "aes256cbchs512" => {
                 Ok(Self::Aes(AesTypes::A256CbcHs512))
             }
+            a if a == "a128kw" || a == "aes128kw" => Ok(Self::Aes(AesTypes::A128Kw)),
+            a if a == "a256kw" || a == "aes256kw" => Ok(Self::Aes(AesTypes::A256Kw)),
             a if a == "bls12381g1" => Ok(Self::Bls12_381(BlsCurves::G1)),
             a if a == "bls12381g2" => Ok(Self::Bls12_381(BlsCurves::G2)),
             a if a == "bls12381g1g2" => Ok(Self::Bls12_381(BlsCurves::G1G2)),
@@ -191,6 +198,7 @@ impl Display for KeyAlg {
 
 /// Supported algorithms for AES
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Zeroize)]
+#[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
 pub enum AesTypes {
     /// 128-bit AES-GCM
     A128Gcm,
@@ -200,10 +208,15 @@ pub enum AesTypes {
     A128CbcHs256,
     /// 256-bit AES-CBC with HMAC-512
     A256CbcHs512,
+    /// 128-bit AES Key Wrap
+    A128Kw,
+    /// 256-bit AES Key Wrap
+    A256Kw,
 }
 
 /// Supported public key types for Bls12_381
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Zeroize)]
+#[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
 pub enum BlsCurves {
     /// G1 curve
     G1,
@@ -215,6 +228,7 @@ pub enum BlsCurves {
 
 /// Supported algorithms for (X)ChaCha20-Poly1305
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Zeroize)]
+#[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
 pub enum Chacha20Types {
     /// ChaCha20-Poly1305
     C20P,
@@ -224,6 +238,7 @@ pub enum Chacha20Types {
 
 /// Supported curves for ECC operations
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Zeroize)]
+#[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
 pub enum EcCurves {
     /// NIST P-256 curve
     Secp256r1,

@@ -50,11 +50,11 @@ pub extern "C" fn askar_key_from_seed(
 }
 
 #[no_mangle]
-pub extern "C" fn askar_key_from_jwk(jwk: FfiStr<'_>, out: *mut LocalKeyHandle) -> ErrorCode {
+pub extern "C" fn askar_key_from_jwk(jwk: ByteBuffer, out: *mut LocalKeyHandle) -> ErrorCode {
     catch_err! {
         trace!("Load key from JWK");
         check_useful_c_ptr!(out);
-        let key = LocalKey::from_jwk(jwk.as_str())?;
+        let key = LocalKey::from_jwk_slice(jwk.as_slice())?;
         unsafe { *out = LocalKeyHandle::create(key) };
         Ok(ErrorCode::Success)
     }
@@ -341,6 +341,43 @@ pub extern "C" fn askar_key_verify_signature(
 }
 
 #[no_mangle]
+pub extern "C" fn askar_key_wrap_key(
+    handle: LocalKeyHandle,
+    other: LocalKeyHandle,
+    nonce: ByteBuffer,
+    out: *mut SecretBuffer,
+) -> ErrorCode {
+    catch_err! {
+        trace!("Wrap key: {}", handle);
+        check_useful_c_ptr!(out);
+        let key = handle.load()?;
+        let other = other.load()?;
+        let result = key.wrap_key(&*other, nonce.as_slice())?;
+        unsafe { *out = SecretBuffer::from_secret(result) };
+        Ok(ErrorCode::Success)
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn askar_key_unwrap_key(
+    handle: LocalKeyHandle,
+    alg: FfiStr<'_>,
+    ciphertext: ByteBuffer,
+    nonce: ByteBuffer,
+    out: *mut LocalKeyHandle,
+) -> ErrorCode {
+    catch_err! {
+        trace!("Unwrap key: {}", handle);
+        check_useful_c_ptr!(out);
+        let key = handle.load()?;
+        let alg = KeyAlg::from_str(alg.as_str())?;
+        let result = key.unwrap_key(alg, ciphertext.as_slice(), nonce.as_slice())?;
+        unsafe { *out = LocalKeyHandle::create(result) };
+        Ok(ErrorCode::Success)
+    }
+}
+
+#[no_mangle]
 pub extern "C" fn askar_key_crypto_box_random_nonce(out: *mut SecretBuffer) -> ErrorCode {
     catch_err! {
         trace!("crypto box random nonce");
@@ -436,21 +473,26 @@ pub extern "C" fn askar_key_derive_ecdh_es(
     alg: FfiStr<'_>,
     ephem_key: LocalKeyHandle,
     recip_key: LocalKeyHandle,
+    alg_id: ByteBuffer,
     apu: ByteBuffer,
     apv: ByteBuffer,
+    receive: i8,
     out: *mut LocalKeyHandle,
 ) -> ErrorCode {
     catch_err! {
         trace!("ECDH-ES: {}", alg.as_str());
         check_useful_c_ptr!(out);
+        let alg = KeyAlg::from_str(alg.as_str())?;
         let ephem_key = ephem_key.load()?;
         let recip_key = recip_key.load()?;
         let key = derive_key_ecdh_es(
+            alg,
             &ephem_key,
             &recip_key,
-            alg.as_str(),
+            alg_id.as_slice(),
             apu.as_slice(),
             apv.as_slice(),
+            receive == 1
         )?;
         unsafe { *out = LocalKeyHandle::create(key) };
         Ok(ErrorCode::Success)
@@ -463,25 +505,30 @@ pub extern "C" fn askar_key_derive_ecdh_1pu(
     ephem_key: LocalKeyHandle,
     sender_key: LocalKeyHandle,
     recip_key: LocalKeyHandle,
+    alg_id: ByteBuffer,
     apu: ByteBuffer,
     apv: ByteBuffer,
     cc_tag: ByteBuffer,
+    receive: i8,
     out: *mut LocalKeyHandle,
 ) -> ErrorCode {
     catch_err! {
         trace!("ECDH-1PU: {}", alg.as_str());
         check_useful_c_ptr!(out);
+        let alg = KeyAlg::from_str(alg.as_str())?;
         let ephem_key = ephem_key.load()?;
         let sender_key = sender_key.load()?;
         let recip_key = recip_key.load()?;
         let key = derive_key_ecdh_1pu(
+            alg,
             &ephem_key,
             &sender_key,
             &recip_key,
-            alg.as_str(),
+            alg_id.as_slice(),
             apu.as_slice(),
             apv.as_slice(),
             cc_tag.as_slice(),
+            receive == 1
         )?;
         unsafe { *out = LocalKeyHandle::create(key) };
         Ok(ErrorCode::Success)

@@ -1,6 +1,4 @@
-use std::str::FromStr;
-
-use super::key::LocalKey;
+use super::local_key::LocalKey;
 use crate::{
     crypto::{
         alg::{x25519::X25519KeyPair, KeyAlg},
@@ -78,36 +76,39 @@ pub fn crypto_box_seal_open(
 
 /// Derive an ECDH-1PU shared key for authenticated encryption
 pub fn derive_key_ecdh_1pu(
+    key_alg: KeyAlg,
     ephem_key: &LocalKey,
     sender_key: &LocalKey,
     recip_key: &LocalKey,
-    alg: &str,
+    alg_id: &[u8],
     apu: &[u8],
     apv: &[u8],
     cc_tag: &[u8],
+    receive: bool,
 ) -> Result<LocalKey, Error> {
-    let key_alg = KeyAlg::from_str(alg)?;
     let derive = Ecdh1PU::new(
         &*ephem_key,
         &*sender_key,
         &*recip_key,
-        alg.as_bytes(),
+        alg_id,
         apu,
         apv,
         cc_tag,
+        receive,
     );
     LocalKey::from_key_derivation(key_alg, derive)
 }
 
 /// Derive an ECDH-ES shared key for anonymous encryption
 pub fn derive_key_ecdh_es(
+    key_alg: KeyAlg,
     ephem_key: &LocalKey,
     recip_key: &LocalKey,
-    alg: &str,
+    alg_id: &[u8],
     apu: &[u8],
     apv: &[u8],
+    receive: bool,
 ) -> Result<LocalKey, Error> {
-    let key_alg = KeyAlg::from_str(alg)?;
-    let derive = EcdhEs::new(&*ephem_key, &*recip_key, alg.as_bytes(), apu, apv);
+    let derive = EcdhEs::new(&*ephem_key, &*recip_key, alg_id, apu, apv, receive);
     LocalKey::from_key_derivation(key_alg, derive)
 }

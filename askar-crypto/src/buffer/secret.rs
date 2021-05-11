@@ -184,7 +184,7 @@ impl ConstantTimeEq for SecretBytes {
 impl PartialEq for SecretBytes {
     #[inline]
     fn eq(&self, other: &Self) -> bool {
-        self.ct_eq(other).unwrap_u8() == 1
+        self.ct_eq(other).into()
     }
 }
 impl Eq for SecretBytes {}

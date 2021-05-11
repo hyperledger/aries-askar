@@ -8,7 +8,7 @@ use core::{
 
 #[cfg(feature = "aes")]
 use super::{
-    aes::{A128CbcHs256, A128Gcm, A256CbcHs512, A256Gcm, AesKey},
+    aes::{A128CbcHs256, A128Gcm, A128Kw, A256CbcHs512, A256Gcm, A256Kw, AesKey},
     AesTypes,
 };
 
@@ -203,6 +203,10 @@ fn generate_any<R: AllocKey>(alg: KeyAlg) -> Result<R, Error> {
         KeyAlg::Aes(AesTypes::A128CbcHs256) => AesKey::<A128CbcHs256>::generate().map(R::alloc_key),
         #[cfg(feature = "aes")]
         KeyAlg::Aes(AesTypes::A256CbcHs512) => AesKey::<A256CbcHs512>::generate().map(R::alloc_key),
+        #[cfg(feature = "aes")]
+        KeyAlg::Aes(AesTypes::A128Kw) => AesKey::<A128Kw>::generate().map(R::alloc_key),
+        #[cfg(feature = "aes")]
+        KeyAlg::Aes(AesTypes::A256Kw) => AesKey::<A256Kw>::generate().map(R::alloc_key),
         #[cfg(feature = "bls")]
         KeyAlg::Bls12_381(BlsCurves::G1) => BlsKeyPair::<G1>::generate().map(R::alloc_key),
         #[cfg(feature = "bls")]
@@ -248,6 +252,10 @@ fn from_seed_any<R: AllocKey>(alg: KeyAlg, seed: Seed<'_>) -> Result<R, Error> {
         KeyAlg::Aes(AesTypes::A256CbcHs512) => {
             AesKey::<A256CbcHs512>::from_seed(seed).map(R::alloc_key)
         }
+        #[cfg(feature = "aes")]
+        KeyAlg::Aes(AesTypes::A128Kw) => AesKey::<A128Kw>::from_seed(seed).map(R::alloc_key),
+        #[cfg(feature = "aes")]
+        KeyAlg::Aes(AesTypes::A256Kw) => AesKey::<A256Kw>::from_seed(seed).map(R::alloc_key),
         #[cfg(feature = "bls")]
         KeyAlg::Bls12_381(BlsCurves::G1) => BlsKeyPair::<G1>::from_seed(seed).map(R::alloc_key),
         #[cfg(feature = "bls")]
@@ -328,6 +336,14 @@ fn from_secret_bytes_any<R: AllocKey>(alg: KeyAlg, secret: &[u8]) -> Result<R, E
         KeyAlg::Aes(AesTypes::A256CbcHs512) => {
             AesKey::<A256CbcHs512>::from_secret_bytes(secret).map(R::alloc_key)
         }
+        #[cfg(feature = "aes")]
+        KeyAlg::Aes(AesTypes::A128Kw) => {
+            AesKey::<A128Kw>::from_secret_bytes(secret).map(R::alloc_key)
+        }
+        #[cfg(feature = "aes")]
+        KeyAlg::Aes(AesTypes::A256Kw) => {
+            AesKey::<A256Kw>::from_secret_bytes(secret).map(R::alloc_key)
+        }
         #[cfg(feature = "bls")]
         KeyAlg::Bls12_381(BlsCurves::G1) => {
             BlsKeyPair::<G1>::from_secret_bytes(secret).map(R::alloc_key)
@@ -395,6 +411,14 @@ where
         KeyAlg::Aes(AesTypes::A256CbcHs512) => {
             AesKey::<A256CbcHs512>::from_key_exchange(secret, public).map(R::alloc_key)
         }
+        #[cfg(feature = "aes")]
+        KeyAlg::Aes(AesTypes::A128Kw) => {
+            AesKey::<A128Kw>::from_key_exchange(secret, public).map(R::alloc_key)
+        }
+        #[cfg(feature = "aes")]
+        KeyAlg::Aes(AesTypes::A256Kw) => {
+            AesKey::<A256Kw>::from_key_exchange(secret, public).map(R::alloc_key)
+        }
         #[cfg(feature = "chacha")]
         KeyAlg::Chacha20(Chacha20Types::C20P) => {
             Chacha20Key::<C20P>::from_key_exchange(secret, public).map(R::alloc_key)
@@ -448,6 +472,14 @@ fn from_key_derivation_any<R: AllocKey>(
         #[cfg(feature = "aes")]
         KeyAlg::Aes(AesTypes::A256CbcHs512) => {
             AesKey::<A256CbcHs512>::from_key_derivation(derive).map(R::alloc_key)
+        }
+        #[cfg(feature = "aes")]
+        KeyAlg::Aes(AesTypes::A128Kw) => {
+            AesKey::<A128Kw>::from_key_derivation(derive).map(R::alloc_key)
+        }
+        #[cfg(feature = "aes")]
+        KeyAlg::Aes(AesTypes::A256Kw) => {
+            AesKey::<A256Kw>::from_key_derivation(derive).map(R::alloc_key)
         }
         #[cfg(feature = "chacha")]
         KeyAlg::Chacha20(Chacha20Types::C20P) => {
@@ -572,6 +604,14 @@ macro_rules! match_key_alg {
         if $alg == KeyAlg::Aes(AesTypes::A256CbcHs512) {
             return Ok($key.assume::<AesKey<A256CbcHs512>>());
         }
+        #[cfg(feature = "aes")]
+        if $alg == KeyAlg::Aes(AesTypes::A128Kw) {
+            return Ok($key.assume::<AesKey<A128Kw>>());
+        }
+        #[cfg(feature = "aes")]
+        if $alg == KeyAlg::Aes(AesTypes::A256Kw) {
+            return Ok($key.assume::<AesKey<A256Kw>>());
+        }
         match_key_alg!(@ $($rest)*; $key, $alg)
     }};
     (@ Bls $($rest:ident)*; $key:ident, $alg:ident) => {{
@@ -630,25 +670,19 @@ macro_rules! match_key_alg {
     }};
 }
 
-impl ToPublicBytes for AnyKey {
-    fn write_public_bytes(&self, out: &mut dyn WriteBuffer) -> Result<(), Error> {
-        let key = match_key_alg! {
+impl AnyKey {
+    fn key_as_aead(&self) -> Result<&dyn KeyAeadInPlace, Error> {
+        match_key_alg! {
             self,
-            &dyn ToPublicBytes,
-            Bls,
-            Ed25519,
-            K256,
-            P256,
-            X25519,
-            "Public key export is not supported for this key type"
-        }?;
-        key.write_public_bytes(out)
+            &dyn KeyAeadInPlace,
+            Aes,
+            Chacha,
+            "AEAD is not supported for this key type"
+        }
     }
-}
 
-impl ToSecretBytes for AnyKey {
-    fn write_secret_bytes(&self, out: &mut dyn WriteBuffer) -> Result<(), Error> {
-        let key = match_key_alg! {
+    fn key_to_secret(&self) -> Result<&dyn ToSecretBytes, Error> {
+        match_key_alg! {
             self,
             &dyn ToSecretBytes,
             Aes,
@@ -659,8 +693,40 @@ impl ToSecretBytes for AnyKey {
             P256,
             X25519,
             "Secret key export is not supported for this key type"
-        }?;
-        key.write_secret_bytes(out)
+        }
+    }
+
+    fn key_to_public(&self) -> Result<&dyn ToPublicBytes, Error> {
+        match_key_alg! {
+            self,
+            &dyn ToPublicBytes,
+            Bls,
+            Ed25519,
+            K256,
+            P256,
+            X25519,
+            "Public key export is not supported for this key type"
+        }
+    }
+}
+
+impl ToPublicBytes for AnyKey {
+    fn public_bytes_length(&self) -> Result<usize, Error> {
+        self.key_to_public()?.public_bytes_length()
+    }
+
+    fn write_public_bytes(&self, out: &mut dyn WriteBuffer) -> Result<(), Error> {
+        self.key_to_public()?.write_public_bytes(out)
+    }
+}
+
+impl ToSecretBytes for AnyKey {
+    fn secret_bytes_length(&self) -> Result<usize, Error> {
+        self.key_to_secret()?.secret_bytes_length()
+    }
+
+    fn write_secret_bytes(&self, out: &mut dyn WriteBuffer) -> Result<(), Error> {
+        self.key_to_secret()?.write_secret_bytes(out)
     }
 }
 
@@ -687,18 +753,6 @@ impl KeyExchange for AnyKey {
                 let _ = out;
                 return Err(err_msg!(Unsupported, "Unsupported key exchange"));
             }
-        }
-    }
-}
-
-impl AnyKey {
-    fn key_as_aead(&self) -> Result<&dyn KeyAeadInPlace, Error> {
-        match_key_alg! {
-            self,
-            &dyn KeyAeadInPlace,
-            Aes,
-            Chacha,
-            "AEAD is not supported for this key type"
         }
     }
 }
