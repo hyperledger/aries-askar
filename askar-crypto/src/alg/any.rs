@@ -670,25 +670,19 @@ macro_rules! match_key_alg {
     }};
 }
 
-impl ToPublicBytes for AnyKey {
-    fn write_public_bytes(&self, out: &mut dyn WriteBuffer) -> Result<(), Error> {
-        let key = match_key_alg! {
+impl AnyKey {
+    fn key_as_aead(&self) -> Result<&dyn KeyAeadInPlace, Error> {
+        match_key_alg! {
             self,
-            &dyn ToPublicBytes,
-            Bls,
-            Ed25519,
-            K256,
-            P256,
-            X25519,
-            "Public key export is not supported for this key type"
-        }?;
-        key.write_public_bytes(out)
+            &dyn KeyAeadInPlace,
+            Aes,
+            Chacha,
+            "AEAD is not supported for this key type"
+        }
     }
-}
 
-impl ToSecretBytes for AnyKey {
-    fn write_secret_bytes(&self, out: &mut dyn WriteBuffer) -> Result<(), Error> {
-        let key = match_key_alg! {
+    fn key_to_secret(&self) -> Result<&dyn ToSecretBytes, Error> {
+        match_key_alg! {
             self,
             &dyn ToSecretBytes,
             Aes,
@@ -699,8 +693,40 @@ impl ToSecretBytes for AnyKey {
             P256,
             X25519,
             "Secret key export is not supported for this key type"
-        }?;
-        key.write_secret_bytes(out)
+        }
+    }
+
+    fn key_to_public(&self) -> Result<&dyn ToPublicBytes, Error> {
+        match_key_alg! {
+            self,
+            &dyn ToPublicBytes,
+            Bls,
+            Ed25519,
+            K256,
+            P256,
+            X25519,
+            "Public key export is not supported for this key type"
+        }
+    }
+}
+
+impl ToPublicBytes for AnyKey {
+    fn public_bytes_length(&self) -> Result<usize, Error> {
+        self.key_to_public()?.public_bytes_length()
+    }
+
+    fn write_public_bytes(&self, out: &mut dyn WriteBuffer) -> Result<(), Error> {
+        self.key_to_public()?.write_public_bytes(out)
+    }
+}
+
+impl ToSecretBytes for AnyKey {
+    fn secret_bytes_length(&self) -> Result<usize, Error> {
+        self.key_to_secret()?.secret_bytes_length()
+    }
+
+    fn write_secret_bytes(&self, out: &mut dyn WriteBuffer) -> Result<(), Error> {
+        self.key_to_secret()?.write_secret_bytes(out)
     }
 }
 
@@ -727,18 +753,6 @@ impl KeyExchange for AnyKey {
                 let _ = out;
                 return Err(err_msg!(Unsupported, "Unsupported key exchange"));
             }
-        }
-    }
-}
-
-impl AnyKey {
-    fn key_as_aead(&self) -> Result<&dyn KeyAeadInPlace, Error> {
-        match_key_alg! {
-            self,
-            &dyn KeyAeadInPlace,
-            Aes,
-            Chacha,
-            "AEAD is not supported for this key type"
         }
     }
 }

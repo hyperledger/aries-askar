@@ -252,6 +252,8 @@ impl AesType for A256Gcm {
 
 /// Specialized trait for performing AEAD encryption
 pub trait AesAead: AesType {
+    /// Flag indicating a key-wrapping algorithm
+    const KEY_WRAP: bool;
     /// The size of the nonce
     type NonceSize: ArrayLength<u8>;
     /// The size of the authentication tag
@@ -282,6 +284,7 @@ impl<T> AesAead for T
 where
     T: NewAead + AeadInPlace + AesType<KeySize = <T as NewAead>::KeySize>,
 {
+    const KEY_WRAP: bool = false;
     type NonceSize = T::NonceSize;
     type TagSize = T::TagSize;
 
@@ -354,6 +357,7 @@ where
     C::KeySize: core::ops::Shl<consts::B1>,
     <C::KeySize as core::ops::Shl<consts::B1>>::Output: ArrayLength<u8>,
 {
+    const KEY_WRAP: bool = false;
     type NonceSize = C::BlockSize;
     type TagSize = C::KeySize;
 
@@ -470,8 +474,9 @@ where
     Self: AesType,
     K: NewBlockCipher<KeySize = Self::KeySize> + BlockCipher<BlockSize = consts::U16>,
 {
+    const KEY_WRAP: bool = true;
     type NonceSize = consts::U0;
-    type TagSize = consts::U0;
+    type TagSize = consts::U8;
 
     fn aes_encrypt_in_place(
         key: &GenericArray<u8, Self::KeySize>,

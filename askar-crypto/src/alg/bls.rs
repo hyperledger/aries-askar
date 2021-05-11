@@ -135,7 +135,10 @@ impl<Pk: BlsPublicKeyType> KeySecretBytes for BlsKeyPair<Pk> {
     }
 }
 
-impl<Pk: BlsPublicKeyType> KeyPublicBytes for BlsKeyPair<Pk> {
+impl<Pk: BlsPublicKeyType> KeyPublicBytes for BlsKeyPair<Pk>
+where
+    Self: KeypairMeta,
+{
     fn from_public_bytes(key: &[u8]) -> Result<Self, Error> {
         Ok(Self {
             secret: None,

@@ -225,6 +225,29 @@ impl LocalKey {
             sig_type.map(SignatureType::from_str).transpose()?,
         )?)
     }
+
+    /// Wrap another key using this key
+    pub fn wrap_key(&self, key: &LocalKey, nonce: &[u8]) -> Result<Vec<u8>, Error> {
+        let params = self.inner.aead_params();
+        let mut buf = SecretBytes::with_capacity(
+            key.inner.secret_bytes_length()? + params.nonce_length + params.tag_length,
+        );
+        key.inner.write_secret_bytes(&mut buf)?;
+        self.inner.encrypt_in_place(&mut buf, nonce, &[])?;
+        Ok(buf.into_vec())
+    }
+
+    /// Unwrap a key using this key
+    pub fn unwrap_key(
+        &self,
+        alg: KeyAlg,
+        ciphertext: &[u8],
+        nonce: &[u8],
+    ) -> Result<LocalKey, Error> {
+        let mut buf = SecretBytes::from_slice(ciphertext);
+        self.inner.decrypt_in_place(&mut buf, nonce, &[])?;
+        Self::from_secret_bytes(alg, buf.as_ref())
+    }
 }
 
 impl KeyExchange for LocalKey {

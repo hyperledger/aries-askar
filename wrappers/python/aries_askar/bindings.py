@@ -1022,7 +1022,7 @@ def key_get_jwk_public(handle: LocalKeyHandle, alg: Union[str, KeyAlg] = None) -
 
 def key_get_jwk_secret(handle: LocalKeyHandle) -> ByteBuffer:
     sec = ByteBuffer()
-    do_call("askar_key_get_jwk_public", handle, byref(sec))
+    do_call("askar_key_get_jwk_secret", handle, byref(sec))
     return sec
 
 
@@ -1116,6 +1116,42 @@ def key_verify_signature(
         byref(verify),
     )
     return verify.value != 0
+
+
+def key_wrap_key(
+    handle: LocalKeyHandle,
+    other: LocalKeyHandle,
+    nonce: Union[bytes, ByteBuffer],
+) -> ByteBuffer:
+    wrapped = ByteBuffer()
+    do_call(
+        "askar_key_wrap_key",
+        handle,
+        other,
+        encode_bytes(nonce),
+        byref(wrapped),
+    )
+    return wrapped
+
+
+def key_unwrap_key(
+    handle: LocalKeyHandle,
+    alg: Union[str, KeyAlg],
+    ciphertext: Union[bytes, ByteBuffer],
+    nonce: Union[bytes, ByteBuffer],
+) -> LocalKeyHandle:
+    result = LocalKeyHandle()
+    if isinstance(alg, KeyAlg):
+        alg = alg.value
+    do_call(
+        "askar_key_unwrap_key",
+        handle,
+        encode_str(alg),
+        encode_bytes(ciphertext),
+        encode_bytes(nonce),
+        byref(result),
+    )
+    return result
 
 
 def key_crypto_box_random_nonce() -> ByteBuffer:

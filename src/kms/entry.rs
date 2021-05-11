@@ -1,4 +1,4 @@
-use super::key::LocalKey;
+use super::local_key::LocalKey;
 use crate::{
     crypto::{alg::AnyKey, buffer::SecretBytes, jwk::FromJwk},
     error::Error,

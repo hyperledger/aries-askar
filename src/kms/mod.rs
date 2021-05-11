@@ -18,8 +18,8 @@ pub use self::envelope::{
 mod entry;
 pub use self::entry::{KeyEntry, KeyParams};
 
-mod key;
-pub use self::key::{KeyAlg, LocalKey};
+mod local_key;
+pub use self::local_key::{KeyAlg, LocalKey};
 
 /// Supported categories of KMS entries
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Zeroize)]

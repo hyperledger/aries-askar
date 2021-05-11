@@ -66,7 +66,7 @@ class Key:
         return bindings.key_get_jwk_public(self._handle, alg)
 
     def get_jwk_secret(self) -> str:
-        return bindings.key_get_jwk_secret(self._handle)
+        return str(bindings.key_get_jwk_secret(self._handle))
 
     def get_jwk_thumbprint(self, alg: Union[str, KeyAlg] = None) -> str:
         return bindings.key_get_jwk_thumbprint(self._handle, alg)
@@ -92,6 +92,14 @@ class Key:
         self, message: Union[str, bytes], signature: bytes, sig_type: str = None
     ) -> bool:
         return bindings.key_verify_signature(self._handle, message, signature, sig_type)
+
+    def wrap_key(self, other: "Key", nonce: bytes = None) -> bytes:
+        return bytes(bindings.key_wrap_key(self._handle, other._handle, nonce))
+
+    def unwrap_key(
+        self, alg: Union[str, KeyAlg], message: bytes, nonce: bytes = None
+    ) -> "Key":
+        return Key(bindings.key_unwrap_key(self._handle, alg, message, nonce))
 
     def __repr__(self) -> str:
         return (

@@ -1,4 +1,4 @@
-use super::key::LocalKey;
+use super::local_key::LocalKey;
 use crate::{
     crypto::{
         alg::{x25519::X25519KeyPair, KeyAlg},

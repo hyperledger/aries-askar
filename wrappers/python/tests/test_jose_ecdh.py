@@ -7,6 +7,7 @@ from aries_askar import (
     derive_key_ecdh_es,
     derive_key_ecdh_1pu,
 )
+import aries_askar
 
 
 def b64_url(val: Union[str, bytes]) -> bytes:
@@ -102,8 +103,11 @@ def test_ecdh_1pu_wrapped_expected():
         "df4c37a0668306a11e3d6b0074b5d8df"
     )
 
-    kw = derived.aead_encrypt(cek.get_secret_bytes(), b"", b"")
-    assert b64_url(kw) == (
+    encrypted_key = derived.wrap_key(cek)
+    assert b64_url(encrypted_key) == (
         b"pOMVA9_PtoRe7xXW1139NzzN1UhiFoio8lGto9cf0t8PyU-"
         b"sjNXH8-LIRLycq8CHJQbDwvQeU1cSl55cQ0hGezJu2N9IY0QN"
     )
+
+    k = derived.unwrap_key(KeyAlg.A256CBC_HS512, encrypted_key)
+    assert k.get_jwk_secret() == cek.get_jwk_secret()

@@ -341,6 +341,43 @@ pub extern "C" fn askar_key_verify_signature(
 }
 
 #[no_mangle]
+pub extern "C" fn askar_key_wrap_key(
+    handle: LocalKeyHandle,
+    other: LocalKeyHandle,
+    nonce: ByteBuffer,
+    out: *mut SecretBuffer,
+) -> ErrorCode {
+    catch_err! {
+        trace!("Wrap key: {}", handle);
+        check_useful_c_ptr!(out);
+        let key = handle.load()?;
+        let other = other.load()?;
+        let result = key.wrap_key(&*other, nonce.as_slice())?;
+        unsafe { *out = SecretBuffer::from_secret(result) };
+        Ok(ErrorCode::Success)
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn askar_key_unwrap_key(
+    handle: LocalKeyHandle,
+    alg: FfiStr<'_>,
+    ciphertext: ByteBuffer,
+    nonce: ByteBuffer,
+    out: *mut LocalKeyHandle,
+) -> ErrorCode {
+    catch_err! {
+        trace!("Unwrap key: {}", handle);
+        check_useful_c_ptr!(out);
+        let key = handle.load()?;
+        let alg = KeyAlg::from_str(alg.as_str())?;
+        let result = key.unwrap_key(alg, ciphertext.as_slice(), nonce.as_slice())?;
+        unsafe { *out = LocalKeyHandle::create(result) };
+        Ok(ErrorCode::Success)
+    }
+}
+
+#[no_mangle]
 pub extern "C" fn askar_key_crypto_box_random_nonce(out: *mut SecretBuffer) -> ErrorCode {
     catch_err! {
         trace!("crypto box random nonce");
