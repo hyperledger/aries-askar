@@ -495,7 +495,7 @@ def encode_str(arg: Optional[Union[str, bytes]]) -> c_char_p:
     if arg is None:
         return c_char_p()
     if isinstance(arg, str):
-        return c_char_p(arg.encode("utf-8"))
+        arg = arg.encode("utf-8")
     return c_char_p(arg)
 
 
@@ -533,6 +533,8 @@ def encode_tags(tags: Optional[dict]) -> c_char_p:
                 for name, value in tags.items()
             }
         )
+    else:
+        tags = None
     return encode_str(tags)
 
 
