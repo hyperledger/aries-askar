@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::str::FromStr;
 
 use super::enc::{Encrypted, ToDecrypt};
@@ -191,10 +192,16 @@ impl LocalKey {
         aad: &[u8],
     ) -> Result<Encrypted, Error> {
         let params = self.inner.aead_params();
+        let mut nonce = Cow::Borrowed(nonce);
+        if nonce.is_empty() && params.nonce_length > 0 {
+            nonce = Cow::Owned(self.aead_random_nonce()?);
+        }
         let mut buf =
-            SecretBytes::from_slice_reserve(message, params.nonce_length + params.tag_length);
-        let tag_pos = self.inner.encrypt_in_place(&mut buf, nonce, aad)?;
-        Ok(Encrypted::new(buf, tag_pos))
+            SecretBytes::from_slice_reserve(message, params.tag_length + params.nonce_length);
+        let tag_pos = self.inner.encrypt_in_place(&mut buf, nonce.as_ref(), aad)?;
+        let nonce_pos = buf.len();
+        buf.extend_from_slice(nonce.as_ref());
+        Ok(Encrypted::new(buf, tag_pos, nonce_pos))
     }
 
     /// Perform AEAD message decryption with this encryption key
@@ -238,11 +245,13 @@ impl LocalKey {
     pub fn wrap_key(&self, key: &LocalKey, nonce: &[u8]) -> Result<Encrypted, Error> {
         let params = self.inner.aead_params();
         let mut buf = SecretBytes::with_capacity(
-            key.inner.secret_bytes_length()? + params.nonce_length + params.tag_length,
+            key.inner.secret_bytes_length()? + params.tag_length + params.nonce_length,
         );
         key.inner.write_secret_bytes(&mut buf)?;
         let tag_pos = self.inner.encrypt_in_place(&mut buf, nonce, &[])?;
-        Ok(Encrypted::new(buf, tag_pos))
+        let nonce_pos = buf.len();
+        buf.extend_from_slice(nonce);
+        Ok(Encrypted::new(buf, tag_pos, nonce_pos))
     }
 
     /// Unwrap a key using this key

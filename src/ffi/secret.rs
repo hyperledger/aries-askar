@@ -56,14 +56,17 @@ impl SecretBuffer {
 pub struct EncryptedBuffer {
     buffer: SecretBuffer,
     tag_pos: i64,
+    nonce_pos: i64,
 }
 
 impl EncryptedBuffer {
     pub fn from_encrypted(enc: Encrypted) -> Self {
         let tag_pos = i64::try_from(enc.tag_pos).expect("ciphertext length exceeds i64::MAX");
+        let nonce_pos = i64::try_from(enc.nonce_pos).expect("ciphertext length exceeds i64::MAX");
         Self {
             buffer: SecretBuffer::from_secret(enc.buffer),
             tag_pos,
+            nonce_pos,
         }
     }
 }

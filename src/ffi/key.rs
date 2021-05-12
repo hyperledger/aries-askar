@@ -287,7 +287,6 @@ pub extern "C" fn askar_key_aead_encrypt(
         let key = handle.load()?;
         let enc = key.aead_encrypt(message.as_slice(), nonce.as_slice(), aad.as_slice())?;
         let result = EncryptedBuffer::from_encrypted(enc);
-        error!("enc buf {:?}", result);
         unsafe { *out = result };
         Ok(ErrorCode::Success)
     }

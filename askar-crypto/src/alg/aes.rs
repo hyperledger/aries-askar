@@ -493,7 +493,7 @@ where
         if aad.len() != 0 {
             return Err(err_msg!(Unsupported, "AAD not supported"));
         }
-        let buf_len = buffer.as_ref().len();
+        let mut buf_len = buffer.as_ref().len();
         if buf_len % 8 != 0 {
             return Err(err_msg!(
                 Unsupported,
@@ -503,6 +503,7 @@ where
         let blocks = buf_len / 8;
 
         buffer.buffer_insert(0, &[0u8; 8])?;
+        buf_len += 8;
 
         let aes = K::new(key);
         let mut iv = AES_KW_DEFAULT_IV;

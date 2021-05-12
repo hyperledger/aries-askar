@@ -5,11 +5,16 @@ pub use crate::crypto::buffer::SecretBytes;
 pub struct Encrypted {
     pub(crate) buffer: SecretBytes,
     pub(crate) tag_pos: usize,
+    pub(crate) nonce_pos: usize,
 }
 
 impl Encrypted {
-    pub(crate) fn new(buffer: SecretBytes, tag_pos: usize) -> Self {
-        Self { buffer, tag_pos }
+    pub(crate) fn new(buffer: SecretBytes, tag_pos: usize, nonce_pos: usize) -> Self {
+        Self {
+            buffer,
+            tag_pos,
+            nonce_pos,
+        }
     }
 
     /// Convert the ciphertext and tag into a Vec<u8>
@@ -22,9 +27,14 @@ impl Encrypted {
         &self.buffer[0..(self.tag_pos)]
     }
 
+    /// Access the nonce
+    pub fn nonce(&self) -> &[u8] {
+        &self.buffer[(self.nonce_pos)..]
+    }
+
     /// Access the authentication tag
     pub fn tag(&self) -> &[u8] {
-        &self.buffer[self.tag_pos..]
+        &self.buffer[(self.tag_pos)..(self.nonce_pos)]
     }
 }
 
