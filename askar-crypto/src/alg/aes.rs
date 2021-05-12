@@ -159,7 +159,7 @@ impl<T: AesAead> KeyAeadInPlace for AesKey<T> {
         buffer: &mut dyn ResizeBuffer,
         nonce: &[u8],
         aad: &[u8],
-    ) -> Result<(), Error> {
+    ) -> Result<usize, Error> {
         if nonce.len() != NonceSize::<T>::USIZE {
             return Err(err_msg!(InvalidNonce));
         }
@@ -265,7 +265,7 @@ pub trait AesAead: AesType {
         buffer: &mut dyn ResizeBuffer,
         nonce: &GenericArray<u8, Self::NonceSize>,
         aad: &[u8],
-    ) -> Result<(), Error>;
+    ) -> Result<usize, Error>;
 
     /// Perform AEAD decryption
     fn aes_decrypt_in_place(
@@ -293,13 +293,14 @@ where
         buffer: &mut dyn ResizeBuffer,
         nonce: &GenericArray<u8, Self::NonceSize>,
         aad: &[u8],
-    ) -> Result<(), Error> {
+    ) -> Result<usize, Error> {
         let enc = <T as NewAead>::new(key);
         let tag = enc
             .encrypt_in_place_detached(nonce, aad, buffer.as_mut())
             .map_err(|_| err_msg!(Encryption, "AEAD encryption error"))?;
+        let ctext_len = buffer.as_ref().len();
         buffer.buffer_write(&tag[..])?;
-        Ok(())
+        Ok(ctext_len)
     }
 
     fn aes_decrypt_in_place(
@@ -366,7 +367,7 @@ where
         buffer: &mut dyn ResizeBuffer,
         nonce: &GenericArray<u8, Self::NonceSize>,
         aad: &[u8],
-    ) -> Result<(), Error> {
+    ) -> Result<usize, Error> {
         // this should be optimized away except when the error is thrown
         if Self::TagSize::USIZE > D::OutputSize::USIZE {
             return Err(err_msg!(
@@ -400,7 +401,7 @@ where
         buffer.as_mut()[ctext_end..(ctext_end + Self::TagSize::USIZE)]
             .copy_from_slice(&mac[..Self::TagSize::USIZE]);
 
-        Ok(())
+        Ok(ctext_end)
     }
 
     fn aes_decrypt_in_place(
@@ -488,19 +489,21 @@ where
         buffer: &mut dyn ResizeBuffer,
         _nonce: &GenericArray<u8, Self::NonceSize>,
         aad: &[u8],
-    ) -> Result<(), Error> {
+    ) -> Result<usize, Error> {
         if aad.len() != 0 {
             return Err(err_msg!(Unsupported, "AAD not supported"));
         }
-        if buffer.as_ref().len() % 8 != 0 {
+        let mut buf_len = buffer.as_ref().len();
+        if buf_len % 8 != 0 {
             return Err(err_msg!(
                 Unsupported,
                 "Data length must be a multiple of 8 bytes"
             ));
         }
-        let blocks = buffer.as_ref().len() / 8;
+        let blocks = buf_len / 8;
 
         buffer.buffer_insert(0, &[0u8; 8])?;
+        buf_len += 8;
 
         let aes = K::new(key);
         let mut iv = AES_KW_DEFAULT_IV;
@@ -519,7 +522,7 @@ where
             }
         }
         buffer.as_mut()[0..8].copy_from_slice(&iv[..]);
-        Ok(())
+        Ok(buf_len)
     }
 
     fn aes_decrypt_in_place(

@@ -21,7 +21,7 @@ from ctypes import (
     c_ubyte,
 )
 from ctypes.util import find_library
-from typing import Optional, Union
+from typing import Optional, Tuple, Union
 
 from .error import AskarError, AskarErrorCode
 from .types import EntryOperation, KeyAlg
@@ -243,17 +243,23 @@ class FfiByteBuffer(Structure):
     ]
 
 
-class ByteBuffer(Structure):
+class RawBuffer(Structure):
     """A byte buffer allocated by the library."""
 
     _fields_ = [
         ("len", c_int64),
-        ("value", c_void_p),
+        ("data", c_void_p),
     ]
+
+
+class ByteBuffer(Structure):
+    """A managed byte buffer allocated by the library."""
+
+    _fields_ = [("buffer", RawBuffer)]
 
     @property
     def raw(self) -> Array:
-        ret = (c_ubyte * self.len).from_address(self.value)
+        ret = (c_ubyte * self.buffer.len).from_address(self.buffer.data)
         setattr(ret, "_ref_", self)  # ensure buffer is not dropped
         return ret
 
@@ -266,7 +272,7 @@ class ByteBuffer(Structure):
 
     def __del__(self):
         """Call the byte buffer destructor when this instance is released."""
-        get_library().askar_buffer_free(self)
+        get_library().askar_buffer_free(self.buffer)
 
 
 class StrBuffer(c_char_p):
@@ -315,6 +321,67 @@ class AeadParams(Structure):
             f"<AeadParams(nonce_length={self.nonce_length}, "
             f"tag_length={self.tag_length})>"
         )
+
+
+class Encrypted(Structure):
+    """The result of an AEAD encryption operation."""
+
+    _fields_ = [
+        ("buffer", RawBuffer),
+        ("tag_pos", c_int64),
+        ("nonce_pos", c_int64),
+    ]
+
+    def __getitem__(self, idx) -> bytes:
+        arr = (c_ubyte * self.buffer.len).from_address(self.buffer.data)
+        return bytes(arr[idx])
+
+    def __bytes__(self) -> bytes:
+        """Convert to bytes."""
+        return self.ciphertext_tag
+
+    @property
+    def ciphertext_tag(self) -> bytes:
+        """Accessor for the combined ciphertext and tag."""
+        p = self.nonce_pos
+        return self[:p]
+
+    @property
+    def ciphertext(self) -> bytes:
+        """Accessor for the ciphertext."""
+        p = self.tag_pos
+        return self[:p]
+
+    @property
+    def nonce(self) -> bytes:
+        """Accessor for the nonce."""
+        p = self.nonce_pos
+        return self[p:]
+
+    @property
+    def tag(self) -> bytes:
+        """Accessor for the authentication tag."""
+        p1 = self.tag_pos
+        p2 = self.nonce_pos
+        return self[p1:p2]
+
+    @property
+    def parts(self) -> Tuple[bytes, bytes, bytes]:
+        """Accessor for the ciphertext, tag, and nonce."""
+        p1 = self.tag_pos
+        p2 = self.nonce_pos
+        return self[:p1], self[p1:p2], self[p2:]
+
+    def __repr__(self) -> str:
+        """Format encrypted value as a string."""
+        return (
+            f"<Encrypted(ciphertext={self.ciphertext}, tag={self.tag},"
+            f" nonce={self.nonce})>"
+        )
+
+    def __del__(self):
+        """Call the byte buffer destructor when this instance is released."""
+        get_library().askar_buffer_free(self.buffer)
 
 
 def get_library() -> CDLL:
@@ -495,7 +562,7 @@ def encode_str(arg: Optional[Union[str, bytes]]) -> c_char_p:
     if arg is None:
         return c_char_p()
     if isinstance(arg, str):
-        return c_char_p(arg.encode("utf-8"))
+        arg = arg.encode("utf-8")
     return c_char_p(arg)
 
 
@@ -533,6 +600,8 @@ def encode_tags(tags: Optional[dict]) -> c_char_p:
                 for name, value in tags.items()
             }
         )
+    else:
+        tags = None
     return encode_str(tags)
 
 
@@ -974,8 +1043,10 @@ def key_get_secret_bytes(handle: LocalKeyHandle) -> ByteBuffer:
     return buf
 
 
-def key_from_jwk(jwk: Union[str, bytes]) -> LocalKeyHandle:
+def key_from_jwk(jwk: Union[dict, str, bytes]) -> LocalKeyHandle:
     handle = LocalKeyHandle()
+    if isinstance(jwk, dict):
+        jwk = json.dumps(jwk)
     do_call("askar_key_from_jwk", encode_bytes(jwk), byref(handle))
     return handle
 
@@ -1052,9 +1123,9 @@ def key_aead_encrypt(
     handle: LocalKeyHandle,
     input: Union[bytes, str, ByteBuffer],
     nonce: Union[bytes, ByteBuffer],
-    aad: Union[bytes, ByteBuffer] = None,
-) -> ByteBuffer:
-    enc = ByteBuffer()
+    aad: Optional[Union[bytes, ByteBuffer]],
+) -> Encrypted:
+    enc = Encrypted()
     do_call(
         "askar_key_aead_encrypt",
         handle,
@@ -1068,16 +1139,20 @@ def key_aead_encrypt(
 
 def key_aead_decrypt(
     handle: LocalKeyHandle,
-    input: Union[bytes, ByteBuffer],
+    ciphertext: Union[bytes, ByteBuffer, Encrypted],
     nonce: Union[bytes, ByteBuffer],
-    aad: Union[bytes, ByteBuffer] = None,
+    tag: Optional[Union[bytes, ByteBuffer]],
+    aad: Optional[Union[bytes, ByteBuffer]],
 ) -> ByteBuffer:
     dec = ByteBuffer()
+    if isinstance(ciphertext, Encrypted):
+        ciphertext = ciphertext.ciphertext_tag
     do_call(
         "askar_key_aead_decrypt",
         handle,
-        encode_bytes(input),
+        encode_bytes(ciphertext),
         encode_bytes(nonce),
+        encode_bytes(tag),
         encode_bytes(aad),
         byref(dec),
     )
@@ -1087,7 +1162,7 @@ def key_aead_decrypt(
 def key_sign_message(
     handle: LocalKeyHandle,
     message: Union[bytes, str, ByteBuffer],
-    sig_type: str = None,
+    sig_type: Optional[str],
 ) -> ByteBuffer:
     sig = ByteBuffer()
     do_call(
@@ -1104,7 +1179,7 @@ def key_verify_signature(
     handle: LocalKeyHandle,
     message: Union[bytes, str, ByteBuffer],
     signature: Union[bytes, ByteBuffer],
-    sig_type: str = None,
+    sig_type: Optional[str],
 ) -> bool:
     verify = c_int8()
     do_call(
@@ -1121,9 +1196,9 @@ def key_verify_signature(
 def key_wrap_key(
     handle: LocalKeyHandle,
     other: LocalKeyHandle,
-    nonce: Union[bytes, ByteBuffer],
-) -> ByteBuffer:
-    wrapped = ByteBuffer()
+    nonce: Optional[Union[bytes, ByteBuffer]],
+) -> Encrypted:
+    wrapped = Encrypted()
     do_call(
         "askar_key_wrap_key",
         handle,
@@ -1137,18 +1212,22 @@ def key_wrap_key(
 def key_unwrap_key(
     handle: LocalKeyHandle,
     alg: Union[str, KeyAlg],
-    ciphertext: Union[bytes, ByteBuffer],
+    ciphertext: Union[bytes, ByteBuffer, Encrypted],
     nonce: Union[bytes, ByteBuffer],
+    tag: Optional[Union[bytes, ByteBuffer]],
 ) -> LocalKeyHandle:
     result = LocalKeyHandle()
     if isinstance(alg, KeyAlg):
         alg = alg.value
+    if isinstance(ciphertext, Encrypted):
+        ciphertext = ciphertext.ciphertext_tag
     do_call(
         "askar_key_unwrap_key",
         handle,
         encode_str(alg),
         encode_bytes(ciphertext),
         encode_bytes(nonce),
+        encode_bytes(tag),
         byref(result),
     )
     return result

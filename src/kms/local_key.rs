@@ -1,5 +1,7 @@
+use std::borrow::Cow;
 use std::str::FromStr;
 
+use super::enc::{Encrypted, ToDecrypt};
 pub use crate::crypto::{
     alg::KeyAlg,
     buffer::{SecretBytes, WriteBuffer},
@@ -176,27 +178,40 @@ impl LocalKey {
                 "Key type does not support AEAD encryption"
             ));
         }
-        let buf = SecretBytes::new_with(nonce_len, fill_random);
-        Ok(buf.into_vec())
+        let mut buf = Vec::with_capacity(nonce_len);
+        buf.resize(nonce_len, 0u8);
+        fill_random(&mut buf);
+        Ok(buf)
     }
 
     /// Perform AEAD message encryption with this encryption key
-    pub fn aead_encrypt(&self, message: &[u8], nonce: &[u8], aad: &[u8]) -> Result<Vec<u8>, Error> {
+    pub fn aead_encrypt(
+        &self,
+        message: &[u8],
+        nonce: &[u8],
+        aad: &[u8],
+    ) -> Result<Encrypted, Error> {
         let params = self.inner.aead_params();
+        let mut nonce = Cow::Borrowed(nonce);
+        if nonce.is_empty() && params.nonce_length > 0 {
+            nonce = Cow::Owned(self.aead_random_nonce()?);
+        }
         let mut buf =
-            SecretBytes::from_slice_reserve(message, params.nonce_length + params.tag_length);
-        self.inner.encrypt_in_place(&mut buf, nonce, aad)?;
-        Ok(buf.into_vec())
+            SecretBytes::from_slice_reserve(message, params.tag_length + params.nonce_length);
+        let tag_pos = self.inner.encrypt_in_place(&mut buf, nonce.as_ref(), aad)?;
+        let nonce_pos = buf.len();
+        buf.extend_from_slice(nonce.as_ref());
+        Ok(Encrypted::new(buf, tag_pos, nonce_pos))
     }
 
     /// Perform AEAD message decryption with this encryption key
-    pub fn aead_decrypt(
-        &self,
-        ciphertext: &[u8],
+    pub fn aead_decrypt<'d>(
+        &'d self,
+        ciphertext: impl Into<ToDecrypt<'d>>,
         nonce: &[u8],
         aad: &[u8],
     ) -> Result<SecretBytes, Error> {
-        let mut buf = SecretBytes::from_slice(ciphertext);
+        let mut buf = ciphertext.into().into_secret();
         self.inner.decrypt_in_place(&mut buf, nonce, aad)?;
         Ok(buf)
     }
@@ -227,24 +242,26 @@ impl LocalKey {
     }
 
     /// Wrap another key using this key
-    pub fn wrap_key(&self, key: &LocalKey, nonce: &[u8]) -> Result<Vec<u8>, Error> {
+    pub fn wrap_key(&self, key: &LocalKey, nonce: &[u8]) -> Result<Encrypted, Error> {
         let params = self.inner.aead_params();
         let mut buf = SecretBytes::with_capacity(
-            key.inner.secret_bytes_length()? + params.nonce_length + params.tag_length,
+            key.inner.secret_bytes_length()? + params.tag_length + params.nonce_length,
         );
         key.inner.write_secret_bytes(&mut buf)?;
-        self.inner.encrypt_in_place(&mut buf, nonce, &[])?;
-        Ok(buf.into_vec())
+        let tag_pos = self.inner.encrypt_in_place(&mut buf, nonce, &[])?;
+        let nonce_pos = buf.len();
+        buf.extend_from_slice(nonce);
+        Ok(Encrypted::new(buf, tag_pos, nonce_pos))
     }
 
     /// Unwrap a key using this key
-    pub fn unwrap_key(
-        &self,
+    pub fn unwrap_key<'d>(
+        &'d self,
         alg: KeyAlg,
-        ciphertext: &[u8],
+        ciphertext: impl Into<ToDecrypt<'d>>,
         nonce: &[u8],
     ) -> Result<LocalKey, Error> {
-        let mut buf = SecretBytes::from_slice(ciphertext);
+        let mut buf = ciphertext.into().into_secret();
         self.inner.decrypt_in_place(&mut buf, nonce, &[])?;
         Self::from_secret_bytes(alg, buf.as_ref())
     }

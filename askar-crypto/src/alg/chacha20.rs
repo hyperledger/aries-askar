@@ -172,7 +172,7 @@ impl<T: Chacha20Type> KeyAeadInPlace for Chacha20Key<T> {
         buffer: &mut dyn ResizeBuffer,
         nonce: &[u8],
         aad: &[u8],
-    ) -> Result<(), Error> {
+    ) -> Result<usize, Error> {
         if nonce.len() != NonceSize::<T>::USIZE {
             return Err(err_msg!(InvalidNonce));
         }
@@ -181,8 +181,9 @@ impl<T: Chacha20Type> KeyAeadInPlace for Chacha20Key<T> {
         let tag = chacha
             .encrypt_in_place_detached(nonce, aad, buffer.as_mut())
             .map_err(|_| err_msg!(Encryption, "AEAD encryption error"))?;
+        let ctext_len = buffer.as_ref().len();
         buffer.buffer_write(&tag[..])?;
-        Ok(())
+        Ok(ctext_len)
     }
 
     /// Decrypt an encrypted (verification tag appended) value in place

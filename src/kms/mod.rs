@@ -9,6 +9,9 @@ use zeroize::Zeroize;
 
 use crate::error::Error;
 
+mod enc;
+pub use enc::{Encrypted, SecretBytes, ToDecrypt};
+
 mod envelope;
 pub use self::envelope::{
     crypto_box, crypto_box_open, crypto_box_random_nonce, crypto_box_seal, crypto_box_seal_open,

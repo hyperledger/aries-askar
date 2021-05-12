@@ -1,9 +1,10 @@
 """Handling of Key instances."""
 
-from typing import Optional, Union
+from typing import Union
 
 from . import bindings
 
+from .bindings import Encrypted
 from .types import KeyAlg
 
 
@@ -33,7 +34,7 @@ class Key:
         return cls(bindings.key_from_public_bytes(alg, public))
 
     @classmethod
-    def from_jwk(cls, jwk: Union[str, bytes]) -> "Key":
+    def from_jwk(cls, jwk: Union[dict, str, bytes]) -> "Key":
         return cls(bindings.key_from_jwk(jwk))
 
     @property
@@ -78,12 +79,21 @@ class Key:
         return bytes(bindings.key_aead_random_nonce(self._handle))
 
     def aead_encrypt(
-        self, message: Union[str, bytes], nonce: bytes, aad: bytes = None
-    ) -> bytes:
-        return bytes(bindings.key_aead_encrypt(self._handle, message, nonce, aad))
+        self, message: Union[str, bytes], *, nonce: bytes = None, aad: bytes = None
+    ) -> Encrypted:
+        return bindings.key_aead_encrypt(self._handle, message, nonce, aad)
 
-    def aead_decrypt(self, message: bytes, nonce: bytes, aad: bytes = None) -> bytes:
-        return bytes(bindings.key_aead_decrypt(self._handle, message, nonce, aad))
+    def aead_decrypt(
+        self,
+        ciphertext: Union[bytes, Encrypted],
+        *,
+        nonce: bytes,
+        tag: bytes = None,
+        aad: bytes = None,
+    ) -> bytes:
+        return bytes(
+            bindings.key_aead_decrypt(self._handle, ciphertext, nonce, tag, aad)
+        )
 
     def sign_message(self, message: Union[str, bytes], sig_type: str = None) -> bytes:
         return bytes(bindings.key_sign_message(self._handle, message, sig_type))
@@ -93,100 +103,21 @@ class Key:
     ) -> bool:
         return bindings.key_verify_signature(self._handle, message, signature, sig_type)
 
-    def wrap_key(self, other: "Key", nonce: bytes = None) -> bytes:
-        return bytes(bindings.key_wrap_key(self._handle, other._handle, nonce))
+    def wrap_key(self, other: "Key", *, nonce: bytes = None) -> Encrypted:
+        return bindings.key_wrap_key(self._handle, other._handle, nonce)
 
     def unwrap_key(
-        self, alg: Union[str, KeyAlg], message: bytes, nonce: bytes = None
+        self,
+        alg: Union[str, KeyAlg],
+        ciphertext: Union[bytes, Encrypted],
+        *,
+        nonce: bytes = None,
+        tag: bytes = None,
     ) -> "Key":
-        return Key(bindings.key_unwrap_key(self._handle, alg, message, nonce))
+        return Key(bindings.key_unwrap_key(self._handle, alg, ciphertext, nonce, tag))
 
     def __repr__(self) -> str:
         return (
             f"<Key(handle={self._handle}, alg={self.algorithm}, "
             f"ephemeral={self.ephemeral})>"
         )
-
-
-def crypto_box_random_nonce() -> bytes:
-    return bytes(bindings.key_crypto_box_random_nonce())
-
-
-def crypto_box(
-    recip_key: Key,
-    sender_key: Key,
-    message: Union[bytes, str],
-    nonce: bytes,
-) -> bytes:
-    return bytes(
-        bindings.key_crypto_box(recip_key._handle, sender_key._handle, message, nonce)
-    )
-
-
-def crypto_box_open(
-    recip_key: Key,
-    sender_key: Key,
-    message: Union[bytes, str],
-    nonce: bytes,
-) -> bytes:
-    return bytes(
-        bindings.key_crypto_box_open(
-            recip_key._handle, sender_key._handle, message, nonce
-        )
-    )
-
-
-def crypto_box_seal(
-    recip_key: Key,
-    message: Union[bytes, str],
-) -> bytes:
-    return bytes(bindings.key_crypto_box_seal(recip_key._handle, message))
-
-
-def crypto_box_seal_open(
-    recip_key: Key,
-    ciphertext: bytes,
-) -> bytes:
-    return bytes(bindings.key_crypto_box_seal_open(recip_key._handle, ciphertext))
-
-
-def derive_key_ecdh_1pu(
-    key_alg: Union[str, KeyAlg],
-    ephem_key: Key,
-    sender_key: Key,
-    receiver_key: Key,
-    alg_id: Union[bytes, str],
-    apu: Union[bytes, str],
-    apv: Union[bytes, str],
-    cc_tag: Optional[bytes],
-    receive: bool,
-) -> Key:
-    return Key(
-        bindings.key_derive_ecdh_1pu(
-            key_alg,
-            ephem_key._handle,
-            sender_key._handle,
-            receiver_key._handle,
-            alg_id,
-            apu,
-            apv,
-            cc_tag,
-            receive,
-        )
-    )
-
-
-def derive_key_ecdh_es(
-    key_alg: Union[str, KeyAlg],
-    ephem_key: Key,
-    receiver_key: Key,
-    alg_id: Union[bytes, str],
-    apu: Union[bytes, str],
-    apv: Union[bytes, str],
-    receive: bool,
-) -> Key:
-    return Key(
-        bindings.key_derive_ecdh_es(
-            key_alg, ephem_key._handle, receiver_key._handle, alg_id, apu, apv, receive
-        )
-    )

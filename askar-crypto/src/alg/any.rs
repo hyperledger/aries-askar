@@ -763,7 +763,7 @@ impl KeyAeadInPlace for AnyKey {
         buffer: &mut dyn ResizeBuffer,
         nonce: &[u8],
         aad: &[u8],
-    ) -> Result<(), Error> {
+    ) -> Result<usize, Error> {
         self.key_as_aead()?.encrypt_in_place(buffer, nonce, aad)
     }
 
