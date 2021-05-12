@@ -4,42 +4,129 @@ from typing import Union
 from aries_askar import (
     KeyAlg,
     Key,
-    derive_key_ecdh_es,
-    derive_key_ecdh_1pu,
 )
+from aries_askar.ecdh import EcdhEs, Ecdh1PU
 
 
-def b64_url(val: Union[str, bytes]) -> bytes:
+def b64_url(val: Union[str, bytes]) -> str:
     if isinstance(val, str):
         val = val.encode("utf-8")
-    return base64.urlsafe_b64encode(val).rstrip(b"=")
+    return base64.urlsafe_b64encode(val).rstrip(b"=").decode("ascii")
 
 
 def test_ecdh_es_direct():
-    ephem = Key.generate(KeyAlg.P256, ephemeral=True)
-    bob = Key.generate(KeyAlg.P256)
-    derived = derive_key_ecdh_es(
-        KeyAlg.A256GCM, ephem, bob, "A256GCM", "Alice", "Bob", receive=False
+    bob_key = Key.generate(KeyAlg.P256)
+    bob_jwk = bob_key.get_jwk_public()
+    ephem_key = Key.generate(KeyAlg.P256)
+    ephem_jwk = ephem_key.get_jwk_public()
+    message = b"Hello there"
+    alg = "ECDH-ES"
+    apu = "Alice"
+    apv = "Bob"
+    enc = "A256GCM"
+    protected_b64 = b64_url(
+        f'{{"alg":"{alg}",'
+        f'"enc":"{enc}",'
+        f'"apu":"{b64_url(apu)}",'
+        f'"apv":"{b64_url(apv)}",'
+        f'"epk":{ephem_jwk}}}'
+    ).encode("ascii")
+    encrypted_msg = EcdhEs(enc, apu, apv).encrypt_direct(
+        KeyAlg.A256GCM, ephem_key, bob_jwk, message, aad=protected_b64
     )
-    assert derived.algorithm == KeyAlg.A256GCM
+    ciphertext, tag, nonce = encrypted_msg.parts
+
+    # switch to receiver
+
+    message_recv = EcdhEs(enc, apu, apv).decrypt_direct(
+        KeyAlg.A256GCM,
+        ephem_jwk,
+        bob_key,
+        ciphertext,
+        nonce=nonce,
+        tag=tag,
+        aad=protected_b64,
+    )
+    assert message_recv == message
+
+
+def test_ecdh_es_wrapped():
+    bob_key = Key.generate(KeyAlg.X25519)
+    bob_jwk = bob_key.get_jwk_public()
+    ephem_key = Key.generate(KeyAlg.X25519)
+    ephem_jwk = ephem_key.get_jwk_public()
+    message = b"Hello there"
+    alg = "ECDH-ES+A128KW"
+    apu = "Alice"
+    apv = "Bob"
+    enc = "A256GCM"
+    protected_b64 = b64_url(
+        f'{{"alg":"{alg}",'
+        f'"enc":"{enc}",'
+        f'"apu":"{b64_url(apu)}",'
+        f'"apv":"{b64_url(apv)}",'
+        f'"epk":{ephem_jwk}}}'
+    ).encode("ascii")
+    cek = Key.generate(KeyAlg.A256GCM)
+    encrypted_msg = cek.aead_encrypt(message, aad=protected_b64)
+    ciphertext, tag, nonce = encrypted_msg.parts
+    encrypted_key = EcdhEs(alg, apu, apv).sender_wrap_key(
+        KeyAlg.A128KW, ephem_key, bob_jwk, cek
+    )
+    encrypted_key = encrypted_key.ciphertext
+
+    # switch to receiver
+
+    cek_recv = EcdhEs(alg, apu, apv).receiver_unwrap_key(
+        KeyAlg.A128KW,
+        KeyAlg.A256GCM,
+        ephem_jwk,
+        bob_key,
+        encrypted_key,
+    )
+    message_recv = cek_recv.aead_decrypt(
+        ciphertext, nonce=nonce, tag=tag, aad=protected_b64
+    )
+    assert message_recv == message
 
 
 def test_ecdh_1pu_direct():
-    ephem = Key.generate(KeyAlg.P256, ephemeral=True)
-    alice = Key.generate(KeyAlg.P256)
-    bob = Key.generate(KeyAlg.P256)
-    derived = derive_key_ecdh_1pu(
-        KeyAlg.A256GCM,
-        ephem,
-        alice,
-        bob,
-        "A256GCM",
-        "Alice",
-        "Bob",
-        cc_tag=None,
-        receive=False,
+    alice_key = Key.generate(KeyAlg.P256)
+    alice_jwk = alice_key.get_jwk_public()
+    bob_key = Key.generate(KeyAlg.P256)
+    bob_jwk = bob_key.get_jwk_public()
+    ephem_key = Key.generate(KeyAlg.P256)
+    ephem_jwk = ephem_key.get_jwk_public()
+    message = b"Hello there"
+    alg = "ECDH-1PU"
+    apu = "Alice"
+    apv = "Bob"
+    enc = "A256GCM"
+    protected_b64 = b64_url(
+        f'{{"alg":"{alg}",'
+        f'"enc":"{enc}",'
+        f'"apu":"{b64_url(apu)}",'
+        f'"apv":"{b64_url(apv)}",'
+        f'"epk":{ephem_jwk}}}'
+    ).encode("ascii")
+    encrypted_msg = Ecdh1PU(alg, apu, apv).encrypt_direct(
+        KeyAlg.A256GCM, ephem_key, alice_key, bob_jwk, message, aad=protected_b64
     )
-    assert derived.algorithm == KeyAlg.A256GCM
+    ciphertext, tag, nonce = encrypted_msg.parts
+
+    # switch to receiver
+
+    message_recv = Ecdh1PU(alg, apu, apv).decrypt_direct(
+        KeyAlg.A256GCM,
+        ephem_jwk,
+        alice_jwk,
+        bob_key,
+        ciphertext,
+        nonce=nonce,
+        tag=tag,
+        aad=protected_b64,
+    )
+    assert message_recv == message
 
 
 # from ECDH-1PU RFC draft 4
@@ -68,7 +155,33 @@ def test_ecdh_1pu_wrapped_expected():
          "d": "1gDirl_r_Y3-qUa3WXHgEXrrEHngWThU3c9zj9A2uBg"}
     """
     )
+
+    alg = "ECDH-1PU+A128KW"
+    enc = "A256CBC-HS512"
+    apu = "Alice"
+    apv = "Bob and Charlie"
     protected_b64 = b64_url(
+        f'{{"alg":"{alg}",'
+        f'"enc":"{enc}",'
+        f'"apu":"{b64_url(apu)}",'
+        f'"apv":"{b64_url(apv)}",'
+        '"epk":'
+        '{"kty":"OKP",'
+        '"crv":"X25519",'
+        '"x":"k9of_cpAajy0poW5gaixXGs9nHkwg1AFqUAFa39dyBc"}}'
+    ).encode("ascii")
+    protected = (
+        f'{{"alg":"{alg}",'
+        f'"enc":"{enc}",'
+        f'"apu":"{b64_url(apu)}",'
+        f'"apv":"{b64_url(apv)}",'
+        '"epk":'
+        '{"kty":"OKP",'
+        '"crv":"X25519",'
+        '"x":"k9of_cpAajy0poW5gaixXGs9nHkwg1AFqUAFa39dyBc"}}'
+    )
+
+    assert protected == (
         '{"alg":"ECDH-1PU+A128KW",'
         '"enc":"A256CBC-HS512",'
         '"apu":"QWxpY2U",'  # Alice
@@ -93,43 +206,36 @@ def test_ecdh_1pu_wrapped_expected():
 
     enc = cek.aead_encrypt(message, nonce=iv, aad=protected_b64)
     ciphertext, cc_tag = enc.ciphertext, enc.tag
-    assert b64_url(ciphertext) == b"Az2IWsISEMDJvyc5XRL-3-d-RgNBOGolCsxFFoUXFYw"
-    assert b64_url(cc_tag) == b"HLb4fTlm8spGmij3RyOs2gJ4DpHM4hhVRwdF_hGb3WQ"
+    assert b64_url(ciphertext) == "Az2IWsISEMDJvyc5XRL-3-d-RgNBOGolCsxFFoUXFYw"
+    assert b64_url(cc_tag) == "HLb4fTlm8spGmij3RyOs2gJ4DpHM4hhVRwdF_hGb3WQ"
 
-    derived = derive_key_ecdh_1pu(
+    derived = Ecdh1PU(alg, apu, apv)._derive_key(
         KeyAlg.A128KW,
         ephem,
         sender_key=alice,
         receiver_key=bob,
-        alg_id="ECDH-1PU+A128KW",
-        apu="Alice",
-        apv="Bob and Charlie",
         cc_tag=cc_tag,
         receive=False,
     )
-    assert derived.algorithm == KeyAlg.A128KW
     assert derived.get_secret_bytes() == bytes.fromhex(
         "df4c37a0668306a11e3d6b0074b5d8df"
     )
 
-    encrypted_key = derived.wrap_key(cek).combined
+    encrypted_key = derived.wrap_key(cek).ciphertext_tag
     assert b64_url(encrypted_key) == (
-        b"pOMVA9_PtoRe7xXW1139NzzN1UhiFoio8lGto9cf0t8PyU-"
-        b"sjNXH8-LIRLycq8CHJQbDwvQeU1cSl55cQ0hGezJu2N9IY0QN"
+        "pOMVA9_PtoRe7xXW1139NzzN1UhiFoio8lGto9cf0t8PyU-"
+        "sjNXH8-LIRLycq8CHJQbDwvQeU1cSl55cQ0hGezJu2N9IY0QN"
     )
 
     # Skipping key derivation for Charlie.
     # Assemble encrypted_key, iv, cc_tag, ciphertext, and headers into a JWE envelope here.
     # Receiver disassembles envelope and..
 
-    derived_recv = derive_key_ecdh_1pu(
+    derived_recv = Ecdh1PU(alg, apu, apv)._derive_key(
         KeyAlg.A128KW,
         ephem,
         sender_key=alice,
         receiver_key=bob,
-        alg_id="ECDH-1PU+A128KW",
-        apu="Alice",
-        apv="Bob and Charlie",
         cc_tag=cc_tag,
         receive=True,
     )

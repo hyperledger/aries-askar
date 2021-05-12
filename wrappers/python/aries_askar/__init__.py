@@ -9,11 +9,10 @@ from .key import (
     crypto_box_random_nonce,
     crypto_box_seal,
     crypto_box_seal_open,
-    derive_key_ecdh_1pu,
-    derive_key_ecdh_es,
 )
 from .store import Entry, EntryList, KeyEntry, KeyEntryList, Session, Store
 from .types import KeyAlg
+from . import ecdh
 
 __all__ = (
     "crypto_box",
@@ -21,8 +20,7 @@ __all__ = (
     "crypto_box_random_nonce",
     "crypto_box_seal",
     "crypto_box_seal_open",
-    "derive_key_ecdh_1pu",
-    "derive_key_ecdh_es",
+    "ecdh",
     "generate_raw_key",
     "version",
     "AskarError",

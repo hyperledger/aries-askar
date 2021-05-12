@@ -21,7 +21,7 @@ from ctypes import (
     c_ubyte,
 )
 from ctypes.util import find_library
-from typing import Optional, Union
+from typing import Optional, Tuple, Union
 
 from .error import AskarError, AskarErrorCode
 from .types import EntryOperation, KeyAlg
@@ -328,7 +328,8 @@ class Encrypted(Structure):
 
     _fields_ = [
         ("buffer", RawBuffer),
-        ("ctext_len", c_int64),
+        ("tag_pos", c_int64),
+        ("nonce_pos", c_int64),
     ]
 
     def __getitem__(self, idx) -> bytes:
@@ -337,30 +338,46 @@ class Encrypted(Structure):
 
     def __bytes__(self) -> bytes:
         """Convert to bytes."""
-        return self[:]
+        return self.ciphertext_tag
 
     @property
-    def combined(self) -> bytes:
+    def ciphertext_tag(self) -> bytes:
         """Accessor for the combined ciphertext and tag."""
-        return self[:]
+        p = self.nonce_pos
+        return self[:p]
 
     @property
     def ciphertext(self) -> bytes:
         """Accessor for the ciphertext."""
-        #        print(self.ctext_len, bytes(self.buffer.raw))
-        # assert False
-        p = self.ctext_len
+        p = self.tag_pos
         return self[:p]
+
+    @property
+    def nonce(self) -> bytes:
+        """Accessor for the nonce."""
+        p = self.nonce_pos
+        return self[p:]
 
     @property
     def tag(self) -> bytes:
         """Accessor for the authentication tag."""
-        p = self.ctext_len
-        return self[p:]
+        p1 = self.tag_pos
+        p2 = self.nonce_pos
+        return self[p1:p2]
+
+    @property
+    def parts(self) -> Tuple[bytes, bytes, bytes]:
+        """Accessor for the ciphertext, tag, and nonce."""
+        p1 = self.tag_pos
+        p2 = self.nonce_pos
+        return self[:p1], self[p1:p2], self[p2:]
 
     def __repr__(self) -> str:
         """Format encrypted value as a string."""
-        return f"<Encrypted(ciphertext={self.ciphertext}, tag={self.tag}, {self.combined})>"
+        return (
+            f"<Encrypted(ciphertext={self.ciphertext}, tag={self.tag},"
+            f" nonce={self.nonce})>"
+        )
 
     def __del__(self):
         """Call the byte buffer destructor when this instance is released."""
@@ -1026,8 +1043,10 @@ def key_get_secret_bytes(handle: LocalKeyHandle) -> ByteBuffer:
     return buf
 
 
-def key_from_jwk(jwk: Union[str, bytes]) -> LocalKeyHandle:
+def key_from_jwk(jwk: Union[dict, str, bytes]) -> LocalKeyHandle:
     handle = LocalKeyHandle()
+    if isinstance(jwk, dict):
+        jwk = json.dumps(jwk)
     do_call("askar_key_from_jwk", encode_bytes(jwk), byref(handle))
     return handle
 
@@ -1126,9 +1145,8 @@ def key_aead_decrypt(
     aad: Optional[Union[bytes, ByteBuffer]],
 ) -> ByteBuffer:
     dec = ByteBuffer()
-    print(f"decrypt with {ciphertext}")
     if isinstance(ciphertext, Encrypted):
-        ciphertext = ciphertext.combined
+        ciphertext = ciphertext.ciphertext_tag
     do_call(
         "askar_key_aead_decrypt",
         handle,
@@ -1202,7 +1220,7 @@ def key_unwrap_key(
     if isinstance(alg, KeyAlg):
         alg = alg.value
     if isinstance(ciphertext, Encrypted):
-        ciphertext = ciphertext.combined
+        ciphertext = ciphertext.ciphertext_tag
     do_call(
         "askar_key_unwrap_key",
         handle,

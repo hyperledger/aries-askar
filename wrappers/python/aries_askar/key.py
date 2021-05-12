@@ -1,6 +1,6 @@
 """Handling of Key instances."""
 
-from typing import Optional, Union
+from typing import Union
 
 from . import bindings
 
@@ -34,7 +34,7 @@ class Key:
         return cls(bindings.key_from_public_bytes(alg, public))
 
     @classmethod
-    def from_jwk(cls, jwk: Union[str, bytes]) -> "Key":
+    def from_jwk(cls, jwk: Union[dict, str, bytes]) -> "Key":
         return cls(bindings.key_from_jwk(jwk))
 
     @property
@@ -79,7 +79,7 @@ class Key:
         return bytes(bindings.key_aead_random_nonce(self._handle))
 
     def aead_encrypt(
-        self, message: Union[str, bytes], *, nonce: bytes, aad: bytes = None
+        self, message: Union[str, bytes], *, nonce: bytes = None, aad: bytes = None
     ) -> Encrypted:
         return bindings.key_aead_encrypt(self._handle, message, nonce, aad)
 
@@ -163,45 +163,3 @@ def crypto_box_seal_open(
     ciphertext: bytes,
 ) -> bytes:
     return bytes(bindings.key_crypto_box_seal_open(recip_key._handle, ciphertext))
-
-
-def derive_key_ecdh_1pu(
-    key_alg: Union[str, KeyAlg],
-    ephem_key: Key,
-    sender_key: Key,
-    receiver_key: Key,
-    alg_id: Union[bytes, str],
-    apu: Union[bytes, str],
-    apv: Union[bytes, str],
-    cc_tag: Optional[bytes],
-    receive: bool,
-) -> Key:
-    return Key(
-        bindings.key_derive_ecdh_1pu(
-            key_alg,
-            ephem_key._handle,
-            sender_key._handle,
-            receiver_key._handle,
-            alg_id,
-            apu,
-            apv,
-            cc_tag,
-            receive,
-        )
-    )
-
-
-def derive_key_ecdh_es(
-    key_alg: Union[str, KeyAlg],
-    ephem_key: Key,
-    receiver_key: Key,
-    alg_id: Union[bytes, str],
-    apu: Union[bytes, str],
-    apv: Union[bytes, str],
-    receive: bool,
-) -> Key:
-    return Key(
-        bindings.key_derive_ecdh_es(
-            key_alg, ephem_key._handle, receiver_key._handle, alg_id, apu, apv, receive
-        )
-    )
