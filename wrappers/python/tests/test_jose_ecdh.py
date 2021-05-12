@@ -21,9 +21,9 @@ def test_ecdh_es_direct():
     ephem_jwk = ephem_key.get_jwk_public()
     message = b"Hello there"
     alg = "ECDH-ES"
+    enc = "A256GCM"
     apu = "Alice"
     apv = "Bob"
-    enc = "A256GCM"
     protected_b64 = b64_url(
         f'{{"alg":"{alg}",'
         f'"enc":"{enc}",'
@@ -57,9 +57,9 @@ def test_ecdh_es_wrapped():
     ephem_jwk = ephem_key.get_jwk_public()
     message = b"Hello there"
     alg = "ECDH-ES+A128KW"
+    enc = "A256GCM"
     apu = "Alice"
     apv = "Bob"
-    enc = "A256GCM"
     protected_b64 = b64_url(
         f'{{"alg":"{alg}",'
         f'"enc":"{enc}",'
@@ -99,9 +99,9 @@ def test_ecdh_1pu_direct():
     ephem_jwk = ephem_key.get_jwk_public()
     message = b"Hello there"
     alg = "ECDH-1PU"
+    enc = "A256GCM"
     apu = "Alice"
     apv = "Bob"
-    enc = "A256GCM"
     protected_b64 = b64_url(
         f'{{"alg":"{alg}",'
         f'"enc":"{enc}",'
@@ -109,14 +109,14 @@ def test_ecdh_1pu_direct():
         f'"apv":"{b64_url(apv)}",'
         f'"epk":{ephem_jwk}}}'
     ).encode("ascii")
-    encrypted_msg = Ecdh1PU(alg, apu, apv).encrypt_direct(
+    encrypted_msg = Ecdh1PU(enc, apu, apv).encrypt_direct(
         KeyAlg.A256GCM, ephem_key, alice_key, bob_jwk, message, aad=protected_b64
     )
     ciphertext, tag, nonce = encrypted_msg.parts
 
     # switch to receiver
 
-    message_recv = Ecdh1PU(alg, apu, apv).decrypt_direct(
+    message_recv = Ecdh1PU(enc, apu, apv).decrypt_direct(
         KeyAlg.A256GCM,
         ephem_jwk,
         alice_jwk,

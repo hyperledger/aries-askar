@@ -6,7 +6,6 @@ from aries_askar import (
     KeyAlg,
     Key,
     Store,
-    generate_raw_key,
 )
 
 
@@ -21,7 +20,7 @@ TEST_ENTRY = {
 
 @fixture
 async def store() -> Store:
-    key = generate_raw_key(b"00000000000000000000000000000My1")
+    key = Store.generate_raw_key(b"00000000000000000000000000000My1")
     store = await Store.provision(TEST_STORE_URI, "raw", key, recreate=True)
     yield store
     await store.close(remove=True)

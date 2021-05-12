@@ -1,8 +1,10 @@
 from aries_askar import (
-    crypto_box_seal,
-    crypto_box_seal_open,
     KeyAlg,
     Key,
+)
+from aries_askar.crypto_box import (
+    crypto_box_seal,
+    crypto_box_seal_open,
 )
 
 
