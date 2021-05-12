@@ -2,6 +2,7 @@ from aries_askar import (
     KeyAlg,
     Key,
 )
+from aries_askar.bindings import ByteBuffer, Encrypted
 
 
 def test_aes_cbc_hmac():
@@ -13,8 +14,8 @@ def test_aes_cbc_hmac():
     params = key.aead_params()
     assert params.nonce_length == 16
     assert params.tag_length == 16
-    enc = key.aead_encrypt(data, nonce, b"aad")
-    dec = key.aead_decrypt(enc, nonce, b"aad")
+    enc = key.aead_encrypt(data, nonce=nonce, aad=b"aad")
+    dec = key.aead_decrypt(enc, nonce=nonce, aad=b"aad")
     assert data == bytes(dec)
 
 
@@ -27,8 +28,8 @@ def test_aes_gcm():
     params = key.aead_params()
     assert params.nonce_length == 12
     assert params.tag_length == 16
-    enc = key.aead_encrypt(data, nonce, b"aad")
-    dec = key.aead_decrypt(enc, nonce, b"aad")
+    enc = key.aead_encrypt(data, nonce=nonce, aad=b"aad")
+    dec = key.aead_decrypt(enc, nonce=nonce, aad=b"aad")
     assert data == bytes(dec)
 
 

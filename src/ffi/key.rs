@@ -2,7 +2,11 @@ use std::{os::raw::c_char, str::FromStr};
 
 use ffi_support::{rust_string_to_c, ByteBuffer, FfiStr};
 
-use super::{handle::ArcHandle, secret::SecretBuffer, ErrorCode};
+use super::{
+    handle::ArcHandle,
+    secret::{EncryptedBuffer, SecretBuffer},
+    ErrorCode,
+};
 use crate::kms::{
     crypto_box, crypto_box_open, crypto_box_random_nonce, crypto_box_seal, crypto_box_seal_open,
     derive_key_ecdh_1pu, derive_key_ecdh_es, KeyAlg, LocalKey,
@@ -275,14 +279,16 @@ pub extern "C" fn askar_key_aead_encrypt(
     message: ByteBuffer,
     nonce: ByteBuffer,
     aad: ByteBuffer,
-    out: *mut SecretBuffer,
+    out: *mut EncryptedBuffer,
 ) -> ErrorCode {
     catch_err! {
         trace!("AEAD encrypt: {}", handle);
         check_useful_c_ptr!(out);
         let key = handle.load()?;
         let enc = key.aead_encrypt(message.as_slice(), nonce.as_slice(), aad.as_slice())?;
-        unsafe { *out = SecretBuffer::from_secret(enc) };
+        let result = EncryptedBuffer::from_encrypted(enc);
+        error!("enc buf {:?}", result);
+        unsafe { *out = result };
         Ok(ErrorCode::Success)
     }
 }
@@ -292,6 +298,7 @@ pub extern "C" fn askar_key_aead_decrypt(
     handle: LocalKeyHandle,
     ciphertext: ByteBuffer,
     nonce: ByteBuffer,
+    tag: ByteBuffer,
     aad: ByteBuffer,
     out: *mut SecretBuffer,
 ) -> ErrorCode {
@@ -299,7 +306,7 @@ pub extern "C" fn askar_key_aead_decrypt(
         trace!("AEAD decrypt: {}", handle);
         check_useful_c_ptr!(out);
         let key = handle.load()?;
-        let dec = key.aead_decrypt(ciphertext.as_slice(), nonce.as_slice(), aad.as_slice())?;
+        let dec = key.aead_decrypt((ciphertext.as_slice(), tag.as_slice()), nonce.as_slice(), aad.as_slice())?;
         unsafe { *out = SecretBuffer::from_secret(dec) };
         Ok(ErrorCode::Success)
     }
@@ -345,7 +352,7 @@ pub extern "C" fn askar_key_wrap_key(
     handle: LocalKeyHandle,
     other: LocalKeyHandle,
     nonce: ByteBuffer,
-    out: *mut SecretBuffer,
+    out: *mut EncryptedBuffer,
 ) -> ErrorCode {
     catch_err! {
         trace!("Wrap key: {}", handle);
@@ -353,7 +360,7 @@ pub extern "C" fn askar_key_wrap_key(
         let key = handle.load()?;
         let other = other.load()?;
         let result = key.wrap_key(&*other, nonce.as_slice())?;
-        unsafe { *out = SecretBuffer::from_secret(result) };
+        unsafe { *out = EncryptedBuffer::from_encrypted(result) };
         Ok(ErrorCode::Success)
     }
 }
@@ -364,6 +371,7 @@ pub extern "C" fn askar_key_unwrap_key(
     alg: FfiStr<'_>,
     ciphertext: ByteBuffer,
     nonce: ByteBuffer,
+    tag: ByteBuffer,
     out: *mut LocalKeyHandle,
 ) -> ErrorCode {
     catch_err! {
@@ -371,7 +379,7 @@ pub extern "C" fn askar_key_unwrap_key(
         check_useful_c_ptr!(out);
         let key = handle.load()?;
         let alg = KeyAlg::from_str(alg.as_str())?;
-        let result = key.unwrap_key(alg, ciphertext.as_slice(), nonce.as_slice())?;
+        let result = key.unwrap_key(alg, (ciphertext.as_slice(), tag.as_slice()), nonce.as_slice())?;
         unsafe { *out = LocalKeyHandle::create(result) };
         Ok(ErrorCode::Success)
     }

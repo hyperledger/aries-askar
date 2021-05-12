@@ -4,6 +4,7 @@ from typing import Optional, Union
 
 from . import bindings
 
+from .bindings import Encrypted
 from .types import KeyAlg
 
 
@@ -78,12 +79,21 @@ class Key:
         return bytes(bindings.key_aead_random_nonce(self._handle))
 
     def aead_encrypt(
-        self, message: Union[str, bytes], nonce: bytes, aad: bytes = None
-    ) -> bytes:
-        return bytes(bindings.key_aead_encrypt(self._handle, message, nonce, aad))
+        self, message: Union[str, bytes], *, nonce: bytes, aad: bytes = None
+    ) -> Encrypted:
+        return bindings.key_aead_encrypt(self._handle, message, nonce, aad)
 
-    def aead_decrypt(self, message: bytes, nonce: bytes, aad: bytes = None) -> bytes:
-        return bytes(bindings.key_aead_decrypt(self._handle, message, nonce, aad))
+    def aead_decrypt(
+        self,
+        ciphertext: Union[bytes, Encrypted],
+        *,
+        nonce: bytes,
+        tag: bytes = None,
+        aad: bytes = None,
+    ) -> bytes:
+        return bytes(
+            bindings.key_aead_decrypt(self._handle, ciphertext, nonce, tag, aad)
+        )
 
     def sign_message(self, message: Union[str, bytes], sig_type: str = None) -> bytes:
         return bytes(bindings.key_sign_message(self._handle, message, sig_type))
@@ -93,13 +103,18 @@ class Key:
     ) -> bool:
         return bindings.key_verify_signature(self._handle, message, signature, sig_type)
 
-    def wrap_key(self, other: "Key", nonce: bytes = None) -> bytes:
-        return bytes(bindings.key_wrap_key(self._handle, other._handle, nonce))
+    def wrap_key(self, other: "Key", *, nonce: bytes = None) -> Encrypted:
+        return bindings.key_wrap_key(self._handle, other._handle, nonce)
 
     def unwrap_key(
-        self, alg: Union[str, KeyAlg], message: bytes, nonce: bytes = None
+        self,
+        alg: Union[str, KeyAlg],
+        ciphertext: Union[bytes, Encrypted],
+        *,
+        nonce: bytes = None,
+        tag: bytes = None,
     ) -> "Key":
-        return Key(bindings.key_unwrap_key(self._handle, alg, message, nonce))
+        return Key(bindings.key_unwrap_key(self._handle, alg, ciphertext, nonce, tag))
 
     def __repr__(self) -> str:
         return (

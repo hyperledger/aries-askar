@@ -91,11 +91,10 @@ def test_ecdh_1pu_wrapped_expected():
     iv = bytes.fromhex("000102030405060708090a0b0c0d0e0f")
     message = b"Three is a magic number."
 
-    enc = cek.aead_encrypt(message, iv, aad=protected_b64)
-    ciphertext = enc[:-32]
-    tag = enc[-32:]
+    enc = cek.aead_encrypt(message, nonce=iv, aad=protected_b64)
+    ciphertext, cc_tag = enc.ciphertext, enc.tag
     assert b64_url(ciphertext) == b"Az2IWsISEMDJvyc5XRL-3-d-RgNBOGolCsxFFoUXFYw"
-    assert b64_url(tag) == b"HLb4fTlm8spGmij3RyOs2gJ4DpHM4hhVRwdF_hGb3WQ"
+    assert b64_url(cc_tag) == b"HLb4fTlm8spGmij3RyOs2gJ4DpHM4hhVRwdF_hGb3WQ"
 
     derived = derive_key_ecdh_1pu(
         KeyAlg.A128KW,
@@ -105,7 +104,7 @@ def test_ecdh_1pu_wrapped_expected():
         alg_id="ECDH-1PU+A128KW",
         apu="Alice",
         apv="Bob and Charlie",
-        cc_tag=tag,
+        cc_tag=cc_tag,
         receive=False,
     )
     assert derived.algorithm == KeyAlg.A128KW
@@ -113,7 +112,7 @@ def test_ecdh_1pu_wrapped_expected():
         "df4c37a0668306a11e3d6b0074b5d8df"
     )
 
-    encrypted_key = derived.wrap_key(cek)
+    encrypted_key = derived.wrap_key(cek).combined
     assert b64_url(encrypted_key) == (
         b"pOMVA9_PtoRe7xXW1139NzzN1UhiFoio8lGto9cf0t8PyU-"
         b"sjNXH8-LIRLycq8CHJQbDwvQeU1cSl55cQ0hGezJu2N9IY0QN"
@@ -131,13 +130,14 @@ def test_ecdh_1pu_wrapped_expected():
         alg_id="ECDH-1PU+A128KW",
         apu="Alice",
         apv="Bob and Charlie",
-        cc_tag=tag,
+        cc_tag=cc_tag,
         receive=True,
     )
 
     cek_recv = derived_recv.unwrap_key(KeyAlg.A256CBC_HS512, encrypted_key)
     assert cek_recv.get_jwk_secret() == cek.get_jwk_secret()
 
-    enc = ciphertext + tag
-    message_recv = cek_recv.aead_decrypt(enc, iv, aad=protected_b64)
+    message_recv = cek_recv.aead_decrypt(
+        ciphertext, nonce=iv, aad=protected_b64, tag=cc_tag
+    )
     assert message_recv == message

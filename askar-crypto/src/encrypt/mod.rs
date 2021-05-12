@@ -13,13 +13,14 @@ pub mod crypto_box;
 
 /// Trait for key types which perform AEAD encryption
 pub trait KeyAeadInPlace {
-    /// Encrypt a secret value in place, appending the verification tag
+    /// Encrypt a secret value in place, appending the verification tag and
+    /// returning the length of the ciphertext
     fn encrypt_in_place(
         &self,
         buffer: &mut dyn ResizeBuffer,
         nonce: &[u8],
         aad: &[u8],
-    ) -> Result<(), Error>;
+    ) -> Result<usize, Error>;
 
     /// Decrypt an encrypted (verification tag appended) value in place
     fn decrypt_in_place(

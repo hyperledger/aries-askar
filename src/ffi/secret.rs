@@ -1,6 +1,6 @@
 use std::{convert::TryFrom, mem, ptr};
 
-use crate::crypto::buffer::SecretBytes;
+use crate::{crypto::buffer::SecretBytes, kms::Encrypted};
 
 #[no_mangle]
 pub extern "C" fn askar_buffer_free(buffer: SecretBuffer) {
@@ -10,6 +10,7 @@ pub extern "C" fn askar_buffer_free(buffer: SecretBuffer) {
 }
 
 // Structure consistent with ffi_support ByteBuffer, but zeroized on drop
+#[derive(Debug)]
 #[repr(C)]
 pub struct SecretBuffer {
     // must be >= 0, signed int was chosen for compatibility
@@ -45,6 +46,24 @@ impl SecretBuffer {
             }
             let len = self.len as usize;
             SecretBytes::from(unsafe { Vec::from_raw_parts(self.data, len, len) })
+        }
+    }
+}
+
+// A combined ciphertext and tag value
+#[derive(Debug)]
+#[repr(C)]
+pub struct EncryptedBuffer {
+    buffer: SecretBuffer,
+    tag_pos: i64,
+}
+
+impl EncryptedBuffer {
+    pub fn from_encrypted(enc: Encrypted) -> Self {
+        let tag_pos = i64::try_from(enc.tag_pos).expect("ciphertext length exceeds i64::MAX");
+        Self {
+            buffer: SecretBuffer::from_secret(enc.buffer),
+            tag_pos,
         }
     }
 }

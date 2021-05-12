@@ -1,6 +1,6 @@
 """aries-askar Python wrapper library"""
 
-from .bindings import generate_raw_key, version
+from .bindings import generate_raw_key, version, Encrypted
 from .error import AskarError, AskarErrorCode
 from .key import (
     Key,
@@ -27,6 +27,7 @@ __all__ = (
     "version",
     "AskarError",
     "AskarErrorCode",
+    "Encrypted",
     "Entry",
     "EntryList",
     "Key",
