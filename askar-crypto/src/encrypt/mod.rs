@@ -11,7 +11,7 @@ use crate::{
 #[cfg_attr(docsrs, doc(cfg(feature = "crypto_box")))]
 pub mod crypto_box;
 
-/// Trait for key types which perform AEAD encryption
+/// Object-safe trait for key types which perform AEAD encryption
 pub trait KeyAeadInPlace {
     /// Encrypt a secret value in place, appending the verification tag and
     /// returning the length of the ciphertext
@@ -32,6 +32,11 @@ pub trait KeyAeadInPlace {
 
     /// Get the nonce and tag length for encryption
     fn aead_params(&self) -> KeyAeadParams;
+
+    /// Get the ciphertext padding required
+    fn aead_padding(&self, _msg_len: usize) -> usize {
+        0
+    }
 }
 
 /// For concrete key types with fixed nonce and tag sizes

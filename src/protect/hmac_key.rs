@@ -121,7 +121,7 @@ where
                 "invalid length for hmac output",
             ));
         }
-        let mut hmac = Hmac::<H>::new_varkey(self.key.as_ref()).map_err(|_| {
+        let mut hmac = Hmac::<H>::new_from_slice(self.key.as_ref()).map_err(|_| {
             crypto::Error::from_msg(crypto::ErrorKind::Encryption, "invalid length for hmac key")
         })?;
         for msg in self.inputs {

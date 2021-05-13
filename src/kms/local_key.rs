@@ -160,7 +160,7 @@ impl LocalKey {
     /// Fetch the AEAD parameter lengths
     pub fn aead_params(&self) -> Result<KeyAeadParams, Error> {
         let params = self.inner.aead_params();
-        if params.nonce_length == 0 {
+        if params.tag_length == 0 {
             return Err(err_msg!(
                 Unsupported,
                 "AEAD is not supported for this key type"
@@ -169,14 +169,16 @@ impl LocalKey {
         Ok(params)
     }
 
+    /// Calculate the padding required for a message
+    pub fn aead_padding(&self, msg_len: usize) -> usize {
+        self.inner.aead_padding(msg_len)
+    }
+
     /// Create a new random nonce for AEAD message encryption
     pub fn aead_random_nonce(&self) -> Result<Vec<u8>, Error> {
         let nonce_len = self.inner.aead_params().nonce_length;
         if nonce_len == 0 {
-            return Err(err_msg!(
-                Unsupported,
-                "Key type does not support AEAD encryption"
-            ));
+            return Ok(Vec::new());
         }
         let mut buf = Vec::with_capacity(nonce_len);
         buf.resize(nonce_len, 0u8);
@@ -196,11 +198,14 @@ impl LocalKey {
         if nonce.is_empty() && params.nonce_length > 0 {
             nonce = Cow::Owned(self.aead_random_nonce()?);
         }
+        let pad_len = self.inner.aead_padding(message.len());
         let mut buf =
-            SecretBytes::from_slice_reserve(message, params.tag_length + params.nonce_length);
+            SecretBytes::from_slice_reserve(message, pad_len + params.tag_length + nonce.len());
         let tag_pos = self.inner.encrypt_in_place(&mut buf, nonce.as_ref(), aad)?;
         let nonce_pos = buf.len();
-        buf.extend_from_slice(nonce.as_ref());
+        if !nonce.is_empty() {
+            buf.extend_from_slice(nonce.as_ref());
+        }
         Ok(Encrypted::new(buf, tag_pos, nonce_pos))
     }
 

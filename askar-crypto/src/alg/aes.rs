@@ -51,13 +51,13 @@ pub trait AesType: 'static {
 
 type KeyType<A> = ArrayKey<<A as AesType>::KeySize>;
 
-type NonceSize<A> = <A as AesAead>::NonceSize;
+type NonceSize<A> = <A as KeyAeadMeta>::NonceSize;
 
-type TagSize<A> = <A as AesAead>::TagSize;
+type TagSize<A> = <A as KeyAeadMeta>::TagSize;
 
 const AES_KW_DEFAULT_IV: [u8; 8] = [166, 166, 166, 166, 166, 166, 166, 166];
 
-/// An AES-GCM symmetric encryption key
+/// An AES symmetric encryption key
 #[derive(Serialize, Deserialize, Zeroize)]
 #[serde(
     transparent,
@@ -147,56 +147,6 @@ impl<T: AesType> FromKeyDerivation for AesKey<T> {
     }
 }
 
-impl<T: AesAead> KeyAeadMeta for AesKey<T> {
-    type NonceSize = NonceSize<T>;
-    type TagSize = TagSize<T>;
-}
-
-impl<T: AesAead> KeyAeadInPlace for AesKey<T> {
-    /// Encrypt a secret value in place, appending the verification tag
-    fn encrypt_in_place(
-        &self,
-        buffer: &mut dyn ResizeBuffer,
-        nonce: &[u8],
-        aad: &[u8],
-    ) -> Result<usize, Error> {
-        if nonce.len() != NonceSize::<T>::USIZE {
-            return Err(err_msg!(InvalidNonce));
-        }
-        T::aes_encrypt_in_place(
-            self.0.as_ref(),
-            buffer,
-            GenericArray::from_slice(nonce),
-            aad,
-        )
-    }
-
-    /// Decrypt an encrypted (verification tag appended) value in place
-    fn decrypt_in_place(
-        &self,
-        buffer: &mut dyn ResizeBuffer,
-        nonce: &[u8],
-        aad: &[u8],
-    ) -> Result<(), Error> {
-        if nonce.len() != NonceSize::<T>::USIZE {
-            return Err(err_msg!(InvalidNonce));
-        }
-        T::aes_decrypt_in_place(
-            self.0.as_ref(),
-            buffer,
-            GenericArray::from_slice(nonce),
-            aad,
-        )
-    }
-
-    fn aead_params(&self) -> KeyAeadParams {
-        KeyAeadParams {
-            nonce_length: NonceSize::<T>::USIZE,
-            tag_length: TagSize::<T>::USIZE,
-        }
-    }
-}
-
 impl<T: AesType> ToJwk for AesKey<T> {
     fn encode_jwk(&self, enc: &mut JwkEncoder<'_>) -> Result<(), Error> {
         if enc.is_public() {
@@ -250,81 +200,70 @@ impl AesType for A256Gcm {
     const JWK_ALG: &'static str = "A256GCM";
 }
 
-/// Specialized trait for performing AEAD encryption
-pub trait AesAead: AesType {
-    /// Flag indicating a key-wrapping algorithm
-    const KEY_WRAP: bool;
-    /// The size of the nonce
-    type NonceSize: ArrayLength<u8>;
-    /// The size of the authentication tag
-    type TagSize: ArrayLength<u8>;
-
-    /// Perform AEAD encryption
-    fn aes_encrypt_in_place(
-        key: &GenericArray<u8, Self::KeySize>,
-        buffer: &mut dyn ResizeBuffer,
-        nonce: &GenericArray<u8, Self::NonceSize>,
-        aad: &[u8],
-    ) -> Result<usize, Error>;
-
-    /// Perform AEAD decryption
-    fn aes_decrypt_in_place(
-        key: &GenericArray<u8, Self::KeySize>,
-        buffer: &mut dyn ResizeBuffer,
-        nonce: &GenericArray<u8, Self::NonceSize>,
-        aad: &[u8],
-    ) -> Result<(), Error>;
-
-    /// Calculate padding length for a plaintext length
-    fn aes_padding_length(len: usize) -> usize;
+// generic implementation applying to AesGcm
+impl<T: AeadInPlace + AesType> KeyAeadMeta for AesKey<T> {
+    type NonceSize = <T as AeadInPlace>::NonceSize;
+    type TagSize = <T as AeadInPlace>::TagSize;
 }
 
-// Generic implementation for AesGcm<Aes, NonceSize>
-impl<T> AesAead for T
+// generic implementation applying to AesGcm
+impl<T> KeyAeadInPlace for AesKey<T>
 where
     T: NewAead + AeadInPlace + AesType<KeySize = <T as NewAead>::KeySize>,
 {
-    const KEY_WRAP: bool = false;
-    type NonceSize = T::NonceSize;
-    type TagSize = T::TagSize;
-
-    fn aes_encrypt_in_place(
-        key: &GenericArray<u8, Self::KeySize>,
+    /// Encrypt a secret value in place, appending the verification tag
+    fn encrypt_in_place(
+        &self,
         buffer: &mut dyn ResizeBuffer,
-        nonce: &GenericArray<u8, Self::NonceSize>,
+        nonce: &[u8],
         aad: &[u8],
     ) -> Result<usize, Error> {
-        let enc = <T as NewAead>::new(key);
+        if nonce.len() != T::NonceSize::USIZE {
+            return Err(err_msg!(InvalidNonce));
+        }
+        let enc = <T as NewAead>::new(self.0.as_ref());
         let tag = enc
-            .encrypt_in_place_detached(nonce, aad, buffer.as_mut())
+            .encrypt_in_place_detached(GenericArray::from_slice(nonce), aad, buffer.as_mut())
             .map_err(|_| err_msg!(Encryption, "AEAD encryption error"))?;
         let ctext_len = buffer.as_ref().len();
         buffer.buffer_write(&tag[..])?;
         Ok(ctext_len)
     }
 
-    fn aes_decrypt_in_place(
-        key: &GenericArray<u8, Self::KeySize>,
+    /// Decrypt an encrypted (verification tag appended) value in place
+    fn decrypt_in_place(
+        &self,
         buffer: &mut dyn ResizeBuffer,
-        nonce: &GenericArray<u8, Self::NonceSize>,
+        nonce: &[u8],
         aad: &[u8],
     ) -> Result<(), Error> {
+        if nonce.len() != T::NonceSize::USIZE {
+            return Err(err_msg!(InvalidNonce));
+        }
         let buf_len = buffer.as_ref().len();
-        if buf_len < Self::TagSize::USIZE {
+        if buf_len < T::TagSize::USIZE {
             return Err(err_msg!(Encryption, "Invalid size for encrypted data"));
         }
-        let tag_start = buf_len - Self::TagSize::USIZE;
+        let tag_start = buf_len - T::TagSize::USIZE;
         let mut tag = GenericArray::default();
         tag.clone_from_slice(&buffer.as_ref()[tag_start..]);
-        let enc = <T as NewAead>::new(key);
-        enc.decrypt_in_place_detached(nonce, aad, &mut buffer.as_mut()[..tag_start], &tag)
-            .map_err(|_| err_msg!(Encryption, "AEAD decryption error"))?;
+        let enc = <T as NewAead>::new(self.0.as_ref());
+        enc.decrypt_in_place_detached(
+            GenericArray::from_slice(nonce),
+            aad,
+            &mut buffer.as_mut()[..tag_start],
+            &tag,
+        )
+        .map_err(|_| err_msg!(Encryption, "AEAD decryption error"))?;
         buffer.buffer_resize(tag_start)?;
         Ok(())
     }
 
-    fn aes_padding_length(_len: usize) -> usize {
-        0
+    fn aead_params(&self) -> KeyAeadParams {
+        KeyAeadParams {
+            nonce_length: T::NonceSize::USIZE,
+            tag_length: T::TagSize::USIZE,
+        }
     }
 }
 
@@ -350,26 +289,44 @@ impl AesType for A256CbcHs512 {
 #[derive(Debug)]
 pub struct AesCbcHmac<C, D>(PhantomData<(C, D)>);
 
-impl<C, D> AesAead for AesCbcHmac<C, D>
+impl<C, D> AesCbcHmac<C, D>
 where
-    Self: AesType,
+    C: BlockCipher,
+{
+    #[inline]
+    fn padding_length(len: usize) -> usize {
+        C::BlockSize::USIZE - (len % C::BlockSize::USIZE)
+    }
+}
+
+impl<C, D> KeyAeadMeta for AesKey<AesCbcHmac<C, D>>
+where
+    AesCbcHmac<C, D>: AesType,
+    C: BlockCipher + NewBlockCipher,
+{
+    type NonceSize = C::BlockSize;
+    type TagSize = C::KeySize;
+}
+
+impl<C, D> KeyAeadInPlace for AesKey<AesCbcHmac<C, D>>
+where
+    AesCbcHmac<C, D>: AesType,
     C: BlockCipher + NewBlockCipher,
     D: Update + BlockInput + FixedOutput + Reset + Default + Clone,
     C::KeySize: core::ops::Shl<consts::B1>,
     <C::KeySize as core::ops::Shl<consts::B1>>::Output: ArrayLength<u8>,
 {
-    const KEY_WRAP: bool = false;
-    type NonceSize = C::BlockSize;
-    type TagSize = C::KeySize;
-
-    fn aes_encrypt_in_place(
-        key: &GenericArray<u8, Self::KeySize>,
+    fn encrypt_in_place(
+        &self,
         buffer: &mut dyn ResizeBuffer,
-        nonce: &GenericArray<u8, Self::NonceSize>,
+        nonce: &[u8],
         aad: &[u8],
     ) -> Result<usize, Error> {
+        if nonce.len() != NonceSize::<Self>::USIZE {
+            return Err(err_msg!(InvalidNonce));
+        }
         // this should be optimized away except when the error is thrown
-        if Self::TagSize::USIZE > D::OutputSize::USIZE {
+        if TagSize::<Self>::USIZE > D::OutputSize::USIZE {
             return Err(err_msg!(
                 Encryption,
                 "AES-CBC-HMAC tag size exceeds maximum supported"
@@ -383,33 +340,36 @@ where
         }
 
         let msg_len = buffer.as_ref().len();
-        let pad_len = Self::aes_padding_length(msg_len);
-        buffer.buffer_extend(pad_len + Self::TagSize::USIZE)?;
-        let enc_key = GenericArray::from_slice(&key[C::KeySize::USIZE..]);
-        Cbc::<C, Pkcs7>::new_fix(enc_key, nonce)
+        let pad_len = AesCbcHmac::<C, D>::padding_length(msg_len);
+        buffer.buffer_extend(pad_len + TagSize::<Self>::USIZE)?;
+        let enc_key = GenericArray::from_slice(&self.0[C::KeySize::USIZE..]);
+        Cbc::<C, Pkcs7>::new_fix(enc_key, GenericArray::from_slice(nonce))
             .encrypt(buffer.as_mut(), msg_len)
             .map_err(|_| err_msg!(Encryption, "AES-CBC encryption error"))?;
         let ctext_end = msg_len + pad_len;
 
-        let mut hmac = Hmac::<D>::new_from_slice(&key[..C::KeySize::USIZE])
+        let mut hmac = Hmac::<D>::new_from_slice(&self.0[..C::KeySize::USIZE])
             .expect("Incompatible HMAC key length");
         hmac.update(aad);
         hmac.update(nonce.as_ref());
         hmac.update(&buffer.as_ref()[..ctext_end]);
         hmac.update(&((aad.len() as u64) * 8).to_be_bytes());
         let mac = hmac.finalize().into_bytes();
-        buffer.as_mut()[ctext_end..(ctext_end + Self::TagSize::USIZE)]
-            .copy_from_slice(&mac[..Self::TagSize::USIZE]);
+        buffer.as_mut()[ctext_end..(ctext_end + TagSize::<Self>::USIZE)]
+            .copy_from_slice(&mac[..TagSize::<Self>::USIZE]);
 
         Ok(ctext_end)
     }
 
-    fn aes_decrypt_in_place(
-        key: &GenericArray<u8, Self::KeySize>,
+    fn decrypt_in_place(
+        &self,
         buffer: &mut dyn ResizeBuffer,
-        nonce: &GenericArray<u8, Self::NonceSize>,
+        nonce: &[u8],
         aad: &[u8],
     ) -> Result<(), Error> {
+        if nonce.len() != NonceSize::<Self>::USIZE {
+            return Err(err_msg!(InvalidNonce));
+        }
         if aad.len() as u64 > u64::MAX / 8 {
             return Err(err_msg!(
                 Encryption,
@@ -417,13 +377,13 @@ where
             ));
         }
         let buf_len = buffer.as_ref().len();
-        if buf_len < Self::TagSize::USIZE {
+        if buf_len < TagSize::<Self>::USIZE {
             return Err(err_msg!(Encryption, "Invalid size for encrypted data"));
         }
-        let ctext_end = buf_len - Self::TagSize::USIZE;
-        let tag = GenericArray::<u8, Self::TagSize>::from_slice(&buffer.as_ref()[ctext_end..]);
+        let ctext_end = buf_len - TagSize::<Self>::USIZE;
+        let tag = GenericArray::<u8, TagSize<Self>>::from_slice(&buffer.as_ref()[ctext_end..]);
 
-        let mut hmac = Hmac::<D>::new_from_slice(&key[..C::KeySize::USIZE])
+        let mut hmac = Hmac::<D>::new_from_slice(&self.0[..C::KeySize::USIZE])
             .expect("Incompatible HMAC key length");
         hmac.update(aad);
         hmac.update(nonce.as_ref());
@@ -431,10 +391,10 @@ where
         hmac.update(&((aad.len() as u64) * 8).to_be_bytes());
         let mac = hmac.finalize().into_bytes();
         let tag_match =
-            subtle::ConstantTimeEq::ct_eq(tag.as_ref(), &mac[..Self::TagSize::USIZE]).unwrap_u8();
+            subtle::ConstantTimeEq::ct_eq(tag.as_ref(), &mac[..TagSize::<Self>::USIZE]).unwrap_u8();
 
-        let enc_key = GenericArray::from_slice(&key[C::KeySize::USIZE..]);
-        let dec_len = Cbc::<C, Pkcs7>::new_fix(enc_key, nonce)
+        let enc_key = GenericArray::from_slice(&self.0[C::KeySize::USIZE..]);
+        let dec_len = Cbc::<C, Pkcs7>::new_fix(enc_key, GenericArray::from_slice(nonce))
             .decrypt(&mut buffer.as_mut()[..ctext_end])
             .map_err(|_| err_msg!(Encryption, "AES-CBC decryption error"))?
             .len();
@@ -447,9 +407,15 @@ where
         }
     }
 
-    #[inline]
-    fn aes_padding_length(len: usize) -> usize {
-        Self::NonceSize::USIZE - (len % Self::NonceSize::USIZE)
+    fn aead_params(&self) -> KeyAeadParams {
+        KeyAeadParams {
+            nonce_length: NonceSize::<Self>::USIZE,
+            tag_length: TagSize::<Self>::USIZE,
+        }
+    }
+
+    fn aead_padding(&self, msg_len: usize) -> usize {
+        AesCbcHmac::<C, D>::padding_length(msg_len)
     }
 }
 
@@ -473,23 +439,31 @@ impl AesType for A256Kw {
 
 /// AES Key Wrap implementation
 #[derive(Debug)]
-pub struct AesKeyWrap<K>(PhantomData<K>);
+pub struct AesKeyWrap<C>(PhantomData<C>);
 
-impl<K> AesAead for AesKeyWrap<K>
+impl<C> KeyAeadMeta for AesKey<AesKeyWrap<C>>
 where
-    Self: AesType,
-    K: NewBlockCipher<KeySize = Self::KeySize> + BlockCipher<BlockSize = consts::U16>,
+    AesKeyWrap<C>: AesType,
 {
-    const KEY_WRAP: bool = true;
     type NonceSize = consts::U0;
     type TagSize = consts::U8;
+}
 
-    fn aes_encrypt_in_place(
-        key: &GenericArray<u8, Self::KeySize>,
+impl<C> KeyAeadInPlace for AesKey<AesKeyWrap<C>>
+where
+    AesKeyWrap<C>: AesType,
+    C: NewBlockCipher<KeySize = <AesKeyWrap<C> as AesType>::KeySize>
+        + BlockCipher<BlockSize = consts::U16>,
+{
+    fn encrypt_in_place(
+        &self,
         buffer: &mut dyn ResizeBuffer,
-        _nonce: &GenericArray<u8, Self::NonceSize>,
+        nonce: &[u8],
         aad: &[u8],
     ) -> Result<usize, Error> {
+        if nonce.len() != 0 {
+            return Err(err_msg!(Unsupported, "Custom nonce not supported"));
+        }
         if aad.len() != 0 {
             return Err(err_msg!(Unsupported, "AAD not supported"));
         }
@@ -505,7 +479,7 @@ where
         buffer.buffer_insert(0, &[0u8; 8])?;
         buf_len += 8;
 
-        let aes = K::new(key);
+        let aes = C::new(self.0.as_ref());
         let mut iv = AES_KW_DEFAULT_IV;
         let mut block = GenericArray::default();
         for j in 0..6 {
@@ -525,12 +499,15 @@ where
         Ok(buf_len)
     }
 
-    fn aes_decrypt_in_place(
-        key: &GenericArray<u8, Self::KeySize>,
+    fn decrypt_in_place(
+        &self,
         buffer: &mut dyn ResizeBuffer,
-        _nonce: &GenericArray<u8, Self::NonceSize>,
+        nonce: &[u8],
         aad: &[u8],
     ) -> Result<(), Error> {
+        if nonce.len() != 0 {
+            return Err(err_msg!(Unsupported, "Custom nonce not supported"));
+        }
         if aad.len() != 0 {
             return Err(err_msg!(Unsupported, "AAD not supported"));
         }
@@ -546,7 +523,7 @@ where
         }
         blocks -= 1;
 
-        let aes = K::new(key);
+        let aes = C::new(self.0.as_ref());
         let mut iv = *TryInto::<&[u8; 8]>::try_into(&buffer.as_ref()[0..8]).unwrap();
         buffer.buffer_remove(0..8)?;
 
@@ -572,8 +549,11 @@ where
         }
     }
 
-    fn aes_padding_length(_len: usize) -> usize {
-        0
+    fn aead_params(&self) -> KeyAeadParams {
+        KeyAeadParams {
+            nonce_length: NonceSize::<Self>::USIZE,
+            tag_length: TagSize::<Self>::USIZE,
+        }
     }
 }
 
@@ -586,16 +566,21 @@ mod tests {
 
     #[test]
     fn encrypt_round_trip() {
-        fn test_encrypt<T: AesAead>() {
+        fn test_encrypt<T>()
+        where
+            T: AesType,
+            AesKey<T>: KeyAeadInPlace + KeyAeadMeta,
+        {
             let input = b"hello";
             let aad = b"additional data";
             let key = AesKey::<T>::generate().unwrap();
             let mut buffer = SecretBytes::from_slice(input);
-            let pad_len = T::aes_padding_length(input.len());
+            let params = key.aead_params();
+            let pad_len = key.aead_padding(input.len());
             let nonce = AesKey::<T>::random_nonce();
             key.encrypt_in_place(&mut buffer, &nonce, aad).unwrap();
             let enc_len = buffer.len();
-            assert_eq!(enc_len, input.len() + pad_len + T::TagSize::USIZE);
+            assert_eq!(enc_len, input.len() + pad_len + params.tag_length);
             assert_ne!(&buffer[..], input);
             let mut dec = buffer.clone();
             key.decrypt_in_place(&mut dec, &nonce, aad).unwrap();
@@ -707,9 +692,9 @@ mod tests {
         let input = b"Three is a magic number.";
         let key = AesKey::<A256CbcHs512>::from_secret_bytes(key_data).unwrap();
         let mut buffer = SecretBytes::from_slice(input);
-        key.encrypt_in_place(&mut buffer, &nonce[..], aad.as_bytes())
+        let ct_len = key
+            .encrypt_in_place(&mut buffer, &nonce[..], aad.as_bytes())
             .unwrap();
-        let ct_len = buffer.len() - key.aead_params().tag_length;
         let ctext = base64::encode_config(&buffer.as_ref()[..ct_len], base64::URL_SAFE_NO_PAD);
         let tag = base64::encode_config(&buffer.as_ref()[ct_len..], base64::URL_SAFE_NO_PAD);
         assert_eq!(ctext, "Az2IWsISEMDJvyc5XRL-3-d-RgNBOGolCsxFFoUXFYw");
