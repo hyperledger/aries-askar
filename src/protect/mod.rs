@@ -1,6 +1,6 @@
 use std::{collections::HashMap, sync::Arc};
 
-use async_mutex::Mutex;
+use async_lock::Mutex;
 use zeroize::Zeroize;
 
 pub mod kdf;

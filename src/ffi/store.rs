@@ -1,6 +1,6 @@
 use std::{collections::BTreeMap, os::raw::c_char, ptr, str::FromStr, sync::Arc};
 
-use async_mutex::{Mutex, MutexGuardArc};
+use async_lock::{Mutex, MutexGuardArc};
 use ffi_support::{rust_string_to_c, ByteBuffer, FfiStr};
 use once_cell::sync::Lazy;
 
