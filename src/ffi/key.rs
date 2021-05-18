@@ -274,6 +274,25 @@ pub extern "C" fn askar_key_aead_get_params(
 }
 
 #[no_mangle]
+pub extern "C" fn askar_key_aead_get_padding(
+    handle: LocalKeyHandle,
+    msg_len: i64,
+    out: *mut i32,
+) -> ErrorCode {
+    catch_err! {
+        trace!("AEAD get padding: {}", handle);
+        check_useful_c_ptr!(out);
+        if msg_len < 0 {
+            return Err(err_msg!("Invalid message length"));
+        }
+        let key = handle.load()?;
+        let padding = key.aead_padding(msg_len as usize);
+        unsafe { *out = padding as i32 };
+        Ok(ErrorCode::Success)
+    }
+}
+
+#[no_mangle]
 pub extern "C" fn askar_key_aead_encrypt(
     handle: LocalKeyHandle,
     message: ByteBuffer,

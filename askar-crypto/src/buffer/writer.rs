@@ -164,7 +164,7 @@ impl<B: ResizeBuffer + ?Sized> ResizeBuffer for Writer<'_, B> {
 }
 
 impl<'b, B: ?Sized> Writer<'b, B> {
-    /// Create a new writer from a pointer to a buffer implementation
+    /// Create a new writer from a reference to a buffer implementation
     pub fn from_buffer(buf: &'b mut B) -> Writer<'b, B> {
         Writer { inner: buf, pos: 0 }
     }

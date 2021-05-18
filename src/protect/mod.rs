@@ -1,7 +1,6 @@
 use std::{collections::HashMap, sync::Arc};
 
-use async_mutex::Mutex;
-use zeroize::Zeroize;
+use async_lock::RwLock;
 
 pub mod kdf;
 
@@ -27,14 +26,14 @@ pub type ProfileId = i64;
 
 #[derive(Debug)]
 pub struct KeyCache {
-    profile_info: Mutex<HashMap<String, (ProfileId, Arc<ProfileKey>)>>,
+    profile_info: RwLock<HashMap<String, (ProfileId, Arc<ProfileKey>)>>,
     pub(crate) store_key: Arc<StoreKey>,
 }
 
 impl KeyCache {
     pub fn new(store_key: impl Into<Arc<StoreKey>>) -> Self {
         Self {
-            profile_info: Mutex::new(HashMap::new()),
+            profile_info: RwLock::new(HashMap::new()),
             store_key: store_key.into(),
         }
     }
@@ -42,12 +41,10 @@ impl KeyCache {
     pub async fn load_key(&self, ciphertext: Vec<u8>) -> Result<ProfileKey, Error> {
         let store_key = self.store_key.clone();
         unblock(move || {
-            let mut data = store_key
+            let data = store_key
                 .unwrap_data(ciphertext)
                 .map_err(err_map!(Encryption, "Error decrypting profile key"))?;
-            let key = ProfileKey::from_slice(&data)?;
-            data.zeroize();
-            Ok(key)
+            Ok(ProfileKey::from_slice(data.as_ref())?)
         })
         .await
     }
@@ -59,11 +56,11 @@ impl KeyCache {
     }
 
     pub async fn add_profile(&self, ident: String, pid: ProfileId, key: Arc<ProfileKey>) {
-        self.profile_info.lock().await.insert(ident, (pid, key));
+        self.profile_info.write().await.insert(ident, (pid, key));
     }
 
     pub async fn get_profile(&self, name: &str) -> Option<(ProfileId, Arc<ProfileKey>)> {
-        self.profile_info.lock().await.get(name).cloned()
+        self.profile_info.read().await.get(name).cloned()
     }
 }
 

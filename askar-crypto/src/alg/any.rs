@@ -783,6 +783,14 @@ impl KeyAeadInPlace for AnyKey {
             KeyAeadParams::default()
         }
     }
+
+    fn aead_padding(&self, msg_len: usize) -> usize {
+        if let Ok(key) = self.key_as_aead() {
+            key.aead_padding(msg_len)
+        } else {
+            0
+        }
+    }
 }
 
 impl ToJwk for AnyKey {
