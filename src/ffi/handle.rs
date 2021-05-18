@@ -48,6 +48,14 @@ impl<T> std::fmt::Display for ArcHandle<T> {
     }
 }
 
+pub trait ResourceHandle: Copy + Ord + From<usize> {
+    fn invalid() -> Self {
+        Self::from(0)
+    }
+
+    fn next() -> Self;
+}
+
 /// Derive a new handle type having an atomically increasing sequence number
 #[macro_export]
 macro_rules! new_sequence_handle (($newtype:ident, $counter:ident) => (
@@ -57,14 +65,8 @@ macro_rules! new_sequence_handle (($newtype:ident, $counter:ident) => (
     #[repr(transparent)]
     pub struct $newtype(pub usize);
 
-    impl $newtype {
-        #[allow(dead_code)]
-        pub fn invalid() -> $newtype {
-            $newtype(0)
-        }
-
-        #[allow(dead_code)]
-        pub fn next() -> $newtype {
+    impl $crate::ffi::ResourceHandle for $newtype {
+        fn next() -> $newtype {
             $newtype($counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1)
         }
     }
@@ -82,6 +84,12 @@ macro_rules! new_sequence_handle (($newtype:ident, $counter:ident) => (
         }
     }
 
+    impl From<usize> for $newtype {
+        fn from(val: usize) -> Self {
+            Self(val)
+        }
+    }
+
     impl PartialEq<usize> for $newtype {
         fn eq(&self, other: &usize) -> bool {
             self.0 == *other
@@ -91,6 +99,7 @@ macro_rules! new_sequence_handle (($newtype:ident, $counter:ident) => (
 
 #[cfg(test)]
 mod tests {
+    use super::ResourceHandle;
     new_sequence_handle!(TestHandle, TEST_HANDLE_CTR);
 
     #[test]

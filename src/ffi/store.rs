@@ -1,14 +1,15 @@
 use std::{collections::BTreeMap, os::raw::c_char, ptr, str::FromStr, sync::Arc};
 
-use async_lock::{Mutex, MutexGuardArc};
+use async_lock::RwLock;
 use ffi_support::{rust_string_to_c, ByteBuffer, FfiStr};
 use once_cell::sync::Lazy;
+use option_lock::{Mutex as TryMutex, MutexGuardArc as TryMutexGuard};
 
 use super::{
     error::set_last_error,
     key::LocalKeyHandle,
     result_list::{EntryListHandle, FfiEntryList, FfiKeyEntryList, KeyEntryListHandle},
-    CallbackId, EnsureCallback, ErrorCode,
+    CallbackId, EnsureCallback, ErrorCode, ResourceHandle,
 };
 use crate::{
     backend::{
@@ -25,24 +26,24 @@ new_sequence_handle!(StoreHandle, FFI_STORE_COUNTER);
 new_sequence_handle!(SessionHandle, FFI_SESSION_COUNTER);
 new_sequence_handle!(ScanHandle, FFI_SCAN_COUNTER);
 
-static FFI_STORES: Lazy<Mutex<BTreeMap<StoreHandle, Arc<AnyStore>>>> =
-    Lazy::new(|| Mutex::new(BTreeMap::new()));
-static FFI_SESSIONS: Lazy<Mutex<BTreeMap<SessionHandle, Arc<Mutex<AnySession>>>>> =
-    Lazy::new(|| Mutex::new(BTreeMap::new()));
-static FFI_SCANS: Lazy<Mutex<BTreeMap<ScanHandle, Option<Scan<'static, Entry>>>>> =
-    Lazy::new(|| Mutex::new(BTreeMap::new()));
+static FFI_STORES: Lazy<RwLock<BTreeMap<StoreHandle, Arc<AnyStore>>>> =
+    Lazy::new(|| RwLock::new(BTreeMap::new()));
+static FFI_SESSIONS: Lazy<StoreResourceMap<SessionHandle, AnySession>> =
+    Lazy::new(|| StoreResourceMap::new());
+static FFI_SCANS: Lazy<StoreResourceMap<ScanHandle, Scan<'static, Entry>>> =
+    Lazy::new(|| StoreResourceMap::new());
 
 impl StoreHandle {
     pub async fn create(value: AnyStore) -> Self {
         let handle = Self::next();
-        let mut repo = FFI_STORES.lock().await;
+        let mut repo = FFI_STORES.write().await;
         repo.insert(handle, Arc::new(value));
         handle
     }
 
     pub async fn load(&self) -> Result<Arc<AnyStore>, Error> {
         FFI_STORES
-            .lock()
+            .read()
             .await
             .get(self)
             .cloned()
@@ -51,80 +52,82 @@ impl StoreHandle {
 
     pub async fn remove(&self) -> Result<Arc<AnyStore>, Error> {
         FFI_STORES
-            .lock()
+            .write()
             .await
             .remove(self)
             .ok_or_else(|| err_msg!("Invalid store handle"))
     }
 
     pub async fn replace(&self, store: Arc<AnyStore>) {
-        FFI_STORES.lock().await.insert(*self, store);
+        FFI_STORES.write().await.insert(*self, store);
     }
 }
 
-impl SessionHandle {
-    pub async fn create(value: AnySession) -> Self {
-        let handle = Self::next();
-        let mut repo = FFI_SESSIONS.lock().await;
-        repo.insert(handle, Arc::new(Mutex::new(value)));
+struct StoreResourceMap<K, V> {
+    map: RwLock<BTreeMap<K, (StoreHandle, Arc<TryMutex<V>>)>>,
+}
+
+impl<K, V> StoreResourceMap<K, V>
+where
+    K: ResourceHandle,
+{
+    pub fn new() -> Self {
+        Self {
+            map: RwLock::new(BTreeMap::new()),
+        }
+    }
+
+    pub async fn insert(&self, store: StoreHandle, value: V) -> K {
+        let handle = K::next();
+        let mut map = self.map.write().await;
+        map.insert(handle, (store, Arc::new(TryMutex::new(value))));
         handle
     }
 
-    pub async fn load(&self) -> Result<MutexGuardArc<AnySession>, Error> {
-        Ok(Mutex::lock_arc(
-            FFI_SESSIONS
-                .lock()
+    pub async fn remove(&self, handle: K) -> Result<V, Error> {
+        Arc::try_unwrap(
+            self.map
+                .write()
                 .await
-                .get(self)
-                .ok_or_else(|| err_msg!("Invalid session handle"))?,
+                .remove(&handle)
+                .ok_or_else(|| err_msg!("Invalid resource handle"))?
+                .1,
         )
-        .await)
+        .map(|item| item.into_inner().unwrap())
+        .map_err(|_| err_msg!(Busy, "Resource handle in use"))
     }
 
-    pub async fn remove(&self) -> Result<Arc<Mutex<AnySession>>, Error> {
-        FFI_SESSIONS
-            .lock()
+    pub async fn borrow(&self, handle: K) -> Result<TryMutexGuard<V>, Error> {
+        self.map
+            .read()
             .await
-            .remove(self)
-            .ok_or_else(|| err_msg!("Invalid session handle"))
-    }
-}
-
-impl ScanHandle {
-    pub async fn create(value: Scan<'static, Entry>) -> Self {
-        let handle = Self::next();
-        let mut repo = FFI_SCANS.lock().await;
-        repo.insert(handle, Some(value));
-        handle
+            .get(&handle)
+            .ok_or_else(|| err_msg!("Invalid resource handle"))?
+            .1
+            .try_lock_arc()
+            .map_err(|_| err_msg!(Busy, "Resource handle in use"))
     }
 
-    pub async fn borrow(&self) -> Result<Scan<'static, Entry>, Error> {
-        FFI_SCANS
-            .lock()
-            .await
-            .get_mut(self)
-            .ok_or_else(|| err_msg!("Invalid scan handle"))?
-            .take()
-            .ok_or_else(|| err_msg!(Busy, "Scan handle in use"))
-    }
-
-    pub async fn release(&self, value: Scan<'static, Entry>) -> Result<(), Error> {
-        FFI_SCANS
-            .lock()
-            .await
-            .get_mut(self)
-            .ok_or_else(|| err_msg!("Invalid scan handle"))?
-            .replace(value);
+    pub async fn remove_all(&self, store: StoreHandle) -> Result<(), Error> {
+        let mut guard = self.map.write().await;
+        let mut pos = K::from(0usize);
+        let mut found;
+        loop {
+            found = false;
+            for (h, (sh, _)) in guard.range(pos..) {
+                if store == *sh {
+                    pos = *h;
+                    found = true;
+                    break;
+                }
+            }
+            if found {
+                guard.remove(&pos);
+            } else {
+                break;
+            }
+        }
         Ok(())
-    }
-
-    pub async fn remove(&self) -> Result<Scan<'static, Entry>, Error> {
-        FFI_SCANS
-            .lock()
-            .await
-            .remove(self)
-            .ok_or_else(|| err_msg!("Invalid scan handle"))?
-            .ok_or_else(|| err_msg!(Busy, "Scan handle in use"))
     }
 }
 
@@ -405,6 +408,11 @@ pub extern "C" fn askar_store_close(
         spawn_ok(async move {
             let result = async {
                 let store = handle.remove().await?;
+                // remove any leftover sessions and scans associated with this store,
+                // to avoid blocking unnecessarily due to handles that simply haven't
+                // been dropped yet (this will invalidate associated handles)
+                FFI_SESSIONS.remove_all(handle).await?;
+                FFI_SCANS.remove_all(handle).await?;
                 store.arc_close().await?;
                 info!("Closed store {}", handle);
                 Ok(())
@@ -450,7 +458,7 @@ pub extern "C" fn askar_scan_start(
             let result = async {
                 let store = handle.load().await?;
                 let scan = store.scan(profile, category, tag_filter, Some(offset), if limit < 0 { None }else {Some(limit)}).await?;
-                Ok(ScanHandle::create(scan).await)
+                Ok(FFI_SCANS.insert(handle, scan).await)
             }.await;
             cb.resolve(result);
         });
@@ -479,9 +487,8 @@ pub extern "C" fn askar_scan_next(
         );
         spawn_ok(async move {
             let result = async {
-                let mut scan = handle.borrow().await?;
+                let mut scan = FFI_SCANS.borrow(handle).await?;
                 let entries = scan.fetch_next().await?;
-                handle.release(scan).await?;
                 Ok(entries)
             }.await;
             cb.resolve(result);
@@ -495,7 +502,7 @@ pub extern "C" fn askar_scan_free(handle: ScanHandle) -> ErrorCode {
     catch_err! {
         trace!("Close scan");
         spawn_ok(async move {
-            handle.remove().await.ok();
+            FFI_SCANS.remove(handle).await.ok();
             info!("Closed scan {}", handle);
         });
         Ok(ErrorCode::Success)
@@ -531,7 +538,7 @@ pub extern "C" fn askar_session_start(
                 } else {
                     store.transaction(profile).await?
                 };
-                Ok(SessionHandle::create(session).await)
+                Ok(FFI_SESSIONS.insert(handle, session).await)
             }.await;
             cb.resolve(result);
         });
@@ -560,8 +567,9 @@ pub extern "C" fn askar_session_count(
         );
         spawn_ok(async move {
             let result = async {
-                let mut session = handle.load().await?;
-                session.count(&category, tag_filter).await
+                let mut session = FFI_SESSIONS.borrow(handle).await?;
+                let count = session.count(&category, tag_filter).await;
+                count
             }.await;
             cb.resolve(result);
         });
@@ -595,8 +603,9 @@ pub extern "C" fn askar_session_fetch(
         );
         spawn_ok(async move {
             let result = async {
-                let mut session = handle.load().await?;
-                session.fetch(&category, &name, for_update != 0).await
+                let mut session = FFI_SESSIONS.borrow(handle).await?;
+                let found = session.fetch(&category, &name, for_update != 0).await;
+                found
             }.await;
             cb.resolve(result);
         });
@@ -631,8 +640,9 @@ pub extern "C" fn askar_session_fetch_all(
         );
         spawn_ok(async move {
             let result = async {
-                let mut session = handle.load().await?;
-                session.fetch_all(&category, tag_filter, limit, for_update != 0).await
+                let mut session = FFI_SESSIONS.borrow(handle).await?;
+                let found = session.fetch_all(&category, tag_filter, limit, for_update != 0).await;
+                found
             }.await;
             cb.resolve(result);
         });
@@ -663,8 +673,9 @@ pub extern "C" fn askar_session_remove_all(
         );
         spawn_ok(async move {
             let result = async {
-                let mut session = handle.load().await?;
-                session.remove_all(&category, tag_filter).await
+                let mut session = FFI_SESSIONS.borrow(handle).await?;
+                let removed = session.remove_all(&category, tag_filter).await;
+                removed
             }.await;
             cb.resolve(result);
         });
@@ -718,9 +729,9 @@ pub extern "C" fn askar_session_update(
         );
         spawn_ok(async move {
             let result = async {
-                let mut session = handle.load().await?;
-                session.update(operation, &category, &name, Some(value.as_slice()), tags.as_ref().map(Vec::as_slice), expiry_ms).await?;
-                Ok(())
+                let mut session = FFI_SESSIONS.borrow(handle).await?;
+                let result = session.update(operation, &category, &name, Some(value.as_slice()), tags.as_ref().map(Vec::as_slice), expiry_ms).await;
+                result
             }.await;
             cb.resolve(result);
         });
@@ -770,15 +781,15 @@ pub extern "C" fn askar_session_insert_key(
 
         spawn_ok(async move {
             let result = async {
-                let mut session = handle.load().await?;
-                session.insert_key(
+                let mut session = FFI_SESSIONS.borrow(handle).await?;
+                let result = session.insert_key(
                     name.as_str(),
                     &key,
                     metadata.as_ref().map(String::as_str),
                     tags.as_ref().map(Vec::as_slice),
                     expiry_ms,
-                ).await?;
-                Ok(())
+                ).await;
+                result
             }.await;
             cb.resolve(result);
         });
@@ -814,12 +825,12 @@ pub extern "C" fn askar_session_fetch_key(
 
         spawn_ok(async move {
             let result = async {
-                let mut session = handle.load().await?;
-                let key_entry = session.fetch_key(
+                let mut session = FFI_SESSIONS.borrow(handle).await?;
+                let result = session.fetch_key(
                     name.as_str(),
                     for_update != 0
-                ).await?;
-                Ok(key_entry)
+                ).await;
+                result
             }.await;
             cb.resolve(result);
         });
@@ -858,15 +869,15 @@ pub extern "C" fn askar_session_fetch_all_keys(
 
         spawn_ok(async move {
             let result = async {
-                let mut session = handle.load().await?;
-                let key_entry = session.fetch_all_keys(
+                let mut session = FFI_SESSIONS.borrow(handle).await?;
+                let result = session.fetch_all_keys(
                     alg.as_ref().map(String::as_str),
                     thumbprint.as_ref().map(String::as_str),
                     tag_filter,
                     limit,
                     for_update != 0
-                ).await?;
-                Ok(key_entry)
+                ).await;
+                result
             }.await;
             cb.resolve(result);
         });
@@ -914,15 +925,15 @@ pub extern "C" fn askar_session_update_key(
 
         spawn_ok(async move {
             let result = async {
-                let mut session = handle.load().await?;
-                session.update_key(
+                let mut session = FFI_SESSIONS.borrow(handle).await?;
+                let result = session.update_key(
                     &name,
                     metadata.as_ref().map(String::as_str),
                     tags.as_ref().map(Vec::as_slice),
                     expiry_ms,
 
-                ).await?;
-                Ok(())
+                ).await;
+                result
             }.await;
             cb.resolve(result);
         });
@@ -952,11 +963,11 @@ pub extern "C" fn askar_session_remove_key(
 
         spawn_ok(async move {
             let result = async {
-                let mut session = handle.load().await?;
-                session.remove_key(
+                let mut session = FFI_SESSIONS.borrow(handle).await?;
+                let result = session.remove_key(
                     &name,
-                ).await?;
-                Ok(())
+                ).await;
+                result
             }.await;
             cb.resolve(result);
         });
@@ -985,20 +996,16 @@ pub extern "C" fn askar_session_close(
         });
         spawn_ok(async move {
             let result = async {
-                let session = handle.remove().await?;
-                if let Ok(session) = Arc::try_unwrap(session) {
-                    if commit == 0 {
-                        // not necessary - rollback is automatic for txn,
-                        // and for regular session there is no action to perform
-                        // session.into_inner().rollback().await?;
-                    } else {
-                        session.into_inner().commit().await?;
-                    }
-                    info!("Closed session {}", handle);
-                    Ok(())
+                let session = FFI_SESSIONS.remove(handle).await?;
+                if commit == 0 {
+                    // not necessary - rollback is automatic for txn,
+                    // and for regular session there is no action to perform
+                    // > session.rollback().await?;
                 } else {
-                    Err(err_msg!("Error closing session: has outstanding references"))
+                    session.commit().await?;
                 }
+                info!("Closed session {}", handle);
+                Ok(())
             }.await;
             if let Some(cb) = cb {
                 cb.resolve(result);

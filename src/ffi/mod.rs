@@ -11,6 +11,7 @@ pub static LIB_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 #[macro_use]
 mod handle;
+use self::handle::ResourceHandle;
 
 #[macro_use]
 mod macros;
