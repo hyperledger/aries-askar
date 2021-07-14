@@ -80,6 +80,13 @@ impl SecretBytes {
         self.0.extend_from_slice(data);
     }
 
+    /// Truncate and zeroize the buffer
+    #[inline]
+    pub fn clear(&mut self) {
+        self.0.zeroize();
+        self.0.truncate(0);
+    }
+
     /// Reserve extra space in the buffer
     #[inline]
     pub fn reserve(&mut self, extra: usize) {
