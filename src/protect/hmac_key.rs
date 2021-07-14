@@ -15,6 +15,7 @@ use crate::{
         buffer::ArrayKey,
         generic_array::{typenum::Unsigned, ArrayLength, GenericArray},
         kdf::KeyDerivation,
+        random::KeyMaterial,
         repr::KeyGen,
     },
     error::Error,
@@ -70,8 +71,8 @@ impl<H, L: ArrayLength<u8>> PartialEq for HmacKey<H, L> {
 impl<H, L: ArrayLength<u8>> Eq for HmacKey<H, L> {}
 
 impl<H, L: ArrayLength<u8>> KeyGen for HmacKey<H, L> {
-    fn generate() -> Result<Self, crate::crypto::Error> {
-        Ok(Self(ArrayKey::random(), PhantomData))
+    fn generate(rng: impl KeyMaterial) -> Result<Self, crate::crypto::Error> {
+        Ok(Self(ArrayKey::generate(rng), PhantomData))
     }
 }
 

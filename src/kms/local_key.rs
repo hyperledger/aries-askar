@@ -9,11 +9,11 @@ pub use crate::crypto::{
 };
 use crate::{
     crypto::{
-        alg::{AnyKey, AnyKeyCreate, BlsCurves},
+        alg::{bls::BlsKeyGen, AnyKey, AnyKeyCreate, BlsCurves},
         encrypt::KeyAeadInPlace,
         jwk::{FromJwk, ToJwk},
         kdf::{KeyDerivation, KeyExchange},
-        random::fill_random,
+        random::{fill_random, RandomDet},
         repr::{ToPublicBytes, ToSecretBytes},
         sign::{KeySigVerify, KeySign, SignatureType},
         Error as CryptoError,
@@ -31,13 +31,22 @@ pub struct LocalKey {
 impl LocalKey {
     /// Create a new random key or keypair
     pub fn generate(alg: KeyAlg, ephemeral: bool) -> Result<Self, Error> {
-        let inner = Box::<AnyKey>::generate(alg)?;
+        let inner = Box::<AnyKey>::random(alg)?;
         Ok(Self { inner, ephemeral })
     }
 
     /// Create a new deterministic key or keypair
-    pub fn from_seed(alg: KeyAlg, seed: &[u8], _method: Option<&str>) -> Result<Self, Error> {
-        let inner = Box::<AnyKey>::from_seed(alg, seed.into())?;
+    pub fn from_seed(alg: KeyAlg, seed: &[u8], method: Option<&str>) -> Result<Self, Error> {
+        let inner = match method {
+            Some("bls_keygen") => Box::<AnyKey>::generate(alg, BlsKeyGen::new(seed)?)?,
+            None | Some("") => Box::<AnyKey>::generate(alg, RandomDet::new(seed))?,
+            _ => {
+                return Err(err_msg!(
+                    Unsupported,
+                    "Unknown seed method for key generation"
+                ))
+            }
+        };
         Ok(Self {
             inner,
             ephemeral: false,

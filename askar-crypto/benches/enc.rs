@@ -3,11 +3,11 @@ extern crate criterion;
 
 use askar_crypto::{
     alg::{
-        aes::{A128CbcHs256, A128Gcm, AesKey},
-        chacha20::{Chacha20Key, C20P},
+        aes::{A128CbcHs256, A128Gcm, A256CbcHs512, A256Gcm, AesKey},
+        chacha20::{Chacha20Key, C20P, XC20P},
         AnyKey, AnyKeyCreate, Chacha20Types, KeyAlg,
     },
-    buffer::{SecretBytes, WriteBuffer, Writer},
+    buffer::{SecretBytes, WriteBuffer},
     encrypt::{KeyAeadInPlace, KeyAeadMeta},
     random::fill_random,
     repr::KeyGen,
@@ -16,67 +16,102 @@ use askar_crypto::{
 use criterion::{black_box, Criterion};
 
 fn criterion_benchmark(c: &mut Criterion) {
-    {
-        let message = b"test message for encrypting";
+    const MSG_SIZE: usize = 2000000;
+    const ALLOC_SIZE: usize = MSG_SIZE + 512;
 
-        c.bench_function(&format!("aes128gcm encrypt"), move |b| {
-            let key = AesKey::<A128Gcm>::generate().unwrap();
-            let nonce = AesKey::<A128Gcm>::random_nonce();
-            b.iter(|| {
-                let mut buffer = [0u8; 255];
-                buffer[0..message.len()].copy_from_slice(black_box(&message[..]));
-                let mut writer = Writer::from_slice_position(&mut buffer, message.len());
-                key.encrypt_in_place(&mut writer, &nonce, &[]).unwrap();
-            })
-        });
-        c.bench_function(&format!("aes128cbc-hs256 encrypt"), move |b| {
-            let key = AesKey::<A128CbcHs256>::generate().unwrap();
-            let nonce = AesKey::<A128CbcHs256>::random_nonce();
-            b.iter(|| {
-                let mut buffer = [0u8; 255];
-                buffer[0..message.len()].copy_from_slice(black_box(&message[..]));
-                let mut writer = Writer::from_slice_position(&mut buffer, message.len());
-                key.encrypt_in_place(&mut writer, &nonce, &[]).unwrap();
-            })
-        });
+    let mut message = vec![0u8; MSG_SIZE];
+    fill_random(&mut message[..]);
+    let message = &message[..];
 
-        c.bench_function(&format!("chacha20-poly1305 encrypt"), move |b| {
-            let key = Chacha20Key::<C20P>::generate().unwrap();
-            let nonce = Chacha20Key::<C20P>::random_nonce();
-            b.iter(|| {
-                let mut buffer = [0u8; 255];
-                buffer[0..message.len()].copy_from_slice(black_box(&message[..]));
-                let mut writer = Writer::from_slice_position(&mut buffer, message.len());
-                key.encrypt_in_place(&mut writer, &nonce, &[]).unwrap();
-            })
-        });
+    c.bench_function(&format!("aes128gcm encrypt"), move |b| {
+        let key = AesKey::<A128Gcm>::random().unwrap();
+        let nonce = AesKey::<A128Gcm>::random_nonce();
+        let mut buffer = Vec::with_capacity(ALLOC_SIZE);
+        b.iter(|| {
+            buffer.clear();
+            buffer.extend_from_slice(black_box(&message[..]));
+            key.encrypt_in_place(&mut buffer, &nonce, &[]).unwrap();
+        })
+    });
+    c.bench_function(&format!("aes256gcm encrypt"), move |b| {
+        let key = AesKey::<A256Gcm>::random().unwrap();
+        let nonce = AesKey::<A256Gcm>::random_nonce();
+        let mut buffer = Vec::with_capacity(ALLOC_SIZE);
+        b.iter(|| {
+            buffer.clear();
+            buffer.extend_from_slice(black_box(&message[..]));
+            key.encrypt_in_place(&mut buffer, &nonce, &[]).unwrap();
+        })
+    });
 
-        // test overhead of SecretBytes
-        c.bench_function(&format!("chacha20-poly1305 encrypt alloc"), move |b| {
-            let key = Chacha20Key::<C20P>::generate().unwrap();
-            let nonce = Chacha20Key::<C20P>::random_nonce();
-            b.iter(|| {
-                let mut buffer = SecretBytes::with_capacity(255);
-                buffer.buffer_write(black_box(&message[..])).unwrap();
-                key.encrypt_in_place(&mut buffer, &nonce, &[]).unwrap();
-            })
-        });
+    c.bench_function(&format!("aes128cbc-hs256 encrypt"), move |b| {
+        let key = AesKey::<A128CbcHs256>::random().unwrap();
+        let nonce = AesKey::<A128CbcHs256>::random_nonce();
+        let mut buffer = Vec::with_capacity(ALLOC_SIZE);
+        b.iter(|| {
+            buffer.clear();
+            buffer.extend_from_slice(black_box(&message[..]));
+            key.encrypt_in_place(&mut buffer, &nonce, &[]).unwrap();
+        })
+    });
+    c.bench_function(&format!("aes256cbc-hs512 encrypt"), move |b| {
+        let key = AesKey::<A256CbcHs512>::random().unwrap();
+        let nonce = AesKey::<A256CbcHs512>::random_nonce();
+        let mut buffer = Vec::with_capacity(ALLOC_SIZE);
+        b.iter(|| {
+            buffer.clear();
+            buffer.extend_from_slice(black_box(&message[..]));
+            key.encrypt_in_place(&mut buffer, &nonce, &[]).unwrap();
+        })
+    });
 
-        // test overhead of AnyKey
-        c.bench_function(&format!("chacha20-poly1305 encrypt as any"), move |b| {
-            let key = Box::<AnyKey>::generate(KeyAlg::Chacha20(Chacha20Types::C20P)).unwrap();
-            let mut nonce = [0u8; 255];
-            let nonce_len = key.aead_params().nonce_length;
-            fill_random(&mut nonce[..nonce_len]);
-            b.iter(|| {
-                let mut buffer = [0u8; 255];
-                buffer[0..message.len()].copy_from_slice(black_box(&message[..]));
-                let mut writer = Writer::from_slice_position(&mut buffer, message.len());
-                key.encrypt_in_place(&mut writer, &nonce[..nonce_len], &[])
-                    .unwrap();
-            })
-        });
-    }
+    c.bench_function(&format!("chacha20-poly1305 encrypt"), move |b| {
+        let key = Chacha20Key::<C20P>::random().unwrap();
+        let nonce = Chacha20Key::<C20P>::random_nonce();
+        let mut buffer = Vec::with_capacity(ALLOC_SIZE);
+        b.iter(|| {
+            buffer.clear();
+            buffer.extend_from_slice(black_box(&message[..]));
+            key.encrypt_in_place(&mut buffer, &nonce, &[]).unwrap();
+        })
+    });
+    c.bench_function(&format!("xchacha20-poly1305 encrypt"), move |b| {
+        let key = Chacha20Key::<XC20P>::random().unwrap();
+        let nonce = Chacha20Key::<XC20P>::random_nonce();
+        let mut buffer = Vec::with_capacity(ALLOC_SIZE);
+        b.iter(|| {
+            buffer.clear();
+            buffer.extend_from_slice(black_box(&message[..]));
+            key.encrypt_in_place(&mut buffer, &nonce, &[]).unwrap();
+        })
+    });
+
+    // test overhead of SecretBytes
+    c.bench_function(&format!("chacha20-poly1305 encrypt alloc"), move |b| {
+        let key = Chacha20Key::<C20P>::random().unwrap();
+        let nonce = Chacha20Key::<C20P>::random_nonce();
+        let mut buffer = SecretBytes::with_capacity(ALLOC_SIZE);
+        b.iter(|| {
+            buffer.clear();
+            buffer.buffer_write(black_box(&message[..])).unwrap();
+            key.encrypt_in_place(&mut buffer, &nonce, &[]).unwrap();
+        })
+    });
+
+    // test overhead of AnyKey
+    c.bench_function(&format!("chacha20-poly1305 encrypt as any"), move |b| {
+        let key = Box::<AnyKey>::random(KeyAlg::Chacha20(Chacha20Types::C20P)).unwrap();
+        let mut nonce = [0u8; 255];
+        let nonce_len = key.aead_params().nonce_length;
+        fill_random(&mut nonce[..nonce_len]);
+        let mut buffer = Vec::with_capacity(ALLOC_SIZE);
+        b.iter(|| {
+            buffer.clear();
+            buffer.extend_from_slice(black_box(&message[..]));
+            key.encrypt_in_place(&mut buffer, &nonce[..nonce_len], &[])
+                .unwrap();
+        })
+    });
 }
 
 criterion_group!(benches, criterion_benchmark);

@@ -16,6 +16,7 @@ use crate::{
     generic_array::typenum::{U32, U64},
     jwk::{FromJwk, JwkEncoder, JwkParts, ToJwk},
     kdf::KeyExchange,
+    random::KeyMaterial,
     repr::{KeyGen, KeyMeta, KeyPublicBytes, KeySecretBytes, KeypairBytes, KeypairMeta},
 };
 
@@ -97,8 +98,8 @@ impl KeyMeta for X25519KeyPair {
 }
 
 impl KeyGen for X25519KeyPair {
-    fn generate() -> Result<Self, Error> {
-        let sk = ArrayKey::<U32>::random();
+    fn generate(rng: impl KeyMaterial) -> Result<Self, Error> {
+        let sk = ArrayKey::<U32>::generate(rng);
         let sk = SecretKey::from(
             TryInto::<[u8; SECRET_KEY_LENGTH]>::try_into(&sk.as_ref()[..]).unwrap(),
         );
@@ -281,8 +282,8 @@ mod tests {
 
     #[test]
     fn key_exchange_random() {
-        let kp1 = X25519KeyPair::generate().unwrap();
-        let kp2 = X25519KeyPair::generate().unwrap();
+        let kp1 = X25519KeyPair::random().unwrap();
+        let kp2 = X25519KeyPair::random().unwrap();
         assert_ne!(
             kp1.to_keypair_bytes().unwrap(),
             kp2.to_keypair_bytes().unwrap()
@@ -296,7 +297,7 @@ mod tests {
 
     #[test]
     fn round_trip_bytes() {
-        let kp = X25519KeyPair::generate().unwrap();
+        let kp = X25519KeyPair::random().unwrap();
         let cmp = X25519KeyPair::from_keypair_bytes(&kp.to_keypair_bytes().unwrap()).unwrap();
         assert_eq!(
             kp.to_keypair_bytes().unwrap(),

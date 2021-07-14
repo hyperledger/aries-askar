@@ -1,54 +1,121 @@
 //! Support for random number generation
 
+use core::fmt::{self, Debug, Formatter};
+
 use aead::generic_array::{typenum::Unsigned, GenericArray};
 use chacha20::{
     cipher::{NewStreamCipher, SyncStreamCipher},
     ChaCha20,
 };
-use rand::{CryptoRng, RngCore};
+use rand::{CryptoRng, RngCore, SeedableRng};
 
-#[cfg(feature = "alloc")]
+#[cfg(all(feature = "alloc", feature = "getrandom"))]
 use crate::buffer::SecretBytes;
 use crate::error::Error;
 
 /// The expected length of a seed for `fill_random_deterministic`
 pub const DETERMINISTIC_SEED_LENGTH: usize = <ChaCha20 as NewStreamCipher>::KeySize::USIZE;
-
 /// Combined trait for CryptoRng and RngCore
-pub trait Rng: CryptoRng + RngCore {}
+pub trait Rng: CryptoRng + RngCore + Debug {}
 
-impl<T: CryptoRng + RngCore> Rng for T {}
+impl<T: CryptoRng + RngCore + Debug> Rng for T {}
 
-/// Perform an operation with a reference to the random number generator
-#[inline(always)]
-pub fn with_rng<O>(f: impl FnOnce(&mut dyn Rng) -> O) -> O {
-    // FIXME may wish to support platforms without 'getrandom' by adding
-    // a method to initialize with a custom RNG (or fill_bytes function)
-    f(&mut ::rand::rngs::OsRng)
+pub trait KeyMaterial {
+    fn read_okm(&mut self, buf: &mut [u8]);
+}
+
+impl<C: CryptoRng + RngCore> KeyMaterial for C {
+    fn read_okm(&mut self, buf: &mut [u8]) {
+        self.fill_bytes(buf);
+    }
+}
+
+#[cfg(feature = "getrandom")]
+#[inline]
+pub fn default_rng() -> impl CryptoRng + RngCore + Debug {
+    rand::rngs::OsRng
 }
 
 /// Fill a mutable slice with random data using the
 /// system random number generator.
+#[cfg(feature = "getrandom")]
 #[inline(always)]
 pub fn fill_random(value: &mut [u8]) {
-    with_rng(|rng| rng.fill_bytes(value));
+    default_rng().fill_bytes(value);
 }
 
 /// Written to be compatible with randombytes_deterministic in libsodium,
 /// used to generate a deterministic symmetric encryption key
 pub fn fill_random_deterministic(seed: &[u8], output: &mut [u8]) -> Result<(), Error> {
-    if seed.len() != DETERMINISTIC_SEED_LENGTH {
-        return Err(err_msg!(Usage, "Invalid length for seed"));
-    }
-    let mut cipher = ChaCha20::new(
-        GenericArray::from_slice(seed),
-        GenericArray::from_slice(b"LibsodiumDRG"),
-    );
-    cipher.apply_keystream(output);
+    RandomDet::new(seed).fill_bytes(output);
     Ok(())
 }
 
-#[cfg(feature = "alloc")]
+pub struct RandomDet {
+    cipher: ChaCha20,
+}
+
+impl Debug for RandomDet {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "RandomDet {{}}")
+    }
+}
+
+impl SeedableRng for RandomDet {
+    type Seed = [u8; DETERMINISTIC_SEED_LENGTH];
+
+    #[inline]
+    fn from_seed(seed: Self::Seed) -> Self {
+        Self {
+            cipher: ChaCha20::new(
+                GenericArray::from_slice(&seed[..]),
+                GenericArray::from_slice(b"LibsodiumDRG"),
+            ),
+        }
+    }
+}
+
+impl CryptoRng for RandomDet {}
+
+impl RngCore for RandomDet {
+    #[inline]
+    fn next_u32(&mut self) -> u32 {
+        let mut buf = [0; 4];
+        self.cipher.apply_keystream(&mut buf[..]);
+        u32::from_le_bytes(buf)
+    }
+
+    #[inline]
+    fn next_u64(&mut self) -> u64 {
+        let mut buf = [0; 8];
+        self.cipher.apply_keystream(&mut buf[..]);
+        u64::from_le_bytes(buf)
+    }
+
+    #[inline]
+    fn fill_bytes(&mut self, bytes: &mut [u8]) {
+        bytes.iter_mut().for_each(|b| *b = 0u8);
+        self.cipher.apply_keystream(bytes);
+    }
+
+    #[inline]
+    fn try_fill_bytes(&mut self, bytes: &mut [u8]) -> Result<(), rand::Error> {
+        bytes.iter_mut().for_each(|b| *b = 0u8);
+        self.cipher.apply_keystream(bytes);
+        Ok(())
+    }
+}
+
+impl RandomDet {
+    pub fn new(seed: &[u8]) -> Self {
+        let mut sd = [0u8; DETERMINISTIC_SEED_LENGTH];
+        let seed_len = seed.len().max(DETERMINISTIC_SEED_LENGTH);
+        sd[..seed_len].copy_from_slice(&seed[..seed_len]);
+        Self::from_seed(sd)
+    }
+}
+
+#[cfg(all(feature = "alloc", feature = "getrandom"))]
 #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 /// Create a new `SecretBytes` instance with random data.
 #[inline(always)]

@@ -4,7 +4,7 @@ from .bindings import version, Encrypted
 from .error import AskarError, AskarErrorCode
 from .key import Key
 from .store import Entry, EntryList, KeyEntry, KeyEntryList, Session, Store
-from .types import KeyAlg
+from .types import KeyAlg, SeedMethod
 from . import crypto_box
 from . import ecdh
 
@@ -21,6 +21,7 @@ __all__ = (
     "KeyAlg",
     "KeyEntry",
     "KeyEntryList",
+    "SeedMethod",
     "Session",
     "Store",
 )

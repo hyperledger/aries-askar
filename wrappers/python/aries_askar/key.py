@@ -5,7 +5,7 @@ from typing import Union
 from . import bindings
 
 from .bindings import Encrypted
-from .types import KeyAlg
+from .types import KeyAlg, SeedMethod
 
 
 class Key:
@@ -21,7 +21,11 @@ class Key:
 
     @classmethod
     def from_seed(
-        cls, alg: Union[str, KeyAlg], seed: Union[str, bytes], *, method: str = None
+        cls,
+        alg: Union[str, KeyAlg],
+        seed: Union[str, bytes],
+        *,
+        method: Union[str, SeedMethod] = None,
     ) -> "Key":
         return cls(bindings.key_from_seed(alg, seed, method))
 

@@ -1,4 +1,4 @@
-//! AES-CBC-HMAC-SHA2
+//! AES-CBC-HMAC
 
 use core::marker::PhantomData;
 
@@ -11,6 +11,7 @@ use block_modes::{
 };
 use digest::{BlockInput, FixedOutput, Reset, Update};
 use hmac::{Hmac, Mac, NewMac};
+use subtle::ConstantTimeEq;
 
 use super::{AesKey, AesType, NonceSize, TagSize};
 use crate::{
@@ -24,7 +25,7 @@ use crate::{
     },
 };
 
-/// 128 bit AES-CBC with HMAC-256
+/// 128 bit AES-CBC with SHA-256 HMAC
 pub type A128CbcHs256 = AesCbcHmac<Aes128, sha2::Sha256>;
 
 impl AesType for A128CbcHs256 {
@@ -33,7 +34,7 @@ impl AesType for A128CbcHs256 {
     const JWK_ALG: &'static str = "A128CBC-HS256";
 }
 
-/// 256 bit AES-CBC with HMAC-512
+/// 256 bit AES-CBC with SHA-512 HMAC
 pub type A256CbcHs512 = AesCbcHmac<Aes256, sha2::Sha512>;
 
 impl AesType for A256CbcHs512 {
@@ -147,8 +148,7 @@ where
         hmac.update(&buffer.as_ref()[..ctext_end]);
         hmac.update(&((aad.len() as u64) * 8).to_be_bytes());
         let mac = hmac.finalize().into_bytes();
-        let tag_match =
-            subtle::ConstantTimeEq::ct_eq(tag.as_ref(), &mac[..TagSize::<Self>::USIZE]).unwrap_u8();
+        let tag_match = tag.as_ref().ct_eq(&mac[..TagSize::<Self>::USIZE]);
 
         let enc_key = GenericArray::from_slice(&self.0[C::KeySize::USIZE..]);
         let dec_len = Cbc::<C, Pkcs7>::new_fix(enc_key, GenericArray::from_slice(nonce))
@@ -157,7 +157,7 @@ where
             .len();
         buffer.buffer_resize(dec_len)?;
 
-        if tag_match != 1 {
+        if tag_match.unwrap_u8() != 1 {
             Err(err_msg!(Encryption, "AEAD decryption error"))
         } else {
             Ok(())
@@ -184,7 +184,7 @@ mod tests {
     use std::string::ToString;
 
     #[test]
-    fn encrypt_expected_cbc_hmac_128() {
+    fn encrypt_expected_cbc_128_hmac_256() {
         let key_data = &hex!("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f");
         let input = b"A cipher system must not be required to be secret, and it must be able to fall into the hands of the enemy without inconvenience";
         let nonce = &hex!("1af38c2dc2b96ffdd86694092341bc04");
@@ -200,8 +200,7 @@ mod tests {
             a94ac9b47ad2655c5f10f9aef71427e2fc6f9b3f399a221489f16362c7032336\
             09d45ac69864e3321cf82935ac4096c86e133314c54019e8ca7980dfa4b9cf1b\
             384c486f3a54c51078158ee5d79de59fbd34d848b3d69550a67646344427ade5\
-            4b8851ffb598f7f80074b9473c82e2db\
-            652c3fa36b0a7c5b3219fab3a30bc1c4"
+            4b8851ffb598f7f80074b9473c82e2db652c3fa36b0a7c5b3219fab3a30bc1c4"
         );
         key.decrypt_in_place(&mut buffer, &nonce[..], &aad[..])
             .unwrap();
@@ -209,7 +208,7 @@ mod tests {
     }
 
     #[test]
-    fn encrypt_expected_cbc_hmac_256() {
+    fn encrypt_expected_cbc_256_hmac_512() {
         let key_data = &hex!(
             "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f
             202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f"
@@ -228,8 +227,8 @@ mod tests {
             822c301dd67c373bccb584ad3e9279c2e6d12a1374b77f077553df829410446b\
             36ebd97066296ae6427ea75c2e0846a11a09ccf5370dc80bfecbad28c73f09b3\
             a3b75e662a2594410ae496b2e2e6609e31e6e02cc837f053d21f37ff4f51950b\
-            be2638d09dd7a4930930806d0703b1f6\
-            4dd3b4c088a7f45c216839645b2012bf2e6269a8c56a816dbc1b267761955bc5"
+            be2638d09dd7a4930930806d0703b1f64dd3b4c088a7f45c216839645b2012bf\
+            2e6269a8c56a816dbc1b267761955bc5"
         );
         key.decrypt_in_place(&mut buffer, &nonce[..], &aad[..])
             .unwrap();
@@ -237,7 +236,7 @@ mod tests {
     }
 
     #[test]
-    fn encrypt_expected_cbc_hmac_1pu() {
+    fn encrypt_expected_ecdh_1pu_cbc_hmac() {
         let key_data = &hex!(
             "fffefdfcfbfaf9f8f7f6f5f4f3f2f1f0efeeedecebeae9e8e7e6e5e4e3e2e1e0
             dfdedddcdbdad9d8d7d6d5d4d3d2d1d0cfcecdcccbcac9c8c7c6c5c4c3c2c1c0"

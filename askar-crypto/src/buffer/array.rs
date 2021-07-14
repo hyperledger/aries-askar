@@ -13,7 +13,7 @@ use super::HexRepr;
 use crate::{
     error::Error,
     kdf::{FromKeyDerivation, KeyDerivation},
-    random::fill_random,
+    random::KeyMaterial,
 };
 
 /// A secure representation for fixed-length keys
@@ -28,6 +28,12 @@ pub struct ArrayKey<L: ArrayLength<u8>>(
 impl<L: ArrayLength<u8>> ArrayKey<L> {
     /// The array length in bytes
     pub const SIZE: usize = L::USIZE;
+
+    /// Create a new buffer from a random data source
+    #[inline]
+    pub fn generate(mut rng: impl KeyMaterial) -> Self {
+        Self::new_with(|buf| rng.read_okm(buf))
+    }
 
     /// Create a new buffer using an initializer for the data
     pub fn new_with(f: impl FnOnce(&mut [u8])) -> Self {
@@ -44,9 +50,9 @@ impl<L: ArrayLength<u8>> ArrayKey<L> {
     }
 
     /// Temporarily allocate and use a key
-    pub fn temp<R>(f: impl FnOnce(&mut [u8]) -> R) -> R {
+    pub fn temp<R>(f: impl FnOnce(&mut GenericArray<u8, L>) -> R) -> R {
         let mut slf = Self::default();
-        f(slf.0.as_mut())
+        f(&mut slf.0)
     }
 
     /// Convert this array to a non-zeroing GenericArray instance
@@ -70,9 +76,10 @@ impl<L: ArrayLength<u8>> ArrayKey<L> {
     }
 
     /// Create a new array of random bytes
+    #[cfg(feature = "getrandom")]
     #[inline]
     pub fn random() -> Self {
-        Self::new_with(fill_random)
+        Self::generate(crate::random::default_rng())
     }
 
     /// Get a hex formatter for the key data
