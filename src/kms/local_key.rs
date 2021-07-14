@@ -9,7 +9,7 @@ pub use crate::crypto::{
 };
 use crate::{
     crypto::{
-        alg::{AnyKey, AnyKeyCreate, BlsCurves},
+        alg::{bls::BlsKeyGen, AnyKey, AnyKeyCreate, BlsCurves},
         encrypt::KeyAeadInPlace,
         jwk::{FromJwk, ToJwk},
         kdf::{KeyDerivation, KeyExchange},
@@ -36,8 +36,17 @@ impl LocalKey {
     }
 
     /// Create a new deterministic key or keypair
-    pub fn from_seed(alg: KeyAlg, seed: &[u8], _method: Option<&str>) -> Result<Self, Error> {
-        let inner = Box::<AnyKey>::generate(alg, RandomDet::new(seed))?;
+    pub fn from_seed(alg: KeyAlg, seed: &[u8], method: Option<&str>) -> Result<Self, Error> {
+        let inner = match method {
+            Some("bls_keygen") => Box::<AnyKey>::generate(alg, BlsKeyGen::new(seed)?)?,
+            None | Some("") => Box::<AnyKey>::generate(alg, RandomDet::new(seed))?,
+            _ => {
+                return Err(err_msg!(
+                    Unsupported,
+                    "Unknown seed method for key generation"
+                ))
+            }
+        };
         Ok(Self {
             inner,
             ephemeral: false,

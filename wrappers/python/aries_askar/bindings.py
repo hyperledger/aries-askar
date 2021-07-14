@@ -24,7 +24,7 @@ from ctypes.util import find_library
 from typing import Optional, Tuple, Union
 
 from .error import AskarError, AskarErrorCode
-from .types import EntryOperation, KeyAlg
+from .types import EntryOperation, KeyAlg, SeedMethod
 
 
 CALLBACKS = {}
@@ -978,11 +978,15 @@ def key_generate(alg: Union[str, KeyAlg], ephemeral: bool = False) -> LocalKeyHa
 
 
 def key_from_seed(
-    alg: Union[str, KeyAlg], seed: Union[str, bytes, ByteBuffer], method: str = None
+    alg: Union[str, KeyAlg],
+    seed: Union[str, bytes, ByteBuffer],
+    method: Union[str, SeedMethod] = None,
 ) -> LocalKeyHandle:
     handle = LocalKeyHandle()
     if isinstance(alg, KeyAlg):
         alg = alg.value
+    if isinstance(method, SeedMethod):
+        method = method.value
     do_call(
         "askar_key_from_seed",
         encode_str(alg),

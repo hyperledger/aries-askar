@@ -1,8 +1,8 @@
 from aries_askar import (
     KeyAlg,
     Key,
+    SeedMethod,
 )
-from aries_askar.bindings import ByteBuffer, Encrypted
 
 
 def test_aes_cbc_hmac():
@@ -33,8 +33,12 @@ def test_aes_gcm():
     assert data == bytes(dec)
 
 
-def test_bls():
-    key = Key.from_seed(KeyAlg.BLS12_381_G1G2, b"testseed000000000000000000000001")
+def test_bls_keygen():
+    key = Key.from_seed(
+        KeyAlg.BLS12_381_G1G2,
+        b"testseed000000000000000000000001",
+        method=SeedMethod.BlsKeyGen,
+    )
     assert key.get_jwk_public(KeyAlg.BLS12_381_G1) == (
         '{"crv":"BLS12381_G1","kty":"EC","x":'
         '"h56eYI8Qkq5hitICb-ik8wRTzcn6Fd4iY8aDNVc9q1xoPS3lh4DB_B4wNtar1HrV"}'

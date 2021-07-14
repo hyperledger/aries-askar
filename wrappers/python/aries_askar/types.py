@@ -29,6 +29,19 @@ class KeyAlg(Enum):
         return None
 
 
+class SeedMethod(Enum):
+    BlsKeyGen = "bls_keygen"
+
+    @classmethod
+    def from_seed_method(cls, method: str) -> Optional["SeedMethod"]:
+        """Get SeedMethod instance from the method identifier."""
+        for cmp_mth in SeedMethod:
+            if cmp_mth.value == method:
+                return cmp_mth
+
+        return None
+
+
 class EntryOperation(Enum):
     INSERT = 0
     REPLACE = 1
