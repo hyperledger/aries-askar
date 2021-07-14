@@ -47,12 +47,12 @@ where
 {
     pub fn new() -> Result<Self, Error> {
         Ok(Self {
-            category_key: KeyGen::generate()?,
-            name_key: KeyGen::generate()?,
-            item_hmac_key: KeyGen::generate()?,
-            tag_name_key: KeyGen::generate()?,
-            tag_value_key: KeyGen::generate()?,
-            tags_hmac_key: KeyGen::generate()?,
+            category_key: KeyGen::random()?,
+            name_key: KeyGen::random()?,
+            item_hmac_key: KeyGen::random()?,
+            tag_name_key: KeyGen::random()?,
+            tag_value_key: KeyGen::random()?,
+            tags_hmac_key: KeyGen::random()?,
         })
     }
 }
@@ -299,8 +299,8 @@ mod tests {
     #[test]
     fn check_encrypt_searchable() {
         let input = SecretBytes::from(&b"hello"[..]);
-        let key = Chacha20Key::<C20P>::generate().unwrap();
-        let hmac_key = HmacKey::generate().unwrap();
+        let key = Chacha20Key::<C20P>::random().unwrap();
+        let hmac_key = HmacKey::random().unwrap();
         let enc1 = ProfileKey::encrypt_searchable(input.clone(), &key, &hmac_key).unwrap();
         let enc2 = ProfileKey::encrypt_searchable(input.clone(), &key, &hmac_key).unwrap();
         let enc3 = ProfileKey::encrypt(input.clone(), &key).unwrap();

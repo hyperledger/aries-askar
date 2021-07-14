@@ -100,7 +100,7 @@ pub fn crypto_box_seal_nonce(
 /// Encrypt a message for a recipient using an ephemeral key and deterministic nonce
 // Could add a non-alloc version, if needed
 pub fn crypto_box_seal(recip_pk: &X25519KeyPair, message: &[u8]) -> Result<SecretBytes, Error> {
-    let ephem_kp = X25519KeyPair::generate()?;
+    let ephem_kp = X25519KeyPair::random()?;
     let ephem_pk_bytes = ephem_kp.public.as_bytes();
     let buf_len = CBOX_KEY_LENGTH + CBOX_TAG_LENGTH + message.len();
     let mut buffer = SecretBytes::with_capacity(buf_len);
@@ -155,7 +155,7 @@ mod tests {
 
     #[test]
     fn crypto_box_seal_round_trip() {
-        let recip = X25519KeyPair::generate().unwrap();
+        let recip = X25519KeyPair::random().unwrap();
 
         let recip_public =
             X25519KeyPair::from_public_bytes(recip.to_public_bytes().unwrap().as_ref()).unwrap();

@@ -6,6 +6,7 @@ use crate::{
         alg::chacha20::{Chacha20Key, C20P},
         buffer::{ArrayKey, ResizeBuffer, SecretBytes},
         encrypt::{KeyAeadInPlace, KeyAeadMeta},
+        random::RandomDet,
         repr::{KeyGen, KeyMeta, KeySecretBytes},
     },
     error::Error,
@@ -22,9 +23,9 @@ type StoreKeyNonce = ArrayKey<<StoreKeyType as KeyAeadMeta>::NonceSize>;
 /// Create a new raw (non-derived) store key
 pub fn generate_raw_store_key(seed: Option<&[u8]>) -> Result<PassKey<'static>, Error> {
     let key = if let Some(seed) = seed {
-        StoreKey::from(StoreKeyType::from_seed(seed.into())?)
+        StoreKey::from(StoreKeyType::generate(RandomDet::new(seed))?)
     } else {
-        StoreKey::from(StoreKeyType::generate()?)
+        StoreKey::from(StoreKeyType::random()?)
     };
     Ok(key.to_passkey())
 }
@@ -51,7 +52,7 @@ impl StoreKey {
     }
 
     pub fn random() -> Result<Self, Error> {
-        Ok(Self(Some(StoreKeyType::generate()?)))
+        Ok(Self(Some(StoreKeyType::random()?)))
     }
 
     pub fn is_empty(&self) -> bool {

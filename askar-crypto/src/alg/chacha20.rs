@@ -15,8 +15,8 @@ use crate::{
     generic_array::{typenum::Unsigned, GenericArray},
     jwk::{JwkEncoder, ToJwk},
     kdf::{FromKeyDerivation, FromKeyExchange, KeyDerivation, KeyExchange},
-    random::fill_random_deterministic,
-    repr::{KeyGen, KeyMeta, KeySecretBytes, Seed, SeedMethod},
+    random::KeyMaterial,
+    repr::{KeyGen, KeyMeta, KeySecretBytes},
 };
 
 /// The 'kty' value of a symmetric key JWK
@@ -116,23 +116,8 @@ impl<T: Chacha20Type> KeyMeta for Chacha20Key<T> {
 }
 
 impl<T: Chacha20Type> KeyGen for Chacha20Key<T> {
-    fn generate() -> Result<Self, Error> {
-        Ok(Chacha20Key(KeyType::<T>::random()))
-    }
-
-    fn from_seed(seed: Seed<'_>) -> Result<Self, Error>
-    where
-        Self: Sized,
-    {
-        match seed {
-            Seed::Bytes(ikm, SeedMethod::Preferred) | Seed::Bytes(ikm, SeedMethod::RandomDet) => {
-                Ok(Self(KeyType::<T>::try_new_with(|arr| {
-                    fill_random_deterministic(ikm, arr)
-                })?))
-            }
-            #[allow(unreachable_patterns)]
-            _ => Err(err_msg!(Unsupported)),
-        }
+    fn generate(rng: impl KeyMaterial) -> Result<Self, Error> {
+        Ok(Chacha20Key(KeyType::<T>::generate(rng)))
     }
 }
 
@@ -263,7 +248,7 @@ mod tests {
     fn encrypt_round_trip() {
         fn test_encrypt<T: Chacha20Type>() {
             let input = b"hello";
-            let key = Chacha20Key::<T>::generate().unwrap();
+            let key = Chacha20Key::<T>::random().unwrap();
             let mut buffer = SecretBytes::from_slice(input);
             let nonce = Chacha20Key::<T>::random_nonce();
             key.encrypt_in_place(&mut buffer, &nonce, &[]).unwrap();
@@ -279,7 +264,7 @@ mod tests {
     #[test]
     fn serialize_round_trip() {
         fn test_serialize<T: Chacha20Type>() {
-            let key = Chacha20Key::<T>::generate().unwrap();
+            let key = Chacha20Key::<T>::random().unwrap();
             let sk = key.to_secret_bytes().unwrap();
             let bytes = serde_cbor::to_vec(&key).unwrap();
             let deser: &[u8] = serde_cbor::from_slice(bytes.as_ref()).unwrap();

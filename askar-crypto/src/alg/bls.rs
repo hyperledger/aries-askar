@@ -6,6 +6,7 @@ use core::{
     ops::Add,
 };
 
+use aead::generic_array::GenericArray;
 use blake2::Digest;
 use bls12_381::{G1Affine, G1Projective, G2Affine, G2Projective, Scalar};
 use group::GroupEncoding;
@@ -23,8 +24,8 @@ use crate::{
     buffer::ArrayKey,
     error::Error,
     jwk::{FromJwk, JwkEncoder, JwkParts, ToJwk},
-    random::fill_random,
-    repr::{KeyGen, KeyMeta, KeyPublicBytes, KeySecretBytes, KeypairMeta, Seed, SeedMethod},
+    random::KeyMaterial,
+    repr::{KeyGen, KeyMeta, KeyPublicBytes, KeySecretBytes, KeypairMeta},
 };
 
 /// The 'kty' value of a BLS key JWK
@@ -38,8 +39,14 @@ pub struct BlsKeyPair<Pk: BlsPublicKeyType> {
 }
 
 impl<Pk: BlsPublicKeyType> BlsKeyPair<Pk> {
+    pub fn from_seed(seed: &[u8]) -> Result<Self, Error> {
+        Ok(Self::from_secret_key(BlsSecretKey::generate(
+            BlsKeyGen::new(seed)?,
+        )?))
+    }
+
     #[inline]
-    fn from_secret_key(sk: BlsSecretKey) -> Self {
+    pub(crate) fn from_secret_key(sk: BlsSecretKey) -> Self {
         let public = Pk::from_secret_scalar(&sk.0);
         Self {
             secret: Some(sk),
@@ -95,23 +102,9 @@ where
 }
 
 impl<Pk: BlsPublicKeyType> KeyGen for BlsKeyPair<Pk> {
-    fn generate() -> Result<Self, Error> {
-        let secret = BlsSecretKey::generate()?;
+    fn generate(rng: impl KeyMaterial) -> Result<Self, Error> {
+        let secret = BlsSecretKey::generate(rng)?;
         Ok(Self::from_secret_key(secret))
-    }
-
-    fn from_seed(seed: Seed<'_>) -> Result<Self, Error>
-    where
-        Self: Sized,
-    {
-        match seed {
-            Seed::Bytes(ikm, SeedMethod::Preferred)
-            | Seed::Bytes(ikm, SeedMethod::BlsKeyGenDraft4) => {
-                Ok(Self::from_secret_key(BlsSecretKey::from_seed(ikm)?))
-            }
-            #[allow(unreachable_patterns)]
-            _ => Err(err_msg!(Unsupported, "Unsupported seed method for BLS key")),
-        }
     }
 }
 
@@ -199,38 +192,14 @@ impl<Pk: BlsPublicKeyType> FromJwk for BlsKeyPair<Pk> {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[repr(transparent)]
-struct BlsSecretKey(Scalar);
+pub(crate) struct BlsSecretKey(Scalar);
 
 impl BlsSecretKey {
-    pub fn generate() -> Result<Self, Error> {
+    fn generate(mut rng: impl KeyMaterial) -> Result<Self, Error> {
         let mut secret = Zeroizing::new([0u8; 64]);
-        fill_random(&mut secret[..]);
+        rng.read_okm(&mut secret[16..]);
+        secret.reverse(); // into little endian
         Ok(Self(Scalar::from_bytes_wide(&secret)))
-    }
-
-    // bls-signatures draft 4 version (incompatible with earlier)
-    pub fn from_seed(ikm: &[u8]) -> Result<Self, Error> {
-        const SALT: &[u8] = b"BLS-SIG-KEYGEN-SALT-";
-        if ikm.len() < 32 {
-            return Err(err_msg!(Usage, "Insufficient length for seed"));
-        }
-
-        let mut salt = Sha256::digest(SALT);
-        Ok(Self(loop {
-            let mut okm = Zeroizing::new([0u8; 64]);
-            let mut extract = hkdf::HkdfExtract::<Sha256>::new(Some(salt.as_ref()));
-            extract.input_ikm(ikm);
-            extract.input_ikm(&[0u8]);
-            let (_, hkdf) = extract.finalize();
-            hkdf.expand(&(48 as u16).to_be_bytes(), &mut okm[16..])
-                .expect("HDKF extract failure");
-            okm.reverse(); // into little endian
-            let scalar = Scalar::from_bytes_wide(&okm);
-            if scalar != Scalar::zero() {
-                break scalar;
-            }
-            salt = Sha256::digest(salt.as_ref());
-        }))
     }
 
     pub fn from_bytes(sk: &[u8]) -> Result<Self, Error> {
@@ -242,6 +211,38 @@ impl BlsSecretKey {
         skb.reverse(); // into little endian
         let result: Option<Scalar> = Scalar::from_bytes(&skb).into();
         Ok(Self(result.ok_or_else(|| err_msg!(InvalidKeyData))?))
+    }
+}
+
+// bls-signatures draft 4 version (incompatible with earlier)
+pub struct BlsKeyGen<'g> {
+    salt: Option<GenericArray<u8, U32>>,
+    ikm: &'g [u8],
+}
+
+impl<'g> BlsKeyGen<'g> {
+    pub fn new(ikm: &'g [u8]) -> Result<Self, Error> {
+        if ikm.len() < 32 {
+            return Err(err_msg!(Usage, "Insufficient length for seed"));
+        }
+        Ok(Self { salt: None, ikm })
+    }
+}
+
+impl KeyMaterial for BlsKeyGen<'_> {
+    fn read_okm(&mut self, buf: &mut [u8]) {
+        const SALT: &[u8] = b"BLS-SIG-KEYGEN-SALT-";
+
+        self.salt.replace(match self.salt {
+            None => Sha256::digest(SALT),
+            Some(salt) => Sha256::digest(salt.as_ref()),
+        });
+        let mut extract = hkdf::HkdfExtract::<Sha256>::new(Some(self.salt.as_ref().unwrap()));
+        extract.input_ikm(self.ikm);
+        extract.input_ikm(&[0u8]);
+        let (_, hkdf) = extract.finalize();
+        hkdf.expand(&(buf.len() as u16).to_be_bytes(), buf)
+            .expect("HDKF extract failure");
     }
 }
 
@@ -427,8 +428,7 @@ mod tests {
             "c55257c360c07c72029aebc1b53c05ed0362ada38ead3e3e9efa3708e5349553
             1f09a6987599d18264c1e1c92f2cf141630c7a3c4ab7c81b2f001698e7463b04"
         );
-        let sk = BlsSecretKey::from_seed(&seed[..]).unwrap();
-        let kp = BlsKeyPair::<G1>::from_secret_key(sk);
+        let kp = BlsKeyPair::<G1>::from_seed(&seed[..]).unwrap();
         let sk = kp.to_secret_bytes().unwrap();
         assert_eq!(
             sk.as_hex().to_string(),

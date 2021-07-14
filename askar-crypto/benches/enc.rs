@@ -20,7 +20,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         let message = b"test message for encrypting";
 
         c.bench_function(&format!("aes128gcm encrypt"), move |b| {
-            let key = AesKey::<A128Gcm>::generate().unwrap();
+            let key = AesKey::<A128Gcm>::random().unwrap();
             let nonce = AesKey::<A128Gcm>::random_nonce();
             b.iter(|| {
                 let mut buffer = [0u8; 255];
@@ -30,7 +30,7 @@ fn criterion_benchmark(c: &mut Criterion) {
             })
         });
         c.bench_function(&format!("aes128cbc-hs256 encrypt"), move |b| {
-            let key = AesKey::<A128CbcHs256>::generate().unwrap();
+            let key = AesKey::<A128CbcHs256>::random().unwrap();
             let nonce = AesKey::<A128CbcHs256>::random_nonce();
             b.iter(|| {
                 let mut buffer = [0u8; 255];
@@ -41,7 +41,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         });
 
         c.bench_function(&format!("chacha20-poly1305 encrypt"), move |b| {
-            let key = Chacha20Key::<C20P>::generate().unwrap();
+            let key = Chacha20Key::<C20P>::random().unwrap();
             let nonce = Chacha20Key::<C20P>::random_nonce();
             b.iter(|| {
                 let mut buffer = [0u8; 255];
@@ -53,7 +53,7 @@ fn criterion_benchmark(c: &mut Criterion) {
 
         // test overhead of SecretBytes
         c.bench_function(&format!("chacha20-poly1305 encrypt alloc"), move |b| {
-            let key = Chacha20Key::<C20P>::generate().unwrap();
+            let key = Chacha20Key::<C20P>::random().unwrap();
             let nonce = Chacha20Key::<C20P>::random_nonce();
             b.iter(|| {
                 let mut buffer = SecretBytes::with_capacity(255);
@@ -64,7 +64,7 @@ fn criterion_benchmark(c: &mut Criterion) {
 
         // test overhead of AnyKey
         c.bench_function(&format!("chacha20-poly1305 encrypt as any"), move |b| {
-            let key = Box::<AnyKey>::generate(KeyAlg::Chacha20(Chacha20Types::C20P)).unwrap();
+            let key = Box::<AnyKey>::random(KeyAlg::Chacha20(Chacha20Types::C20P)).unwrap();
             let mut nonce = [0u8; 255];
             let nonce_len = key.aead_params().nonce_length;
             fill_random(&mut nonce[..nonce_len]);

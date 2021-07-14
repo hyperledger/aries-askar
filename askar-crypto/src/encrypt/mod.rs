@@ -4,7 +4,6 @@ use crate::{
     buffer::ResizeBuffer,
     error::Error,
     generic_array::{ArrayLength, GenericArray},
-    random::fill_random,
 };
 
 #[cfg(feature = "crypto_box")]
@@ -47,9 +46,10 @@ pub trait KeyAeadMeta {
     type TagSize: ArrayLength<u8>;
 
     /// Generate a new random nonce
+    #[cfg(feature = "getrandom")]
     fn random_nonce() -> GenericArray<u8, Self::NonceSize> {
         let mut nonce = GenericArray::default();
-        fill_random(nonce.as_mut_slice());
+        crate::random::fill_random(nonce.as_mut_slice());
         nonce
     }
 }

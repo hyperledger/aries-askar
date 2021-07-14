@@ -6,49 +6,18 @@ use crate::{
     buffer::WriteBuffer,
     error::Error,
     generic_array::{typenum::Unsigned, ArrayLength},
+    random::KeyMaterial,
 };
 
-/// A seed used in key generation
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Seed<'d> {
-    /// A seed byte string with a selected generation method
-    Bytes(&'d [u8], SeedMethod),
-}
+/// Raw key generation operations
+pub trait KeyGen: Sized {
+    /// Create a new key from a key material generator.
+    fn generate(rng: impl KeyMaterial) -> Result<Self, Error>;
 
-impl<'d> From<&'d [u8]> for Seed<'d> {
-    fn from(seed: &'d [u8]) -> Self {
-        Self::Bytes(seed, SeedMethod::Preferred)
-    }
-}
-
-/// Supported deterministic key methods
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum SeedMethod {
-    /// Use the preferred method for the current key algorithm
-    Preferred,
-    /// Generate a BLS key according to bls-signatures-draft-04
-    BlsKeyGenDraft4,
-    /// Random bytes compatible with libsodium's randombytes_buf_deterministic.
-    /// The seed must be 32 bytes in length
-    RandomDet,
-}
-
-/// Key generation operations
-pub trait KeyGen {
     /// Generate a new random key.
-    fn generate() -> Result<Self, Error>
-    where
-        Self: Sized;
-
-    /// Generate a new deterministic key.
-    fn from_seed(_seed: Seed<'_>) -> Result<Self, Error>
-    where
-        Self: Sized,
-    {
-        return Err(err_msg!(
-            Unsupported,
-            "Key generation from seed not supported"
-        ));
+    #[cfg(feature = "getrandom")]
+    fn random() -> Result<Self, Error> {
+        Self::generate(crate::random::default_rng())
     }
 }
 

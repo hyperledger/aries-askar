@@ -42,7 +42,8 @@ use crate::{
     error::Error,
     jwk::{FromJwk, JwkEncoder, JwkParts, ToJwk},
     kdf::{KeyDerivation, KeyExchange},
-    repr::{KeyGen, KeyPublicBytes, KeySecretBytes, Seed, ToPublicBytes, ToSecretBytes},
+    random::KeyMaterial,
+    repr::{KeyGen, KeyPublicBytes, KeySecretBytes, ToPublicBytes, ToSecretBytes},
     sign::{KeySigVerify, KeySign, SignatureType},
 };
 
@@ -86,11 +87,19 @@ impl std::panic::RefUnwindSafe for AnyKey {}
 
 /// Create `AnyKey` instances from various sources
 pub trait AnyKeyCreate: Sized {
-    /// Generate a new random key for the given key algorithm.
-    fn generate(alg: KeyAlg) -> Result<Self, Error>;
+    /// Generate a new key from a key material generator for the given key algorithm.
+    fn generate(alg: KeyAlg, rng: impl KeyMaterial) -> Result<Self, Error>;
 
-    /// Generate a new deterministic key for the given key algorithm.
-    fn from_seed(alg: KeyAlg, seed: Seed<'_>) -> Result<Self, Error>;
+    /// Generate a new random key for the given key algorithm.
+    #[cfg(feature = "getrandom")]
+    fn random(alg: KeyAlg) -> Result<Self, Error> {
+        Self::generate(alg, crate::random::default_rng())
+    }
+
+    /// Generate a new random key for the given key algorithm.
+    fn random_det(alg: KeyAlg, seed: &[u8]) -> Result<Self, Error> {
+        Self::generate(alg, crate::random::RandomDet::new(seed))
+    }
 
     /// Load a public key from its byte representation
     fn from_public_bytes(alg: KeyAlg, public: &[u8]) -> Result<Self, Error>;
@@ -115,12 +124,8 @@ pub trait AnyKeyCreate: Sized {
 }
 
 impl AnyKeyCreate for Box<AnyKey> {
-    fn generate(alg: KeyAlg) -> Result<Self, Error> {
-        generate_any(alg)
-    }
-
-    fn from_seed(alg: KeyAlg, seed: Seed<'_>) -> Result<Self, Error> {
-        from_seed_any(alg, seed)
+    fn generate(alg: KeyAlg, rng: impl KeyMaterial) -> Result<Self, Error> {
+        generate_any(alg, rng)
     }
 
     fn from_public_bytes(alg: KeyAlg, public: &[u8]) -> Result<Self, Error> {
@@ -154,12 +159,8 @@ impl AnyKeyCreate for Box<AnyKey> {
 }
 
 impl AnyKeyCreate for Arc<AnyKey> {
-    fn generate(alg: KeyAlg) -> Result<Self, Error> {
-        generate_any(alg)
-    }
-
-    fn from_seed(alg: KeyAlg, seed: Seed<'_>) -> Result<Self, Error> {
-        from_seed_any(alg, seed)
+    fn generate(alg: KeyAlg, rng: impl KeyMaterial) -> Result<Self, Error> {
+        generate_any(alg, rng)
     }
 
     fn from_public_bytes(alg: KeyAlg, public: &[u8]) -> Result<Self, Error> {
@@ -193,88 +194,51 @@ impl AnyKeyCreate for Arc<AnyKey> {
 }
 
 #[inline]
-fn generate_any<R: AllocKey>(alg: KeyAlg) -> Result<R, Error> {
+fn generate_any<R: AllocKey>(alg: KeyAlg, rng: impl KeyMaterial) -> Result<R, Error> {
     match alg {
         #[cfg(feature = "aes")]
-        KeyAlg::Aes(AesTypes::A128Gcm) => AesKey::<A128Gcm>::generate().map(R::alloc_key),
+        KeyAlg::Aes(AesTypes::A128Gcm) => AesKey::<A128Gcm>::generate(rng).map(R::alloc_key),
         #[cfg(feature = "aes")]
-        KeyAlg::Aes(AesTypes::A256Gcm) => AesKey::<A256Gcm>::generate().map(R::alloc_key),
+        KeyAlg::Aes(AesTypes::A256Gcm) => AesKey::<A256Gcm>::generate(rng).map(R::alloc_key),
         #[cfg(feature = "aes")]
-        KeyAlg::Aes(AesTypes::A128CbcHs256) => AesKey::<A128CbcHs256>::generate().map(R::alloc_key),
+        KeyAlg::Aes(AesTypes::A128CbcHs256) => {
+            AesKey::<A128CbcHs256>::generate(rng).map(R::alloc_key)
+        }
         #[cfg(feature = "aes")]
-        KeyAlg::Aes(AesTypes::A256CbcHs512) => AesKey::<A256CbcHs512>::generate().map(R::alloc_key),
+        KeyAlg::Aes(AesTypes::A256CbcHs512) => {
+            AesKey::<A256CbcHs512>::generate(rng).map(R::alloc_key)
+        }
         #[cfg(feature = "aes")]
-        KeyAlg::Aes(AesTypes::A128Kw) => AesKey::<A128Kw>::generate().map(R::alloc_key),
+        KeyAlg::Aes(AesTypes::A128Kw) => AesKey::<A128Kw>::generate(rng).map(R::alloc_key),
         #[cfg(feature = "aes")]
-        KeyAlg::Aes(AesTypes::A256Kw) => AesKey::<A256Kw>::generate().map(R::alloc_key),
+        KeyAlg::Aes(AesTypes::A256Kw) => AesKey::<A256Kw>::generate(rng).map(R::alloc_key),
         #[cfg(feature = "bls")]
-        KeyAlg::Bls12_381(BlsCurves::G1) => BlsKeyPair::<G1>::generate().map(R::alloc_key),
+        KeyAlg::Bls12_381(BlsCurves::G1) => BlsKeyPair::<G1>::generate(rng).map(R::alloc_key),
         #[cfg(feature = "bls")]
-        KeyAlg::Bls12_381(BlsCurves::G2) => BlsKeyPair::<G2>::generate().map(R::alloc_key),
+        KeyAlg::Bls12_381(BlsCurves::G2) => BlsKeyPair::<G2>::generate(rng).map(R::alloc_key),
         #[cfg(feature = "bls")]
-        KeyAlg::Bls12_381(BlsCurves::G1G2) => BlsKeyPair::<G1G2>::generate().map(R::alloc_key),
+        KeyAlg::Bls12_381(BlsCurves::G1G2) => BlsKeyPair::<G1G2>::generate(rng).map(R::alloc_key),
         #[cfg(feature = "chacha")]
-        KeyAlg::Chacha20(Chacha20Types::C20P) => Chacha20Key::<C20P>::generate().map(R::alloc_key),
+        KeyAlg::Chacha20(Chacha20Types::C20P) => {
+            Chacha20Key::<C20P>::generate(rng).map(R::alloc_key)
+        }
         #[cfg(feature = "chacha")]
         KeyAlg::Chacha20(Chacha20Types::XC20P) => {
-            Chacha20Key::<XC20P>::generate().map(R::alloc_key)
+            Chacha20Key::<XC20P>::generate(rng).map(R::alloc_key)
         }
         #[cfg(feature = "ed25519")]
-        KeyAlg::Ed25519 => Ed25519KeyPair::generate().map(R::alloc_key),
+        KeyAlg::Ed25519 => Ed25519KeyPair::generate(rng).map(R::alloc_key),
         #[cfg(feature = "ed25519")]
-        KeyAlg::X25519 => X25519KeyPair::generate().map(R::alloc_key),
+        KeyAlg::X25519 => X25519KeyPair::generate(rng).map(R::alloc_key),
         #[cfg(feature = "k256")]
-        KeyAlg::EcCurve(EcCurves::Secp256k1) => K256KeyPair::generate().map(R::alloc_key),
+        KeyAlg::EcCurve(EcCurves::Secp256k1) => K256KeyPair::generate(rng).map(R::alloc_key),
         #[cfg(feature = "p256")]
-        KeyAlg::EcCurve(EcCurves::Secp256r1) => P256KeyPair::generate().map(R::alloc_key),
+        KeyAlg::EcCurve(EcCurves::Secp256r1) => P256KeyPair::generate(rng).map(R::alloc_key),
         #[allow(unreachable_patterns)]
         _ => {
             return Err(err_msg!(
                 Unsupported,
                 "Unsupported algorithm for key generation"
-            ))
-        }
-    }
-}
-
-#[inline]
-fn from_seed_any<R: AllocKey>(alg: KeyAlg, seed: Seed<'_>) -> Result<R, Error> {
-    match alg {
-        #[cfg(feature = "aes")]
-        KeyAlg::Aes(AesTypes::A128Gcm) => AesKey::<A128Gcm>::from_seed(seed).map(R::alloc_key),
-        #[cfg(feature = "aes")]
-        KeyAlg::Aes(AesTypes::A256Gcm) => AesKey::<A256Gcm>::from_seed(seed).map(R::alloc_key),
-        #[cfg(feature = "aes")]
-        KeyAlg::Aes(AesTypes::A128CbcHs256) => {
-            AesKey::<A128CbcHs256>::from_seed(seed).map(R::alloc_key)
-        }
-        #[cfg(feature = "aes")]
-        KeyAlg::Aes(AesTypes::A256CbcHs512) => {
-            AesKey::<A256CbcHs512>::from_seed(seed).map(R::alloc_key)
-        }
-        #[cfg(feature = "aes")]
-        KeyAlg::Aes(AesTypes::A128Kw) => AesKey::<A128Kw>::from_seed(seed).map(R::alloc_key),
-        #[cfg(feature = "aes")]
-        KeyAlg::Aes(AesTypes::A256Kw) => AesKey::<A256Kw>::from_seed(seed).map(R::alloc_key),
-        #[cfg(feature = "bls")]
-        KeyAlg::Bls12_381(BlsCurves::G1) => BlsKeyPair::<G1>::from_seed(seed).map(R::alloc_key),
-        #[cfg(feature = "bls")]
-        KeyAlg::Bls12_381(BlsCurves::G2) => BlsKeyPair::<G2>::from_seed(seed).map(R::alloc_key),
-        #[cfg(feature = "bls")]
-        KeyAlg::Bls12_381(BlsCurves::G1G2) => BlsKeyPair::<G1G2>::from_seed(seed).map(R::alloc_key),
-        #[cfg(feature = "chacha")]
-        KeyAlg::Chacha20(Chacha20Types::C20P) => {
-            Chacha20Key::<C20P>::from_seed(seed).map(R::alloc_key)
-        }
-        #[cfg(feature = "chacha")]
-        KeyAlg::Chacha20(Chacha20Types::XC20P) => {
-            Chacha20Key::<XC20P>::from_seed(seed).map(R::alloc_key)
-        }
-        #[allow(unreachable_patterns)]
-        _ => {
-            return Err(err_msg!(
-                Unsupported,
-                "Unsupported algorithm for public key import"
             ))
         }
     }
@@ -889,7 +853,7 @@ mod tests {
     #[cfg(feature = "ed25519")]
     #[test]
     fn ed25519_as_any() {
-        let key = Box::<AnyKey>::generate(KeyAlg::Ed25519).unwrap();
+        let key = Box::<AnyKey>::random(KeyAlg::Ed25519).unwrap();
         assert_eq!(key.algorithm(), KeyAlg::Ed25519);
         assert_eq!(key.key_type_id(), TypeId::of::<Ed25519KeyPair>());
         let _ = key.to_jwk_public(None).unwrap();
@@ -898,8 +862,8 @@ mod tests {
     #[cfg(feature = "aes")]
     #[test]
     fn key_exchange_any() {
-        let alice = Box::<AnyKey>::generate(KeyAlg::X25519).unwrap();
-        let bob = Box::<AnyKey>::generate(KeyAlg::X25519).unwrap();
+        let alice = Box::<AnyKey>::random(KeyAlg::X25519).unwrap();
+        let bob = Box::<AnyKey>::random(KeyAlg::X25519).unwrap();
         let exch_a = alice.key_exchange_bytes(&bob).unwrap();
         let exch_b = bob.key_exchange_bytes(&alice).unwrap();
         assert_eq!(exch_a, exch_b);
@@ -916,7 +880,7 @@ mod tests {
         let message = b"test message";
         let mut data = SecretBytes::from(&message[..]);
 
-        let key = Box::<AnyKey>::generate(KeyAlg::Chacha20(Chacha20Types::XC20P)).unwrap();
+        let key = Box::<AnyKey>::random(KeyAlg::Chacha20(Chacha20Types::XC20P)).unwrap();
         let nonce = [0u8; 24]; // size varies by algorithm
         key.encrypt_in_place(&mut data, &nonce, &[]).unwrap();
         assert_ne!(data, &message[..]);

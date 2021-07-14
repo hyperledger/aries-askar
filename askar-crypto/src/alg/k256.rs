@@ -7,7 +7,7 @@ use k256::{
         signature::{Signer, Verifier},
         Signature, SigningKey, VerifyingKey,
     },
-    elliptic_curve::{ecdh::diffie_hellman, sec1::Coordinates, Curve},
+    elliptic_curve::{ecdh::diffie_hellman, sec1::Coordinates, Curve, SecretValue},
     EncodedPoint, PublicKey, SecretKey,
 };
 use subtle::ConstantTimeEq;
@@ -19,7 +19,7 @@ use crate::{
     generic_array::typenum::{U32, U33, U65},
     jwk::{FromJwk, JwkEncoder, JwkParts, ToJwk},
     kdf::KeyExchange,
-    random::with_rng,
+    random::KeyMaterial,
     repr::{KeyGen, KeyMeta, KeyPublicBytes, KeySecretBytes, KeypairBytes, KeypairMeta},
     sign::{KeySigVerify, KeySign, SignatureType},
 };
@@ -112,8 +112,15 @@ impl KeyMeta for K256KeyPair {
 }
 
 impl KeyGen for K256KeyPair {
-    fn generate() -> Result<Self, Error> {
-        Ok(Self::from_secret_key(with_rng(|r| SecretKey::random(r))))
+    fn generate(mut rng: impl KeyMaterial) -> Result<Self, Error> {
+        ArrayKey::<FieldSize>::temp(|buf| loop {
+            rng.read_okm(buf);
+            if let Some(key) = k256::Secp256k1::from_secret_bytes(&buf) {
+                if key.is_zero().unwrap_u8() == 0 {
+                    return Ok(Self::from_secret_key(SecretKey::new(key)));
+                }
+            }
+        })
     }
 }
 
@@ -374,8 +381,8 @@ mod tests {
 
     #[test]
     fn key_exchange_random() {
-        let kp1 = K256KeyPair::generate().unwrap();
-        let kp2 = K256KeyPair::generate().unwrap();
+        let kp1 = K256KeyPair::random().unwrap();
+        let kp2 = K256KeyPair::random().unwrap();
         assert_ne!(
             kp1.to_keypair_bytes().unwrap(),
             kp2.to_keypair_bytes().unwrap()
@@ -389,7 +396,7 @@ mod tests {
 
     #[test]
     fn round_trip_bytes() {
-        let kp = K256KeyPair::generate().unwrap();
+        let kp = K256KeyPair::random().unwrap();
         let cmp = K256KeyPair::from_keypair_bytes(&kp.to_keypair_bytes().unwrap()).unwrap();
         assert_eq!(
             kp.to_keypair_bytes().unwrap(),

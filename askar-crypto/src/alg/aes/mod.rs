@@ -15,8 +15,8 @@ use crate::{
     generic_array::{typenum::Unsigned, GenericArray},
     jwk::{JwkEncoder, ToJwk},
     kdf::{FromKeyDerivation, FromKeyExchange, KeyDerivation, KeyExchange},
-    random::fill_random_deterministic,
-    repr::{KeyGen, KeyMeta, KeySecretBytes, Seed, SeedMethod},
+    random::KeyMaterial,
+    repr::{KeyGen, KeyMeta, KeySecretBytes},
 };
 
 mod cbc_hmac;
@@ -91,23 +91,8 @@ impl<T: AesType> KeyMeta for AesKey<T> {
 }
 
 impl<T: AesType> KeyGen for AesKey<T> {
-    fn generate() -> Result<Self, Error> {
-        Ok(AesKey(KeyType::<T>::random()))
-    }
-
-    fn from_seed(seed: Seed<'_>) -> Result<Self, Error>
-    where
-        Self: Sized,
-    {
-        match seed {
-            Seed::Bytes(ikm, SeedMethod::Preferred) | Seed::Bytes(ikm, SeedMethod::RandomDet) => {
-                Ok(Self(KeyType::<T>::try_new_with(|arr| {
-                    fill_random_deterministic(ikm, arr)
-                })?))
-            }
-            #[allow(unreachable_patterns)]
-            _ => Err(err_msg!(Unsupported)),
-        }
+    fn generate(rng: impl KeyMaterial) -> Result<Self, Error> {
+        Ok(AesKey(KeyType::<T>::generate(rng)))
     }
 }
 
@@ -270,7 +255,7 @@ mod tests {
         {
             let input = b"hello";
             let aad = b"additional data";
-            let key = AesKey::<T>::generate().unwrap();
+            let key = AesKey::<T>::random().unwrap();
             let mut buffer = SecretBytes::from_slice(input);
             let params = key.aead_params();
             let pad_len = key.aead_padding(input.len());
@@ -295,7 +280,7 @@ mod tests {
 
     #[test]
     fn test_random() {
-        let key = AesKey::<A128CbcHs256>::generate().unwrap();
+        let key = AesKey::<A128CbcHs256>::random().unwrap();
         let nonce = AesKey::<A128CbcHs256>::random_nonce();
         let message = b"hello there";
         let mut buffer = [0u8; 255];
@@ -307,7 +292,7 @@ mod tests {
     #[test]
     fn serialize_round_trip() {
         fn test_serialize<T: AesType>() {
-            let key = AesKey::<T>::generate().unwrap();
+            let key = AesKey::<T>::random().unwrap();
             let sk = key.to_secret_bytes().unwrap();
             let bytes = serde_cbor::to_vec(&key).unwrap();
             let deser: &[u8] = serde_cbor::from_slice(bytes.as_ref()).unwrap();

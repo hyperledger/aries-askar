@@ -17,6 +17,7 @@ use crate::{
     error::Error,
     generic_array::typenum::{U32, U64},
     jwk::{FromJwk, JwkEncoder, JwkParts, ToJwk},
+    random::KeyMaterial,
     repr::{KeyGen, KeyMeta, KeyPublicBytes, KeySecretBytes, KeypairBytes, KeypairMeta},
     sign::{KeySigVerify, KeySign, SignatureType},
 };
@@ -132,8 +133,8 @@ impl Debug for Ed25519KeyPair {
 }
 
 impl KeyGen for Ed25519KeyPair {
-    fn generate() -> Result<Self, Error> {
-        let sk = ArrayKey::<U32>::random();
+    fn generate(rng: impl KeyMaterial) -> Result<Self, Error> {
+        let sk = ArrayKey::<U32>::generate(rng);
         // NB: from_bytes is infallible if the slice is the right length
         Ok(Self::from_secret_key(
             SecretKey::from_bytes(sk.as_ref()).unwrap(),
@@ -404,7 +405,7 @@ mod tests {
 
     #[test]
     fn round_trip_bytes() {
-        let kp = Ed25519KeyPair::generate().unwrap();
+        let kp = Ed25519KeyPair::random().unwrap();
         let cmp = Ed25519KeyPair::from_keypair_bytes(&kp.to_keypair_bytes().unwrap()).unwrap();
         assert_eq!(
             kp.to_keypair_bytes().unwrap(),
