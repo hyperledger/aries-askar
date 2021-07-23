@@ -44,7 +44,7 @@ class EcdhEs:
         receiver_key: Union[dict, str, Key],
         message: Union[str, bytes],
         *,
-        aad: bytes,
+        aad: bytes = None,
         nonce: bytes = None,
     ) -> Encrypted:
         derived = self._derive_key(
@@ -61,7 +61,7 @@ class EcdhEs:
         *,
         nonce: bytes,
         tag: bytes,
-        aad: bytes,
+        aad: bytes = None,
     ) -> bytes:
         derived = self._derive_key(
             enc_alg, _load_key(ephemeral_key), _load_key(receiver_key), True
@@ -88,8 +88,8 @@ class EcdhEs:
         receiver_key: Union[dict, str, Key],
         ciphertext: bytes,
         *,
-        tag: bytes = None,
         nonce: bytes = None,
+        tag: bytes = None,
     ) -> Key:
         derived = self._derive_key(
             wrap_alg, _load_key(ephemeral_key), _load_key(receiver_key), True
@@ -135,7 +135,7 @@ class Ecdh1PU:
         receiver_key: Union[dict, str, Key],
         message: Union[str, bytes],
         *,
-        aad: bytes,
+        aad: bytes = None,
         nonce: bytes = None,
     ) -> Encrypted:
         derived = self._derive_key(
@@ -158,7 +158,7 @@ class Ecdh1PU:
         *,
         nonce: bytes,
         tag: bytes,
-        aad: bytes,
+        aad: bytes = None,
     ) -> bytes:
         derived = self._derive_key(
             enc_alg,
@@ -178,15 +178,15 @@ class Ecdh1PU:
         receiver_key: Union[dict, str, Key],
         cek: Key,
         *,
-        tag: bytes,
+        cc_tag: bytes,
     ) -> Encrypted:
         derived = self._derive_key(
             wrap_alg,
             _load_key(ephemeral_key),
             _load_key(sender_key),
             _load_key(receiver_key),
-            tag,
-            False,
+            cc_tag=cc_tag,
+            receive=False,
         )
         return derived.wrap_key(cek)
 
@@ -199,15 +199,16 @@ class Ecdh1PU:
         receiver_key: Union[dict, str, Key],
         ciphertext: bytes,
         *,
-        tag: bytes,
+        cc_tag: bytes,
         nonce: bytes = None,
+        tag: bytes = None,
     ) -> Key:
         derived = self._derive_key(
             wrap_alg,
             _load_key(ephemeral_key),
             _load_key(sender_key),
             _load_key(receiver_key),
-            tag,
-            True,
+            cc_tag=cc_tag,
+            receive=True,
         )
         return derived.unwrap_key(enc_alg, ciphertext, nonce=nonce, tag=tag)
