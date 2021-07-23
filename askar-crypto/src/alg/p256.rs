@@ -7,7 +7,7 @@ use p256::{
         signature::{Signer, Verifier},
         Signature, SigningKey, VerifyingKey,
     },
-    elliptic_curve::{ecdh::diffie_hellman, sec1::Coordinates, Curve, SecretValue},
+    elliptic_curve::{self, ecdh::diffie_hellman, sec1::Coordinates},
     EncodedPoint, PublicKey, SecretKey,
 };
 use subtle::ConstantTimeEq;
@@ -47,7 +47,7 @@ pub static JWK_KEY_TYPE: &'static str = "EC";
 /// The 'crv' value of a P-256 key JWK
 pub static JWK_CURVE: &'static str = "P-256";
 
-type FieldSize = <p256::NistP256 as Curve>::FieldSize;
+type FieldSize = elliptic_curve::FieldSize<p256::NistP256>;
 
 /// A P-256 (secp256r1) public key or keypair
 #[derive(Clone, Debug)]
@@ -115,10 +115,8 @@ impl KeyGen for P256KeyPair {
     fn generate(mut rng: impl KeyMaterial) -> Result<Self, Error> {
         ArrayKey::<FieldSize>::temp(|buf| loop {
             rng.read_okm(buf);
-            if let Some(key) = p256::NistP256::from_secret_bytes(&buf) {
-                if key.is_zero().unwrap_u8() == 0 {
-                    return Ok(Self::from_secret_key(SecretKey::new(key)));
-                }
+            if let Ok(key) = SecretKey::from_bytes(&buf) {
+                return Ok(Self::from_secret_key(key));
             }
         })
     }
@@ -133,8 +131,7 @@ impl KeySecretBytes for P256KeyPair {
 
     fn with_secret_bytes<O>(&self, f: impl FnOnce(Option<&[u8]>) -> O) -> O {
         if let Some(sk) = self.secret.as_ref() {
-            let b = p256::SecretBytes::from(sk.to_bytes());
-            f(Some(&b[..]))
+            f(Some(sk.as_scalar_bytes().as_ref()))
         } else {
             f(None)
         }
@@ -160,9 +157,9 @@ impl KeypairBytes for P256KeyPair {
     fn with_keypair_bytes<O>(&self, f: impl FnOnce(Option<&[u8]>) -> O) -> O {
         if let Some(secret) = self.secret.as_ref() {
             ArrayKey::<<Self as KeypairMeta>::KeypairSize>::temp(|arr| {
-                let sk_b = p256::SecretBytes::from(secret.to_bytes());
+                let sk_b = secret.as_scalar_bytes();
                 let pk_enc = EncodedPoint::encode(self.public, true);
-                arr[..SECRET_KEY_LENGTH].copy_from_slice(&sk_b[..]);
+                arr[..SECRET_KEY_LENGTH].copy_from_slice(sk_b.as_ref());
                 arr[SECRET_KEY_LENGTH..].copy_from_slice(pk_enc.as_ref());
                 f(Some(&*arr))
             })
@@ -237,7 +234,7 @@ impl ToJwk for P256KeyPair {
                 ))
             }
             Coordinates::Uncompressed { x, y } => (x, y),
-            Coordinates::Compressed { .. } => unreachable!(),
+            Coordinates::Compressed { .. } | Coordinates::Compact { .. } => unreachable!(),
         };
 
         enc.add_str("crv", JWK_CURVE)?;
@@ -302,7 +299,7 @@ impl KeyExchange for P256KeyPair {
     fn write_key_exchange(&self, other: &Self, out: &mut dyn WriteBuffer) -> Result<(), Error> {
         match self.secret.as_ref() {
             Some(sk) => {
-                let xk = diffie_hellman(sk.secret_scalar(), other.public.as_affine());
+                let xk = diffie_hellman(sk.to_secret_scalar(), other.public.as_affine());
                 out.buffer_write(xk.as_bytes())?;
                 Ok(())
             }
