@@ -227,6 +227,17 @@ def test_ecdh_1pu_wrapped_expected():
         "sjNXH8-LIRLycq8CHJQbDwvQeU1cSl55cQ0hGezJu2N9IY0QN"
     )
 
+    # test sender_wrap_key
+    encrypted_key_2 = Ecdh1PU(alg, apu, apv).sender_wrap_key(
+        KeyAlg.A128KW,
+        ephem,
+        alice,
+        bob,
+        cek,
+        cc_tag=cc_tag,
+    )
+    assert encrypted_key_2.ciphertext_tag == encrypted_key
+
     # Skipping key derivation for Charlie.
     # Assemble encrypted_key, iv, cc_tag, ciphertext, and headers into a JWE envelope here.
     # Receiver disassembles envelope and..
@@ -247,3 +258,15 @@ def test_ecdh_1pu_wrapped_expected():
         ciphertext, nonce=iv, aad=protected_b64, tag=cc_tag
     )
     assert message_recv == message
+
+    # test receiver_wrap_key
+    cek_recv_2 = Ecdh1PU(alg, apu, apv).receiver_unwrap_key(
+        KeyAlg.A128KW,
+        KeyAlg.A256CBC_HS512,
+        ephem,
+        sender_key=alice,
+        receiver_key=bob,
+        ciphertext=encrypted_key,
+        cc_tag=cc_tag,
+    )
+    assert cek_recv_2.get_jwk_secret() == cek.get_jwk_secret()
