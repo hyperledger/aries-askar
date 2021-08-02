@@ -1,0 +1,40 @@
+[package]
+name = "askar-bbs"
+version = "0.2.1"
+authors = ["Hyperledger Aries Contributors <aries@lists.hyperledger.org>"]
+edition = "2018"
+description = "Hyperledger Aries Askar BBS+ Signatures"
+license = "MIT OR Apache-2.0"
+readme = "README.md"
+repository = "https://github.com/hyperledger/aries-askar/"
+categories = ["cryptography", "no-std"]
+keywords = ["hyperledger", "aries", "credentials", "bbs", "signatures"]
+
+[package.metadata.docs.rs]
+features = ["argon2", "std"]
+rustdoc-args = ["--cfg", "docsrs"]
+
+[features]
+default = ["alloc", "getrandom"]
+alloc = []
+std = ["alloc"]
+getrandom = ["rand/getrandom"]
+
+[dependencies]
+askar-crypto = { version = "0.2.1", default-features = false, features = ["bls"], path = "../askar-crypto" }
+blake2 = { version = "0.9", default-features = false }
+bls12_381 = { version = "0.5", default-features = false, features = ["experimental", "groups", "pairings"] }
+ff = { version = "0.10", default-features = false }
+group = { version = "0.10", default-features = false }
+rand = { version = "0.8", default-features = false }
+subtle = "2.4"
+zeroize = { version = "1.4", features = ["zeroize_derive"] }
+
+[dev-dependencies]
+criterion = "0.3"
+hex-literal = "0.3"
+serde-json-core = { version = "0.4", default-features = false, features = ["std"] }
+
+[[bench]]
+name = "sign"
+harness = false

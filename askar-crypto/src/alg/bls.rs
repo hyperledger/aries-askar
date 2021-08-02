@@ -61,6 +61,14 @@ impl<Pk: BlsPublicKeyType> BlsKeyPair<Pk> {
             Err(err_msg!(InvalidKeyData, "invalid BLS keypair"))
         }
     }
+
+    pub fn bls_public_key(&self) -> &Pk::Buffer {
+        &self.public
+    }
+
+    pub fn bls_secret_scalar(&self) -> Option<&Scalar> {
+        self.secret.as_ref().map(|s| &s.0)
+    }
 }
 
 impl<Pk: BlsPublicKeyType> Debug for BlsKeyPair<Pk> {
