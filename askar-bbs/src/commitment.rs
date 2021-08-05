@@ -53,9 +53,9 @@ impl Commitment {
         let mut factors = Vec::with_capacity(1 + ec);
         factors.push(commit_blind);
 
-        let g_blind = generators.blinding();
-        let mut commitment = g_blind * commit_blind;
-        let mut pok_accum = g_blind * pok_blind;
+        let h0 = generators.blinding();
+        let mut commitment = h0 * commit_blind;
+        let mut pok_accum = h0 * pok_blind;
 
         for (index, message, blinding) in entries.iter().copied() {
             if index > mc {
@@ -167,19 +167,10 @@ impl<'g, G: Generators> CommittedMessages<'g, G> {
 impl<G: Generators> CommittedMessages<'_, G> {
     #[cfg(feature = "getrandom")]
     pub fn insert(&mut self, index: usize, message: Message) -> Result<(), Error> {
-        self.insert_fixed(index, message, Blinding::new())
+        self.insert_with(index, message, Blinding::new())
     }
 
-    pub fn insert_with_rng(
-        &mut self,
-        index: usize,
-        message: Message,
-        rng: impl Rng + CryptoRng,
-    ) -> Result<(), Error> {
-        self.insert_fixed(index, message, Blinding::new_with_rng(rng))
-    }
-
-    pub fn insert_fixed(
+    pub fn insert_with(
         &mut self,
         index: usize,
         message: Message,

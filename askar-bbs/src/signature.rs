@@ -9,7 +9,7 @@ use crate::{
     commitment::Commitment,
     error::Error,
     generators::Generators,
-    util::{random_nonce, HashScalar},
+    util::{random_nonce, AccumG1, HashScalar},
     Blinding,
 };
 
@@ -43,9 +43,9 @@ impl From<u64> for Message {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Signature {
-    a: G1Affine,
-    e: Scalar,
-    s: Scalar,
+    pub(crate) a: G1Affine,
+    pub(crate) e: Scalar,
+    pub(crate) s: Scalar,
 }
 
 impl Signature {
@@ -72,7 +72,7 @@ impl Signature {
 // TODO: buffer messages and use sum-of-products in batches
 #[derive(Clone, Debug)]
 pub struct SignatureMessages<'g, G: Generators> {
-    accum: G1Projective,
+    accum_b: AccumG1,
     count: usize,
     generators: &'g G,
 }
@@ -80,7 +80,7 @@ pub struct SignatureMessages<'g, G: Generators> {
 impl<'g, G: Generators> SignatureMessages<'g, G> {
     pub fn new(generators: &'g G) -> Self {
         Self {
-            accum: G1Projective::generator(),
+            accum_b: AccumG1::new_with(G1Projective::generator()),
             count: 0,
             generators,
         }
@@ -88,7 +88,7 @@ impl<'g, G: Generators> SignatureMessages<'g, G> {
 
     pub fn from_commitment(commitment: Commitment, generators: &'g G) -> Self {
         Self {
-            accum: G1Projective::generator() + commitment.0,
+            accum_b: AccumG1::new_with(G1Projective::generator() + commitment.0),
             count: 0,
             generators,
         }
@@ -100,7 +100,8 @@ impl<G: Generators> SignatureMessages<'_, G> {
         if self.count >= self.generators.message_count() {
             return Err(err_msg!(Usage, "Message index exceeds generator count"));
         }
-        self.accum += self.generators.message(self.count) * message.0;
+        self.accum_b
+            .push(self.generators.message(self.count), message.0);
         self.count += 1;
         Ok(())
     }
@@ -112,7 +113,7 @@ impl<G: Generators> SignatureMessages<'_, G> {
         Ok(())
     }
 
-    pub fn push_committed(&mut self, count: usize) -> Result<(), Error> {
+    pub fn push_committed_count(&mut self, count: usize) -> Result<(), Error> {
         let c = self.count + count;
         if c > self.generators.message_count() {
             return Err(err_msg!(Usage, "Message index exceeds generator count"));
@@ -125,7 +126,6 @@ impl<G: Generators> SignatureMessages<'_, G> {
         self.count
     }
 
-    #[inline]
     fn get_b(&self, s: Scalar) -> Result<G1Projective, Error> {
         if self.count != self.generators.message_count() {
             return Err(err_msg!(
@@ -133,7 +133,7 @@ impl<G: Generators> SignatureMessages<'_, G> {
                 "Message count does not match generator count"
             ));
         }
-        Ok(self.accum + self.generators.blinding() * s)
+        Ok(self.accum_b.sum_with(self.generators.blinding(), s))
     }
 
     #[cfg(feature = "getrandom")]

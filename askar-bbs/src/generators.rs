@@ -66,7 +66,6 @@ impl<G: Generators> ExactSizeIterator for GeneratorsIter<'_, G> {}
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct VecGenerators {
     h: Vec<G1Projective>,
-    // pre-calc hash?
 }
 
 impl Generators for VecGenerators {
@@ -100,6 +99,10 @@ impl DynGeneratorsV1 {
             pk: pk.bls_public_key().to_uncompressed(),
         }
     }
+
+    pub fn to_vec(&self) -> VecGenerators {
+        self.into()
+    }
 }
 
 impl Generators for DynGeneratorsV1 {
@@ -123,16 +126,3 @@ impl Generators for DynGeneratorsV1 {
         self.count
     }
 }
-
-// impl<'i> IntoIterator for &'i DynGeneratorsV1 {
-//     type IntoIter = GeneratorsIter<'i, DynGeneratorsV1>;
-//     type Item = G1Projective;
-
-//     fn into_iter(self) -> Self::IntoIter {
-//         GeneratorsIter {
-//             index: 0,
-//             count: self.message_count() + 1,
-//             gens: self,
-//         }
-//     }
-// }

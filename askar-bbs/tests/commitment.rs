@@ -39,7 +39,7 @@ fn test_blind_signature() {
 
     let sign_messages = [Message::hash(b"world")];
     let mut signer = SignatureMessages::from_commitment(commitment, &gens);
-    signer.push_committed(1).unwrap();
+    signer.push_committed_count(1).unwrap();
     signer.append(sign_messages.iter().copied()).unwrap();
     let blind_signature = signer.sign(&keypair).expect("Error creating signature");
 

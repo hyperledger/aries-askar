@@ -3,6 +3,8 @@
 #[cfg(feature = "alloc")]
 extern crate alloc;
 
+pub use bls12_381;
+
 #[macro_use]
 mod error;
 pub use error::{Error, ErrorKind};
@@ -12,6 +14,9 @@ pub use commitment::{Blinding, Commitment, CommitmentProof, CommittedMessages};
 
 mod generators;
 pub use generators::{DynGeneratorsV1, Generators, VecGenerators};
+
+mod proof;
+pub use proof::{ProofChallenge, ProofPrepare, ProverMessages, VerifierMessages};
 
 mod signature;
 pub use signature::{Message, Signature, SignatureMessages};

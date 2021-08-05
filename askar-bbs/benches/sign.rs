@@ -1,7 +1,7 @@
 #[macro_use]
 extern crate criterion;
 
-use askar_bbs::{DynGeneratorsV1, Message, SignatureMessages, VecGenerators};
+use askar_bbs::{DynGeneratorsV1, Message, SignatureMessages};
 use askar_crypto::{
     alg::bls::{BlsKeyPair, G2},
     repr::KeyGen,
@@ -15,10 +15,10 @@ fn criterion_benchmark(c: &mut Criterion) {
 
     for message_count in vec![5, 25, 125] {
         c.bench_function(&format!("keygen for {} messages", message_count), |b| {
-            b.iter(|| VecGenerators::from(&DynGeneratorsV1::new(&keypair, message_count)));
+            b.iter(|| DynGeneratorsV1::new(&keypair, message_count).to_vec());
         });
 
-        let gens = VecGenerators::from(&DynGeneratorsV1::new(&keypair, message_count));
+        let gens = DynGeneratorsV1::new(&keypair, message_count).to_vec();
         let messages: Vec<Message> = (0..message_count)
             .map(|_| Message::from(OsRng.next_u64()))
             .collect();

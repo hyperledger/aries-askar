@@ -1,9 +1,12 @@
-use askar_crypto::generic_array::{typenum::Unsigned, GenericArray};
+use askar_crypto::{
+    buffer::WriteBuffer,
+    generic_array::{typenum::Unsigned, GenericArray},
+};
 use blake2::{
     digest::{Update, VariableOutput},
     VarBlake2b,
 };
-use bls12_381::{hash_to_curve::HashToField, Scalar};
+use bls12_381::{hash_to_curve::HashToField, G1Projective, Scalar};
 use ff::Field;
 use rand::{CryptoRng, Rng};
 
@@ -28,7 +31,7 @@ pub fn random_nonce<R: CryptoRng + Rng>(mut rng: R) -> Scalar {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Nonce(pub(crate) Scalar);
 
 impl Nonce {
@@ -48,6 +51,7 @@ impl From<Scalar> for Nonce {
     }
 }
 
+#[derive(Debug)]
 pub struct HashScalar {
     hasher: VarBlake2b,
 }
@@ -77,5 +81,57 @@ impl HashScalar {
             buf.copy_from_slice(hash);
         });
         Scalar::from_okm(&buf)
+    }
+}
+
+impl WriteBuffer for HashScalar {
+    fn buffer_write(&mut self, data: &[u8]) -> Result<(), askar_crypto::Error> {
+        self.update(data);
+        Ok(())
+    }
+}
+
+// will modify to use sum-of-products
+#[derive(Clone, Debug)]
+pub(crate) struct AccumG1 {
+    accum: G1Projective,
+}
+
+impl AccumG1 {
+    pub fn zero() -> Self {
+        Self {
+            accum: G1Projective::identity(),
+        }
+    }
+
+    pub fn new_with(accum: impl Into<G1Projective>) -> Self {
+        Self {
+            accum: accum.into(),
+        }
+    }
+
+    pub fn calc(pairs: &[(G1Projective, Scalar)]) -> G1Projective {
+        let mut acc = Self::zero();
+        acc.append(pairs);
+        acc.sum()
+    }
+
+    #[inline]
+    pub fn push(&mut self, base: G1Projective, message: Scalar) {
+        self.accum += base * message;
+    }
+
+    pub fn append(&mut self, pairs: &[(G1Projective, Scalar)]) {
+        for (base, factor) in pairs.into_iter().copied() {
+            self.push(base, factor);
+        }
+    }
+
+    pub fn sum(&self) -> G1Projective {
+        self.accum
+    }
+
+    pub fn sum_with(&self, base: G1Projective, message: Scalar) -> G1Projective {
+        self.accum + base * message
     }
 }
