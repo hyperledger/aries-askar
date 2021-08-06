@@ -58,7 +58,7 @@ fn criterion_benchmark(c: &mut Criterion) {
                         }
                     }
                     let ctx = prover.prepare(&sig).unwrap();
-                    let challenge = ctx.challenge_values().create_challenge(&gens, nonce);
+                    let challenge = ctx.create_challenge(nonce);
                     let _proof = ctx.complete(challenge).unwrap();
                 });
             },
@@ -74,7 +74,7 @@ fn criterion_benchmark(c: &mut Criterion) {
             }
         }
         let ctx = prover.prepare(&sig).unwrap();
-        let challenge = ctx.challenge_values().create_challenge(&gens, nonce);
+        let challenge = ctx.create_challenge(nonce);
         let proof = ctx.complete(challenge).unwrap();
         c.bench_function(
             &format!("verify signature pok for {} messages", message_count),
@@ -85,7 +85,7 @@ fn criterion_benchmark(c: &mut Criterion) {
                     for index in hidden_count..messages.len() {
                         verify.push_revealed(messages[index]).unwrap();
                     }
-                    let challenge = proof.challenge_values().create_challenge(&gens, nonce);
+                    let challenge = proof.create_challenge(&verify, nonce);
                     let check = proof.verify(&keypair, &verify, challenge).unwrap();
                     assert!(check);
                 });

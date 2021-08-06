@@ -124,7 +124,7 @@ impl<G: Generators> ProverMessages<'_, G> {
         let mut hidden = Vec::new();
         for (base, msg, blinding) in self.hidden.iter() {
             c2_accum.push(*base, blinding.0);
-            hidden.push((*msg, *blinding));
+            hidden.push((*base, *msg, *blinding));
         }
 
         let mut cvals = [G1Affine::identity(); 5];
@@ -146,6 +146,7 @@ impl<G: Generators> ProverMessages<'_, G> {
             r3_rand,
             s_prime,
             s_rand,
+            h0,
             hidden,
         })
     }
@@ -162,7 +163,8 @@ pub struct SignatureProofContext {
     r3_rand: Scalar,
     s_prime: Scalar,
     s_rand: Scalar,
-    hidden: Vec<(Scalar, Blinding)>,
+    h0: G1Projective, // TODO h0 only used in challenge, currently
+    hidden: Vec<(G1Projective, Scalar, Blinding)>, // TODO base only used in challenge, currently
 }
 
 impl SignatureProofContext {
@@ -171,7 +173,7 @@ impl SignatureProofContext {
         let hidden_resp = self
             .hidden
             .iter()
-            .map(|(msg, m_rand)| m_rand.0 - c * msg)
+            .map(|(_base, msg, m_rand)| m_rand.0 - c * msg)
             .collect();
         Ok(SignatureProof {
             cvals: self.cvals,
@@ -183,13 +185,27 @@ impl SignatureProofContext {
         })
     }
 
-    pub fn challenge_values(&self) -> &ChallengeValues {
-        &self.cvals
+    pub fn create_challenge(&self, nonce: Nonce) -> ProofChallenge {
+        let mut c_hash = HashScalar::new();
+        self.write_challenge_bytes(&mut c_hash).unwrap();
+        c_hash.update(&nonce.0.to_bytes());
+        Nonce(c_hash.finalize())
+    }
+
+    pub fn write_challenge_bytes<W>(&self, writer: &mut W) -> Result<(), askar_crypto::Error>
+    where
+        W: WriteBuffer,
+    {
+        self.cvals.write_challenge_bytes(
+            self.h0,
+            self.hidden.iter().map(|(base, _, _)| *base),
+            writer,
+        )
     }
 }
 
 #[derive(Clone, Copy, Debug)]
-pub struct ChallengeValues {
+struct ChallengeValues {
     a_prime: G1Affine,
     a_bar: G1Affine,
     d: G1Affine,
@@ -198,30 +214,25 @@ pub struct ChallengeValues {
 }
 
 impl ChallengeValues {
-    pub fn create_challenge<G: Generators>(&self, generators: &G, nonce: Nonce) -> ProofChallenge {
-        let mut challenge_hash = HashScalar::new();
-        self.write_challenge_bytes(generators, &mut challenge_hash)
-            .unwrap();
-        challenge_hash.update(&nonce.0.to_bytes());
-        Nonce(challenge_hash.finalize())
-    }
-
-    pub fn write_challenge_bytes<G, W>(
+    pub fn write_challenge_bytes<W, H>(
         &self,
-        generators: &G,
+        h0: G1Projective,
+        hi: H,
         writer: &mut W,
     ) -> Result<(), askar_crypto::Error>
     where
-        G: Generators,
         W: WriteBuffer,
+        H: IntoIterator<Item = G1Projective>,
     {
-        let h0 = generators.blinding();
         writer.buffer_write(&self.a_bar.to_uncompressed())?;
         writer.buffer_write(&self.a_prime.to_uncompressed())?;
         writer.buffer_write(&h0.to_affine().to_uncompressed())?;
         writer.buffer_write(&self.c1.to_uncompressed())?;
         writer.buffer_write(&self.d.to_uncompressed())?;
         writer.buffer_write(&h0.to_affine().to_uncompressed())?;
+        for h in hi {
+            writer.buffer_write(&h.to_affine().to_uncompressed())?;
+        }
         writer.buffer_write(&self.c2.to_uncompressed())?;
         Ok(())
     }
@@ -276,13 +287,13 @@ impl SignatureProof {
                 ),
             ][..],
         );
-        for (index, resp) in messages
+        for (base, resp) in messages
             .hidden
             .iter()
             .copied()
             .zip(self.hidden_resp.iter().copied())
         {
-            c2_accum.push(messages.generators.message(index), resp);
+            c2_accum.push(base, resp);
         }
 
         let mut checks = [G1Affine::identity(); 2];
@@ -297,8 +308,27 @@ impl SignatureProof {
         )
     }
 
-    pub fn challenge_values(&self) -> &ChallengeValues {
-        &self.cvals
+    pub fn create_challenge<G: Generators>(
+        &self,
+        messages: &VerifierMessages<G>,
+        nonce: Nonce,
+    ) -> ProofChallenge {
+        let mut c_hash = HashScalar::new();
+        self.write_challenge_bytes(messages, &mut c_hash).unwrap();
+        c_hash.update(&nonce.0.to_bytes());
+        Nonce(c_hash.finalize())
+    }
+
+    pub fn write_challenge_bytes<G: Generators, W: WriteBuffer>(
+        &self,
+        messages: &VerifierMessages<G>,
+        writer: &mut W,
+    ) -> Result<(), askar_crypto::Error> {
+        self.cvals.write_challenge_bytes(
+            messages.generators.blinding(),
+            messages.hidden.iter().copied(),
+            writer,
+        )
     }
 }
 
@@ -307,7 +337,7 @@ pub struct VerifierMessages<'g, G: Generators> {
     accum_reveal: AccumG1,
     count: usize,
     generators: &'g G,
-    hidden: Vec<usize>,
+    hidden: Vec<G1Projective>,
 }
 
 impl<'g, G: Generators> VerifierMessages<'g, G> {
@@ -348,7 +378,9 @@ impl<G: Generators> VerifierMessages<'_, G> {
         if c >= self.generators.message_count() {
             return Err(err_msg!(Usage, "Message index exceeds generator count"));
         }
-        self.hidden.extend(self.count..c);
+        for index in self.count..c {
+            self.hidden.push(self.generators.message(index));
+        }
         self.count = c;
         Ok(())
     }

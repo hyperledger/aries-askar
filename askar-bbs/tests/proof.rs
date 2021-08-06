@@ -28,12 +28,14 @@ fn prove_single_signature_hidden_message() {
     prover.push_revealed(messages[1]).unwrap();
     let prepare = prover.prepare(&sig).unwrap();
     let nonce = Nonce::new();
-    let challenge = prepare.challenge_values().create_challenge(&gens, nonce);
+    let challenge = prepare.create_challenge(nonce);
     let proof = prepare.complete(challenge).unwrap();
 
     let mut check_msgs = VerifierMessages::new(&gens);
     check_msgs.push_hidden_count(1).unwrap();
     check_msgs.push_revealed(messages[1]).unwrap();
-    let verify = proof.verify(&keypair, &check_msgs, challenge).unwrap();
+    let challenge_v = proof.create_challenge(&check_msgs, nonce);
+    assert_eq!(challenge, challenge_v);
+    let verify = proof.verify(&keypair, &check_msgs, challenge_v).unwrap();
     assert!(verify);
 }
