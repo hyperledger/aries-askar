@@ -16,7 +16,9 @@ mod generators;
 pub use generators::{DynGeneratorsV1, Generators, VecGenerators};
 
 mod proof;
-pub use proof::{ProofChallenge, ProofPrepare, ProverMessages, VerifierMessages};
+pub use proof::{
+    ProofChallenge, ProverMessages, SignatureProof, SignatureProofContext, VerifierMessages,
+};
 
 mod signature;
 pub use signature::{Message, Signature, SignatureMessages};

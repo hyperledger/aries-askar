@@ -23,7 +23,6 @@ use crate::util::default_rng;
 
 pub type ProofChallenge = Nonce;
 
-// TODO: buffer messages and use sum-of-products in batches
 #[derive(Clone, Debug)]
 pub struct ProverMessages<'g, G: Generators> {
     accum_b: AccumG1,
@@ -93,7 +92,7 @@ impl<G: Generators> ProverMessages<'_, G> {
     }
 
     #[cfg(feature = "getrandom")]
-    pub fn prepare(&self, signature: &Signature) -> Result<ProofPrepare, Error> {
+    pub fn prepare(&self, signature: &Signature) -> Result<SignatureProofContext, Error> {
         self.prepare_with_rng(signature, default_rng())
     }
 
@@ -101,7 +100,7 @@ impl<G: Generators> ProverMessages<'_, G> {
         &self,
         signature: &Signature,
         mut rng: impl CryptoRng + Rng,
-    ) -> Result<ProofPrepare, Error> {
+    ) -> Result<SignatureProofContext, Error> {
         let Signature { a, e, s } = *signature;
         let b = self.get_b(s)?;
         let h0 = self.generators.blinding();
@@ -120,8 +119,7 @@ impl<G: Generators> ProverMessages<'_, G> {
         let s_prime = s - r2 * r3;
 
         let c1 = AccumG1::calc(&[(a_prime, e_rand), (h0, r2_rand)]);
-        let mut c2_accum = AccumG1::zero();
-        c2_accum.append(&[(d, r3_rand), (h0, s_rand)]);
+        let mut c2_accum = AccumG1::from(&[(d, r3_rand), (h0, s_rand)][..]);
 
         let mut hidden = Vec::new();
         for (base, msg, blinding) in self.hidden.iter() {
@@ -136,7 +134,7 @@ impl<G: Generators> ProverMessages<'_, G> {
         let c1 = c1.to_affine();
         let c2 = c2_accum.sum().to_affine();
 
-        Ok(ProofPrepare {
+        Ok(SignatureProofContext {
             cvals: ChallengeValues {
                 a_prime,
                 a_bar,
@@ -157,7 +155,8 @@ impl<G: Generators> ProverMessages<'_, G> {
     }
 }
 
-pub struct ProofPrepare {
+#[derive(Clone, Debug)]
+pub struct SignatureProofContext {
     cvals: ChallengeValues,
     e: Scalar,
     e_rand: Scalar,
@@ -170,7 +169,7 @@ pub struct ProofPrepare {
     hidden: Vec<(Scalar, Blinding)>,
 }
 
-impl ProofPrepare {
+impl SignatureProofContext {
     pub fn complete(&self, challenge: ProofChallenge) -> Result<SignatureProof, Error> {
         let c = challenge.0;
         let hidden_resp = self
@@ -232,6 +231,7 @@ impl ChallengeValues {
     }
 }
 
+#[derive(Clone, Debug)]
 pub struct SignatureProof {
     cvals: ChallengeValues,
     e_resp: Scalar,
@@ -270,15 +270,16 @@ impl SignatureProof {
             (G1Projective::from(a_bar) - d, challenge.0),
         ]);
 
-        let mut c2_accum = AccumG1::zero();
-        c2_accum.append(&[
-            (d.into(), self.r3_resp),
-            (h0, self.s_resp),
-            (
-                G1Projective::generator() + messages.accum_reveal()?,
-                -challenge.0,
-            ),
-        ]);
+        let mut c2_accum = AccumG1::from(
+            &[
+                (d.into(), self.r3_resp),
+                (h0, self.s_resp),
+                (
+                    G1Projective::generator() + messages.accum_reveal()?,
+                    -challenge.0,
+                ),
+            ][..],
+        );
         for (index, resp) in messages
             .hidden
             .iter()
@@ -295,16 +296,6 @@ impl SignatureProof {
         let check_pair = pairing(&a_prime, keypair.bls_public_key())
             .ct_eq(&pairing(&a_bar, &G2Affine::generator()));
 
-        // #[cfg(test)]
-        {
-            println!(
-                "c1, c2, pair: {}, {}, {}",
-                check_c1 == c1,
-                check_c2 == c2,
-                check_pair.unwrap_u8() == 1,
-            );
-        }
-
         Ok(
             (!a_prime.is_identity() & check_c1.ct_eq(&c1) & check_c2.ct_eq(&c2) & check_pair)
                 .into(),
@@ -316,7 +307,6 @@ impl SignatureProof {
     }
 }
 
-// TODO: buffer messages and use sum-of-products in batches
 #[derive(Clone, Debug)]
 pub struct VerifierMessages<'g, G: Generators> {
     accum_reveal: AccumG1,

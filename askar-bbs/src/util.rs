@@ -117,8 +117,8 @@ impl AccumG1 {
     }
 
     #[inline]
-    pub fn push(&mut self, base: G1Projective, message: Scalar) {
-        self.accum += base * message;
+    pub fn push(&mut self, base: G1Projective, factor: Scalar) {
+        self.accum += base * factor;
     }
 
     pub fn append(&mut self, pairs: &[(G1Projective, Scalar)]) {
@@ -131,7 +131,23 @@ impl AccumG1 {
         self.accum
     }
 
-    pub fn sum_with(&self, base: G1Projective, message: Scalar) -> G1Projective {
-        self.accum + base * message
+    pub fn sum_with(&self, base: G1Projective, factor: Scalar) -> G1Projective {
+        self.accum + base * factor
+    }
+}
+
+impl From<(G1Projective, Scalar)> for AccumG1 {
+    fn from((base, factor): (G1Projective, Scalar)) -> Self {
+        let mut acc = AccumG1::zero();
+        acc.push(base, factor);
+        acc
+    }
+}
+
+impl From<&[(G1Projective, Scalar)]> for AccumG1 {
+    fn from(pairs: &[(G1Projective, Scalar)]) -> Self {
+        let mut acc = AccumG1::zero();
+        acc.append(pairs);
+        acc
     }
 }

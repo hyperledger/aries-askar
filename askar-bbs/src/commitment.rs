@@ -10,7 +10,7 @@ use crate::{
     error::Error,
     generators::Generators,
     signature::Message,
-    util::{random_nonce, HashScalar, Nonce},
+    util::{random_nonce, AccumG1, HashScalar, Nonce},
 };
 
 #[cfg(feature = "getrandom")]
@@ -47,33 +47,35 @@ impl Commitment {
         let mc = generators.message_count();
 
         let commit_blind = random_nonce(&mut rng); // s'
-        let pok_blind = random_nonce(&mut rng); // s~
+        let resp_blind = random_nonce(&mut rng); // s~
         let mut proofs = Vec::with_capacity(1 + ec);
-        proofs.push(pok_blind);
+        proofs.push(resp_blind);
         let mut factors = Vec::with_capacity(1 + ec);
         factors.push(commit_blind);
 
         let h0 = generators.blinding();
-        let mut commitment = h0 * commit_blind;
-        let mut pok_accum = h0 * pok_blind;
+        let mut commit_accum = AccumG1::from((h0, commit_blind));
+        let mut resp_accum = AccumG1::from((h0, resp_blind));
 
         for (index, message, blinding) in entries.iter().copied() {
             if index > mc {
                 return Err(err_msg!(Usage, "Invalid committed message index"));
             }
             let base = generators.message(index);
-            commitment += base * message.0;
-            pok_accum += base * blinding.0;
+            commit_accum.push(base, message.0);
+            resp_accum.push(base, blinding.0);
             proofs.push(blinding.0);
             factors.push(message.0);
         }
 
-        let commitment = commitment.to_affine();
+        // FIXME batch normalize
+        let commitment = commit_accum.sum().to_affine();
+        let response = resp_accum.sum().to_affine();
 
         let mut challenge_hash = HashScalar::new();
-        challenge_hash.update(&commitment.to_uncompressed()[..]);
-        challenge_hash.update(&pok_accum.to_affine().to_uncompressed()[..]);
-        challenge_hash.update(&nonce.0.to_bytes()[..]);
+        challenge_hash.update(&commitment.to_uncompressed());
+        challenge_hash.update(&response.to_uncompressed());
+        challenge_hash.update(&nonce.0.to_bytes());
         let challenge = challenge_hash.finalize();
 
         for (idx, f) in factors.into_iter().enumerate() {
