@@ -1,7 +1,7 @@
 #[cfg(feature = "alloc")]
 use alloc::collections::BTreeMap;
 
-use bls12_381::{G1Affine, Scalar};
+use bls12_381::{G1Affine, G1Projective, Scalar};
 use group::Curve;
 use rand::{CryptoRng, Rng};
 use subtle::ConstantTimeEq;
@@ -68,13 +68,15 @@ impl Commitment {
             factors.push(message.0);
         }
 
-        // FIXME batch normalize
-        let commitment = commit_accum.sum().to_affine();
-        let response = resp_accum.sum().to_affine();
+        let mut commit_response = [G1Affine::identity(); 2];
+        G1Projective::batch_normalize(
+            &[commit_accum.sum(), resp_accum.sum()],
+            &mut commit_response[..],
+        );
 
         let mut challenge_hash = HashScalar::new();
-        challenge_hash.update(&commitment.to_uncompressed());
-        challenge_hash.update(&response.to_uncompressed());
+        challenge_hash.update(&commit_response[0].to_uncompressed());
+        challenge_hash.update(&commit_response[1].to_uncompressed());
         challenge_hash.update(&nonce.0.to_bytes());
         let challenge = challenge_hash.finalize();
 
@@ -86,7 +88,7 @@ impl Commitment {
 
         Ok((
             commit_blind.into(),
-            commitment.into(),
+            commit_response[0].into(),
             CommitmentProof { challenge, proofs },
         ))
     }

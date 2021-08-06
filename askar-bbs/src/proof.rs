@@ -127,20 +127,16 @@ impl<G: Generators> ProverMessages<'_, G> {
             hidden.push((*msg, *blinding));
         }
 
-        // FIXME - batch normalize
-        let a_prime = a_prime.to_affine();
-        let a_bar = a_bar.to_affine();
-        let d = d.to_affine();
-        let c1 = c1.to_affine();
-        let c2 = c2_accum.sum().to_affine();
+        let mut cvals = [G1Affine::identity(); 5];
+        G1Projective::batch_normalize(&[a_prime, a_bar, d, c1, c2_accum.sum()], &mut cvals[..]);
 
         Ok(SignatureProofContext {
             cvals: ChallengeValues {
-                a_prime,
-                a_bar,
-                d,
-                c1,
-                c2,
+                a_prime: cvals[0],
+                a_bar: cvals[1],
+                d: cvals[2],
+                c1: cvals[3],
+                c2: cvals[4],
             },
             e,
             e_rand,
@@ -289,15 +285,14 @@ impl SignatureProof {
             c2_accum.push(messages.generators.message(index), resp);
         }
 
-        // FIXME batch normalize
-        let check_c1 = check_c1.to_affine();
-        let check_c2 = c2_accum.sum().to_affine();
+        let mut checks = [G1Affine::identity(); 2];
+        G1Projective::batch_normalize(&[check_c1, c2_accum.sum()], &mut checks[..]);
 
         let check_pair = pairing(&a_prime, keypair.bls_public_key())
             .ct_eq(&pairing(&a_bar, &G2Affine::generator()));
 
         Ok(
-            (!a_prime.is_identity() & check_c1.ct_eq(&c1) & check_c2.ct_eq(&c2) & check_pair)
+            (!a_prime.is_identity() & checks[0].ct_eq(&c1) & checks[1].ct_eq(&c2) & check_pair)
                 .into(),
         )
     }
