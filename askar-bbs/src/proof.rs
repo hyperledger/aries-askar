@@ -281,10 +281,7 @@ impl SignatureProof {
             &[
                 (d.into(), self.r3_resp),
                 (h0, self.s_resp),
-                (
-                    G1Projective::generator() + messages.accum_reveal()?,
-                    -challenge.0,
-                ),
+                (messages.accum_reveal()?, -challenge.0),
             ][..],
         );
         for (base, resp) in messages
@@ -343,7 +340,7 @@ pub struct VerifierMessages<'g, G: Generators> {
 impl<'g, G: Generators> VerifierMessages<'g, G> {
     pub fn new(generators: &'g G) -> Self {
         Self {
-            accum_reveal: AccumG1::zero(),
+            accum_reveal: AccumG1::new_with(G1Projective::generator()),
             count: 0,
             generators,
             hidden: Vec::new(),
