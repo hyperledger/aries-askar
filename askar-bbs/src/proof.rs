@@ -1,6 +1,3 @@
-#[cfg(feature = "alloc")]
-use alloc::vec::Vec;
-
 use askar_crypto::{
     alg::bls::{BlsKeyPair, G2},
     buffer::WriteBuffer,
@@ -11,6 +8,7 @@ use rand::{CryptoRng, Rng};
 use subtle::ConstantTimeEq;
 
 use crate::{
+    collect::{DefaultSeq, Seq, Vec},
     commitment::Blinding,
     error::Error,
     generators::Generators,
@@ -23,16 +21,25 @@ use crate::util::default_rng;
 
 pub type ProofChallenge = Nonce;
 
+pub type ProverMessages<'g, G> = ProverMessagesT<'g, G, DefaultSeq<128>>;
+
 #[derive(Clone, Debug)]
-pub struct ProverMessages<'g, G: Generators> {
+pub struct ProverMessagesT<'g, G: Generators, S>
+where
+    G: Generators,
+    S: Seq<(G1Projective, Scalar, Blinding)>,
+{
     accum_b: AccumG1,
     count: usize,
     generators: &'g G,
-    hidden: Vec<(G1Projective, Scalar, Blinding)>,
+    hidden: Vec<(G1Projective, Scalar, Blinding), S>,
 }
 
-#[cfg(feature = "alloc")]
-impl<'g, G: Generators> ProverMessages<'g, G> {
+impl<'g, G, S> ProverMessagesT<'g, G, S>
+where
+    G: Generators,
+    S: Seq<(G1Projective, Scalar, Blinding)>,
+{
     pub fn new(generators: &'g G) -> Self {
         Self {
             accum_b: AccumG1::new_with(G1Projective::generator()),
@@ -43,7 +50,11 @@ impl<'g, G: Generators> ProverMessages<'g, G> {
     }
 }
 
-impl<G: Generators> ProverMessages<'_, G> {
+impl<G, S> ProverMessagesT<'_, G, S>
+where
+    G: Generators,
+    S: Seq<(G1Projective, Scalar, Blinding)>,
+{
     pub fn push_revealed(&mut self, message: Message) -> Result<(), Error> {
         let c = self.count;
         if c >= self.generators.message_count() {
@@ -75,7 +86,7 @@ impl<G: Generators> ProverMessages<'_, G> {
             return Err(err_msg!(Usage, "Message index exceeds generator count"));
         }
         let base = self.generators.message(c);
-        self.hidden.push((base, message.0, blinding));
+        self.hidden.push((base, message.0, blinding))?;
         self.accum_b.push(self.generators.message(c), message.0);
         self.count = c + 1;
         Ok(())
@@ -92,7 +103,7 @@ impl<G: Generators> ProverMessages<'_, G> {
     }
 
     #[cfg(feature = "getrandom")]
-    pub fn prepare(&self, signature: &Signature) -> Result<SignatureProofContext, Error> {
+    pub fn prepare(&self, signature: &Signature) -> Result<SignatureProofContext<S>, Error> {
         self.prepare_with_rng(signature, default_rng())
     }
 
@@ -100,7 +111,7 @@ impl<G: Generators> ProverMessages<'_, G> {
         &self,
         signature: &Signature,
         mut rng: impl CryptoRng + Rng,
-    ) -> Result<SignatureProofContext, Error> {
+    ) -> Result<SignatureProofContext<S>, Error> {
         let Signature { a, e, s } = *signature;
         let b = self.get_b(s)?;
         let h0 = self.generators.blinding();
@@ -121,10 +132,8 @@ impl<G: Generators> ProverMessages<'_, G> {
         let c1 = AccumG1::calc(&[(a_prime, e_rand), (h0, r2_rand)]);
         let mut c2_accum = AccumG1::from(&[(d, r3_rand), (h0, s_rand)][..]);
 
-        let mut hidden = Vec::new();
-        for (base, msg, blinding) in self.hidden.iter() {
+        for (base, _msg, blinding) in self.hidden.iter() {
             c2_accum.push(*base, blinding.0);
-            hidden.push((*base, *msg, *blinding));
         }
 
         let mut cvals = [G1Affine::identity(); 5];
@@ -147,13 +156,17 @@ impl<G: Generators> ProverMessages<'_, G> {
             s_prime,
             s_rand,
             h0,
-            hidden,
+            hidden: self.hidden.clone(),
         })
     }
 }
 
 #[derive(Clone, Debug)]
-pub struct SignatureProofContext {
+pub struct SignatureProofContext<S>
+where
+    // TODO base G1Projective only used in challenge, currently
+    S: Seq<(G1Projective, Scalar, Blinding)>,
+{
     cvals: ChallengeValues,
     e: Scalar,
     e_rand: Scalar,
@@ -164,17 +177,20 @@ pub struct SignatureProofContext {
     s_prime: Scalar,
     s_rand: Scalar,
     h0: G1Projective, // TODO h0 only used in challenge, currently
-    hidden: Vec<(G1Projective, Scalar, Blinding)>, // TODO base only used in challenge, currently
+    hidden: Vec<(G1Projective, Scalar, Blinding), S>,
 }
 
-impl SignatureProofContext {
-    pub fn complete(&self, challenge: ProofChallenge) -> Result<SignatureProof, Error> {
+impl<S> SignatureProofContext<S>
+where
+    S: Seq<(G1Projective, Scalar, Blinding)>,
+    S: Seq<Scalar>,
+{
+    pub fn complete(&self, challenge: ProofChallenge) -> Result<SignatureProof<S>, Error> {
         let c = challenge.0;
-        let hidden_resp = self
-            .hidden
-            .iter()
-            .map(|(_base, msg, m_rand)| m_rand.0 - c * msg)
-            .collect();
+        let mut hidden_resp = Vec::with_capacity(self.hidden.len());
+        for (_base, msg, m_rand) in self.hidden.iter() {
+            hidden_resp.push(m_rand.0 - c * msg)?;
+        }
         Ok(SignatureProof {
             cvals: self.cvals,
             e_resp: self.e_rand + c * self.e,
@@ -239,22 +255,32 @@ impl ChallengeValues {
 }
 
 #[derive(Clone, Debug)]
-pub struct SignatureProof {
+pub struct SignatureProof<S>
+where
+    S: Seq<Scalar>,
+{
     cvals: ChallengeValues,
     e_resp: Scalar,
     r2_resp: Scalar,
     r3_resp: Scalar,
     s_resp: Scalar,
-    hidden_resp: Vec<Scalar>,
+    hidden_resp: Vec<Scalar, S>,
 }
 
-impl SignatureProof {
-    pub fn verify<G: Generators>(
+impl<S> SignatureProof<S>
+where
+    S: Seq<Scalar>,
+{
+    pub fn verify<G, V>(
         &self,
         keypair: &BlsKeyPair<G2>,
-        messages: &VerifierMessages<G>,
+        messages: &VerifierMessagesT<G, V>,
         challenge: ProofChallenge,
-    ) -> Result<bool, Error> {
+    ) -> Result<bool, Error>
+    where
+        G: Generators,
+        V: Seq<G1Projective>,
+    {
         if messages.hidden.len() != self.hidden_resp.len() {
             return Err(err_msg!(
                 InvalidProof,
@@ -305,22 +331,31 @@ impl SignatureProof {
         )
     }
 
-    pub fn create_challenge<G: Generators>(
+    pub fn create_challenge<G, V>(
         &self,
-        messages: &VerifierMessages<G>,
+        messages: &VerifierMessagesT<G, V>,
         nonce: Nonce,
-    ) -> ProofChallenge {
+    ) -> ProofChallenge
+    where
+        G: Generators,
+        V: Seq<G1Projective>,
+    {
         let mut c_hash = HashScalar::new();
         self.write_challenge_bytes(messages, &mut c_hash).unwrap();
         c_hash.update(&nonce.0.to_bytes());
         Nonce(c_hash.finalize())
     }
 
-    pub fn write_challenge_bytes<G: Generators, W: WriteBuffer>(
+    pub fn write_challenge_bytes<G, W, V>(
         &self,
-        messages: &VerifierMessages<G>,
+        messages: &VerifierMessagesT<G, V>,
         writer: &mut W,
-    ) -> Result<(), askar_crypto::Error> {
+    ) -> Result<(), askar_crypto::Error>
+    where
+        G: Generators,
+        W: WriteBuffer,
+        V: Seq<G1Projective>,
+    {
         self.cvals.write_challenge_bytes(
             messages.generators.blinding(),
             messages.hidden.iter().copied(),
@@ -329,15 +364,25 @@ impl SignatureProof {
     }
 }
 
+pub type VerifierMessages<'g, G> = VerifierMessagesT<'g, G, DefaultSeq<128>>;
+
 #[derive(Clone, Debug)]
-pub struct VerifierMessages<'g, G: Generators> {
+pub struct VerifierMessagesT<'g, G, S>
+where
+    G: Generators,
+    S: Seq<G1Projective>,
+{
     accum_reveal: AccumG1,
     count: usize,
     generators: &'g G,
-    hidden: Vec<G1Projective>,
+    hidden: Vec<G1Projective, S>,
 }
 
-impl<'g, G: Generators> VerifierMessages<'g, G> {
+impl<'g, G, S> VerifierMessagesT<'g, G, S>
+where
+    G: Generators,
+    S: Seq<G1Projective>,
+{
     pub fn new(generators: &'g G) -> Self {
         Self {
             accum_reveal: AccumG1::new_with(G1Projective::generator()),
@@ -348,7 +393,11 @@ impl<'g, G: Generators> VerifierMessages<'g, G> {
     }
 }
 
-impl<G: Generators> VerifierMessages<'_, G> {
+impl<G, S> VerifierMessagesT<'_, G, S>
+where
+    G: Generators,
+    S: Seq<G1Projective>,
+{
     pub fn push_revealed(&mut self, message: Message) -> Result<(), Error> {
         let c = self.count;
         if c >= self.generators.message_count() {
@@ -376,7 +425,7 @@ impl<G: Generators> VerifierMessages<'_, G> {
             return Err(err_msg!(Usage, "Message index exceeds generator count"));
         }
         for index in self.count..c {
-            self.hidden.push(self.generators.message(index));
+            self.hidden.push(self.generators.message(index))?;
         }
         self.count = c;
         Ok(())

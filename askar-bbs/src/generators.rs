@@ -1,11 +1,14 @@
-#[cfg(feature = "alloc")]
-use alloc::vec::Vec;
 use core::fmt::Debug;
 
 use askar_crypto::alg::bls::{BlsKeyPair, G2};
 use bls12_381::{
     hash_to_curve::{ExpandMsgXmd, HashToCurve},
     G1Projective,
+};
+
+use crate::{
+    collect::{DefaultSeq, Seq, Vec},
+    error::Error,
 };
 
 const DST_G1_V1: &'static [u8] = b"BLS12381G1_XMD:BLAKE2B_SSWU_RO_BBS+_SIGNATURES:1_0_0";
@@ -62,13 +65,30 @@ impl<G: Generators> Iterator for GeneratorsIter<'_, G> {
 
 impl<G: Generators> ExactSizeIterator for GeneratorsIter<'_, G> {}
 
-#[cfg(feature = "alloc")]
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct VecGenerators {
-    h: Vec<G1Projective>,
+pub type VecGenerators = GeneratorsSeq<DefaultSeq<128>>;
+
+#[derive(Debug)]
+pub struct GeneratorsSeq<S>
+where
+    S: Seq<G1Projective>,
+{
+    h: Vec<G1Projective, S>,
 }
 
-impl Generators for VecGenerators {
+impl<S> Clone for GeneratorsSeq<S>
+where
+    S: Seq<G1Projective>,
+    Vec<G1Projective, S>: Clone,
+{
+    fn clone(&self) -> Self {
+        Self { h: self.h.clone() }
+    }
+}
+
+impl<S> Generators for GeneratorsSeq<S>
+where
+    S: Seq<G1Projective>,
+{
     fn generator(&self, index: usize) -> G1Projective {
         self.h[index]
     }
@@ -78,11 +98,14 @@ impl Generators for VecGenerators {
     }
 }
 
-impl<T: Generators> From<&T> for VecGenerators {
-    fn from(gens: &T) -> Self {
-        Self {
-            h: gens.iter().collect(),
-        }
+impl<S> GeneratorsSeq<S>
+where
+    S: Seq<G1Projective>,
+{
+    pub fn copy_from<G: Generators>(gens: &G) -> Result<Self, Error> {
+        Ok(Self {
+            h: Vec::from_iter(gens.iter())?,
+        })
     }
 }
 
@@ -100,8 +123,8 @@ impl DynGeneratorsV1 {
         }
     }
 
-    pub fn to_vec(&self) -> VecGenerators {
-        self.into()
+    pub fn to_vec(&self) -> Result<VecGenerators, Error> {
+        VecGenerators::copy_from(self)
     }
 }
 

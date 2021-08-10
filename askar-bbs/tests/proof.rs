@@ -1,14 +1,15 @@
-use askar_bbs::{
-    DynGeneratorsV1, Message, Nonce, ProverMessages, SignatureMessages, VerifierMessages,
-};
-use askar_crypto::{
-    alg::bls::{BlsKeyPair, G2},
-    repr::KeySecretBytes,
-};
-use hex_literal::hex;
-
+#[cfg(feature = "getrandom")]
 #[test]
 fn prove_single_signature_hidden_message() {
+    use askar_bbs::{
+        DynGeneratorsV1, Message, Nonce, ProverMessages, SignatureMessages, VerifierMessages,
+    };
+    use askar_crypto::{
+        alg::bls::{BlsKeyPair, G2},
+        repr::KeySecretBytes,
+    };
+    use hex_literal::hex;
+
     let keypair = BlsKeyPair::<G2>::from_secret_bytes(&hex!(
         "0011223344556677889900112233445566778899001122334455667788990011"
     ))

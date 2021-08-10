@@ -1,10 +1,19 @@
-use askar_bbs::{CommittedMessages, DynGeneratorsV1, Message, Nonce, SignatureMessages};
+#[cfg(feature = "getrandom")]
+use askar_bbs::{Blinding, Commitment, DynGeneratorsV1, Message, Nonce, SignatureMessages};
+
+#[cfg(feature = "getrandom")]
 use askar_crypto::{
     alg::bls::{BlsKeyPair, G2},
     repr::KeyGen,
 };
+
+#[cfg(feature = "getrandom")]
 use rand::rngs::OsRng;
 
+#[cfg(feature = "alloc")]
+use askar_bbs::CommittedMessages;
+
+#[cfg(all(feature = "alloc", feature = "getrandom"))]
 #[test]
 fn test_commitment_verify() {
     let keypair = BlsKeyPair::<G2>::generate(OsRng).unwrap();
@@ -22,6 +31,21 @@ fn test_commitment_verify() {
         .expect("Error verifying commitment");
 }
 
+#[cfg(feature = "getrandom")]
+#[test]
+fn test_commitment_verify_no_alloc() {
+    let keypair = BlsKeyPair::<G2>::generate(OsRng).unwrap();
+    let gens = DynGeneratorsV1::new(&keypair, 1);
+    let nonce = Nonce::new();
+    let commit_messages = [(0, Message::hash(b"hello"), Blinding::new())];
+    let (_blind, commitment, proof) =
+        Commitment::commit(&gens, &commit_messages, nonce).expect("Error creating commitment");
+    commitment
+        .verify_proof(&[0], &gens, &proof, nonce)
+        .expect("Error verifying commitment");
+}
+
+#[cfg(all(feature = "alloc", feature = "getrandom"))]
 #[test]
 fn test_blind_signature() {
     let keypair = BlsKeyPair::<G2>::generate(OsRng).unwrap();

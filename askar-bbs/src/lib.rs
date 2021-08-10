@@ -9,15 +9,21 @@ pub use bls12_381;
 mod error;
 pub use error::{Error, ErrorKind};
 
+mod collect;
+
 mod commitment;
-pub use commitment::{Blinding, Commitment, CommitmentProof, CommittedMessages};
+pub use commitment::{Blinding, Commitment, CommitmentProof};
+
+#[cfg(feature = "alloc")]
+pub use commitment::CommittedMessages;
 
 mod generators;
 pub use generators::{DynGeneratorsV1, Generators, VecGenerators};
 
 mod proof;
 pub use proof::{
-    ProofChallenge, ProverMessages, SignatureProof, SignatureProofContext, VerifierMessages,
+    ProofChallenge, ProverMessages, ProverMessagesT, SignatureProof, SignatureProofContext,
+    VerifierMessages, VerifierMessagesT,
 };
 
 mod signature;

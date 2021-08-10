@@ -17,10 +17,16 @@ fn criterion_benchmark(c: &mut Criterion) {
 
     for message_count in vec![5, 25, 125] {
         c.bench_function(&format!("keygen for {} messages", message_count), |b| {
-            b.iter(|| DynGeneratorsV1::new(&keypair, message_count).to_vec());
+            b.iter(|| {
+                DynGeneratorsV1::new(&keypair, message_count)
+                    .to_vec()
+                    .unwrap()
+            });
         });
 
-        let gens = DynGeneratorsV1::new(&keypair, message_count).to_vec();
+        let gens = DynGeneratorsV1::new(&keypair, message_count)
+            .to_vec()
+            .unwrap();
         let messages: Vec<Message> = (0..message_count)
             .map(|_| Message::from(OsRng.next_u64()))
             .collect();
