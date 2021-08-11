@@ -6,6 +6,9 @@ use std::error::Error as StdError;
 /// The possible kinds of error produced by the crate
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ErrorKind {
+    /// A blind signature commitment did not pass validation
+    InvalidCommitment,
+
     /// A proof did not pass verification
     InvalidProof,
 
@@ -29,6 +32,7 @@ impl ErrorKind {
     /// Convert the error kind to a string reference
     pub fn as_str(&self) -> &'static str {
         match self {
+            Self::InvalidCommitment => "Invalid commitment",
             Self::InvalidProof => "Invalid proof",
             Self::InvalidSignature => "Invalid signature",
             Self::MissingSecretKey => "Missing secret key",

@@ -24,7 +24,7 @@ pub type ProofChallenge = Nonce;
 pub type ProverMessages<'g, G> = ProverMessagesT<'g, G, DefaultSeq<128>>;
 
 #[derive(Clone, Debug)]
-pub struct ProverMessagesT<'g, G: Generators, S>
+pub struct ProverMessagesT<'g, G, S>
 where
     G: Generators,
     S: Seq<(G1Projective, Scalar, Blinding)>,
@@ -431,7 +431,7 @@ where
         Ok(())
     }
 
-    fn accum_reveal(&self) -> Result<G1Projective, Error> {
+    pub(crate) fn accum_reveal(&self) -> Result<G1Projective, Error> {
         if self.count != self.generators.message_count() {
             return Err(err_msg!(
                 Usage,

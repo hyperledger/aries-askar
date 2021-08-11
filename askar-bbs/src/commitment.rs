@@ -7,6 +7,7 @@ use rand::{CryptoRng, Rng};
 use subtle::ConstantTimeEq;
 
 use crate::{
+    collect::{DefaultSeq, Seq, Vec},
     error::Error,
     generators::Generators,
     signature::Message,
@@ -15,6 +16,8 @@ use crate::{
 
 #[cfg(feature = "getrandom")]
 use crate::util::default_rng;
+
+const G1_COMPRESSED_SIZE: usize = 48;
 
 pub type Blinding = Nonce;
 
@@ -31,15 +34,16 @@ impl Commitment {
         Self::commit_with_rng(generators, entries, nonce, default_rng())
     }
 
-    pub fn commit_with_rng<G: Generators>(
+    pub fn commit_with_rng<G, S>(
         generators: &G,
         entries: &[(usize, Message, Blinding)],
         nonce: Nonce,
         mut rng: impl CryptoRng + Rng,
-    ) -> Result<(Blinding, Commitment, CommitmentProof), Error> {
-        // FIXME: ensure subgroup check on generators, may be enforced by bls12_381
-        // TODO: optimize with sum-of-products
-
+    ) -> Result<(Blinding, Commitment, CommitmentProofT<S>), Error>
+    where
+        G: Generators,
+        S: Seq<G1Projective> + Seq<Scalar>,
+    {
         let ec = entries.len();
         if ec == 0 {
             return Err(err_msg!(Usage, "No messages provided for commitment"));
@@ -49,9 +53,9 @@ impl Commitment {
         let commit_blind = random_nonce(&mut rng); // s'
         let resp_blind = random_nonce(&mut rng); // s~
         let mut proofs = Vec::with_capacity(1 + ec);
-        proofs.push(resp_blind);
-        let mut factors = Vec::with_capacity(1 + ec);
-        factors.push(commit_blind);
+        proofs.push(resp_blind)?;
+        let mut factors = Vec::<_, S>::with_capacity(1 + ec);
+        factors.push(commit_blind)?;
 
         let h0 = generators.blinding();
         let mut commit_accum = AccumG1::from((h0, commit_blind));
@@ -64,8 +68,8 @@ impl Commitment {
             let base = generators.message(index);
             commit_accum.push(base, message.0);
             resp_accum.push(base, blinding.0);
-            proofs.push(blinding.0);
-            factors.push(message.0);
+            proofs.push(blinding.0)?;
+            factors.push(message.0)?;
         }
 
         let mut commit_response = [G1Affine::identity(); 2];
@@ -89,17 +93,21 @@ impl Commitment {
         Ok((
             commit_blind.into(),
             commit_response[0].into(),
-            CommitmentProof { challenge, proofs },
+            CommitmentProofT { challenge, proofs },
         ))
     }
 
-    pub fn verify_proof<G: Generators>(
+    pub fn verify_proof<G, S>(
         &self,
         committed_indices: &[usize],
         generators: &G,
-        proof: &CommitmentProof,
+        proof: &CommitmentProofT<S>,
         nonce: Nonce,
-    ) -> Result<(), Error> {
+    ) -> Result<(), Error>
+    where
+        G: Generators,
+        S: Seq<Scalar>,
+    {
         if committed_indices.len() + 1 != proof.proofs.len() {
             return Err(err_msg!(
                 InvalidProof,
@@ -107,7 +115,12 @@ impl Commitment {
             ));
         }
 
-        let mut pok_accum = -(self.0 * proof.challenge) + generators.blinding() * proof.proofs[0];
+        let mut pok_accum = AccumG1::from(
+            &[
+                (self.0.into(), -proof.challenge),
+                (generators.blinding(), proof.proofs[0]),
+            ][..],
+        );
 
         for (pos, index) in committed_indices.into_iter().copied().enumerate() {
             if index >= generators.message_count() {
@@ -116,12 +129,12 @@ impl Commitment {
                     "Message index exceeds generator count"
                 ));
             }
-            pok_accum += generators.message(index) * proof.proofs[pos + 1];
+            pok_accum.push(generators.message(index), proof.proofs[pos + 1]);
         }
 
         let mut verify_hash = HashScalar::new();
         verify_hash.update(&self.0.to_uncompressed()[..]);
-        verify_hash.update(&pok_accum.to_affine().to_uncompressed()[..]);
+        verify_hash.update(&pok_accum.sum().to_affine().to_uncompressed()[..]);
         verify_hash.update(&nonce.0.to_bytes()[..]);
         let c_verify = verify_hash.finalize();
 
@@ -131,6 +144,18 @@ impl Commitment {
             Err(err_msg!(InvalidProof, "Verification failed"))
         }
     }
+
+    pub fn from_bytes(buf: &[u8; G1_COMPRESSED_SIZE]) -> Result<Self, Error> {
+        if let Some(pt) = G1Affine::from_compressed(buf).into() {
+            Ok(Self(pt))
+        } else {
+            Err(err_msg!(InvalidCommitment))
+        }
+    }
+
+    pub fn to_bytes(&self) -> [u8; G1_COMPRESSED_SIZE] {
+        self.0.to_compressed()
+    }
 }
 
 impl From<G1Affine> for Commitment {
@@ -139,16 +164,15 @@ impl From<G1Affine> for Commitment {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct CommitmentProof {
-    pub(crate) challenge: Scalar,
-    pub(crate) proofs: Vec<Scalar>,
-}
+pub type CommitmentProof = CommitmentProofT<DefaultSeq<32>>;
 
-impl From<(Scalar, Vec<Scalar>)> for CommitmentProof {
-    fn from((challenge, proofs): (Scalar, Vec<Scalar>)) -> Self {
-        Self { challenge, proofs }
-    }
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CommitmentProofT<S>
+where
+    S: Seq<Scalar>,
+{
+    pub(crate) challenge: Scalar,
+    pub(crate) proofs: Vec<Scalar, S>,
 }
 
 #[cfg(feature = "alloc")]
@@ -191,16 +215,23 @@ impl<G: Generators> CommittedMessages<'_, G> {
     }
 
     #[cfg(feature = "getrandom")]
-    pub fn commit(&self, nonce: Nonce) -> Result<(Blinding, Commitment, CommitmentProof), Error> {
+    pub fn commit(
+        &self,
+        nonce: Nonce,
+    ) -> Result<(Blinding, Commitment, CommitmentProofT<DefaultSeq<32>>), Error> {
         self.commit_with_rng(nonce, default_rng())
     }
 
-    pub fn commit_with_rng(
+    pub fn commit_with_rng<S>(
         &self,
         nonce: Nonce,
         rng: impl CryptoRng + Rng,
-    ) -> Result<(Blinding, Commitment, CommitmentProof), Error> {
-        let entries: Vec<_> = self
+    ) -> Result<(Blinding, Commitment, CommitmentProofT<S>), Error>
+    where
+        S: Seq<G1Projective> + Seq<Scalar> + Seq<(usize, Message, Blinding)>,
+    {
+        // FIXME accept an ExactSizedIterator for commit_with_rng
+        let entries: alloc::vec::Vec<_> = self
             .entries
             .iter()
             .map(|(index, (message, blinding))| (*index, *message, *blinding))

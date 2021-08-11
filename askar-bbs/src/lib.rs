@@ -1,4 +1,4 @@
-// #![cfg_attr(not(feature = "std"), no_std)]
+#![cfg_attr(not(feature = "std"), no_std)]
 
 #[cfg(feature = "alloc")]
 extern crate alloc;
@@ -12,7 +12,7 @@ pub use error::{Error, ErrorKind};
 mod collect;
 
 mod commitment;
-pub use commitment::{Blinding, Commitment, CommitmentProof};
+pub use commitment::{Blinding, Commitment, CommitmentProof, CommitmentProofT};
 
 #[cfg(feature = "alloc")]
 pub use commitment::CommittedMessages;

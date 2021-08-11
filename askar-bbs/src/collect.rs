@@ -102,6 +102,23 @@ where
     }
 }
 
+impl<Item, B> PartialEq for Vec<Item, B>
+where
+    B: Seq<Item>,
+    Item: PartialEq,
+{
+    fn eq(&self, other: &Self) -> bool {
+        &*self == &*other
+    }
+}
+
+impl<Item, B> Eq for Vec<Item, B>
+where
+    B: Seq<Item>,
+    Item: Eq,
+{
+}
+
 pub trait Seq<Item>: Debug {
     type Vec;
 

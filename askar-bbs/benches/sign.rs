@@ -2,7 +2,8 @@
 extern crate criterion;
 
 use askar_bbs::{
-    DynGeneratorsV1, Message, Nonce, ProverMessages, SignatureMessages, VerifierMessages,
+    CommittedMessages, DynGeneratorsV1, Message, Nonce, ProverMessages, SignatureMessages,
+    VerifierMessages,
 };
 use askar_crypto::{
     alg::bls::{BlsKeyPair, G2},
@@ -27,6 +28,18 @@ fn criterion_benchmark(c: &mut Criterion) {
         let gens = DynGeneratorsV1::new(&keypair, message_count)
             .to_vec()
             .unwrap();
+
+        // FIXME move to separate blind signature benchmarks
+        if message_count == 5 {
+            c.bench_function(&format!("create commitment"), |b| {
+                b.iter(|| {
+                    let mut committer = CommittedMessages::new(&gens);
+                    committer.insert(0, Message::from(0)).unwrap();
+                    let (_blind, _commit, _proof) = committer.commit(Nonce::new()).unwrap();
+                });
+            });
+        }
+
         let messages: Vec<Message> = (0..message_count)
             .map(|_| Message::from(OsRng.next_u64()))
             .collect();
