@@ -1,3 +1,5 @@
+use core::convert::TryInto;
+
 use askar_crypto::alg::bls::{BlsKeyPair, G2};
 use bls12_381::{pairing, G1Affine, G1Projective, G2Affine, G2Projective, Scalar};
 use ff::Field;
@@ -24,8 +26,20 @@ impl Message {
         Self(HashScalar::digest(input))
     }
 
+    pub fn from_bytes(buf: &[u8; 32]) -> Result<Self, Error> {
+        let mut b = *buf;
+        b.reverse(); // into big-endian
+        if let Some(s) = Scalar::from_bytes(&b).into() {
+            Ok(Message(s))
+        } else {
+            Err(err_msg!(Usage, "Message bytes not in canonical format"))
+        }
+    }
+
     pub fn to_bytes(&self) -> [u8; 32] {
-        self.0.to_bytes()
+        let mut b = self.0.to_bytes();
+        b.reverse(); // into big-endian
+        b
     }
 }
 
@@ -55,8 +69,29 @@ impl Signature {
         let mut buf = [0u8; Self::SIZE];
         buf[..48].copy_from_slice(&self.a.to_compressed()[..]);
         buf[48..80].copy_from_slice(&self.e.to_bytes()[..]);
+        buf[48..80].reverse(); // into big endian
         buf[80..].copy_from_slice(&self.s.to_bytes()[..]);
+        buf[80..].reverse(); // into big endian
         buf
+    }
+
+    pub fn from_bytes(sig: impl AsRef<[u8]>) -> Result<Self, Error> {
+        let buf = sig.as_ref();
+        if buf.len() != Self::SIZE {
+            return Err(err_msg!(InvalidSignature));
+        }
+        let a = G1Affine::from_compressed(&buf[..48].try_into().unwrap());
+        let mut scalar: [u8; 32] = buf[48..80].try_into().unwrap();
+        scalar.reverse(); // from big endian
+        let e = Scalar::from_bytes(&scalar);
+        scalar.copy_from_slice(&buf[80..]);
+        scalar.reverse(); // from big endian
+        let s = Scalar::from_bytes(&scalar);
+        if let (Some(a), Some(e), Some(s)) = (a.into(), e.into(), s.into()) {
+            Ok(Self { a, e, s })
+        } else {
+            Err(err_msg!(InvalidSignature))
+        }
     }
 
     pub fn unblind(self, blinding: Blinding) -> Self {

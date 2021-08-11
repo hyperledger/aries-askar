@@ -1,5 +1,3 @@
-#[cfg(feature = "std")]
-use alloc::boxed::Box;
 use core::fmt::{self, Display, Formatter};
 
 #[cfg(feature = "std")]
@@ -10,6 +8,9 @@ use std::error::Error as StdError;
 pub enum ErrorKind {
     /// A proof did not pass verification
     InvalidProof,
+
+    /// A signature did not pass verification
+    InvalidSignature,
 
     /// A secret key is required but not present
     MissingSecretKey,
@@ -29,6 +30,7 @@ impl ErrorKind {
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::InvalidProof => "Invalid proof",
+            Self::InvalidSignature => "Invalid signature",
             Self::MissingSecretKey => "Missing secret key",
             Self::Unexpected => "Unexpected error",
             Self::Unsupported => "Unsupported",
