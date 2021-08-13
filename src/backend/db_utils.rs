@@ -609,6 +609,13 @@ pub fn init_keys<'a>(
     method: StoreKeyMethod,
     pass_key: PassKey<'a>,
 ) -> Result<(ProfileKey, Vec<u8>, StoreKey, String), Error> {
+    if method == StoreKeyMethod::RawKey && pass_key.is_empty() {
+        // disallow random key for a new database
+        return Err(err_msg!(
+            Input,
+            "Cannot create a store with a blank raw key"
+        ));
+    }
     let (store_key, store_key_ref) = method.resolve(pass_key)?;
     let profile_key = ProfileKey::new()?;
     let enc_profile_key = encode_profile_key(&profile_key, &store_key)?;
