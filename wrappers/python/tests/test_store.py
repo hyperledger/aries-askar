@@ -18,9 +18,13 @@ TEST_ENTRY = {
 }
 
 
+def raw_key() -> str:
+    return Store.generate_raw_key(b"00000000000000000000000000000My1")
+
+
 @fixture
 async def store() -> Store:
-    key = Store.generate_raw_key(b"00000000000000000000000000000My1")
+    key = raw_key()
     store = await Store.provision(TEST_STORE_URI, "raw", key, recreate=True)
     yield store
     await store.close(remove=True)
@@ -179,5 +183,51 @@ async def test_key_store(store: Store):
 
 @mark.asyncio
 async def test_profile(store: Store):
+    # New session in the default profile
+    async with store as session:
+        # Insert a new entry
+        await session.insert(
+            TEST_ENTRY["category"],
+            TEST_ENTRY["name"],
+            TEST_ENTRY["value"],
+            TEST_ENTRY["tags"],
+        )
+
     profile = await store.create_profile()
+
+    async with store.session(profile) as session:
+        # Should not find previously stored record
+        assert (
+            await session.count(
+                TEST_ENTRY["category"], {"~plaintag": "a", "enctag": "b"}
+            )
+        ) == 0
+
+        # Insert a new entry
+        await session.insert(
+            TEST_ENTRY["category"],
+            TEST_ENTRY["name"],
+            TEST_ENTRY["value"],
+            TEST_ENTRY["tags"],
+        )
+        assert (
+            await session.count(
+                TEST_ENTRY["category"], {"~plaintag": "a", "enctag": "b"}
+            )
+        ) == 1
+
+    if ":memory:" not in TEST_STORE_URI:
+        # Test accessing profile after re-opening
+        key = raw_key()
+        store_2 = await Store.open(TEST_STORE_URI, "raw", key)
+        print("try profile", profile)
+        async with store_2.session(profile) as session:
+            # Should not find previously stored record
+            assert (
+                await session.count(
+                    TEST_ENTRY["category"], {"~plaintag": "a", "enctag": "b"}
+                )
+            ) == 1
+        await store_2.close()
+
     await store.remove_profile(profile)
