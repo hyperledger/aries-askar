@@ -104,20 +104,25 @@ impl Backend for PostgresStore {
     fn create_profile(&self, name: Option<String>) -> BoxFuture<'_, Result<String, Error>> {
         let name = name.unwrap_or_else(random_profile_name);
         Box::pin(async move {
-            let key = ProfileKey::new()?;
-            let enc_key = key.to_bytes()?;
+            let store_key = self.key_cache.store_key.clone();
+            let (profile_key, enc_key) = unblock(move || {
+                let profile_key = ProfileKey::new()?;
+                let enc_key = encode_profile_key(&profile_key, &store_key)?;
+                Result::<_, Error>::Ok((profile_key, enc_key))
+            })
+            .await?;
             let mut conn = self.conn_pool.acquire().await?;
             if let Some(pid) = sqlx::query_scalar(
                 "INSERT INTO profiles (name, profile_key) VALUES ($1, $2) 
                 ON CONFLICT DO NOTHING RETURNING id",
             )
             .bind(&name)
-            .bind(enc_key.as_ref())
+            .bind(enc_key)
             .fetch_optional(&mut conn)
             .await?
             {
                 self.key_cache
-                    .add_profile(name.clone(), pid, Arc::new(key))
+                    .add_profile(name.clone(), pid, Arc::new(profile_key))
                     .await;
                 Ok(name)
             } else {
@@ -585,7 +590,7 @@ async fn resolve_profile_key(
     if let Some((pid, key)) = cache.get_profile(profile.as_str()).await {
         Ok((pid, key))
     } else {
-        if let Some(row) = sqlx::query("SELECT id, profile_key FROM profiles WHERE name=?1")
+        if let Some(row) = sqlx::query("SELECT id, profile_key FROM profiles WHERE name=$1")
             .bind(profile.as_str())
             .fetch_optional(conn)
             .await?
