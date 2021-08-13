@@ -183,6 +183,7 @@ jobs:
           python setup.py bdist_wheel --python-tag=py3 --plat-name=${{ matrix.plat-name }}
           pip install pytest pytest-asyncio dist/*
           python -m pytest
+          TEST_STORE_URI=sqlite://test.db python -m pytest
         working-directory: wrappers/python
 
       - if: "runner.os == 'Linux'"
