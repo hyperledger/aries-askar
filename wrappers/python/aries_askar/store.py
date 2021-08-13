@@ -271,7 +271,7 @@ class Store:
     @classmethod
     def generate_raw_key(cls, seed: Union[str, bytes] = None) -> str:
         """Generate a new raw key for a Store."""
-        bindings.generate_raw_key(seed)
+        return bindings.generate_raw_key(seed)
 
     @property
     def handle(self) -> StoreHandle:
