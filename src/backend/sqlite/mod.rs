@@ -100,20 +100,29 @@ impl Backend for SqliteStore {
     fn create_profile(&self, name: Option<String>) -> BoxFuture<'_, Result<String, Error>> {
         let name = name.unwrap_or_else(random_profile_name);
         Box::pin(async move {
-            let key = ProfileKey::new()?;
-            let enc_key = key.to_bytes()?;
+            let store_key = self.key_cache.store_key.clone();
+            let (profile_key, enc_key) = unblock(move || {
+                let profile_key = ProfileKey::new()?;
+                let enc_key = encode_profile_key(&profile_key, &store_key)?;
+                Result::<_, Error>::Ok((profile_key, enc_key))
+            })
+            .await?;
             let mut conn = self.conn_pool.acquire().await?;
             let done =
                 sqlx::query("INSERT OR IGNORE INTO profiles (name, profile_key) VALUES (?1, ?2)")
                     .bind(&name)
-                    .bind(enc_key.as_ref())
+                    .bind(enc_key)
                     .execute(&mut conn)
                     .await?;
             if done.rows_affected() == 0 {
                 return Err(err_msg!(Duplicate, "Duplicate profile name"));
             }
             self.key_cache
-                .add_profile(name.clone(), done.last_insert_rowid(), Arc::new(key))
+                .add_profile(
+                    name.clone(),
+                    done.last_insert_rowid(),
+                    Arc::new(profile_key),
+                )
                 .await;
             Ok(name)
         })

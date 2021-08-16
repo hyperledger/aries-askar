@@ -34,6 +34,8 @@ jobs:
 
       - name: Cache cargo resources
         uses: Swatinem/rust-cache@v1
+        with:
+          sharedKey: deps
 
       - name: Cargo check
         uses: actions-rs/cargo@v1
@@ -58,6 +60,47 @@ jobs:
         with:
           command: test
           args: --workspace
+
+  test-postgres:
+    name: Postgres
+    runs-on: ubuntu-latest
+    needs: [check]
+
+    services:
+      postgres:
+        image: postgres
+        env:
+          POSTGRES_PASSWORD: postgres
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: Install Rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+
+      - name: Cache cargo resources
+        uses: Swatinem/rust-cache@v1
+        with:
+          sharedKey: deps
+
+      - name: Test
+        uses: actions-rs/cargo@v1
+        env:
+          POSTGRES_URL: postgres://postgres:postgres@localhost:5432/test-db
+        with:
+          command: test
+          args: --features pg_test
 
   build-manylinux:
     name: Build Library
@@ -85,6 +128,8 @@ jobs:
 
       - name: Cache cargo resources
         uses: Swatinem/rust-cache@v1
+        with:
+          sharedKey: deps
 
       - name: Build library
         env:
@@ -126,6 +171,8 @@ jobs:
 
       - name: Cache cargo resources
         uses: Swatinem/rust-cache@v1
+        with:
+          sharedKey: deps
 
       - name: Build library
         env:
@@ -183,6 +230,7 @@ jobs:
           python setup.py bdist_wheel --python-tag=py3 --plat-name=${{ matrix.plat-name }}
           pip install pytest pytest-asyncio dist/*
           python -m pytest
+          TEST_STORE_URI=sqlite://test.db python -m pytest
         working-directory: wrappers/python
 
       - if: "runner.os == 'Linux'"
