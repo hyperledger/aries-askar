@@ -179,15 +179,21 @@ macro_rules! backend_tests {
     };
 }
 
+fn log_init() {
+    env_logger::builder().is_test(true).try_init().unwrap_or(());
+}
+
 #[cfg(feature = "sqlite")]
 mod sqlite {
     use aries_askar::backend::sqlite::{SqliteStore, SqliteStoreOptions};
     use aries_askar::{generate_raw_store_key, ManageBackend, Store, StoreKeyMethod};
     use std::path::Path;
 
+    use super::*;
+
     #[test]
     fn create_remove_db() {
-        env_logger::builder().is_test(true).try_init().unwrap_or(());
+        log_init();
         let fname = format!("sqlite-test-{}.db", uuid::Uuid::new_v4().to_string());
         assert_eq!(
             Path::new(&fname).exists(),
@@ -237,7 +243,7 @@ mod sqlite {
 
     #[test]
     fn rekey_db() {
-        env_logger::builder().is_test(true).try_init().unwrap_or(());
+        log_init();
         let fname = format!("sqlite-test-{}.db", uuid::Uuid::new_v4().to_string());
         let key1 = generate_raw_store_key(None).expect("Error creating raw key");
         let key2 = generate_raw_store_key(None).expect("Error creating raw key");
@@ -275,7 +281,7 @@ mod sqlite {
     }
 
     async fn init_db() -> Store<SqliteStore> {
-        env_logger::builder().is_test(true).try_init().unwrap_or(());
+        log_init();
         let key = generate_raw_store_key(None).expect("Error creating raw key");
         SqliteStoreOptions::in_memory()
             .provision(StoreKeyMethod::RawKey, key, None, false)
@@ -311,8 +317,10 @@ mod sqlite {
 mod postgres {
     use aries_askar::backend::postgres::test_db::TestDB;
 
+    use super::*;
+
     async fn init_db() -> TestDB {
-        env_logger::builder().is_test(true).try_init().unwrap_or(());
+        log_init();
         TestDB::provision()
             .await
             .expect("Error provisioning postgres test database")
