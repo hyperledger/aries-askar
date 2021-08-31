@@ -14,9 +14,9 @@ use crate::{
     error::Error,
 };
 
-#[cfg(any(test, feature = "any_key"))]
+#[cfg(feature = "any_key")]
 mod any;
-#[cfg(any(test, feature = "any_key"))]
+#[cfg(feature = "any_key")]
 #[cfg_attr(docsrs, doc(cfg(feature = "any_key")))]
 pub use any::{AnyKey, AnyKeyCreate};
 

@@ -79,6 +79,7 @@ impl ResizeBuffer for Vec<u8> {
     }
 }
 
+#[cfg(feature = "alloc")]
 #[cfg(test)]
 mod tests {
     use super::*;

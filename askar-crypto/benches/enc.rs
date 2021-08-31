@@ -23,6 +23,9 @@ fn criterion_benchmark(c: &mut Criterion) {
     fill_random(&mut message[..]);
     let message = &message[..];
 
+    c.bench_function(&format!("random nonce"), move |b| {
+        b.iter(|| AesKey::<A128Gcm>::random_nonce())
+    });
     c.bench_function(&format!("aes128gcm encrypt"), move |b| {
         let key = AesKey::<A128Gcm>::random().unwrap();
         let nonce = AesKey::<A128Gcm>::random_nonce();
