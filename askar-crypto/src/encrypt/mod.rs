@@ -1,10 +1,9 @@
 //! AEAD encryption traits and parameters
 
-use crate::{
-    buffer::ResizeBuffer,
-    error::Error,
-    generic_array::{ArrayLength, GenericArray},
-};
+use crate::{buffer::ResizeBuffer, error::Error, generic_array::ArrayLength};
+
+#[cfg(feature = "getrandom")]
+use crate::generic_array::GenericArray;
 
 #[cfg(feature = "crypto_box")]
 #[cfg_attr(docsrs, doc(cfg(feature = "crypto_box")))]

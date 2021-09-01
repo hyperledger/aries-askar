@@ -15,6 +15,7 @@ use crate::error::Error;
 
 /// The expected length of a seed for `fill_random_deterministic`
 pub const DETERMINISTIC_SEED_LENGTH: usize = <ChaCha20 as NewStreamCipher>::KeySize::USIZE;
+
 /// Combined trait for CryptoRng and RngCore
 pub trait Rng: CryptoRng + RngCore + Debug {}
 
@@ -31,9 +32,17 @@ impl<C: CryptoRng + RngCore> KeyMaterial for C {
 }
 
 #[cfg(feature = "getrandom")]
+#[cfg_attr(docsrs, doc(cfg(feature = "getrandom")))]
 #[inline]
 pub fn default_rng() -> impl CryptoRng + RngCore + Debug {
-    rand::rngs::OsRng
+    #[cfg(feature = "std_rng")]
+    {
+        rand::rngs::ThreadRng::default()
+    }
+    #[cfg(not(feature = "std_rng"))]
+    {
+        rand::rngs::OsRng
+    }
 }
 
 /// Fill a mutable slice with random data using the
