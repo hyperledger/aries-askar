@@ -5,7 +5,10 @@ use core::{
 
 #[cfg(feature = "arbitrary")]
 use arbitrary::Arbitrary;
-use serde::de::{Deserialize, Deserializer, MapAccess, SeqAccess, Visitor};
+use serde::{
+    de::{Deserialize, Deserializer, MapAccess, Visitor},
+    ser::{Serialize, SerializeMap, Serializer},
+};
 
 use super::ops::{KeyOps, KeyOpsSet};
 use crate::error::Error;
@@ -197,39 +200,35 @@ impl<'de> Deserialize<'de> for JwkParts<'de> {
     }
 }
 
-struct KeyOpsVisitor;
-
-impl<'de> Visitor<'de> for KeyOpsVisitor {
-    type Value = KeyOpsSet;
-
-    fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str("an array of key operations")
-    }
-
-    fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+impl Serialize for JwkParts<'_> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
-        A: SeqAccess<'de>,
+        S: Serializer,
     {
-        let mut ops = KeyOpsSet::new();
-        while let Some(op) = seq.next_element()? {
-            if let Some(op) = KeyOps::from_str(op) {
-                if ops & op {
-                    return Err(serde::de::Error::duplicate_field(op.as_str()));
-                } else {
-                    ops = ops | op;
-                }
-            }
+        let mut map = serializer.serialize_map(None)?;
+        if let Some(crv) = self.crv.to_option() {
+            map.serialize_entry("crv", crv)?;
         }
-        Ok(ops)
-    }
-}
-
-impl<'de> Deserialize<'de> for KeyOpsSet {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        deserializer.deserialize_seq(KeyOpsVisitor)
+        if let Some(d) = self.d.to_option() {
+            map.serialize_entry("d", d)?;
+        }
+        if let Some(k) = self.k.to_option() {
+            map.serialize_entry("k", k)?;
+        }
+        if let Some(kid) = self.kid.to_option() {
+            map.serialize_entry("kid", kid)?;
+        }
+        map.serialize_entry("kty", self.kty)?;
+        if let Some(x) = self.x.to_option() {
+            map.serialize_entry("x", x)?;
+        }
+        if let Some(y) = self.y.to_option() {
+            map.serialize_entry("y", y)?;
+        }
+        if let Some(ops) = self.key_ops {
+            map.serialize_entry("key_ops", &ops)?;
+        }
+        map.end()
     }
 }
 
@@ -259,5 +258,11 @@ mod tests {
         assert_eq!(parts.d, Some("nWGxne_9WmC6hEr0kuwsxERJxWl7MmkZcDusAxyuf2A"));
         assert_eq!(parts.k, None);
         assert_eq!(parts.key_ops, Some(KeyOps::Sign | KeyOps::Verify));
+
+        // check serialization
+        let mut buf = [0u8; 512];
+        let len = serde_json_core::to_slice(&parts, &mut buf[..]).unwrap();
+        let parts_2 = JwkParts::from_slice(&buf[..len]).unwrap();
+        assert_eq!(parts_2, parts);
     }
 }

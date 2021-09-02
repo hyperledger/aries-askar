@@ -250,7 +250,7 @@ impl KeySigVerify for Ed25519KeyPair {
 }
 
 impl ToJwk for Ed25519KeyPair {
-    fn encode_jwk(&self, enc: &mut JwkEncoder<'_>) -> Result<(), Error> {
+    fn encode_jwk(&self, enc: &mut dyn JwkEncoder) -> Result<(), Error> {
         enc.add_str("crv", JWK_CURVE)?;
         enc.add_str("kty", JWK_KEY_TYPE)?;
         self.with_public_bytes(|buf| enc.add_as_base64("x", buf))?;
@@ -370,7 +370,7 @@ mod tests {
         assert_eq!(kp.to_public_bytes(), pk_load.to_public_bytes());
 
         let jwk = kp
-            .to_jwk_secret()
+            .to_jwk_secret(None)
             .expect("Error converting private key to JWK");
         let jwk = JwkParts::from_slice(&jwk).expect("Error parsing JWK output");
         assert_eq!(jwk.kty, "OKP");

@@ -758,7 +758,7 @@ impl KeyAeadInPlace for AnyKey {
 }
 
 impl ToJwk for AnyKey {
-    fn encode_jwk(&self, enc: &mut JwkEncoder<'_>) -> Result<(), Error> {
+    fn encode_jwk(&self, enc: &mut dyn JwkEncoder) -> Result<(), Error> {
         let key = match_key_alg! {
             self,
             &dyn ToJwk,
