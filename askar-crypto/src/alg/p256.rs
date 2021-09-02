@@ -194,7 +194,7 @@ impl KeySign for P256KeyPair {
         out: &mut dyn WriteBuffer,
     ) -> Result<(), Error> {
         match sig_type {
-            None | Some(SignatureType::ES256K) => {
+            None | Some(SignatureType::ES256) => {
                 if let Some(sig) = self.sign(message) {
                     out.buffer_write(&sig[..])?;
                     Ok(())
