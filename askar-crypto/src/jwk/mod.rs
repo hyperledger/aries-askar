@@ -9,12 +9,12 @@ use sha2::Sha256;
 use crate::buffer::SecretBytes;
 use crate::{
     alg::KeyAlg,
-    buffer::{HashBuffer, ResizeBuffer},
+    buffer::{HashBuffer, WriteBuffer},
     error::Error,
 };
 
 mod encode;
-pub use self::encode::{JwkEncoder, JwkEncoderMode};
+pub use self::encode::{JwkBufferEncoder, JwkEncoder, JwkEncoderMode, JwkSerialize};
 
 mod ops;
 pub use self::ops::{KeyOps, KeyOpsSet};
@@ -25,7 +25,7 @@ pub use self::parts::JwkParts;
 /// Support for converting a key into a JWK
 pub trait ToJwk {
     /// Write the JWK representation to an encoder
-    fn encode_jwk(&self, enc: &mut JwkEncoder<'_>) -> Result<(), Error>;
+    fn encode_jwk(&self, enc: &mut dyn JwkEncoder) -> Result<(), Error>;
 
     /// Create the JWK thumbprint of the key
     #[cfg(feature = "alloc")]
@@ -41,7 +41,7 @@ pub trait ToJwk {
     #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
     fn to_jwk_public(&self, alg: Option<KeyAlg>) -> Result<String, Error> {
         let mut v = Vec::with_capacity(128);
-        let mut buf = JwkEncoder::new(alg, &mut v, JwkEncoderMode::PublicKey)?;
+        let mut buf = JwkBufferEncoder::new(&mut v, JwkEncoderMode::PublicKey).alg(alg);
         self.encode_jwk(&mut buf)?;
         buf.finalize()?;
         Ok(String::from_utf8(v).unwrap())
@@ -50,9 +50,9 @@ pub trait ToJwk {
     /// Create a JWK of the secret key
     #[cfg(feature = "alloc")]
     #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
-    fn to_jwk_secret(&self) -> Result<SecretBytes, Error> {
+    fn to_jwk_secret(&self, alg: Option<KeyAlg>) -> Result<SecretBytes, Error> {
         let mut v = SecretBytes::with_capacity(128);
-        let mut buf = JwkEncoder::new(None, &mut v, JwkEncoderMode::SecretKey)?;
+        let mut buf = JwkBufferEncoder::new(&mut v, JwkEncoderMode::SecretKey).alg(alg);
         self.encode_jwk(&mut buf)?;
         buf.finalize()?;
         Ok(v)
@@ -63,14 +63,16 @@ pub trait ToJwk {
 pub fn write_jwk_thumbprint<K: ToJwk + ?Sized>(
     key: &K,
     alg: Option<KeyAlg>,
-    output: &mut dyn ResizeBuffer,
+    output: &mut dyn WriteBuffer,
 ) -> Result<(), Error> {
     let mut hasher = HashBuffer::<Sha256>::new();
-    let mut buf = JwkEncoder::new(alg, &mut hasher, JwkEncoderMode::Thumbprint)?;
+    let mut buf = JwkBufferEncoder::new(&mut hasher, JwkEncoderMode::Thumbprint).alg(alg);
     key.encode_jwk(&mut buf)?;
     buf.finalize()?;
     let hash = hasher.finalize();
-    base64::encode_config_slice(&hash, base64::URL_SAFE_NO_PAD, output.buffer_extend(43)?);
+    let mut buf = [0u8; 43];
+    let len = base64::encode_config_slice(&hash, base64::URL_SAFE_NO_PAD, &mut buf);
+    output.buffer_write(&buf[..len])?;
     Ok(())
 }
 

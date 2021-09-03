@@ -224,7 +224,7 @@ impl KeySigVerify for P256KeyPair {
 }
 
 impl ToJwk for P256KeyPair {
-    fn encode_jwk(&self, enc: &mut JwkEncoder<'_>) -> Result<(), Error> {
+    fn encode_jwk(&self, enc: &mut dyn JwkEncoder) -> Result<(), Error> {
         let pk_enc = EncodedPoint::encode(self.public, false);
         let (x, y) = match pk_enc.coordinates() {
             Coordinates::Identity => {
@@ -340,7 +340,7 @@ mod tests {
         let pk_load = P256KeyPair::from_jwk_parts(jwk).unwrap();
         assert_eq!(sk.to_public_bytes(), pk_load.to_public_bytes());
 
-        let jwk = sk.to_jwk_secret().expect("Error converting key to JWK");
+        let jwk = sk.to_jwk_secret(None).expect("Error converting key to JWK");
         let jwk = JwkParts::from_slice(&jwk).expect("Error parsing JWK");
         assert_eq!(jwk.kty, "EC");
         assert_eq!(jwk.crv, JWK_CURVE);

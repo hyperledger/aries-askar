@@ -3,6 +3,11 @@ use core::{
     ops::{BitAnd, BitOr},
 };
 
+use serde::{
+    de::{Deserialize, Deserializer, SeqAccess, Visitor},
+    ser::{Serialize, SerializeSeq, Serializer},
+};
+
 #[cfg(feature = "arbitrary")]
 use arbitrary::Arbitrary;
 
@@ -195,6 +200,55 @@ impl Iterator for KeyOpsIter {
             }
         }
         None
+    }
+}
+
+struct KeyOpsVisitor;
+
+impl<'de> Visitor<'de> for KeyOpsVisitor {
+    type Value = KeyOpsSet;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("an array of key operations")
+    }
+
+    fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+    where
+        A: SeqAccess<'de>,
+    {
+        let mut ops = KeyOpsSet::new();
+        while let Some(op) = seq.next_element()? {
+            if let Some(op) = KeyOps::from_str(op) {
+                if ops & op {
+                    return Err(serde::de::Error::duplicate_field(op.as_str()));
+                } else {
+                    ops = ops | op;
+                }
+            }
+        }
+        Ok(ops)
+    }
+}
+
+impl<'de> Deserialize<'de> for KeyOpsSet {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        deserializer.deserialize_seq(KeyOpsVisitor)
+    }
+}
+
+impl Serialize for KeyOpsSet {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut seq = serializer.serialize_seq(None)?;
+        for op in self {
+            seq.serialize_element(op.as_str())?;
+        }
+        seq.end()
     }
 }
 

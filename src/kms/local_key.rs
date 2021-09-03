@@ -120,7 +120,7 @@ impl LocalKey {
     }
 
     pub(crate) fn encode(&self) -> Result<SecretBytes, Error> {
-        Ok(self.inner.to_jwk_secret()?)
+        Ok(self.inner.to_jwk_secret(None)?)
     }
 
     /// Accessor for the key algorithm
@@ -135,7 +135,7 @@ impl LocalKey {
 
     /// Get the JWK representation for this private key or keypair
     pub fn to_jwk_secret(&self) -> Result<SecretBytes, Error> {
-        Ok(self.inner.to_jwk_secret()?)
+        Ok(self.inner.to_jwk_secret(None)?)
     }
 
     /// Get the JWK thumbprint for this key or keypair

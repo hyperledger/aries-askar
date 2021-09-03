@@ -121,7 +121,7 @@ impl<T: AesType> FromKeyDerivation for AesKey<T> {
 }
 
 impl<T: AesType> ToJwk for AesKey<T> {
-    fn encode_jwk(&self, enc: &mut JwkEncoder<'_>) -> Result<(), Error> {
+    fn encode_jwk(&self, enc: &mut dyn JwkEncoder) -> Result<(), Error> {
         if enc.is_public() {
             return Err(err_msg!(Unsupported, "Cannot export as a public key"));
         }

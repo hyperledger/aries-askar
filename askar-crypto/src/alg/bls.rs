@@ -145,7 +145,7 @@ where
 }
 
 impl<Pk: BlsPublicKeyType> ToJwk for BlsKeyPair<Pk> {
-    fn encode_jwk(&self, enc: &mut JwkEncoder<'_>) -> Result<(), Error> {
+    fn encode_jwk(&self, enc: &mut dyn JwkEncoder) -> Result<(), Error> {
         enc.add_str("crv", Pk::get_jwk_curve(enc.alg()))?;
         enc.add_str("kty", JWK_KEY_TYPE)?;
         Pk::with_bytes(&self.public, enc.alg(), |buf| enc.add_as_base64("x", buf))?;
@@ -509,7 +509,7 @@ mod tests {
         let pk_load = BlsKeyPair::<G1>::from_jwk_parts(jwk).unwrap();
         assert_eq!(kp.to_public_bytes(), pk_load.to_public_bytes());
 
-        let jwk = kp.to_jwk_secret().expect("Error converting key to JWK");
+        let jwk = kp.to_jwk_secret(None).expect("Error converting key to JWK");
         let jwk = JwkParts::from_slice(&jwk).expect("Error parsing JWK");
         assert_eq!(jwk.kty, "EC");
         assert_eq!(jwk.crv, G1::JWK_CURVE);

@@ -206,7 +206,7 @@ impl<T: Chacha20Type> KeyAeadInPlace for Chacha20Key<T> {
 }
 
 impl<T: Chacha20Type> ToJwk for Chacha20Key<T> {
-    fn encode_jwk(&self, enc: &mut JwkEncoder<'_>) -> Result<(), Error> {
+    fn encode_jwk(&self, enc: &mut dyn JwkEncoder) -> Result<(), Error> {
         if enc.is_public() {
             return Err(err_msg!(Unsupported, "Cannot export as a public key"));
         }
