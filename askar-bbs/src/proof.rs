@@ -3,57 +3,69 @@ use askar_crypto::{
     buffer::WriteBuffer,
 };
 use bls12_381::{pairing, G1Affine, G1Projective, G2Affine, Scalar};
-use group::Curve;
 use rand::{CryptoRng, Rng};
 use subtle::ConstantTimeEq;
 
 use crate::{
+    challenge::{CreateChallenge, ProofChallenge},
     collect::{DefaultSeq, Seq, Vec},
     commitment::Blinding,
     error::Error,
     generators::Generators,
     signature::{Message, Signature},
-    util::{random_nonce, AccumG1, HashScalar, Nonce},
+    util::{random_nonce, AccumG1},
 };
 
 #[cfg(feature = "getrandom")]
 use crate::util::default_rng;
 
-pub type ProofChallenge = Nonce;
-
-pub type ProverMessages<'g, G> = ProverMessagesT<'g, G, DefaultSeq<128>>;
-
 #[derive(Clone, Debug)]
-pub struct ProverMessagesT<'g, G, S>
+pub struct SignatureProver<'g, G, S = DefaultSeq<128>>
 where
     G: Generators,
-    S: Seq<(G1Projective, Scalar, Blinding)>,
+    S: Seq<(Message, Blinding)>,
 {
     accum_b: AccumG1,
+    accum_c2: AccumG1,
     count: usize,
     generators: &'g G,
-    hidden: Vec<(G1Projective, Scalar, Blinding), S>,
+    hidden: Vec<(Message, Blinding), S>,
+    sig: Signature,
 }
 
-impl<'g, G, S> ProverMessagesT<'g, G, S>
+impl<'g, G, S> SignatureProver<'g, G, S>
 where
     G: Generators,
-    S: Seq<(G1Projective, Scalar, Blinding)>,
+    S: Seq<(Message, Blinding)>,
 {
-    pub fn new(generators: &'g G) -> Self {
+    pub fn custom(generators: &'g G, signature: &Signature) -> Self {
         Self {
             accum_b: AccumG1::new_with(G1Projective::generator()),
+            accum_c2: AccumG1::zero(),
             count: 0,
             generators,
             hidden: Vec::new(),
+            sig: *signature,
         }
     }
 }
 
-impl<G, S> ProverMessagesT<'_, G, S>
+impl<'g, G> SignatureProver<'g, G>
 where
     G: Generators,
-    S: Seq<(G1Projective, Scalar, Blinding)>,
+{
+    pub fn new(
+        generators: &'g G,
+        signature: &Signature,
+    ) -> SignatureProver<'g, G, DefaultSeq<128>> {
+        Self::custom(generators, signature)
+    }
+}
+
+impl<G, S> SignatureProver<'_, G, S>
+where
+    G: Generators,
+    S: Seq<(Message, Blinding)>,
 {
     pub fn push_revealed(&mut self, message: Message) -> Result<(), Error> {
         let c = self.count;
@@ -86,34 +98,32 @@ where
             return Err(err_msg!(Usage, "Message index exceeds generator count"));
         }
         let base = self.generators.message(c);
-        self.hidden.push((base, message.0, blinding))?;
-        self.accum_b.push(self.generators.message(c), message.0);
+        self.hidden.push((message, blinding))?;
+        self.accum_b.push(base, message.0);
+        self.accum_c2.push(base, blinding.0);
         self.count = c + 1;
         Ok(())
     }
 
-    fn get_b(&self, s: Scalar) -> Result<G1Projective, Error> {
+    #[cfg(feature = "getrandom")]
+    pub fn prepare(self) -> Result<SignatureProofContext<S>, Error> {
+        self.prepare_with_rng(default_rng())
+    }
+
+    pub fn prepare_with_rng(
+        mut self,
+        mut rng: impl CryptoRng + Rng,
+    ) -> Result<SignatureProofContext<S>, Error> {
         if self.count != self.generators.message_count() {
             return Err(err_msg!(
                 Usage,
                 "Message count does not match generator count"
             ));
         }
-        Ok(self.accum_b.sum_with(self.generators.blinding(), s))
-    }
 
-    #[cfg(feature = "getrandom")]
-    pub fn prepare(&self, signature: &Signature) -> Result<SignatureProofContext<S>, Error> {
-        self.prepare_with_rng(signature, default_rng())
-    }
-
-    pub fn prepare_with_rng(
-        &self,
-        signature: &Signature,
-        mut rng: impl CryptoRng + Rng,
-    ) -> Result<SignatureProofContext<S>, Error> {
-        let Signature { a, e, s } = *signature;
-        let b = self.get_b(s)?;
+        let Signature { a, e, s } = self.sig;
+        self.accum_b.push(self.generators.blinding(), s);
+        let b = self.accum_b.sum();
         let h0 = self.generators.blinding();
         let r1 = random_nonce(&mut rng);
         let r2 = random_nonce(&mut rng);
@@ -130,23 +140,22 @@ where
         let s_prime = s - r2 * r3;
 
         let c1 = AccumG1::calc(&[(a_prime, e_rand), (h0, r2_rand)]);
-        let mut c2_accum = AccumG1::from(&[(d, r3_rand), (h0, s_rand)][..]);
+        self.accum_c2.append(&[(d, r3_rand), (h0, s_rand)][..]);
 
-        for (base, _msg, blinding) in self.hidden.iter() {
-            c2_accum.push(*base, blinding.0);
-        }
-
-        let mut cvals = [G1Affine::identity(); 5];
-        G1Projective::batch_normalize(&[a_prime, a_bar, d, c1, c2_accum.sum()], &mut cvals[..]);
+        let mut affine = [G1Affine::identity(); 5];
+        G1Projective::batch_normalize(
+            &[a_prime, a_bar, d, c1, self.accum_c2.sum()],
+            &mut affine[..],
+        );
 
         Ok(SignatureProofContext {
-            cvals: ChallengeValues {
-                a_prime: cvals[0],
-                a_bar: cvals[1],
-                d: cvals[2],
-                c1: cvals[3],
-                c2: cvals[4],
+            params: ProofPublicParams {
+                a_prime: affine[0],
+                a_bar: affine[1],
+                d: affine[2],
             },
+            c1: affine[3],
+            c2: affine[4],
             e,
             e_rand,
             r2,
@@ -155,8 +164,7 @@ where
             r3_rand,
             s_prime,
             s_rand,
-            h0,
-            hidden: self.hidden.clone(),
+            hidden: self.hidden,
         })
     }
 }
@@ -164,10 +172,11 @@ where
 #[derive(Clone, Debug)]
 pub struct SignatureProofContext<S>
 where
-    // TODO base G1Projective only used in challenge, currently
-    S: Seq<(G1Projective, Scalar, Blinding)>,
+    S: Seq<(Message, Blinding)>,
 {
-    cvals: ChallengeValues,
+    params: ProofPublicParams,
+    c1: G1Affine,
+    c2: G1Affine,
     e: Scalar,
     e_rand: Scalar,
     r2: Scalar,
@@ -176,23 +185,22 @@ where
     r3_rand: Scalar,
     s_prime: Scalar,
     s_rand: Scalar,
-    h0: G1Projective, // TODO h0 only used in challenge, currently
-    hidden: Vec<(G1Projective, Scalar, Blinding), S>,
+    hidden: Vec<(Message, Blinding), S>,
 }
 
 impl<S> SignatureProofContext<S>
 where
-    S: Seq<(G1Projective, Scalar, Blinding)>,
+    S: Seq<(Message, Blinding)>,
     S: Seq<Scalar>,
 {
     pub fn complete(&self, challenge: ProofChallenge) -> Result<SignatureProof<S>, Error> {
         let c = challenge.0;
         let mut hidden_resp = Vec::with_capacity(self.hidden.len());
-        for (_base, msg, m_rand) in self.hidden.iter() {
-            hidden_resp.push(m_rand.0 - c * msg)?;
+        for (msg, m_rand) in self.hidden.iter() {
+            hidden_resp.push(m_rand.0 - c * msg.0)?;
         }
         Ok(SignatureProof {
-            cvals: self.cvals,
+            params: self.params,
             e_resp: self.e_rand + c * self.e,
             r2_resp: self.r2_rand - c * self.r2,
             r3_resp: self.r3_rand + c * self.r3,
@@ -200,56 +208,40 @@ where
             hidden_resp,
         })
     }
+}
 
-    pub fn create_challenge(&self, nonce: Nonce) -> ProofChallenge {
-        let mut c_hash = HashScalar::new();
-        self.write_challenge_bytes(&mut c_hash).unwrap();
-        c_hash.update(&nonce.0.to_bytes());
-        Nonce(c_hash.finalize())
-    }
-
-    pub fn write_challenge_bytes<W>(&self, writer: &mut W) -> Result<(), askar_crypto::Error>
-    where
-        W: WriteBuffer,
-    {
-        self.cvals.write_challenge_bytes(
-            self.h0,
-            self.hidden.iter().map(|(base, _, _)| *base),
-            writer,
-        )
+impl<S> CreateChallenge for SignatureProofContext<S>
+where
+    S: Seq<(Message, Blinding)>,
+{
+    fn write_challenge_bytes(
+        &self,
+        writer: &mut dyn WriteBuffer,
+    ) -> Result<(), askar_crypto::Error> {
+        self.params
+            .write_challenge_bytes(&self.c1, &self.c2, writer)
     }
 }
 
 #[derive(Clone, Copy, Debug)]
-struct ChallengeValues {
+struct ProofPublicParams {
     a_prime: G1Affine,
     a_bar: G1Affine,
     d: G1Affine,
-    c1: G1Affine,
-    c2: G1Affine,
 }
 
-impl ChallengeValues {
-    pub fn write_challenge_bytes<W, H>(
+impl ProofPublicParams {
+    pub fn write_challenge_bytes(
         &self,
-        h0: G1Projective,
-        hi: H,
-        writer: &mut W,
-    ) -> Result<(), askar_crypto::Error>
-    where
-        W: WriteBuffer,
-        H: IntoIterator<Item = G1Projective>,
-    {
+        c1: &G1Affine,
+        c2: &G1Affine,
+        writer: &mut dyn WriteBuffer,
+    ) -> Result<(), askar_crypto::Error> {
         writer.buffer_write(&self.a_bar.to_uncompressed())?;
         writer.buffer_write(&self.a_prime.to_uncompressed())?;
-        writer.buffer_write(&h0.to_affine().to_uncompressed())?;
-        writer.buffer_write(&self.c1.to_uncompressed())?;
         writer.buffer_write(&self.d.to_uncompressed())?;
-        writer.buffer_write(&h0.to_affine().to_uncompressed())?;
-        for h in hi {
-            writer.buffer_write(&h.to_affine().to_uncompressed())?;
-        }
-        writer.buffer_write(&self.c2.to_uncompressed())?;
+        writer.buffer_write(&c1.to_uncompressed())?;
+        writer.buffer_write(&c2.to_uncompressed())?;
         Ok(())
     }
 }
@@ -259,7 +251,7 @@ pub struct SignatureProof<S>
 where
     S: Seq<Scalar>,
 {
-    cvals: ChallengeValues,
+    params: ProofPublicParams,
     e_resp: Scalar,
     r2_resp: Scalar,
     r3_resp: Scalar,
@@ -271,141 +263,85 @@ impl<S> SignatureProof<S>
 where
     S: Seq<Scalar>,
 {
-    pub fn verify<G, V>(
-        &self,
-        keypair: &BlsKeyPair<G2>,
-        messages: &VerifierMessagesT<G, V>,
+    pub fn verifier<'v, G>(
+        &'v self,
+        generators: &'v G,
         challenge: ProofChallenge,
-    ) -> Result<bool, Error>
+    ) -> Result<SignatureProofVerifier<'v, G, S>, Error>
     where
         G: Generators,
-        V: Seq<G1Projective>,
     {
-        if messages.hidden.len() != self.hidden_resp.len() {
-            return Err(err_msg!(
-                InvalidProof,
-                "Number of hidden messages does not correspond with responses"
-            ));
-        }
+        SignatureProofVerifier::new(generators, self, challenge)
+    }
+}
 
-        let ChallengeValues {
-            a_prime,
-            a_bar,
-            d,
-            c1,
-            c2,
-        } = self.cvals;
+pub struct SignatureProofVerifier<'v, G, S>
+where
+    G: Generators,
+    S: Seq<Scalar>,
+{
+    generators: &'v G,
+    proof: &'v SignatureProof<S>,
+    challenge: Scalar,
+    c1: G1Projective,
+    accum_c2: AccumG1,
+    hidden_count: usize,
+    message_count: usize,
+}
 
-        let h0 = messages.generators.blinding();
-        let check_c1 = AccumG1::calc(&[
-            (a_prime.into(), self.e_resp),
-            (h0, self.r2_resp),
-            (G1Projective::from(a_bar) - d, challenge.0),
+impl<'v, G, S> SignatureProofVerifier<'v, G, S>
+where
+    G: Generators,
+    S: Seq<Scalar>,
+{
+    pub(crate) fn new(
+        generators: &'v G,
+        proof: &'v SignatureProof<S>,
+        challenge: ProofChallenge,
+    ) -> Result<Self, Error> {
+        let ProofPublicParams { a_prime, a_bar, d } = proof.params;
+        let challenge = challenge.0;
+        let neg_c = -challenge;
+
+        let h0 = generators.blinding();
+        let c1 = AccumG1::calc(&[
+            (a_prime.into(), proof.e_resp),
+            (h0, proof.r2_resp),
+            (G1Projective::from(a_bar) - d, challenge),
         ]);
-
-        let mut c2_accum = AccumG1::from(
+        let accum_c2 = AccumG1::from(
             &[
-                (d.into(), self.r3_resp),
-                (h0, self.s_resp),
-                (messages.accum_reveal()?, -challenge.0),
+                (d.into(), proof.r3_resp),
+                (h0, proof.s_resp),
+                (G1Projective::generator(), neg_c),
             ][..],
         );
-        for (base, resp) in messages
-            .hidden
-            .iter()
-            .copied()
-            .zip(self.hidden_resp.iter().copied())
-        {
-            c2_accum.push(base, resp);
-        }
 
-        let mut checks = [G1Affine::identity(); 2];
-        G1Projective::batch_normalize(&[check_c1, c2_accum.sum()], &mut checks[..]);
-
-        let check_pair = pairing(&a_prime, keypair.bls_public_key())
-            .ct_eq(&pairing(&a_bar, &G2Affine::generator()));
-
-        Ok(
-            (!a_prime.is_identity() & checks[0].ct_eq(&c1) & checks[1].ct_eq(&c2) & check_pair)
-                .into(),
-        )
-    }
-
-    pub fn create_challenge<G, V>(
-        &self,
-        messages: &VerifierMessagesT<G, V>,
-        nonce: Nonce,
-    ) -> ProofChallenge
-    where
-        G: Generators,
-        V: Seq<G1Projective>,
-    {
-        let mut c_hash = HashScalar::new();
-        self.write_challenge_bytes(messages, &mut c_hash).unwrap();
-        c_hash.update(&nonce.0.to_bytes());
-        Nonce(c_hash.finalize())
-    }
-
-    pub fn write_challenge_bytes<G, W, V>(
-        &self,
-        messages: &VerifierMessagesT<G, V>,
-        writer: &mut W,
-    ) -> Result<(), askar_crypto::Error>
-    where
-        G: Generators,
-        W: WriteBuffer,
-        V: Seq<G1Projective>,
-    {
-        self.cvals.write_challenge_bytes(
-            messages.generators.blinding(),
-            messages.hidden.iter().copied(),
-            writer,
-        )
-    }
-}
-
-pub type VerifierMessages<'g, G> = VerifierMessagesT<'g, G, DefaultSeq<128>>;
-
-#[derive(Clone, Debug)]
-pub struct VerifierMessagesT<'g, G, S>
-where
-    G: Generators,
-    S: Seq<G1Projective>,
-{
-    accum_reveal: AccumG1,
-    count: usize,
-    generators: &'g G,
-    hidden: Vec<G1Projective, S>,
-}
-
-impl<'g, G, S> VerifierMessagesT<'g, G, S>
-where
-    G: Generators,
-    S: Seq<G1Projective>,
-{
-    pub fn new(generators: &'g G) -> Self {
-        Self {
-            accum_reveal: AccumG1::new_with(G1Projective::generator()),
-            count: 0,
+        Ok(Self {
+            challenge: neg_c, // negate early for multiplying
             generators,
-            hidden: Vec::new(),
-        }
+            proof,
+            c1,
+            accum_c2,
+            hidden_count: 0,
+            message_count: 0,
+        })
     }
 }
 
-impl<G, S> VerifierMessagesT<'_, G, S>
+impl<G, S> SignatureProofVerifier<'_, G, S>
 where
     G: Generators,
-    S: Seq<G1Projective>,
+    S: Seq<Scalar>,
 {
     pub fn push_revealed(&mut self, message: Message) -> Result<(), Error> {
-        let c = self.count;
+        let c = self.message_count;
         if c >= self.generators.message_count() {
             return Err(err_msg!(Usage, "Message index exceeds generator count"));
         }
-        self.accum_reveal
-            .push(self.generators.message(c), message.0);
-        self.count = c + 1;
+        self.accum_c2
+            .push(self.generators.message(c), message.0 * self.challenge);
+        self.message_count = c + 1;
         Ok(())
     }
 
@@ -420,24 +356,64 @@ where
     }
 
     pub fn push_hidden_count(&mut self, count: usize) -> Result<(), Error> {
-        let c = self.count + count;
-        if c >= self.generators.message_count() {
+        let c = self.message_count + count;
+        if c > self.generators.message_count() {
             return Err(err_msg!(Usage, "Message index exceeds generator count"));
         }
-        for index in self.count..c {
-            self.hidden.push(self.generators.message(index))?;
+        if self.hidden_count + c > self.proof.hidden_resp.len() {
+            return Err(err_msg!(
+                Usage,
+                "Hidden message count exceeded response count"
+            ));
         }
-        self.count = c;
+        for index in self.message_count..c {
+            self.accum_c2.push(
+                self.generators.message(index),
+                self.proof.hidden_resp[self.hidden_count],
+            );
+            self.hidden_count += 1;
+        }
+        self.message_count = c;
         Ok(())
     }
 
-    pub(crate) fn accum_reveal(&self) -> Result<G1Projective, Error> {
-        if self.count != self.generators.message_count() {
+    pub fn verify(&self, keypair: &BlsKeyPair<G2>) -> Result<bool, Error> {
+        // NOTE: MUST verify the Fiat-Shamir challenge value as well
+
+        if self.message_count != self.generators.message_count() {
             return Err(err_msg!(
-                Usage,
-                "Message count does not match generator count"
+                InvalidProof,
+                "Number of messages does not correspond with generators"
             ));
         }
-        Ok(self.accum_reveal.sum())
+        if self.hidden_count != self.proof.hidden_resp.len() {
+            return Err(err_msg!(
+                InvalidProof,
+                "Number of hidden messages does not correspond with responses"
+            ));
+        }
+
+        let ProofPublicParams { a_prime, a_bar, .. } = self.proof.params;
+        let check_pair = pairing(&a_prime, keypair.bls_public_key())
+            .ct_eq(&pairing(&a_bar, &G2Affine::generator()));
+
+        Ok((!a_prime.is_identity() & check_pair).into())
+    }
+}
+
+impl<G, S> CreateChallenge for SignatureProofVerifier<'_, G, S>
+where
+    G: Generators,
+    S: Seq<Scalar>,
+{
+    fn write_challenge_bytes(
+        &self,
+        writer: &mut dyn WriteBuffer,
+    ) -> Result<(), askar_crypto::Error> {
+        let mut checks = [G1Affine::identity(); 2];
+        G1Projective::batch_normalize(&[self.c1, self.accum_c2.sum()], &mut checks[..]);
+        self.proof
+            .params
+            .write_challenge_bytes(&checks[0], &checks[1], writer)
     }
 }

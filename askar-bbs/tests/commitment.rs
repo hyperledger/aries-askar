@@ -1,5 +1,5 @@
 #[cfg(feature = "getrandom")]
-use askar_bbs::{Blinding, Commitment, DynGeneratorsV1, Message, Nonce, SignatureMessages};
+use askar_bbs::{CommitmentBuilder, DynGeneratorsV1, Message, Nonce, SignatureMessages};
 
 #[cfg(feature = "getrandom")]
 use askar_crypto::{
@@ -10,55 +10,41 @@ use askar_crypto::{
 #[cfg(feature = "getrandom")]
 use rand::rngs::OsRng;
 
-#[cfg(feature = "alloc")]
-use askar_bbs::CommittedMessages;
-
-#[cfg(all(feature = "alloc", feature = "getrandom"))]
+#[cfg(all(feature = "getrandom"))]
 #[test]
 fn test_commitment_verify() {
     let keypair = BlsKeyPair::<G2>::generate(OsRng).unwrap();
-    let gens = DynGeneratorsV1::new(&keypair, 1);
+    let gens = DynGeneratorsV1::new(&keypair, 5);
     let nonce = Nonce::new();
     let commit_messages = [(0, Message::hash(b"hello"))];
-    let mut committer = CommittedMessages::new(&gens);
+    let mut committer = CommitmentBuilder::new(&gens);
     for (index, message) in commit_messages.iter().copied() {
-        committer.insert(index, message).unwrap();
+        committer.commit(index, message).unwrap();
     }
-    let (_blinding, commitment, proof) =
-        committer.commit(nonce).expect("Error creating commitment");
-    commitment
-        .verify_proof(&[0], &gens, &proof, nonce)
+    let (challenge, _blinding, commitment, proof) = committer
+        .complete(nonce)
+        .expect("Error completing commitment");
+    proof
+        .verify(&gens, commitment, [0].iter().cloned(), challenge, nonce)
         .expect("Error verifying commitment");
 }
 
-#[cfg(feature = "getrandom")]
-#[test]
-fn test_commitment_verify_no_alloc() {
-    let keypair = BlsKeyPair::<G2>::generate(OsRng).unwrap();
-    let gens = DynGeneratorsV1::new(&keypair, 1);
-    let nonce = Nonce::new();
-    let commit_messages = [(0, Message::hash(b"hello"), Blinding::new())];
-    let (_blind, commitment, proof) =
-        Commitment::commit(&gens, &commit_messages, nonce).expect("Error creating commitment");
-    commitment
-        .verify_proof(&[0], &gens, &proof, nonce)
-        .expect("Error verifying commitment");
-}
-
-#[cfg(all(feature = "alloc", feature = "getrandom"))]
+#[cfg(all(feature = "getrandom"))]
 #[test]
 fn test_blind_signature() {
     let keypair = BlsKeyPair::<G2>::generate(OsRng).unwrap();
     let gens = DynGeneratorsV1::new(&keypair, 2);
     let nonce = Nonce::new();
     let commit_messages = [(0, Message::hash(b"hello"))];
-    let mut committer = CommittedMessages::new(&gens);
+    let mut committer = CommitmentBuilder::new(&gens);
     for (index, message) in commit_messages.iter().copied() {
-        committer.insert(index, message).unwrap();
+        committer.commit(index, message).unwrap();
     }
-    let (blinding, commitment, proof) = committer.commit(nonce).expect("Error creating commitment");
-    commitment
-        .verify_proof(&[0], &gens, &proof, nonce)
+    let (challenge, blinding, commitment, proof) = committer
+        .complete(nonce)
+        .expect("Error completing commitment");
+    proof
+        .verify(&gens, commitment, [0].iter().cloned(), challenge, nonce)
         .expect("Error verifying commitment");
 
     let sign_messages = [Message::hash(b"world")];

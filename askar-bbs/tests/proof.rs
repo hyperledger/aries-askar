@@ -2,7 +2,7 @@
 #[test]
 fn prove_single_signature_hidden_message() {
     use askar_bbs::{
-        DynGeneratorsV1, Message, Nonce, ProverMessages, SignatureMessages, VerifierMessages,
+        CreateChallenge, DynGeneratorsV1, Message, Nonce, SignatureMessages, SignatureProver,
     };
     use askar_crypto::{
         alg::bls::{BlsKeyPair, G2},
@@ -24,19 +24,19 @@ fn prove_single_signature_hidden_message() {
     let verify = builder.verify_signature(&keypair, &sig).unwrap();
     assert!(verify);
 
-    let mut prover = ProverMessages::new(&gens);
+    let mut prover = SignatureProver::new(&gens, &sig);
     prover.push_hidden(messages[0]).unwrap();
     prover.push_revealed(messages[1]).unwrap();
-    let prepare = prover.prepare(&sig).unwrap();
+    let prepare = prover.prepare().unwrap();
     let nonce = Nonce::new();
     let challenge = prepare.create_challenge(nonce);
     let proof = prepare.complete(challenge).unwrap();
 
-    let mut check_msgs = VerifierMessages::new(&gens);
-    check_msgs.push_hidden_count(1).unwrap();
-    check_msgs.push_revealed(messages[1]).unwrap();
-    let challenge_v = proof.create_challenge(&check_msgs, nonce);
-    assert_eq!(challenge, challenge_v);
-    let verify = proof.verify(&keypair, &check_msgs, challenge_v).unwrap();
+    let mut verifier = proof.verifier(&gens, challenge).unwrap();
+    verifier.push_hidden_count(1).unwrap();
+    verifier.push_revealed(messages[1]).unwrap();
+    let challenge_v = verifier.create_challenge(nonce);
+    let verify = verifier.verify(&keypair).unwrap();
     assert!(verify);
+    assert_eq!(challenge, challenge_v);
 }

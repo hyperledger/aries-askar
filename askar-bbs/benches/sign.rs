@@ -2,8 +2,8 @@
 extern crate criterion;
 
 use askar_bbs::{
-    CommittedMessages, DynGeneratorsV1, Message, Nonce, ProverMessages, SignatureMessages,
-    VerifierMessages,
+    CommitmentBuilder, CreateChallenge, DynGeneratorsV1, Message, Nonce, SignatureMessages,
+    SignatureProver,
 };
 use askar_crypto::{
     alg::bls::{BlsKeyPair, G2},
@@ -33,9 +33,10 @@ fn criterion_benchmark(c: &mut Criterion) {
         if message_count == 5 {
             c.bench_function(&format!("create commitment"), |b| {
                 b.iter(|| {
-                    let mut committer = CommittedMessages::new(&gens);
-                    committer.insert(0, Message::from(0)).unwrap();
-                    let (_blind, _commit, _proof) = committer.commit(Nonce::new()).unwrap();
+                    let mut committer = CommitmentBuilder::new(&gens);
+                    committer.commit(0, Message::from(0)).unwrap();
+                    let (_challenge, _blind, _commit, _proof) =
+                        committer.complete(Nonce::new()).unwrap();
                 });
             });
         }
@@ -67,7 +68,7 @@ fn criterion_benchmark(c: &mut Criterion) {
             &format!("create signature pok for {} messages", message_count),
             |b| {
                 b.iter(|| {
-                    let mut prover = ProverMessages::new(&gens);
+                    let mut prover = SignatureProver::new(&gens, &sig);
                     let hidden_count = message_count / 2;
                     for (index, msg) in messages.iter().enumerate() {
                         if index < hidden_count {
@@ -76,14 +77,14 @@ fn criterion_benchmark(c: &mut Criterion) {
                             prover.push_revealed(*msg).unwrap();
                         }
                     }
-                    let ctx = prover.prepare(&sig).unwrap();
+                    let ctx = prover.prepare().unwrap();
                     let challenge = ctx.create_challenge(nonce);
                     let _proof = ctx.complete(challenge).unwrap();
                 });
             },
         );
 
-        let mut prover = ProverMessages::new(&gens);
+        let mut prover = SignatureProver::new(&gens, &sig);
         let hidden_count = message_count / 2;
         for (index, msg) in messages.iter().enumerate() {
             if index < hidden_count {
@@ -92,20 +93,21 @@ fn criterion_benchmark(c: &mut Criterion) {
                 prover.push_revealed(*msg).unwrap();
             }
         }
-        let ctx = prover.prepare(&sig).unwrap();
+        let ctx = prover.prepare().unwrap();
         let challenge = ctx.create_challenge(nonce);
         let proof = ctx.complete(challenge).unwrap();
         c.bench_function(
             &format!("verify signature pok for {} messages", message_count),
             |b| {
                 b.iter(|| {
-                    let mut verify = VerifierMessages::new(&gens);
-                    verify.push_hidden_count(hidden_count).unwrap();
+                    let mut verifier = proof.verifier(&gens, challenge).unwrap();
+                    verifier.push_hidden_count(hidden_count).unwrap();
                     for index in hidden_count..messages.len() {
-                        verify.push_revealed(messages[index]).unwrap();
+                        verifier.push_revealed(messages[index]).unwrap();
                     }
-                    let challenge = proof.create_challenge(&verify, nonce);
-                    let check = proof.verify(&keypair, &verify, challenge).unwrap();
+                    let v_challenge = verifier.create_challenge(nonce);
+                    assert_eq!(challenge, v_challenge);
+                    let check = verifier.verify(&keypair).unwrap();
                     assert!(check);
                 });
             },
