@@ -195,7 +195,7 @@ impl<G: Generators> SignatureMessages<'_, G> {
         let sk = signer_key
             .bls_secret_scalar()
             .ok_or_else(|| err_msg!(MissingSecretKey))?;
-        if sk.is_zero() {
+        if sk.is_zero().into() {
             return Err(err_msg!(MissingSecretKey));
         }
         if self.count != self.generators.message_count() {

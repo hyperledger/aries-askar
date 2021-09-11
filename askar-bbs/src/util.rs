@@ -25,7 +25,7 @@ pub fn random_nonce<R: CryptoRng + Rng>(mut rng: R) -> Scalar {
     let mut r;
     loop {
         r = Scalar::random(&mut rng);
-        if !r.is_zero() {
+        if r.is_zero().unwrap_u8() == 0 {
             break r;
         }
     }
