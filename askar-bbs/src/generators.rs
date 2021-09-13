@@ -29,8 +29,8 @@ pub trait Generators: Clone + Debug {
 
     fn generator(&self, index: usize) -> G1Projective;
 
-    fn iter(&self) -> GeneratorsIter<'_, Self> {
-        GeneratorsIter {
+    fn iter(&self) -> GeneratorsRefIter<'_, Self> {
+        GeneratorsRefIter {
             index: 0,
             count: self.message_count() + 1,
             gens: self,
@@ -38,13 +38,13 @@ pub trait Generators: Clone + Debug {
     }
 }
 
-pub struct GeneratorsIter<'g, G: Generators> {
+pub struct GeneratorsRefIter<'g, G: Generators> {
     index: usize,
     count: usize,
     gens: &'g G,
 }
 
-impl<G: Generators> Iterator for GeneratorsIter<'_, G> {
+impl<G: Generators> Iterator for GeneratorsRefIter<'_, G> {
     type Item = G1Projective;
 
     fn size_hint(&self) -> (usize, Option<usize>) {
@@ -63,7 +63,7 @@ impl<G: Generators> Iterator for GeneratorsIter<'_, G> {
     }
 }
 
-impl<G: Generators> ExactSizeIterator for GeneratorsIter<'_, G> {}
+impl<G: Generators> ExactSizeIterator for GeneratorsRefIter<'_, G> {}
 
 pub type VecGenerators = GeneratorsSeq<DefaultSeq<128>>;
 

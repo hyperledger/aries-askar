@@ -1,5 +1,5 @@
 #[test]
-fn sign_expected() {
+fn sign_verify_expected() {
     use askar_bbs::{DynGenerators, Message, SignatureMessages};
     use askar_crypto::{
         alg::bls::{BlsKeyPair, G2},
@@ -18,6 +18,7 @@ fn sign_expected() {
         .append(messages.iter().copied())
         .expect("Error building signature");
     let sig = builder.sign().expect("Error creating signature");
-    let verify = builder.verify_signature(&sig).unwrap();
-    assert!(verify);
+    builder
+        .verify_signature(&sig)
+        .expect("Error verifying signature");
 }

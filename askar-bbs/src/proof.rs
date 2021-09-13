@@ -377,7 +377,7 @@ where
         Ok(())
     }
 
-    pub fn verify(&self, keypair: &BlsKeyPair<G2>) -> Result<bool, Error> {
+    pub fn verify(&self, keypair: &BlsKeyPair<G2>) -> Result<(), Error> {
         // NOTE: MUST verify the Fiat-Shamir challenge value as well
 
         if self.message_count != self.generators.message_count() {
@@ -397,7 +397,12 @@ where
         let check_pair = pairing(&a_prime, keypair.bls_public_key())
             .ct_eq(&pairing(&a_bar, &G2Affine::generator()));
 
-        Ok((!a_prime.is_identity() & check_pair).into())
+        let verify: bool = (!a_prime.is_identity() & check_pair).into();
+        if verify {
+            Ok(())
+        } else {
+            Err(err_msg!(InvalidProof))
+        }
     }
 }
 

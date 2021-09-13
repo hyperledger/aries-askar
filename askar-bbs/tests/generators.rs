@@ -7,7 +7,7 @@ use bls12_381::G1Projective;
 use hex_literal::hex;
 
 #[test]
-fn dyn_generators_v1_expected() {
+fn dyn_generators_expected() {
     let keypair = BlsKeyPair::<G2>::from_secret_bytes(&hex!(
         "0011223344556677889900112233445566778899001122334455667788990011"
     ))

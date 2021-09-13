@@ -12,13 +12,15 @@ pub use error::{Error, ErrorKind};
 mod challenge;
 pub use challenge::{CreateChallenge, ProofChallenge};
 
-mod collect;
+pub mod collect;
 
 mod commitment;
 pub use commitment::{Blinding, Commitment, CommitmentBuilder, CommitmentProof};
 
 mod generators;
-pub use generators::{DynGenerators, Generators, VecGenerators};
+pub use generators::{DynGenerators, Generators, GeneratorsSeq, VecGenerators};
+
+pub mod hash;
 
 mod proof;
 pub use proof::{SignatureProof, SignatureProofContext, SignatureProofVerifier, SignatureProver};

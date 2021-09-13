@@ -7,11 +7,11 @@ use group::Curve;
 use subtle::ConstantTimeEq;
 
 use crate::{
-    commitment::Commitment,
+    commitment::{Blinding, Commitment},
     error::Error,
     generators::Generators,
-    util::{AccumG1, HashScalar},
-    Blinding,
+    hash::HashScalar,
+    util::AccumG1,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -206,7 +206,7 @@ impl<G: Generators> SignatureMessages<'_, G> {
         Ok(Signature { a, e, s })
     }
 
-    pub fn verify_signature(&self, signature: &Signature) -> Result<bool, Error> {
+    pub fn verify_signature(&self, signature: &Signature) -> Result<(), Error> {
         if self.count != self.generators.message_count() {
             return Err(err_msg!(
                 Usage,
@@ -216,11 +216,16 @@ impl<G: Generators> SignatureMessages<'_, G> {
         let b = self
             .accum_b
             .sum_with(self.generators.blinding(), signature.s);
-        Ok(pairing(
+        let valid: bool = pairing(
             &signature.a,
             &(G2Projective::generator() * signature.e + self.key.bls_public_key()).to_affine(),
         )
         .ct_eq(&pairing(&b.to_affine(), &G2Affine::generator()))
-        .into())
+        .into();
+        if valid {
+            Ok(())
+        } else {
+            Err(err_msg!(InvalidSignature))
+        }
     }
 }

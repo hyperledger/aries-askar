@@ -18,7 +18,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 default = ["alloc", "getrandom"]
 alloc = []
 std = ["alloc", "rand/std", "sha3/std"]
-getrandom = ["rand/getrandom"]
+getrandom = ["askar-crypto/getrandom", "rand/getrandom"]
 
 [dependencies]
 askar-crypto = { version = "0.2.1", default-features = false, features = ["bls"], path = "../askar-crypto" }
@@ -37,7 +37,22 @@ criterion = "0.3"
 hex-literal = "0.3"
 serde-json-core = { version = "0.4", default-features = false, features = ["std"] }
 
+
 [[bench]]
-name = "sign"
+name = "blind_sign"
+harness = false
+required-features = ["getrandom"]
+
+[[bench]]
+name = "generators"
+harness = false
+
+[[bench]]
+name = "proof"
+harness = false
+required-features = ["getrandom"]
+
+[[bench]]
+name = "signature"
 harness = false
 required-features = ["getrandom"]

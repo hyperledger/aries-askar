@@ -1,3 +1,4 @@
+#[cfg(feature = "getrandom")]
 #[test]
 fn prove_single_signature_hidden_message() {
     use askar_bbs::{
@@ -20,8 +21,9 @@ fn prove_single_signature_hidden_message() {
         .append(messages.iter().copied())
         .expect("Error building signature");
     let sig = builder.sign().expect("Error creating signature");
-    let verify = builder.verify_signature(&sig).unwrap();
-    assert!(verify);
+    builder
+        .verify_signature(&sig)
+        .expect("Error verifying signature");
 
     let mut prover = SignatureProver::new(&gens, &sig);
     prover.push_hidden(messages[0]).unwrap();
@@ -35,7 +37,8 @@ fn prove_single_signature_hidden_message() {
     verifier.push_hidden_count(1).unwrap();
     verifier.push_revealed(messages[1]).unwrap();
     let challenge_v = verifier.create_challenge(nonce);
-    let verify = verifier.verify(&keypair).unwrap();
-    assert!(verify);
+    verifier
+        .verify(&keypair)
+        .expect("Error verifying signature PoK");
     assert_eq!(challenge, challenge_v);
 }

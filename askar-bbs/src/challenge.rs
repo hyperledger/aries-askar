@@ -1,6 +1,6 @@
 use askar_crypto::buffer::WriteBuffer;
 
-use crate::util::{HashScalar, Nonce};
+use crate::{hash::HashScalar, util::Nonce};
 
 pub type ProofChallenge = Nonce;
 

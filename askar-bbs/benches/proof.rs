@@ -2,8 +2,7 @@
 extern crate criterion;
 
 use askar_bbs::{
-    CommitmentBuilder, CreateChallenge, DynGenerators, Message, Nonce, SignatureMessages,
-    SignatureProver,
+    CreateChallenge, DynGenerators, Message, Nonce, SignatureMessages, SignatureProver,
 };
 use askar_crypto::{
     alg::bls::{BlsKeyPair, G2},
@@ -17,53 +16,19 @@ fn criterion_benchmark(c: &mut Criterion) {
     let keypair = BlsKeyPair::<G2>::generate(OsRng).unwrap();
 
     for message_count in vec![5, 25, 125] {
-        c.bench_function(&format!("keygen for {} messages", message_count), |b| {
-            b.iter(|| {
-                DynGenerators::new(&keypair, message_count)
-                    .to_vec()
-                    .unwrap()
-            });
-        });
-
         let gens = DynGenerators::new(&keypair, message_count)
             .to_vec()
             .unwrap();
 
-        // FIXME move to separate blind signature benchmarks
-        if message_count == 5 {
-            c.bench_function(&format!("create commitment"), |b| {
-                b.iter(|| {
-                    let mut committer = CommitmentBuilder::new(&gens);
-                    committer.commit(0, Message::from(0)).unwrap();
-                    let (_challenge, _blind, _commit, _proof) =
-                        committer.complete(Nonce::new()).unwrap();
-                });
-            });
-        }
-
         let messages: Vec<Message> = (0..message_count)
             .map(|_| Message::from(OsRng.next_u64()))
             .collect();
-        c.bench_function(&format!("sign for {} messages", message_count), |b| {
-            b.iter(|| {
-                let mut signer = SignatureMessages::signer(&gens, &keypair);
-                signer.append(messages.iter().copied()).unwrap();
-                signer.sign().unwrap();
-            });
-        });
 
         let mut signer = SignatureMessages::signer(&gens, &keypair);
         signer.append(messages.iter().copied()).unwrap();
         let sig = signer.sign().unwrap();
-        c.bench_function(&format!("verify for {} messages", message_count), |b| {
-            b.iter(|| {
-                let mut verify = SignatureMessages::verifier(&gens, &keypair);
-                verify.append(messages.iter().copied()).unwrap();
-                assert!(verify.verify_signature(&sig).unwrap());
-            });
-        });
-
         let nonce = Nonce::new();
+
         c.bench_function(
             &format!("create signature pok for {} messages", message_count),
             |b| {
@@ -106,9 +71,8 @@ fn criterion_benchmark(c: &mut Criterion) {
                         verifier.push_revealed(messages[index]).unwrap();
                     }
                     let v_challenge = verifier.create_challenge(nonce);
+                    verifier.verify(&keypair).unwrap();
                     assert_eq!(challenge, v_challenge);
-                    let check = verifier.verify(&keypair).unwrap();
-                    assert!(check);
                 });
             },
         );

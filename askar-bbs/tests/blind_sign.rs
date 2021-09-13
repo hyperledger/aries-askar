@@ -1,16 +1,16 @@
+#[cfg(feature = "getrandom")]
 use askar_bbs::{CommitmentBuilder, DynGenerators, Message, Nonce, SignatureMessages};
+
+#[cfg(feature = "getrandom")]
 use askar_crypto::{
     alg::bls::{BlsKeyPair, G2},
-    repr::KeySecretBytes,
+    repr::KeyGen,
 };
-use hex_literal::hex;
 
+#[cfg(feature = "getrandom")]
 #[test]
 fn test_commitment_verify() {
-    let keypair = BlsKeyPair::<G2>::from_secret_bytes(&hex!(
-        "0011223344556677889900112233445566778899001122334455667788990011"
-    ))
-    .unwrap();
+    let keypair = BlsKeyPair::<G2>::random().unwrap();
     let gens = DynGenerators::new(&keypair, 5);
     let nonce = Nonce::new();
     let commit_messages = [(0, Message::hash(b"hello"))];
@@ -26,12 +26,10 @@ fn test_commitment_verify() {
         .expect("Error verifying commitment");
 }
 
+#[cfg(feature = "getrandom")]
 #[test]
 fn test_blind_signature() {
-    let keypair = BlsKeyPair::<G2>::from_secret_bytes(&hex!(
-        "0011223344556677889900112233445566778899001122334455667788990011"
-    ))
-    .unwrap();
+    let keypair = BlsKeyPair::<G2>::random().unwrap();
     let gens = DynGenerators::new(&keypair, 2);
     let nonce = Nonce::new();
     let commit_messages = [(0, Message::hash(b"hello"))];
@@ -56,8 +54,7 @@ fn test_blind_signature() {
     let mut verifier = SignatureMessages::verifier(&gens, &keypair);
     verifier.push(commit_messages[0].1).unwrap();
     verifier.append(sign_messages.iter().copied()).unwrap();
-    let verify = verifier
+    verifier
         .verify_signature(&signature)
         .expect("Error verifying signature");
-    assert!(verify);
 }
