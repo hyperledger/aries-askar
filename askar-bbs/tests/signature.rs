@@ -1,4 +1,3 @@
-#[cfg(feature = "getrandom")]
 #[test]
 fn sign_expected() {
     use askar_bbs::{DynGeneratorsV1, Message, SignatureMessages};
@@ -14,11 +13,11 @@ fn sign_expected() {
     .unwrap();
     let messages = [Message::hash("hello")];
     let gens = DynGeneratorsV1::new(&keypair, messages.len());
-    let mut builder = SignatureMessages::new(&gens);
+    let mut builder = SignatureMessages::signer(&gens, &keypair);
     builder
         .append(messages.iter().copied())
         .expect("Error building signature");
-    let sig = builder.sign(&keypair).expect("Error creating signature");
-    let verify = builder.verify_signature(&keypair, &sig).unwrap();
+    let sig = builder.sign().expect("Error creating signature");
+    let verify = builder.verify_signature(&sig).unwrap();
     assert!(verify);
 }

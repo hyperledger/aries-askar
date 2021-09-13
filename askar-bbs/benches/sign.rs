@@ -46,20 +46,20 @@ fn criterion_benchmark(c: &mut Criterion) {
             .collect();
         c.bench_function(&format!("sign for {} messages", message_count), |b| {
             b.iter(|| {
-                let mut signer = SignatureMessages::new(&gens);
+                let mut signer = SignatureMessages::signer(&gens, &keypair);
                 signer.append(messages.iter().copied()).unwrap();
-                signer.sign(&keypair).unwrap();
+                signer.sign().unwrap();
             });
         });
 
-        let mut signer = SignatureMessages::new(&gens);
+        let mut signer = SignatureMessages::signer(&gens, &keypair);
         signer.append(messages.iter().copied()).unwrap();
-        let sig = signer.sign(&keypair).unwrap();
+        let sig = signer.sign().unwrap();
         c.bench_function(&format!("verify for {} messages", message_count), |b| {
             b.iter(|| {
-                let mut verify = SignatureMessages::new(&gens);
+                let mut verify = SignatureMessages::verifier(&gens, &keypair);
                 verify.append(messages.iter().copied()).unwrap();
-                assert!(verify.verify_signature(&keypair, &sig).unwrap());
+                assert!(verify.verify_signature(&sig).unwrap());
             });
         });
 

@@ -4,26 +4,22 @@ use askar_crypto::alg::bls::{BlsKeyPair, G2};
 use bls12_381::{pairing, G1Affine, G1Projective, G2Affine, G2Projective, Scalar};
 use ff::Field;
 use group::Curve;
-use rand::{CryptoRng, Rng};
 use subtle::ConstantTimeEq;
 
 use crate::{
     commitment::Commitment,
     error::Error,
     generators::Generators,
-    util::{random_nonce, AccumG1, HashScalar},
+    util::{AccumG1, HashScalar},
     Blinding,
 };
-
-#[cfg(feature = "getrandom")]
-use crate::util::default_rng;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Message(pub(crate) Scalar);
 
 impl Message {
     pub fn hash(input: impl AsRef<[u8]>) -> Self {
-        Self(HashScalar::digest(input))
+        Self(HashScalar::digest(input, None))
     }
 
     pub fn from_bytes(buf: &[u8; 32]) -> Result<Self, Error> {
@@ -104,28 +100,47 @@ impl Signature {
     }
 }
 
-// TODO: buffer messages and use sum-of-products in batches
 #[derive(Clone, Debug)]
 pub struct SignatureMessages<'g, G: Generators> {
     accum_b: AccumG1,
     count: usize,
     generators: &'g G,
+    hash_es: Option<HashScalar<'static>>,
+    key: &'g BlsKeyPair<G2>,
 }
 
 impl<'g, G: Generators> SignatureMessages<'g, G> {
-    pub fn new(generators: &'g G) -> Self {
+    pub fn signer(generators: &'g G, key: &'g BlsKeyPair<G2>) -> Self {
         Self {
             accum_b: AccumG1::new_with(G1Projective::generator()),
             count: 0,
             generators,
+            hash_es: Some(HashScalar::new(None)),
+            key,
         }
     }
 
-    pub fn from_commitment(commitment: Commitment, generators: &'g G) -> Self {
+    pub fn signer_from_commitment(
+        commitment: Commitment,
+        generators: &'g G,
+        key: &'g BlsKeyPair<G2>,
+    ) -> Self {
         Self {
             accum_b: AccumG1::new_with(G1Projective::generator() + commitment.0),
             count: 0,
             generators,
+            hash_es: Some(HashScalar::new(None)),
+            key,
+        }
+    }
+
+    pub fn verifier(generators: &'g G, key: &'g BlsKeyPair<G2>) -> Self {
+        Self {
+            accum_b: AccumG1::new_with(G1Projective::generator()),
+            count: 0,
+            generators,
+            hash_es: None,
+            key,
         }
     }
 }
@@ -137,6 +152,9 @@ impl<G: Generators> SignatureMessages<'_, G> {
         }
         self.accum_b
             .push(self.generators.message(self.count), message.0);
+        if let Some(hash_es) = &mut self.hash_es {
+            hash_es.update(&message.0.to_bytes());
+        }
         self.count += 1;
         Ok(())
     }
@@ -161,65 +179,48 @@ impl<G: Generators> SignatureMessages<'_, G> {
         self.count
     }
 
-    fn get_b(&self, s: Scalar) -> Result<G1Projective, Error> {
+    pub fn sign(&self) -> Result<Signature, Error> {
         if self.count != self.generators.message_count() {
             return Err(err_msg!(
                 Usage,
                 "Message count does not match generator count"
             ));
         }
-        Ok(self.accum_b.sum_with(self.generators.blinding(), s))
-    }
-
-    #[cfg(feature = "getrandom")]
-    pub fn sign(&self, signer_key: &BlsKeyPair<G2>) -> Result<Signature, Error> {
-        self.sign_with_rng(signer_key, default_rng())
-    }
-
-    pub fn sign_with_rng(
-        &self,
-        signer_key: &BlsKeyPair<G2>,
-        mut rng: impl CryptoRng + Rng,
-    ) -> Result<Signature, Error> {
-        let e = random_nonce(&mut rng);
-        let s = random_nonce(&mut rng);
-        self._sign(signer_key, e, s)
-    }
-
-    pub(crate) fn _sign(
-        &self,
-        signer_key: &BlsKeyPair<G2>,
-        e: Scalar,
-        s: Scalar,
-    ) -> Result<Signature, Error> {
-        let sk = signer_key
+        let mut hash_es = self
+            .hash_es
+            .clone()
+            .ok_or_else(|| err_msg!(Usage, "Missing signer state"))?;
+        let sk = self
+            .key
             .bls_secret_scalar()
             .ok_or_else(|| err_msg!(MissingSecretKey))?;
         if sk.is_zero().into() {
             return Err(err_msg!(MissingSecretKey));
         }
+        hash_es.update(sk.to_bytes());
+        let mut hash_read = hash_es.finalize();
+        let e = hash_read.next();
+        let s = hash_read.next();
+        let b = self.accum_b.sum_with(self.generators.blinding(), s);
+        let a = (b * (sk + e).invert().unwrap()).to_affine();
+        Ok(Signature { a, e, s })
+    }
+
+    pub fn verify_signature(&self, signature: &Signature) -> Result<bool, Error> {
         if self.count != self.generators.message_count() {
             return Err(err_msg!(
                 Usage,
                 "Message count does not match generator count"
             ));
         }
-        let b = self.get_b(s)?;
-        let a = (b * (sk + e).invert().unwrap()).to_affine();
-        Ok(Signature { a, e, s })
-    }
-
-    pub fn verify_signature(
-        &self,
-        pk: &BlsKeyPair<G2>,
-        signature: &Signature,
-    ) -> Result<bool, Error> {
-        let b = self.get_b(signature.s)?.to_affine();
+        let b = self
+            .accum_b
+            .sum_with(self.generators.blinding(), signature.s);
         Ok(pairing(
             &signature.a,
-            &(G2Projective::generator() * signature.e + pk.bls_public_key()).to_affine(),
+            &(G2Projective::generator() * signature.e + self.key.bls_public_key()).to_affine(),
         )
-        .ct_eq(&pairing(&b, &G2Affine::generator()))
+        .ct_eq(&pairing(&b.to_affine(), &G2Affine::generator()))
         .into())
     }
 }

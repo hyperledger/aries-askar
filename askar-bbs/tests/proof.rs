@@ -1,4 +1,3 @@
-#[cfg(feature = "getrandom")]
 #[test]
 fn prove_single_signature_hidden_message() {
     use askar_bbs::{
@@ -16,12 +15,12 @@ fn prove_single_signature_hidden_message() {
     .unwrap();
     let messages = [Message::hash("hello"), Message::hash("there")];
     let gens = DynGeneratorsV1::new(&keypair, messages.len());
-    let mut builder = SignatureMessages::new(&gens);
+    let mut builder = SignatureMessages::signer(&gens, &keypair);
     builder
         .append(messages.iter().copied())
         .expect("Error building signature");
-    let sig = builder.sign(&keypair).expect("Error creating signature");
-    let verify = builder.verify_signature(&keypair, &sig).unwrap();
+    let sig = builder.sign().expect("Error creating signature");
+    let verify = builder.verify_signature(&sig).unwrap();
     assert!(verify);
 
     let mut prover = SignatureProver::new(&gens, &sig);

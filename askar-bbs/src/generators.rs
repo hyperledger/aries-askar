@@ -2,7 +2,7 @@ use core::fmt::Debug;
 
 use askar_crypto::alg::bls::{BlsKeyPair, G2};
 use bls12_381::{
-    hash_to_curve::{ExpandMsgXmd, HashToCurve},
+    hash_to_curve::{ExpandMsgXof, HashToCurve},
     G1Projective,
 };
 
@@ -11,7 +11,7 @@ use crate::{
     error::Error,
 };
 
-const DST_G1_V1: &'static [u8] = b"BLS12381G1_XMD:BLAKE2B_SSWU_RO_BBS+_SIGNATURES:1_0_0";
+const DST_G1_V1: &'static [u8] = b"BLS12381G1_XOF:SHAKE256_SSWU_RO_BBS+_SIGNATURES:1_0_0";
 const G2_UNCOMPRESSED_SIZE: usize = 192;
 
 pub trait Generators: Clone + Debug {
@@ -139,7 +139,7 @@ impl Generators for DynGeneratorsV1 {
         hash_buf[(G2_UNCOMPRESSED_SIZE + 6)..(G2_UNCOMPRESSED_SIZE + 10)]
             .copy_from_slice(&(self.count as u32).to_be_bytes()[..]);
 
-        <G1Projective as HashToCurve<ExpandMsgXmd<blake2::Blake2b>>>::hash_to_curve(
+        <G1Projective as HashToCurve<ExpandMsgXof<sha3::Shake256>>>::hash_to_curve(
             &hash_buf[..],
             DST_G1_V1,
         )
