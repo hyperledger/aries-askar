@@ -83,11 +83,11 @@ where
     S: Seq<(Message, Blinding)>,
 {
     #[cfg(feature = "getrandom")]
-    pub fn commit(&mut self, index: usize, message: Message) -> Result<(), Error> {
-        self.commit_with(index, message, Blinding::new())
+    pub fn add_message(&mut self, index: usize, message: Message) -> Result<(), Error> {
+        self.add_message_with(index, message, Blinding::new())
     }
 
-    pub fn commit_with(
+    pub fn add_message_with(
         &mut self,
         index: usize,
         message: Message,

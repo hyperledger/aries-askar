@@ -18,6 +18,12 @@ impl<'d> HashScalar<'d> {
             dst,
         }
     }
+
+    pub fn new_with_input(input: &[u8], dst: Option<&'d [u8]>) -> Self {
+        let mut slf = Self::new(dst);
+        slf.update(input);
+        slf
+    }
 }
 
 impl HashScalar<'_> {

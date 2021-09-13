@@ -101,95 +101,81 @@ impl Signature {
 }
 
 #[derive(Clone, Debug)]
-pub struct SignatureMessages<'g, G: Generators> {
+pub struct SignatureBuilder<'g, G: Generators> {
     accum_b: AccumG1,
-    count: usize,
     generators: &'g G,
-    hash_es: Option<HashScalar<'static>>,
+    hash_es: HashScalar<'static>,
     key: &'g BlsKeyPair<G2>,
+    message_count: usize,
 }
 
-impl<'g, G: Generators> SignatureMessages<'g, G> {
-    pub fn signer(generators: &'g G, key: &'g BlsKeyPair<G2>) -> Self {
-        Self {
-            accum_b: AccumG1::new_with(G1Projective::generator()),
-            count: 0,
-            generators,
-            hash_es: Some(HashScalar::new(None)),
-            key,
-        }
+impl<'g, G: Generators> SignatureBuilder<'g, G> {
+    pub fn new(generators: &'g G, key: &'g BlsKeyPair<G2>) -> Self {
+        Self::from_accum(generators, key, G1Projective::generator())
     }
 
-    pub fn signer_from_commitment(
-        commitment: Commitment,
+    pub fn from_commitment(
         generators: &'g G,
         key: &'g BlsKeyPair<G2>,
+        commitment: Commitment,
     ) -> Self {
-        Self {
-            accum_b: AccumG1::new_with(G1Projective::generator() + commitment.0),
-            count: 0,
-            generators,
-            hash_es: Some(HashScalar::new(None)),
-            key,
-        }
+        Self::from_accum(generators, key, G1Projective::generator() + commitment.0)
     }
 
-    pub fn verifier(generators: &'g G, key: &'g BlsKeyPair<G2>) -> Self {
+    #[inline]
+    fn from_accum(generators: &'g G, key: &'g BlsKeyPair<G2>, sum: G1Projective) -> Self {
         Self {
-            accum_b: AccumG1::new_with(G1Projective::generator()),
-            count: 0,
+            accum_b: AccumG1::new_with(sum),
             generators,
-            hash_es: None,
+            hash_es: HashScalar::new_with_input(&sum.to_affine().to_compressed(), None),
             key,
+            message_count: 0,
         }
     }
 }
 
-impl<G: Generators> SignatureMessages<'_, G> {
-    pub fn push(&mut self, message: Message) -> Result<(), Error> {
-        if self.count >= self.generators.message_count() {
+impl<G: Generators> SignatureBuilder<'_, G> {
+    pub fn push_message(&mut self, message: Message) -> Result<(), Error> {
+        let c = self.message_count;
+        if c >= self.generators.message_count() {
             return Err(err_msg!(Usage, "Message index exceeds generator count"));
         }
-        self.accum_b
-            .push(self.generators.message(self.count), message.0);
-        if let Some(hash_es) = &mut self.hash_es {
-            hash_es.update(&message.0.to_bytes());
-        }
-        self.count += 1;
+        self.accum_b.push(self.generators.message(c), message.0);
+        self.hash_es.update(&message.0.to_bytes());
+        self.message_count = c + 1;
         Ok(())
     }
 
-    pub fn append(&mut self, messages: impl IntoIterator<Item = Message>) -> Result<(), Error> {
+    pub fn append_messages(
+        &mut self,
+        messages: impl IntoIterator<Item = Message>,
+    ) -> Result<(), Error> {
         for msg in messages {
-            self.push(msg)?;
+            self.push_message(msg)?;
         }
         Ok(())
     }
 
     pub fn push_committed_count(&mut self, count: usize) -> Result<(), Error> {
-        let c = self.count + count;
+        let c = self.message_count + count;
         if c > self.generators.message_count() {
             return Err(err_msg!(Usage, "Message index exceeds generator count"));
         }
-        self.count = c;
+        self.message_count = c;
         Ok(())
     }
 
     pub fn len(&self) -> usize {
-        self.count
+        self.message_count
     }
 
-    pub fn sign(&self) -> Result<Signature, Error> {
-        if self.count != self.generators.message_count() {
+    pub fn sign(self) -> Result<Signature, Error> {
+        if self.message_count != self.generators.message_count() {
             return Err(err_msg!(
                 Usage,
                 "Message count does not match generator count"
             ));
         }
-        let mut hash_es = self
-            .hash_es
-            .clone()
-            .ok_or_else(|| err_msg!(Usage, "Missing signer state"))?;
         let sk = self
             .key
             .bls_secret_scalar()
@@ -197,6 +183,7 @@ impl<G: Generators> SignatureMessages<'_, G> {
         if sk.is_zero().into() {
             return Err(err_msg!(MissingSecretKey));
         }
+        let mut hash_es = self.hash_es.clone();
         hash_es.update(sk.to_bytes());
         let mut hash_read = hash_es.finalize();
         let e = hash_read.next();
@@ -205,9 +192,54 @@ impl<G: Generators> SignatureMessages<'_, G> {
         let a = (b * (sk + e).invert().unwrap()).to_affine();
         Ok(Signature { a, e, s })
     }
+}
 
-    pub fn verify_signature(&self, signature: &Signature) -> Result<(), Error> {
-        if self.count != self.generators.message_count() {
+#[derive(Clone, Debug)]
+pub struct SignatureVerifier<'g, G: Generators> {
+    accum_b: AccumG1,
+    generators: &'g G,
+    key: &'g BlsKeyPair<G2>,
+    message_count: usize,
+}
+
+impl<'g, G: Generators> SignatureVerifier<'g, G> {
+    pub fn new(generators: &'g G, key: &'g BlsKeyPair<G2>) -> Self {
+        Self {
+            accum_b: AccumG1::new_with(G1Projective::generator()),
+            generators,
+            key,
+            message_count: 0,
+        }
+    }
+}
+
+impl<G: Generators> SignatureVerifier<'_, G> {
+    pub fn push_message(&mut self, message: Message) -> Result<(), Error> {
+        let c = self.message_count;
+        if c >= self.generators.message_count() {
+            return Err(err_msg!(Usage, "Message index exceeds generator count"));
+        }
+        self.accum_b.push(self.generators.message(c), message.0);
+        self.message_count = c + 1;
+        Ok(())
+    }
+
+    pub fn append_messages(
+        &mut self,
+        messages: impl IntoIterator<Item = Message>,
+    ) -> Result<(), Error> {
+        for msg in messages {
+            self.push_message(msg)?;
+        }
+        Ok(())
+    }
+
+    pub fn len(&self) -> usize {
+        self.message_count
+    }
+
+    pub fn verify(&self, signature: &Signature) -> Result<(), Error> {
+        if self.message_count != self.generators.message_count() {
             return Err(err_msg!(
                 Usage,
                 "Message count does not match generator count"

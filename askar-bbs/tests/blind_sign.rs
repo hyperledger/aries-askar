@@ -1,5 +1,5 @@
 #[cfg(feature = "getrandom")]
-use askar_bbs::{CommitmentBuilder, DynGenerators, Message, Nonce, SignatureMessages};
+use askar_bbs::{CommitmentBuilder, DynGenerators, Message, Nonce, SignatureBuilder};
 
 #[cfg(feature = "getrandom")]
 use askar_crypto::{
@@ -16,7 +16,7 @@ fn test_commitment_verify() {
     let commit_messages = [(0, Message::hash(b"hello"))];
     let mut committer = CommitmentBuilder::new(&gens);
     for (index, message) in commit_messages.iter().copied() {
-        committer.commit(index, message).unwrap();
+        committer.add_message(index, message).unwrap();
     }
     let (challenge, _blinding, commitment, proof) = committer
         .complete(nonce)
@@ -29,13 +29,15 @@ fn test_commitment_verify() {
 #[cfg(feature = "getrandom")]
 #[test]
 fn test_blind_signature() {
+    use askar_bbs::SignatureVerifier;
+
     let keypair = BlsKeyPair::<G2>::random().unwrap();
     let gens = DynGenerators::new(&keypair, 2);
     let nonce = Nonce::new();
     let commit_messages = [(0, Message::hash(b"hello"))];
     let mut committer = CommitmentBuilder::new(&gens);
     for (index, message) in commit_messages.iter().copied() {
-        committer.commit(index, message).unwrap();
+        committer.add_message(index, message).unwrap();
     }
     let (challenge, blinding, commitment, proof) = committer
         .complete(nonce)
@@ -45,16 +47,20 @@ fn test_blind_signature() {
         .expect("Error verifying commitment");
 
     let sign_messages = [Message::hash(b"world")];
-    let mut signer = SignatureMessages::signer_from_commitment(commitment, &gens, &keypair);
+    let mut signer = SignatureBuilder::from_commitment(&gens, &keypair, commitment);
     signer.push_committed_count(1).unwrap();
-    signer.append(sign_messages.iter().copied()).unwrap();
+    signer
+        .append_messages(sign_messages.iter().copied())
+        .unwrap();
     let blind_signature = signer.sign().expect("Error creating signature");
 
     let signature = blind_signature.unblind(blinding);
-    let mut verifier = SignatureMessages::verifier(&gens, &keypair);
-    verifier.push(commit_messages[0].1).unwrap();
-    verifier.append(sign_messages.iter().copied()).unwrap();
+    let mut verifier = SignatureVerifier::new(&gens, &keypair);
+    verifier.push_message(commit_messages[0].1).unwrap();
     verifier
-        .verify_signature(&signature)
+        .append_messages(sign_messages.iter().copied())
+        .unwrap();
+    verifier
+        .verify(&signature)
         .expect("Error verifying signature");
 }

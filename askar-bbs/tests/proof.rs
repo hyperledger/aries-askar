@@ -2,7 +2,7 @@
 #[test]
 fn prove_single_signature_hidden_message() {
     use askar_bbs::{
-        CreateChallenge, DynGenerators, Message, Nonce, SignatureMessages, SignatureProver,
+        CreateChallenge, DynGenerators, Message, Nonce, SignatureBuilder, SignatureProver,
     };
     use askar_crypto::{
         alg::bls::{BlsKeyPair, G2},
@@ -16,18 +16,15 @@ fn prove_single_signature_hidden_message() {
     .unwrap();
     let messages = [Message::hash("hello"), Message::hash("there")];
     let gens = DynGenerators::new(&keypair, messages.len());
-    let mut builder = SignatureMessages::signer(&gens, &keypair);
+    let mut builder = SignatureBuilder::new(&gens, &keypair);
     builder
-        .append(messages.iter().copied())
+        .append_messages(messages.iter().copied())
         .expect("Error building signature");
     let sig = builder.sign().expect("Error creating signature");
-    builder
-        .verify_signature(&sig)
-        .expect("Error verifying signature");
 
     let mut prover = SignatureProver::new(&gens, &sig);
-    prover.push_hidden(messages[0]).unwrap();
-    prover.push_revealed(messages[1]).unwrap();
+    prover.push_hidden_message(messages[0]).unwrap();
+    prover.push_message(messages[1]).unwrap();
     let prepare = prover.prepare().unwrap();
     let nonce = Nonce::new();
     let challenge = prepare.create_challenge(nonce);

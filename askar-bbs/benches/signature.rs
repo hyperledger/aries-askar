@@ -1,7 +1,7 @@
 #[macro_use]
 extern crate criterion;
 
-use askar_bbs::{DynGenerators, Message, SignatureMessages};
+use askar_bbs::{DynGenerators, Message, SignatureBuilder, SignatureVerifier};
 use askar_crypto::{
     alg::bls::{BlsKeyPair, G2},
     repr::KeyGen,
@@ -23,20 +23,20 @@ fn criterion_benchmark(c: &mut Criterion) {
 
         c.bench_function(&format!("sign for {} messages", message_count), |b| {
             b.iter(|| {
-                let mut signer = SignatureMessages::signer(&gens, &keypair);
-                signer.append(messages.iter().copied()).unwrap();
+                let mut signer = SignatureBuilder::new(&gens, &keypair);
+                signer.append_messages(messages.iter().copied()).unwrap();
                 signer.sign().unwrap();
             });
         });
 
-        let mut signer = SignatureMessages::signer(&gens, &keypair);
-        signer.append(messages.iter().copied()).unwrap();
+        let mut signer = SignatureBuilder::new(&gens, &keypair);
+        signer.append_messages(messages.iter().copied()).unwrap();
         let sig = signer.sign().unwrap();
         c.bench_function(&format!("verify for {} messages", message_count), |b| {
             b.iter(|| {
-                let mut verify = SignatureMessages::verifier(&gens, &keypair);
-                verify.append(messages.iter().copied()).unwrap();
-                verify.verify_signature(&sig).unwrap();
+                let mut verifier = SignatureVerifier::new(&gens, &keypair);
+                verifier.append_messages(messages.iter().copied()).unwrap();
+                verifier.verify(&sig).unwrap();
             });
         });
     }

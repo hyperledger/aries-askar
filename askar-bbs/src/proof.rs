@@ -67,7 +67,7 @@ where
     G: Generators,
     S: Seq<(Message, Blinding)>,
 {
-    pub fn push_revealed(&mut self, message: Message) -> Result<(), Error> {
+    pub fn push_message(&mut self, message: Message) -> Result<(), Error> {
         let c = self.count;
         if c >= self.generators.message_count() {
             return Err(err_msg!(Usage, "Message index exceeds generator count"));
@@ -77,22 +77,26 @@ where
         Ok(())
     }
 
-    pub fn append_revealed(
+    pub fn append_messages(
         &mut self,
         messages: impl IntoIterator<Item = Message>,
     ) -> Result<(), Error> {
         for msg in messages {
-            self.push_revealed(msg)?;
+            self.push_message(msg)?;
         }
         Ok(())
     }
 
     #[cfg(feature = "getrandom")]
-    pub fn push_hidden(&mut self, message: Message) -> Result<(), Error> {
-        self.push_hidden_with(message, Blinding::new())
+    pub fn push_hidden_message(&mut self, message: Message) -> Result<(), Error> {
+        self.push_hidden_message_with(message, Blinding::new())
     }
 
-    pub fn push_hidden_with(&mut self, message: Message, blinding: Blinding) -> Result<(), Error> {
+    pub fn push_hidden_message_with(
+        &mut self,
+        message: Message,
+        blinding: Blinding,
+    ) -> Result<(), Error> {
         let c = self.count;
         if c >= self.generators.message_count() {
             return Err(err_msg!(Usage, "Message index exceeds generator count"));

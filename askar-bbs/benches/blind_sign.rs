@@ -1,7 +1,9 @@
 #[macro_use]
 extern crate criterion;
 
-use askar_bbs::{CommitmentBuilder, DynGenerators, Message, Nonce, SignatureMessages};
+use askar_bbs::{
+    CommitmentBuilder, DynGenerators, Message, Nonce, SignatureBuilder, SignatureVerifier,
+};
 use askar_crypto::{
     alg::bls::{BlsKeyPair, G2},
     repr::KeyGen,
@@ -24,14 +26,14 @@ fn criterion_benchmark(c: &mut Criterion) {
             c.bench_function("create commitment", |b| {
                 b.iter(|| {
                     let mut committer = CommitmentBuilder::new(&gens);
-                    committer.commit(0, commit_msg).unwrap();
+                    committer.add_message(0, commit_msg).unwrap();
                     let (_challenge, _blind, _commit, _proof) = committer.complete(nonce).unwrap();
                 });
             });
         }
 
         let mut committer = CommitmentBuilder::new(&gens);
-        committer.commit(0, commit_msg).unwrap();
+        committer.add_message(0, commit_msg).unwrap();
         let (challenge, blinding, commitment, proof) = committer.complete(nonce).unwrap();
 
         if message_count == 5 {
@@ -49,17 +51,16 @@ fn criterion_benchmark(c: &mut Criterion) {
             .collect();
         c.bench_function(&format!("blind sign for {} messages", message_count), |b| {
             b.iter(|| {
-                let mut signer =
-                    SignatureMessages::signer_from_commitment(commitment, &gens, &keypair);
+                let mut signer = SignatureBuilder::from_commitment(&gens, &keypair, commitment);
                 signer.push_committed_count(1).unwrap();
-                signer.append(messages.iter().copied()).unwrap();
+                signer.append_messages(messages.iter().copied()).unwrap();
                 signer.sign().unwrap()
             });
         });
 
-        let mut signer = SignatureMessages::signer_from_commitment(commitment, &gens, &keypair);
+        let mut signer = SignatureBuilder::from_commitment(&gens, &keypair, commitment);
         signer.push_committed_count(1).unwrap();
-        signer.append(messages.iter().copied()).unwrap();
+        signer.append_messages(messages.iter().copied()).unwrap();
         let sig = signer.sign().unwrap();
 
         c.bench_function(
@@ -67,10 +68,10 @@ fn criterion_benchmark(c: &mut Criterion) {
             |b| {
                 b.iter(|| {
                     let sig = sig.unblind(blinding);
-                    let mut verifier = SignatureMessages::verifier(&gens, &keypair);
-                    verifier.push(commit_msg).unwrap();
-                    verifier.append(messages.iter().copied()).unwrap();
-                    verifier.verify_signature(&sig).unwrap();
+                    let mut verifier = SignatureVerifier::new(&gens, &keypair);
+                    verifier.push_message(commit_msg).unwrap();
+                    verifier.append_messages(messages.iter().copied()).unwrap();
+                    verifier.verify(&sig).unwrap();
                 });
             },
         );

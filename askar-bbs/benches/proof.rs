@@ -2,7 +2,7 @@
 extern crate criterion;
 
 use askar_bbs::{
-    CreateChallenge, DynGenerators, Message, Nonce, SignatureMessages, SignatureProver,
+    CreateChallenge, DynGenerators, Message, Nonce, SignatureBuilder, SignatureProver,
 };
 use askar_crypto::{
     alg::bls::{BlsKeyPair, G2},
@@ -24,8 +24,8 @@ fn criterion_benchmark(c: &mut Criterion) {
             .map(|_| Message::from(OsRng.next_u64()))
             .collect();
 
-        let mut signer = SignatureMessages::signer(&gens, &keypair);
-        signer.append(messages.iter().copied()).unwrap();
+        let mut signer = SignatureBuilder::new(&gens, &keypair);
+        signer.append_messages(messages.iter().copied()).unwrap();
         let sig = signer.sign().unwrap();
         let nonce = Nonce::new();
 
@@ -37,9 +37,9 @@ fn criterion_benchmark(c: &mut Criterion) {
                     let hidden_count = message_count / 2;
                     for (index, msg) in messages.iter().enumerate() {
                         if index < hidden_count {
-                            prover.push_hidden(*msg).unwrap();
+                            prover.push_hidden_message(*msg).unwrap();
                         } else {
-                            prover.push_revealed(*msg).unwrap();
+                            prover.push_message(*msg).unwrap();
                         }
                     }
                     let ctx = prover.prepare().unwrap();
@@ -53,9 +53,9 @@ fn criterion_benchmark(c: &mut Criterion) {
         let hidden_count = message_count / 2;
         for (index, msg) in messages.iter().enumerate() {
             if index < hidden_count {
-                prover.push_hidden(*msg).unwrap();
+                prover.push_hidden_message(*msg).unwrap();
             } else {
-                prover.push_revealed(*msg).unwrap();
+                prover.push_message(*msg).unwrap();
             }
         }
         let ctx = prover.prepare().unwrap();

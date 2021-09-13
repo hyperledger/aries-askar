@@ -26,7 +26,7 @@ mod proof;
 pub use proof::{SignatureProof, SignatureProofContext, SignatureProofVerifier, SignatureProver};
 
 mod signature;
-pub use signature::{Message, Signature, SignatureMessages};
+pub use signature::{Message, Signature, SignatureBuilder, SignatureVerifier};
 
 mod util;
 pub use util::Nonce;

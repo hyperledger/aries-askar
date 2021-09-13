@@ -1,6 +1,6 @@
 #[test]
 fn sign_verify_expected() {
-    use askar_bbs::{DynGenerators, Message, SignatureMessages};
+    use askar_bbs::{DynGenerators, Message, SignatureBuilder, SignatureVerifier};
     use askar_crypto::{
         alg::bls::{BlsKeyPair, G2},
         repr::KeySecretBytes,
@@ -13,12 +13,15 @@ fn sign_verify_expected() {
     .unwrap();
     let messages = [Message::hash("hello")];
     let gens = DynGenerators::new(&keypair, messages.len());
-    let mut builder = SignatureMessages::signer(&gens, &keypair);
+    let mut builder = SignatureBuilder::new(&gens, &keypair);
     builder
-        .append(messages.iter().copied())
+        .append_messages(messages.iter().copied())
         .expect("Error building signature");
     let sig = builder.sign().expect("Error creating signature");
-    builder
-        .verify_signature(&sig)
+
+    let mut verifier = SignatureVerifier::new(&gens, &keypair);
+    verifier
+        .append_messages(messages.iter().copied())
         .expect("Error verifying signature");
+    verifier.verify(&sig).expect("Error verifying signature");
 }
