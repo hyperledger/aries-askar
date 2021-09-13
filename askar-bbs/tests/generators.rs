@@ -1,4 +1,4 @@
-use askar_bbs::{DynGeneratorsV1, Generators};
+use askar_bbs::{DynGenerators, Generators};
 use askar_crypto::{
     alg::bls::{BlsKeyPair, G2},
     repr::KeySecretBytes,
@@ -14,7 +14,7 @@ fn dyn_generators_v1_expected() {
     .unwrap();
     let message_count = 10;
     let gens_count = message_count + 1;
-    let gens = DynGeneratorsV1::new(&keypair, message_count);
+    let gens = DynGenerators::new(&keypair, message_count);
     let iter = gens.iter();
     assert_eq!(iter.size_hint(), (gens_count, Some(gens_count)));
     let hm: Vec<G1Projective> = iter.collect();

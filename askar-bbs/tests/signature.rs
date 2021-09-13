@@ -1,6 +1,6 @@
 #[test]
 fn sign_expected() {
-    use askar_bbs::{DynGeneratorsV1, Message, SignatureMessages};
+    use askar_bbs::{DynGenerators, Message, SignatureMessages};
     use askar_crypto::{
         alg::bls::{BlsKeyPair, G2},
         repr::KeySecretBytes,
@@ -12,7 +12,7 @@ fn sign_expected() {
     ))
     .unwrap();
     let messages = [Message::hash("hello")];
-    let gens = DynGeneratorsV1::new(&keypair, messages.len());
+    let gens = DynGenerators::new(&keypair, messages.len());
     let mut builder = SignatureMessages::signer(&gens, &keypair);
     builder
         .append(messages.iter().copied())

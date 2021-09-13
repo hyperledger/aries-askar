@@ -110,12 +110,12 @@ where
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct DynGeneratorsV1 {
+pub struct DynGenerators {
     count: usize,
     pk: [u8; G2_UNCOMPRESSED_SIZE],
 }
 
-impl DynGeneratorsV1 {
+impl DynGenerators {
     pub fn new(pk: &BlsKeyPair<G2>, message_count: usize) -> Self {
         Self {
             count: message_count,
@@ -128,7 +128,7 @@ impl DynGeneratorsV1 {
     }
 }
 
-impl Generators for DynGeneratorsV1 {
+impl Generators for DynGenerators {
     fn generator(&self, index: usize) -> G1Projective {
         const HASH_BUF_SIZE: usize = 10 + G2_UNCOMPRESSED_SIZE;
 

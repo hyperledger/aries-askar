@@ -18,7 +18,7 @@ mod commitment;
 pub use commitment::{Blinding, Commitment, CommitmentBuilder, CommitmentProof};
 
 mod generators;
-pub use generators::{DynGeneratorsV1, Generators, VecGenerators};
+pub use generators::{DynGenerators, Generators, VecGenerators};
 
 mod proof;
 pub use proof::{SignatureProof, SignatureProofContext, SignatureProofVerifier, SignatureProver};

@@ -2,7 +2,7 @@
 extern crate criterion;
 
 use askar_bbs::{
-    CommitmentBuilder, CreateChallenge, DynGeneratorsV1, Message, Nonce, SignatureMessages,
+    CommitmentBuilder, CreateChallenge, DynGenerators, Message, Nonce, SignatureMessages,
     SignatureProver,
 };
 use askar_crypto::{
@@ -19,13 +19,13 @@ fn criterion_benchmark(c: &mut Criterion) {
     for message_count in vec![5, 25, 125] {
         c.bench_function(&format!("keygen for {} messages", message_count), |b| {
             b.iter(|| {
-                DynGeneratorsV1::new(&keypair, message_count)
+                DynGenerators::new(&keypair, message_count)
                     .to_vec()
                     .unwrap()
             });
         });
 
-        let gens = DynGeneratorsV1::new(&keypair, message_count)
+        let gens = DynGenerators::new(&keypair, message_count)
             .to_vec()
             .unwrap();
 

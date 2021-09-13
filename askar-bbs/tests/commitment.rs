@@ -1,4 +1,4 @@
-use askar_bbs::{CommitmentBuilder, DynGeneratorsV1, Message, Nonce, SignatureMessages};
+use askar_bbs::{CommitmentBuilder, DynGenerators, Message, Nonce, SignatureMessages};
 use askar_crypto::{
     alg::bls::{BlsKeyPair, G2},
     repr::KeySecretBytes,
@@ -11,7 +11,7 @@ fn test_commitment_verify() {
         "0011223344556677889900112233445566778899001122334455667788990011"
     ))
     .unwrap();
-    let gens = DynGeneratorsV1::new(&keypair, 5);
+    let gens = DynGenerators::new(&keypair, 5);
     let nonce = Nonce::new();
     let commit_messages = [(0, Message::hash(b"hello"))];
     let mut committer = CommitmentBuilder::new(&gens);
@@ -32,7 +32,7 @@ fn test_blind_signature() {
         "0011223344556677889900112233445566778899001122334455667788990011"
     ))
     .unwrap();
-    let gens = DynGeneratorsV1::new(&keypair, 2);
+    let gens = DynGenerators::new(&keypair, 2);
     let nonce = Nonce::new();
     let commit_messages = [(0, Message::hash(b"hello"))];
     let mut committer = CommitmentBuilder::new(&gens);
