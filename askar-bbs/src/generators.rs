@@ -38,6 +38,7 @@ pub trait Generators: Clone + Debug {
     }
 }
 
+#[derive(Clone, Debug)]
 pub struct GeneratorsRefIter<'g, G: Generators> {
     index: usize,
     count: usize,

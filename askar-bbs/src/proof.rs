@@ -279,6 +279,7 @@ where
     }
 }
 
+#[derive(Clone, Debug)]
 pub struct SignatureProofVerifier<'v, G, S>
 where
     G: Generators,

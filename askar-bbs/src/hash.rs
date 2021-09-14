@@ -1,3 +1,5 @@
+use core::fmt::{self, Debug, Formatter};
+
 use askar_crypto::buffer::WriteBuffer;
 use bls12_381::Scalar;
 use sha3::{
@@ -61,5 +63,11 @@ impl HashScalarRead {
         let mut buf = [0u8; 64];
         self.0.read(&mut buf);
         Scalar::from_bytes_wide(&buf)
+    }
+}
+
+impl Debug for HashScalarRead {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.debug_struct("HashScalarRead").finish()
     }
 }

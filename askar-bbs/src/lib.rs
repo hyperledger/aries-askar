@@ -1,4 +1,9 @@
+//! BBS+ signature support for aries-askar
+
 #![cfg_attr(not(feature = "std"), no_std)]
+#![cfg_attr(docsrs, feature(doc_cfg))]
+#![deny(missing_debug_implementations, rust_2018_idioms)]
+#![warn(missing_docs)]
 
 #[cfg(feature = "alloc")]
 extern crate alloc;

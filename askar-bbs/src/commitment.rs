@@ -42,6 +42,7 @@ impl From<G1Affine> for Commitment {
     }
 }
 
+#[derive(Clone, Debug)]
 pub struct CommitmentBuilder<'g, G, S>
 where
     G: Generators,
@@ -163,6 +164,7 @@ where
     }
 }
 
+#[derive(Clone, Debug)]
 pub struct CommitmentProofContext<S>
 where
     S: Seq<(Message, Blinding)>,
@@ -266,6 +268,7 @@ where
     }
 }
 
+#[derive(Clone, Debug)]
 pub struct CommitmentProofVerifier {
     commitment: G1Affine,
     c1: G1Affine,
