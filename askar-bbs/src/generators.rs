@@ -14,21 +14,27 @@ use crate::{
 const DST_G1_V1: &'static [u8] = b"BLS12381G1_XOF:SHAKE256_SSWU_RO_BBS+_SIGNATURES:1_0_0";
 const G2_UNCOMPRESSED_SIZE: usize = 192;
 
+/// Message generators used in signature building and verification
 pub trait Generators: Clone + Debug {
+    /// Get the blinding message generator (h_0)
     #[inline]
     fn blinding(&self) -> G1Projective {
         self.generator(0)
     }
 
+    /// Get the message generator for a given message index (h_i)
     #[inline]
     fn message(&self, index: usize) -> G1Projective {
         self.generator(index + 1)
     }
 
+    /// The number of message generators, not including the blinding
     fn message_count(&self) -> usize;
 
+    /// Fetch a zero-based message generator
     fn generator(&self, index: usize) -> G1Projective;
 
+    /// Create an iterator over the message generators
     fn iter(&self) -> GeneratorsRefIter<'_, Self> {
         GeneratorsRefIter {
             index: 0,
@@ -66,9 +72,11 @@ impl<G: Generators> Iterator for GeneratorsRefIter<'_, G> {
 
 impl<G: Generators> ExactSizeIterator for GeneratorsRefIter<'_, G> {}
 
+/// The default pre-computed message generators
 pub type VecGenerators = GeneratorsSeq<DefaultSeq<128>>;
 
 #[derive(Debug)]
+/// A pre-computed sequence of message generators
 pub struct GeneratorsSeq<S>
 where
     S: Seq<G1Projective>,
@@ -103,6 +111,7 @@ impl<S> GeneratorsSeq<S>
 where
     S: Seq<G1Projective>,
 {
+    /// Populate the message generators from another source
     pub fn copy_from<G: Generators>(gens: &G) -> Result<Self, Error> {
         Ok(Self {
             h: Vec::from_iter(gens.iter())?,
@@ -111,12 +120,14 @@ where
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+/// A dynamic (not pre-computed) message generator source
 pub struct DynGenerators {
     count: usize,
     pk: [u8; G2_UNCOMPRESSED_SIZE],
 }
 
 impl DynGenerators {
+    /// Create a new instance of the message generators
     pub fn new(pk: &BlsKeyPair<G2>, message_count: usize) -> Self {
         Self {
             count: message_count,
@@ -124,6 +135,7 @@ impl DynGenerators {
         }
     }
 
+    /// Compute all the generators
     pub fn to_vec(&self) -> Result<VecGenerators, Error> {
         VecGenerators::copy_from(self)
     }

@@ -30,12 +30,10 @@ fn prove_single_signature_hidden_message() {
     let challenge = prepare.create_challenge(nonce);
     let proof = prepare.complete(challenge).unwrap();
 
-    let mut verifier = proof.verifier(&gens, challenge).unwrap();
+    let mut verifier = proof.verifier(&gens, &keypair, challenge).unwrap();
     verifier.push_hidden_count(1).unwrap();
     verifier.push_revealed(messages[1]).unwrap();
     let challenge_v = verifier.create_challenge(nonce);
-    verifier
-        .verify(&keypair)
-        .expect("Error verifying signature PoK");
+    verifier.verify().expect("Error verifying signature PoK");
     assert_eq!(challenge, challenge_v);
 }

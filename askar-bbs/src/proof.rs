@@ -1,6 +1,7 @@
 use askar_crypto::{
     alg::bls::{BlsKeyPair, G2},
     buffer::WriteBuffer,
+    random::default_rng,
 };
 use bls12_381::{pairing, G1Affine, G1Projective, G2Affine, Scalar};
 use rand::{CryptoRng, Rng};
@@ -13,13 +14,11 @@ use crate::{
     error::Error,
     generators::Generators,
     signature::{Message, Signature},
-    util::{random_nonce, AccumG1},
+    util::{random_nonce, AccumG1, Nonce},
 };
 
-#[cfg(feature = "getrandom")]
-use crate::util::default_rng;
-
 #[derive(Clone, Debug)]
+/// Generate a signature proof of knowledge
 pub struct SignatureProver<'g, G, S = DefaultSeq<128>>
 where
     G: Generators,
@@ -33,11 +32,25 @@ where
     sig: Signature,
 }
 
+impl<'g, G> SignatureProver<'g, G>
+where
+    G: Generators,
+{
+    /// Create a new signature prover
+    pub fn new(
+        generators: &'g G,
+        signature: &Signature,
+    ) -> SignatureProver<'g, G, DefaultSeq<128>> {
+        Self::custom(generators, signature)
+    }
+}
+
 impl<'g, G, S> SignatureProver<'g, G, S>
 where
     G: Generators,
     S: Seq<(Message, Blinding)>,
 {
+    /// Create a new signature prover with a specific backing sequence type
     pub fn custom(generators: &'g G, signature: &Signature) -> Self {
         Self {
             accum_b: AccumG1::new_with(G1Projective::generator()),
@@ -50,23 +63,12 @@ where
     }
 }
 
-impl<'g, G> SignatureProver<'g, G>
-where
-    G: Generators,
-{
-    pub fn new(
-        generators: &'g G,
-        signature: &Signature,
-    ) -> SignatureProver<'g, G, DefaultSeq<128>> {
-        Self::custom(generators, signature)
-    }
-}
-
 impl<G, S> SignatureProver<'_, G, S>
 where
     G: Generators,
     S: Seq<(Message, Blinding)>,
 {
+    /// Push a revealed signed message
     pub fn push_message(&mut self, message: Message) -> Result<(), Error> {
         let c = self.count;
         if c >= self.generators.message_count() {
@@ -77,6 +79,7 @@ where
         Ok(())
     }
 
+    /// Push a sequence of revealed signed messages
     pub fn append_messages(
         &mut self,
         messages: impl IntoIterator<Item = Message>,
@@ -88,10 +91,12 @@ where
     }
 
     #[cfg(feature = "getrandom")]
+    /// Push a hidden signed message
     pub fn push_hidden_message(&mut self, message: Message) -> Result<(), Error> {
         self.push_hidden_message_with(message, Blinding::new())
     }
 
+    /// Push a hidden signed message with a specific blinding value
     pub fn push_hidden_message_with(
         &mut self,
         message: Message,
@@ -110,10 +115,12 @@ where
     }
 
     #[cfg(feature = "getrandom")]
+    /// Prepare the context for generating the final proof
     pub fn prepare(self) -> Result<SignatureProofContext<S>, Error> {
         self.prepare_with_rng(default_rng())
     }
 
+    /// Prepare the context for generating the final proof
     pub fn prepare_with_rng(
         mut self,
         mut rng: impl CryptoRng + Rng,
@@ -171,9 +178,34 @@ where
             hidden: self.hidden,
         })
     }
+
+    #[cfg(feature = "getrandom")]
+    /// Complete an independent signature proof of knowledge
+    pub fn complete(self, nonce: Nonce) -> Result<(ProofChallenge, SignatureProof<S>), Error>
+    where
+        S: Seq<Scalar>,
+    {
+        self.complete_with_rng(default_rng(), nonce)
+    }
+
+    /// Complete an independent signature proof of knowledge with a given RNG
+    pub fn complete_with_rng(
+        self,
+        rng: impl CryptoRng + Rng,
+        nonce: Nonce,
+    ) -> Result<(ProofChallenge, SignatureProof<S>), Error>
+    where
+        S: Seq<Scalar>,
+    {
+        let context = self.prepare_with_rng(rng)?;
+        let challenge = context.create_challenge(nonce);
+        let proof = context.complete(challenge)?;
+        Ok((challenge, proof))
+    }
 }
 
 #[derive(Clone, Debug)]
+/// A prepared context for generating a signature proof of knowledge
 pub struct SignatureProofContext<S>
 where
     S: Seq<(Message, Blinding)>,
@@ -197,6 +229,7 @@ where
     S: Seq<(Message, Blinding)>,
     S: Seq<Scalar>,
 {
+    /// Complete the
     pub fn complete(&self, challenge: ProofChallenge) -> Result<SignatureProof<S>, Error> {
         let c = challenge.0;
         let mut hidden_resp = Vec::with_capacity(self.hidden.len());
@@ -251,6 +284,7 @@ impl ProofPublicParams {
 }
 
 #[derive(Clone, Debug)]
+/// A signature proof of knowledge
 pub struct SignatureProof<S>
 where
     S: Seq<Scalar>,
@@ -267,19 +301,44 @@ impl<S> SignatureProof<S>
 where
     S: Seq<Scalar>,
 {
+    /// Verify an independent commitment proof
+    pub fn verify<G, I>(
+        &self,
+        generators: &G,
+        keypair: &BlsKeyPair<G2>,
+        challenge: ProofChallenge,
+        nonce: Nonce,
+    ) -> Result<(), Error>
+    where
+        G: Generators,
+        I: IntoIterator<Item = usize>,
+    {
+        let verifier = self.verifier(generators, keypair, challenge)?;
+        if verifier.create_challenge(nonce) != challenge {
+            return Err(err_msg!(
+                InvalidProof,
+                "Signature proof of knowledge challenge mismatch"
+            ));
+        }
+        Ok(())
+    }
+
+    /// Create a verifier for the signature proof of knowledge
     pub fn verifier<'v, G>(
         &'v self,
         generators: &'v G,
+        keypair: &'v BlsKeyPair<G2>,
         challenge: ProofChallenge,
     ) -> Result<SignatureProofVerifier<'v, G, S>, Error>
     where
         G: Generators,
     {
-        SignatureProofVerifier::new(generators, self, challenge)
+        SignatureProofVerifier::new(generators, self, keypair, challenge)
     }
 }
 
 #[derive(Clone, Debug)]
+/// A verifier for a signature proof of knowledge
 pub struct SignatureProofVerifier<'v, G, S>
 where
     G: Generators,
@@ -287,6 +346,7 @@ where
 {
     generators: &'v G,
     proof: &'v SignatureProof<S>,
+    keypair: &'v BlsKeyPair<G2>,
     challenge: Scalar,
     c1: G1Projective,
     accum_c2: AccumG1,
@@ -302,6 +362,7 @@ where
     pub(crate) fn new(
         generators: &'v G,
         proof: &'v SignatureProof<S>,
+        keypair: &'v BlsKeyPair<G2>,
         challenge: ProofChallenge,
     ) -> Result<Self, Error> {
         let ProofPublicParams { a_prime, a_bar, d } = proof.params;
@@ -325,6 +386,7 @@ where
         Ok(Self {
             challenge: neg_c, // negate early for multiplying
             generators,
+            keypair,
             proof,
             c1,
             accum_c2,
@@ -339,6 +401,7 @@ where
     G: Generators,
     S: Seq<Scalar>,
 {
+    /// Push a revealed signed message
     pub fn push_revealed(&mut self, message: Message) -> Result<(), Error> {
         let c = self.message_count;
         if c >= self.generators.message_count() {
@@ -350,6 +413,7 @@ where
         Ok(())
     }
 
+    /// Push a sequence of revealed signed messages
     pub fn append_revealed(
         &mut self,
         messages: impl IntoIterator<Item = Message>,
@@ -360,6 +424,7 @@ where
         Ok(())
     }
 
+    /// Push a number of hidden signed messages
     pub fn push_hidden_count(&mut self, count: usize) -> Result<(), Error> {
         let c = self.message_count + count;
         if c > self.generators.message_count() {
@@ -382,9 +447,9 @@ where
         Ok(())
     }
 
-    pub fn verify(&self, keypair: &BlsKeyPair<G2>) -> Result<(), Error> {
-        // NOTE: MUST verify the Fiat-Shamir challenge value as well
-
+    /// Verify the public parameters of the signature proof of knowledge
+    /// NOTE: MUST verify that the Fiat-Shamir challenge value matches as well
+    pub fn verify(&self) -> Result<(), Error> {
         if self.message_count != self.generators.message_count() {
             return Err(err_msg!(
                 InvalidProof,
@@ -399,7 +464,7 @@ where
         }
 
         let ProofPublicParams { a_prime, a_bar, .. } = self.proof.params;
-        let check_pair = pairing(&a_prime, keypair.bls_public_key())
+        let check_pair = pairing(&a_prime, self.keypair.bls_public_key())
             .ct_eq(&pairing(&a_bar, &G2Affine::generator()));
 
         let verify: bool = (!a_prime.is_identity() & check_pair).into();

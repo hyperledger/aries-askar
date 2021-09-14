@@ -1,3 +1,5 @@
+//! Support for hashing inputs into scalar values
+
 use core::fmt::{self, Debug, Formatter};
 
 use askar_crypto::buffer::WriteBuffer;
@@ -8,7 +10,7 @@ use sha3::{
 };
 
 #[derive(Clone, Debug)]
-pub struct HashScalar<'d> {
+pub(crate) struct HashScalar<'d> {
     hasher: Shake256,
     dst: Option<&'d [u8]>,
 }
@@ -56,7 +58,7 @@ impl WriteBuffer for HashScalar<'_> {
     }
 }
 
-pub struct HashScalarRead(Sha3XofReader);
+pub(crate) struct HashScalarRead(Sha3XofReader);
 
 impl HashScalarRead {
     pub fn next(&mut self) -> Scalar {

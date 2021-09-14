@@ -11,47 +11,23 @@ use crate::{
     error::Error,
     generators::Generators,
     hash::HashScalar,
+    io::FixedLengthBytes,
     util::AccumG1,
 };
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Message(pub(crate) Scalar);
+const SIGNATURE_LENGTH: usize = 48 + 32 + 32;
+
+impl_scalar_type!(Message, "A message value used in a signature");
 
 impl Message {
+    /// Generate a message value by hashing arbitrary length input
     pub fn hash(input: impl AsRef<[u8]>) -> Self {
         Self(HashScalar::digest(input, None))
     }
-
-    pub fn from_bytes(buf: &[u8; 32]) -> Result<Self, Error> {
-        let mut b = *buf;
-        b.reverse(); // into big-endian
-        if let Some(s) = Scalar::from_bytes(&b).into() {
-            Ok(Message(s))
-        } else {
-            Err(err_msg!(Usage, "Message bytes not in canonical format"))
-        }
-    }
-
-    pub fn to_bytes(&self) -> [u8; 32] {
-        let mut b = self.0.to_bytes();
-        b.reverse(); // into big-endian
-        b
-    }
-}
-
-impl From<Scalar> for Message {
-    fn from(m: Scalar) -> Self {
-        Self(m)
-    }
-}
-
-impl From<u64> for Message {
-    fn from(m: u64) -> Self {
-        Self(m.into())
-    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// A BBS+ signature value
 pub struct Signature {
     pub(crate) a: G1Affine,
     pub(crate) e: Scalar,
@@ -59,23 +35,34 @@ pub struct Signature {
 }
 
 impl Signature {
-    pub const SIZE: usize = 48 + 32 + 32;
+    /// Unblind a signature created against a commitment
+    pub fn unblind(self, blinding: Blinding) -> Self {
+        let Signature { a, e, s } = self;
+        Self {
+            a,
+            e,
+            s: s + blinding.0,
+        }
+    }
+}
 
-    pub fn to_bytes(&self) -> [u8; Self::SIZE] {
-        let mut buf = [0u8; Self::SIZE];
+impl FixedLengthBytes for Signature {
+    const LENGTH: usize = SIGNATURE_LENGTH;
+
+    type Buffer = [u8; SIGNATURE_LENGTH];
+
+    fn with_bytes<R>(&self, f: impl FnOnce(&Self::Buffer) -> R) -> R {
+        let mut buf = [0u8; Self::LENGTH];
         buf[..48].copy_from_slice(&self.a.to_compressed()[..]);
         buf[48..80].copy_from_slice(&self.e.to_bytes()[..]);
         buf[48..80].reverse(); // into big endian
         buf[80..].copy_from_slice(&self.s.to_bytes()[..]);
         buf[80..].reverse(); // into big endian
-        buf
+        f(&buf)
     }
 
-    pub fn from_bytes(sig: impl AsRef<[u8]>) -> Result<Self, Error> {
+    fn from_bytes(sig: &Self::Buffer) -> Result<Self, Error> {
         let buf = sig.as_ref();
-        if buf.len() != Self::SIZE {
-            return Err(err_msg!(InvalidSignature));
-        }
         let a = G1Affine::from_compressed(&buf[..48].try_into().unwrap());
         let mut scalar: [u8; 32] = buf[48..80].try_into().unwrap();
         scalar.reverse(); // from big endian
@@ -89,18 +76,10 @@ impl Signature {
             Err(err_msg!(InvalidSignature))
         }
     }
-
-    pub fn unblind(self, blinding: Blinding) -> Self {
-        let Signature { a, e, s } = self;
-        Self {
-            a,
-            e,
-            s: s + blinding.0,
-        }
-    }
 }
 
 #[derive(Clone, Debug)]
+/// A builder for a signature
 pub struct SignatureBuilder<'g, G: Generators> {
     accum_b: AccumG1,
     generators: &'g G,
@@ -110,10 +89,12 @@ pub struct SignatureBuilder<'g, G: Generators> {
 }
 
 impl<'g, G: Generators> SignatureBuilder<'g, G> {
+    /// Create a new signature builder
     pub fn new(generators: &'g G, key: &'g BlsKeyPair<G2>) -> Self {
         Self::from_accum(generators, key, G1Projective::generator())
     }
 
+    /// Create a new signature builder with a blinded messages commitment value
     pub fn from_commitment(
         generators: &'g G,
         key: &'g BlsKeyPair<G2>,
@@ -135,6 +116,7 @@ impl<'g, G: Generators> SignatureBuilder<'g, G> {
 }
 
 impl<G: Generators> SignatureBuilder<'_, G> {
+    /// Push a message to be signed
     pub fn push_message(&mut self, message: Message) -> Result<(), Error> {
         let c = self.message_count;
         if c >= self.generators.message_count() {
@@ -146,6 +128,7 @@ impl<G: Generators> SignatureBuilder<'_, G> {
         Ok(())
     }
 
+    /// Push a sequence of messages to be signed
     pub fn append_messages(
         &mut self,
         messages: impl IntoIterator<Item = Message>,
@@ -156,6 +139,7 @@ impl<G: Generators> SignatureBuilder<'_, G> {
         Ok(())
     }
 
+    /// Push a number of blind (committed) messages
     pub fn push_committed_count(&mut self, count: usize) -> Result<(), Error> {
         let c = self.message_count + count;
         if c > self.generators.message_count() {
@@ -165,10 +149,12 @@ impl<G: Generators> SignatureBuilder<'_, G> {
         Ok(())
     }
 
+    /// Get the current number of added messages
     pub fn len(&self) -> usize {
         self.message_count
     }
 
+    /// Create a signature from the builder
     pub fn sign(self) -> Result<Signature, Error> {
         if self.message_count != self.generators.message_count() {
             return Err(err_msg!(
@@ -195,6 +181,7 @@ impl<G: Generators> SignatureBuilder<'_, G> {
 }
 
 #[derive(Clone, Debug)]
+/// A verifier for a BBS+ signature
 pub struct SignatureVerifier<'g, G: Generators> {
     accum_b: AccumG1,
     generators: &'g G,
@@ -203,6 +190,7 @@ pub struct SignatureVerifier<'g, G: Generators> {
 }
 
 impl<'g, G: Generators> SignatureVerifier<'g, G> {
+    /// Create a new signature verifier
     pub fn new(generators: &'g G, key: &'g BlsKeyPair<G2>) -> Self {
         Self {
             accum_b: AccumG1::new_with(G1Projective::generator()),
@@ -214,6 +202,7 @@ impl<'g, G: Generators> SignatureVerifier<'g, G> {
 }
 
 impl<G: Generators> SignatureVerifier<'_, G> {
+    /// Push a signed message
     pub fn push_message(&mut self, message: Message) -> Result<(), Error> {
         let c = self.message_count;
         if c >= self.generators.message_count() {
@@ -224,6 +213,7 @@ impl<G: Generators> SignatureVerifier<'_, G> {
         Ok(())
     }
 
+    /// Push a sequence of signed messages
     pub fn append_messages(
         &mut self,
         messages: impl IntoIterator<Item = Message>,
@@ -234,10 +224,12 @@ impl<G: Generators> SignatureVerifier<'_, G> {
         Ok(())
     }
 
+    /// Get the current number of added messages
     pub fn len(&self) -> usize {
         self.message_count
     }
 
+    /// Verify a signature
     pub fn verify(&self, signature: &Signature) -> Result<(), Error> {
         if self.message_count != self.generators.message_count() {
             return Err(err_msg!(

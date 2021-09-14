@@ -1,19 +1,9 @@
+use askar_crypto::random::default_rng;
 use bls12_381::{G1Projective, Scalar};
 use ff::Field;
 use rand::{CryptoRng, Rng};
 
-#[cfg(feature = "getrandom")]
-use rand::rngs::OsRng;
-
-#[cfg(feature = "getrandom")]
-type DefaultRng = OsRng;
-
-#[cfg(feature = "getrandom")]
-pub fn default_rng() -> DefaultRng {
-    OsRng
-}
-
-pub fn random_nonce<R: CryptoRng + Rng>(mut rng: R) -> Scalar {
+pub(crate) fn random_nonce<R: CryptoRng + Rng>(mut rng: R) -> Scalar {
     let mut r;
     loop {
         r = Scalar::random(&mut rng);
@@ -23,23 +13,18 @@ pub fn random_nonce<R: CryptoRng + Rng>(mut rng: R) -> Scalar {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Nonce(pub(crate) Scalar);
+impl_scalar_type!(Nonce, "A nonce used in proof verification");
 
 impl Nonce {
     #[cfg(feature = "getrandom")]
+    /// Generate a new random nonce value
     pub fn new() -> Self {
         Self(random_nonce(default_rng()))
     }
 
+    /// Generate a new random nonce value from a specific RNG
     pub fn new_with_rng(rng: impl CryptoRng + Rng) -> Self {
         Self(random_nonce(rng))
-    }
-}
-
-impl From<Scalar> for Nonce {
-    fn from(s: Scalar) -> Self {
-        Self(s)
     }
 }
 

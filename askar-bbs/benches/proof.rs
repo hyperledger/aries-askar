@@ -65,13 +65,13 @@ fn criterion_benchmark(c: &mut Criterion) {
             &format!("verify signature pok for {} messages", message_count),
             |b| {
                 b.iter(|| {
-                    let mut verifier = proof.verifier(&gens, challenge).unwrap();
+                    let mut verifier = proof.verifier(&gens, &keypair, challenge).unwrap();
                     verifier.push_hidden_count(hidden_count).unwrap();
                     for index in hidden_count..messages.len() {
                         verifier.push_revealed(messages[index]).unwrap();
                     }
                     let v_challenge = verifier.create_challenge(nonce);
-                    verifier.verify(&keypair).unwrap();
+                    verifier.verify().unwrap();
                     assert_eq!(challenge, v_challenge);
                 });
             },

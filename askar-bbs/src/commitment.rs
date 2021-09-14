@@ -1,4 +1,4 @@
-use askar_crypto::buffer::WriteBuffer;
+use askar_crypto::{buffer::WriteBuffer, random::default_rng};
 use bls12_381::{G1Affine, G1Projective, Scalar};
 use group::Curve;
 use rand::{CryptoRng, Rng};
@@ -8,22 +8,26 @@ use crate::{
     collect::{DefaultSeq, Seq, Vec},
     error::Error,
     generators::Generators,
+    io::FixedLengthBytes,
     signature::Message,
     util::{random_nonce, AccumG1, Nonce},
 };
 
-#[cfg(feature = "getrandom")]
-use crate::util::default_rng;
-
 const G1_COMPRESSED_SIZE: usize = 48;
 
+/// A nonce value used as a blinding
 pub type Blinding = Nonce;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// A commitment to a set of blinded messages for signing
 pub struct Commitment(pub(crate) G1Affine);
 
-impl Commitment {
-    pub fn from_bytes(buf: &[u8; G1_COMPRESSED_SIZE]) -> Result<Self, Error> {
+impl FixedLengthBytes for Commitment {
+    const LENGTH: usize = G1_COMPRESSED_SIZE;
+
+    type Buffer = [u8; G1_COMPRESSED_SIZE];
+
+    fn from_bytes(buf: &Self::Buffer) -> Result<Self, Error> {
         if let Some(pt) = G1Affine::from_compressed(buf).into() {
             Ok(Self(pt))
         } else {
@@ -31,8 +35,8 @@ impl Commitment {
         }
     }
 
-    pub fn to_bytes(&self) -> [u8; G1_COMPRESSED_SIZE] {
-        self.0.to_compressed()
+    fn with_bytes<R>(&self, f: impl FnOnce(&Self::Buffer) -> R) -> R {
+        f(&self.0.to_compressed())
     }
 }
 
@@ -43,6 +47,7 @@ impl From<G1Affine> for Commitment {
 }
 
 #[derive(Clone, Debug)]
+/// A builder used to generate and prove a commitment to a set of messages
 pub struct CommitmentBuilder<'g, G, S>
 where
     G: Generators,
@@ -58,6 +63,7 @@ impl<'g, G> CommitmentBuilder<'g, G, DefaultSeq<32>>
 where
     G: Generators,
 {
+    /// Create a new commitment builder
     pub fn new(generators: &'g G) -> Self {
         Self::custom(generators)
     }
@@ -68,6 +74,7 @@ where
     G: Generators,
     S: Seq<(Message, Blinding)>,
 {
+    /// Create a new commitment builder with a specific backing sequence type
     pub fn custom(generators: &'g G) -> Self {
         Self {
             accum_commitment: AccumG1::zero(),
@@ -84,10 +91,12 @@ where
     S: Seq<(Message, Blinding)>,
 {
     #[cfg(feature = "getrandom")]
+    /// Add a hidden message with a random blinding value
     pub fn add_message(&mut self, index: usize, message: Message) -> Result<(), Error> {
         self.add_message_with(index, message, Blinding::new())
     }
 
+    /// Add a hidden message with a pre-selected blinding value
     pub fn add_message_with(
         &mut self,
         index: usize,
@@ -112,10 +121,12 @@ where
     S: Seq<(Message, Blinding)> + Seq<Scalar>,
 {
     #[cfg(feature = "getrandom")]
+    /// Prepare the commitment proof context
     pub fn prepare(self) -> Result<CommitmentProofContext<S>, Error> {
         self.prepare_with_rng(default_rng())
     }
 
+    /// Prepare the commitment proof context with a specific RNG
     pub fn prepare_with_rng(
         mut self,
         mut rng: impl CryptoRng + Rng,
@@ -145,6 +156,7 @@ where
     }
 
     #[cfg(feature = "getrandom")]
+    /// Complete an independent commitment proof of knowledge
     pub fn complete(
         self,
         nonce: Nonce,
@@ -152,6 +164,7 @@ where
         self.complete_with_rng(default_rng(), nonce)
     }
 
+    /// Complete an independent commitment proof with a specific RNG
     pub fn complete_with_rng(
         self,
         rng: impl CryptoRng + Rng,
@@ -214,6 +227,7 @@ where
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+/// A proof of a commitment to hidden messages for signing
 pub struct CommitmentProof<S = DefaultSeq<32>>
 where
     S: Seq<Scalar>,
@@ -225,6 +239,7 @@ impl<S> CommitmentProof<S>
 where
     S: Seq<Scalar>,
 {
+    /// Verify an independent commitment proof
     pub fn verify<G, I>(
         &self,
         generators: &G,
@@ -247,6 +262,7 @@ where
         Ok(())
     }
 
+    /// Create a verifier for the commitment proof
     pub fn verifier<G, I>(
         &self,
         generators: &G,
@@ -269,6 +285,7 @@ where
 }
 
 #[derive(Clone, Debug)]
+/// A verifier for a commitment proof of knowledge
 pub struct CommitmentProofVerifier {
     commitment: G1Affine,
     c1: G1Affine,
@@ -311,6 +328,12 @@ impl CommitmentProofVerifier {
             commitment: commitment.0,
             c1: accum_c1.sum().to_affine(),
         })
+    }
+
+    /// Verify the public parameters of the commitment proof of knowledge
+    /// NOTE: MUST verify that the Fiat-Shamir challenge value matches as well
+    pub fn verify(&self) -> Result<(), Error> {
+        Ok(())
     }
 }
 
