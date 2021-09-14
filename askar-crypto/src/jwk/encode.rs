@@ -32,6 +32,7 @@ pub enum JwkEncoderMode {
     Thumbprint,
 }
 
+/// Common interface for JWK encoders
 pub trait JwkEncoder {
     /// Get the requested algorithm for the JWK
     fn alg(&self) -> Option<KeyAlg>;
@@ -98,18 +99,22 @@ impl<'b, B: WriteBuffer> JwkBufferEncoder<'b, B> {
         Ok(())
     }
 
+    /// Set the key algorithm
     pub fn alg(self, alg: Option<KeyAlg>) -> Self {
         Self { alg, ..self }
     }
 
+    /// Set the supported key operations
     pub fn key_ops(self, key_ops: Option<KeyOpsSet>) -> Self {
         Self { key_ops, ..self }
     }
 
+    /// Set the key identifier
     pub fn kid(self, kid: Option<&'b str>) -> Self {
         Self { kid, ..self }
     }
 
+    /// Complete the JWK output
     pub fn finalize(mut self) -> Result<(), Error> {
         if let Some(ops) = self.key_ops {
             self.start_attr("key_ops")?;
@@ -165,6 +170,8 @@ impl<B: WriteBuffer> JwkEncoder for JwkBufferEncoder<'_, B> {
     }
 }
 
+/// A wrapper type for serializing a JWK using serde
+#[derive(Debug)]
 pub struct JwkSerialize<'s, K: ToJwk> {
     mode: JwkEncoderMode,
     key: &'s K,

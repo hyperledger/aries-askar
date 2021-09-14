@@ -21,7 +21,10 @@ pub trait Rng: CryptoRng + RngCore + Debug {}
 
 impl<T: CryptoRng + RngCore + Debug> Rng for T {}
 
+/// A trait for generating raw key material, generally
+/// cryptographically random bytes
 pub trait KeyMaterial {
+    /// Read key material from the generator
     fn read_okm(&mut self, buf: &mut [u8]);
 }
 
@@ -34,7 +37,8 @@ impl<C: CryptoRng + RngCore> KeyMaterial for C {
 #[cfg(feature = "getrandom")]
 #[cfg_attr(docsrs, doc(cfg(feature = "getrandom")))]
 #[inline]
-pub fn default_rng() -> impl CryptoRng + RngCore + Debug {
+/// Obtain an instance of the default random number generator
+pub fn default_rng() -> impl CryptoRng + RngCore + Debug + Clone {
     #[cfg(feature = "std_rng")]
     {
         rand::rngs::ThreadRng::default()
@@ -60,6 +64,7 @@ pub fn fill_random_deterministic(seed: &[u8], output: &mut [u8]) -> Result<(), E
     Ok(())
 }
 
+/// A generator for deterministic random bytes
 pub struct RandomDet {
     cipher: ChaCha20,
 }
@@ -116,6 +121,7 @@ impl RngCore for RandomDet {
 }
 
 impl RandomDet {
+    /// Construct a new `RandomDet` instance from a seed value
     pub fn new(seed: &[u8]) -> Self {
         let mut sd = [0u8; DETERMINISTIC_SEED_LENGTH];
         let seed_len = seed.len().max(DETERMINISTIC_SEED_LENGTH);

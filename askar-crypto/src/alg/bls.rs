@@ -39,6 +39,7 @@ pub struct BlsKeyPair<Pk: BlsPublicKeyType> {
 }
 
 impl<Pk: BlsPublicKeyType> BlsKeyPair<Pk> {
+    /// Generate a new BLS key from a seed according to the KeyGen algorithm
     pub fn from_seed(seed: &[u8]) -> Result<Self, Error> {
         Ok(Self::from_secret_key(BlsSecretKey::generate(
             BlsKeyGen::new(seed)?,
@@ -62,10 +63,12 @@ impl<Pk: BlsPublicKeyType> BlsKeyPair<Pk> {
         }
     }
 
+    /// Accessor for the associated public key
     pub fn bls_public_key(&self) -> &Pk::Buffer {
         &self.public
     }
 
+    /// Accessor for the associated secret key value, if any
     pub fn bls_secret_scalar(&self) -> Option<&Scalar> {
         self.secret.as_ref().map(|s| &s.0)
     }
@@ -228,13 +231,16 @@ impl Drop for BlsSecretKey {
     }
 }
 
-// bls-signatures draft 4 version (incompatible with earlier)
+/// A key material generator compatible with KeyGen from the
+/// bls-signatures RFC draft 4 (incompatible with earlier)
+#[derive(Debug, Clone)]
 pub struct BlsKeyGen<'g> {
     salt: Option<GenericArray<u8, U32>>,
     ikm: &'g [u8],
 }
 
 impl<'g> BlsKeyGen<'g> {
+    /// Construct a new `BlsKeyGen` from a seed value
     pub fn new(ikm: &'g [u8]) -> Result<Self, Error> {
         if ikm.len() < 32 {
             return Err(err_msg!(Usage, "Insufficient length for seed"));
@@ -430,6 +436,7 @@ impl From<&BlsKeyPair<G1G2>> for BlsKeyPair<G2> {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Zeroize)]
+/// A utility struct combining G1 and G2 public keys
 pub struct G1G2Pair(G1Affine, G2Affine);
 
 #[cfg(test)]
