@@ -184,6 +184,7 @@ where
 }
 
 #[derive(Clone, Debug)]
+/// A prepared context for generating a commitment proof of knowledge
 pub struct CommitmentProofContext<S>
 where
     S: Seq<(Message, Blinding)>,
@@ -200,6 +201,7 @@ where
     S: Seq<(Message, Blinding)>,
     S: Seq<Scalar>,
 {
+    /// Complete the commitment proof of knowledge given a Fiat-Shamir challenge value
     pub fn complete(
         &self,
         challenge: ProofChallenge,

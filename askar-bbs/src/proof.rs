@@ -235,7 +235,7 @@ where
     S: Seq<(Message, Blinding)>,
     S: Seq<Scalar>,
 {
-    /// Complete the
+    /// Complete the signature proof of knowledge given a Fiat-Shamir challenge value
     pub fn complete(&self, challenge: ProofChallenge) -> Result<SignatureProof<S>, Error> {
         let c = challenge.0;
         let mut m_resp = Vec::with_capacity(self.hidden.len());

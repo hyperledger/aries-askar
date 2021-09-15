@@ -23,7 +23,8 @@ pub mod collect;
 
 mod commitment;
 pub use commitment::{
-    Blinding, Commitment, CommitmentBuilder, CommitmentProof, CommitmentProofVerifier,
+    Blinding, Commitment, CommitmentBuilder, CommitmentProof, CommitmentProofContext,
+    CommitmentProofVerifier,
 };
 
 mod generators;
