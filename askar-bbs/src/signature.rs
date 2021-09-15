@@ -2,7 +2,6 @@ use core::convert::TryInto;
 
 use askar_crypto::alg::bls::{BlsKeyPair, G2};
 use bls12_381::{pairing, G1Affine, G1Projective, G2Affine, G2Projective, Scalar};
-use ff::Field;
 use group::Curve;
 use subtle::ConstantTimeEq;
 
@@ -166,7 +165,7 @@ impl<G: Generators> SignatureBuilder<'_, G> {
             .key
             .bls_secret_scalar()
             .ok_or_else(|| err_msg!(MissingSecretKey))?;
-        if sk.is_zero().into() {
+        if sk == &Scalar::zero() {
             return Err(err_msg!(MissingSecretKey));
         }
         let mut hash_es = self.hash_es.clone();

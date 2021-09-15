@@ -1,16 +1,18 @@
 use bls12_381::{G1Projective, Scalar};
-use ff::Field;
 use rand::{CryptoRng, Rng};
+use subtle::ConstantTimeEq;
 
 #[cfg(feature = "getrandom")]
 use askar_crypto::random::default_rng;
 
 pub(crate) fn random_nonce<R: CryptoRng + Rng>(mut rng: R) -> Scalar {
-    let mut r;
+    let mut buf = [0u8; 64];
+    let mut s;
     loop {
-        r = Scalar::random(&mut rng);
-        if r.is_zero().unwrap_u8() == 0 {
-            break r;
+        rng.fill_bytes(&mut buf);
+        s = Scalar::from_bytes_wide(&buf);
+        if !bool::from(s.ct_eq(&Scalar::zero())) {
+            break s;
         }
     }
 }
