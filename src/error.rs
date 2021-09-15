@@ -12,6 +12,9 @@ pub enum ErrorKind {
     /// The store backend was too busy to handle the request
     Busy,
 
+    /// A custom error type for external integrations
+    Custom,
+
     /// An insert operation failed due to a unique key conflict
     Duplicate,
 
@@ -37,6 +40,7 @@ impl ErrorKind {
         match self {
             Self::Backend => "Backend error",
             Self::Busy => "Busy",
+            Self::Custom => "Custom error",
             Self::Duplicate => "Duplicate",
             Self::Encryption => "Encryption error",
             Self::Input => "Input error",
@@ -136,9 +140,10 @@ impl From<sqlx::Error> for Error {
 impl From<CryptoError> for Error {
     fn from(err: CryptoError) -> Self {
         let kind = match err.kind() {
+            CryptoErrorKind::Custom => ErrorKind::Custom,
             CryptoErrorKind::Encryption => ErrorKind::Encryption,
             CryptoErrorKind::ExceededBuffer | CryptoErrorKind::Unexpected => ErrorKind::Unexpected,
-            CryptoErrorKind::InvalidData
+            CryptoErrorKind::Invalid
             | CryptoErrorKind::InvalidKeyData
             | CryptoErrorKind::InvalidNonce
             | CryptoErrorKind::MissingSecretKey

@@ -14,6 +14,7 @@ class AskarErrorCode(IntEnum):
     UNEXPECTED = 7
     UNSUPPORTED = 8
     WRAPPER = 99
+    CUSTOM = 100
 
 
 class AskarError(Exception):
