@@ -1,9 +1,12 @@
 #[cfg(feature = "getrandom")]
-use askar_bbs::{CommitmentBuilder, DynGenerators, Message, Nonce, SignatureBuilder};
+use askar_bbs::{
+    CommitmentBuilder, CommitmentProof, DynGenerators, Message, Nonce, SignatureBuilder,
+};
 
 #[cfg(feature = "getrandom")]
 use askar_crypto::{
     alg::bls::{BlsKeyPair, G2},
+    buffer::Writer,
     repr::KeyGen,
 };
 
@@ -24,6 +27,15 @@ fn test_commitment_verify() {
     proof
         .verify(&gens, commitment, [0].iter().cloned(), challenge, nonce)
         .expect("Error verifying commitment");
+
+    // test serialization round trip
+    let mut buf = [0u8; 1024];
+    let mut w = Writer::from_slice(&mut buf);
+    proof.write_bytes(&mut w).expect("Error serializing proof");
+    let proof_len = w.position();
+    let proof_de =
+        CommitmentProof::from_bytes(&buf[..proof_len]).expect("Error deserializing proof");
+    assert_eq!(proof, proof_de);
 }
 
 #[cfg(feature = "getrandom")]

@@ -1,6 +1,6 @@
 use askar_crypto::buffer::WriteBuffer;
 
-use crate::{hash::HashScalar, util::Nonce};
+use crate::{hash::HashScalar, util::Nonce, Error};
 
 impl_scalar_type!(ProofChallenge, "Fiat-Shamir proof challenge value");
 
@@ -15,8 +15,5 @@ pub trait CreateChallenge {
     }
 
     /// Write the challenge bytes to a target
-    fn write_challenge_bytes(
-        &self,
-        writer: &mut dyn WriteBuffer,
-    ) -> Result<(), askar_crypto::Error>;
+    fn write_challenge_bytes(&self, writer: &mut dyn WriteBuffer) -> Result<(), Error>;
 }

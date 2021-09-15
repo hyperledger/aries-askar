@@ -10,8 +10,8 @@ extern crate alloc;
 pub use bls12_381;
 
 #[macro_use]
-mod error;
-pub use error::{Error, ErrorKind};
+extern crate askar_crypto;
+pub use askar_crypto::{Error, ErrorKind};
 
 #[macro_use]
 mod macros;

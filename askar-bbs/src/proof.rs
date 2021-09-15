@@ -1,3 +1,6 @@
+#[cfg(feature = "alloc")]
+use alloc::vec::Vec as StdVec;
+
 use askar_crypto::{
     alg::bls::{BlsKeyPair, G2},
     buffer::WriteBuffer,
@@ -11,10 +14,11 @@ use crate::{
     challenge::{CreateChallenge, ProofChallenge},
     collect::{DefaultSeq, Seq, Vec},
     commitment::Blinding,
-    error::Error,
     generators::Generators,
+    io::{CompressedBytes, Cursor, FixedLengthBytes},
     signature::{Message, Signature},
     util::{random_nonce, AccumG1, Nonce},
+    Error,
 };
 
 #[derive(Clone, Debug)]
@@ -41,7 +45,7 @@ where
         generators: &'g G,
         signature: &Signature,
     ) -> SignatureProver<'g, G, DefaultSeq<128>> {
-        Self::custom(generators, signature)
+        Self::new_sized(generators, signature)
     }
 }
 
@@ -51,7 +55,7 @@ where
     S: Seq<(Message, Blinding)>,
 {
     /// Create a new signature prover with a specific backing sequence type
-    pub fn custom(generators: &'g G, signature: &Signature) -> Self {
+    pub fn new_sized(generators: &'g G, signature: &Signature) -> Self {
         Self {
             accum_b: AccumG1::new_with(G1Projective::generator()),
             accum_c2: AccumG1::zero(),
@@ -232,9 +236,9 @@ where
     /// Complete the
     pub fn complete(&self, challenge: ProofChallenge) -> Result<SignatureProof<S>, Error> {
         let c = challenge.0;
-        let mut hidden_resp = Vec::with_capacity(self.hidden.len());
+        let mut m_resp = Vec::with_capacity(self.hidden.len());
         for (msg, m_rand) in self.hidden.iter() {
-            hidden_resp.push(m_rand.0 - c * msg.0)?;
+            m_resp.push(m_rand.0 - c * msg.0)?;
         }
         Ok(SignatureProof {
             params: self.params,
@@ -242,7 +246,7 @@ where
             r2_resp: self.r2_rand - c * self.r2,
             r3_resp: self.r3_rand + c * self.r3,
             s_resp: self.s_rand - c * self.s_prime,
-            hidden_resp,
+            m_resp,
         })
     }
 }
@@ -251,16 +255,13 @@ impl<S> CreateChallenge for SignatureProofContext<S>
 where
     S: Seq<(Message, Blinding)>,
 {
-    fn write_challenge_bytes(
-        &self,
-        writer: &mut dyn WriteBuffer,
-    ) -> Result<(), askar_crypto::Error> {
+    fn write_challenge_bytes(&self, writer: &mut dyn WriteBuffer) -> Result<(), Error> {
         self.params
             .write_challenge_bytes(&self.c1, &self.c2, writer)
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct ProofPublicParams {
     a_prime: G1Affine,
     a_bar: G1Affine,
@@ -294,7 +295,14 @@ where
     r2_resp: Scalar,
     r3_resp: Scalar,
     s_resp: Scalar,
-    hidden_resp: Vec<Scalar, S>,
+    m_resp: Vec<Scalar, S>,
+}
+
+impl SignatureProof<DefaultSeq<128>> {
+    /// Convert a signature proof of knowledge from a byte slice
+    pub fn from_bytes(buf: &[u8]) -> Result<Self, Error> {
+        Self::from_bytes_sized(buf)
+    }
 }
 
 impl<S> SignatureProof<S>
@@ -316,7 +324,7 @@ where
         let verifier = self.verifier(generators, keypair, challenge)?;
         if verifier.create_challenge(nonce) != challenge {
             return Err(err_msg!(
-                InvalidProof,
+                Invalid,
                 "Signature proof of knowledge challenge mismatch"
             ));
         }
@@ -335,7 +343,77 @@ where
     {
         SignatureProofVerifier::new(generators, self, keypair, challenge)
     }
+
+    /// Write the signature proof of knowledge to an output buffer
+    pub fn write_bytes(&self, buf: &mut dyn WriteBuffer) -> Result<(), Error> {
+        self.params.a_prime.write_compressed(&mut *buf)?;
+        self.params.a_bar.write_compressed(&mut *buf)?;
+        self.params.d.write_compressed(&mut *buf)?;
+        self.e_resp.write_bytes(&mut *buf)?;
+        self.r2_resp.write_bytes(&mut *buf)?;
+        self.r3_resp.write_bytes(&mut *buf)?;
+        self.s_resp.write_bytes(&mut *buf)?;
+        buf.buffer_write(&(self.m_resp.len() as u32).to_be_bytes())?;
+        for resp in self.m_resp.iter() {
+            resp.write_bytes(&mut *buf)?;
+        }
+        Ok(())
+    }
+
+    #[cfg(feature = "alloc")]
+    /// Output the signature proof of knowledge as a byte vec
+    pub fn to_bytes(&self) -> Result<StdVec<u8>, Error> {
+        let mut out = StdVec::with_capacity(48 * 3 + 32 * 5 + 4);
+        self.write_bytes(&mut out)?;
+        Ok(out)
+    }
+
+    /// Convert a signature proof of knowledge from a byte slice
+    pub fn from_bytes_sized(buf: &[u8]) -> Result<Self, Error> {
+        let mut cur = Cursor::new(buf);
+        let params = ProofPublicParams {
+            a_prime: G1Affine::read_compressed(&mut cur)?,
+            a_bar: G1Affine::read_compressed(&mut cur)?,
+            d: G1Affine::read_compressed(&mut cur)?,
+        };
+        let e_resp = Scalar::read_bytes(&mut cur)?;
+        let r2_resp = Scalar::read_bytes(&mut cur)?;
+        let r3_resp = Scalar::read_bytes(&mut cur)?;
+        let s_resp = Scalar::read_bytes(&mut cur)?;
+        let m_len = u32::from_be_bytes(*cur.read_fixed()?) as usize;
+        let mut m_resp = Vec::with_capacity(m_len);
+        for _ in 0..m_len {
+            m_resp.push(Scalar::read_bytes(&mut cur)?)?;
+        }
+        if cur.len() != 0 {
+            return Err(err_msg!(Invalid, "Invalid length"));
+        }
+        Ok(Self {
+            params,
+            e_resp,
+            r2_resp,
+            r3_resp,
+            s_resp,
+            m_resp,
+        })
+    }
 }
+
+impl<S, T> PartialEq<SignatureProof<T>> for SignatureProof<S>
+where
+    S: Seq<Scalar>,
+    T: Seq<Scalar>,
+{
+    fn eq(&self, other: &SignatureProof<T>) -> bool {
+        self.params == other.params
+            && self.e_resp == other.e_resp
+            && self.r2_resp == other.r2_resp
+            && self.r3_resp == other.r3_resp
+            && self.s_resp == other.s_resp
+            && &*self.m_resp == &*other.m_resp
+    }
+}
+impl<S> Eq for SignatureProof<S> where S: Seq<Scalar> {}
 
 #[derive(Clone, Debug)]
 /// A verifier for a signature proof of knowledge
@@ -430,7 +508,7 @@ where
         if c > self.generators.message_count() {
             return Err(err_msg!(Usage, "Message index exceeds generator count"));
         }
-        if self.hidden_count + c > self.proof.hidden_resp.len() {
+        if self.hidden_count + c > self.proof.m_resp.len() {
             return Err(err_msg!(
                 Usage,
                 "Hidden message count exceeded response count"
@@ -439,7 +517,7 @@ where
         for index in self.message_count..c {
             self.accum_c2.push(
                 self.generators.message(index),
-                self.proof.hidden_resp[self.hidden_count],
+                self.proof.m_resp[self.hidden_count],
             );
             self.hidden_count += 1;
         }
@@ -452,13 +530,13 @@ where
     pub fn verify(&self) -> Result<(), Error> {
         if self.message_count != self.generators.message_count() {
             return Err(err_msg!(
-                InvalidProof,
+                Invalid,
                 "Number of messages does not correspond with generators"
             ));
         }
-        if self.hidden_count != self.proof.hidden_resp.len() {
+        if self.hidden_count != self.proof.m_resp.len() {
             return Err(err_msg!(
-                InvalidProof,
+                Invalid,
                 "Number of hidden messages does not correspond with responses"
             ));
         }
@@ -471,7 +549,7 @@ where
         if verify {
             Ok(())
         } else {
-            Err(err_msg!(InvalidProof))
+            Err(err_msg!(Invalid))
         }
     }
 }
@@ -481,10 +559,7 @@ where
     G: Generators,
     S: Seq<Scalar>,
 {
-    fn write_challenge_bytes(
-        &self,
-        writer: &mut dyn WriteBuffer,
-    ) -> Result<(), askar_crypto::Error> {
+    fn write_challenge_bytes(&self, writer: &mut dyn WriteBuffer) -> Result<(), Error> {
         let mut checks = [G1Affine::identity(); 2];
         G1Projective::batch_normalize(&[self.c1, self.accum_c2.sum()], &mut checks[..]);
         self.proof

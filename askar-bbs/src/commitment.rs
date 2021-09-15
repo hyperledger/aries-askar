@@ -1,3 +1,6 @@
+#[cfg(feature = "alloc")]
+use alloc::vec::Vec as StdVec;
+
 use askar_crypto::{buffer::WriteBuffer, random::default_rng};
 use bls12_381::{G1Affine, G1Projective, Scalar};
 use group::Curve;
@@ -6,11 +9,11 @@ use rand::{CryptoRng, Rng};
 use crate::{
     challenge::{CreateChallenge, ProofChallenge},
     collect::{DefaultSeq, Seq, Vec},
-    error::Error,
     generators::Generators,
-    io::FixedLengthBytes,
+    io::{Cursor, FixedLengthBytes},
     signature::Message,
     util::{random_nonce, AccumG1, Nonce},
+    Error,
 };
 
 const G1_COMPRESSED_SIZE: usize = 48;
@@ -31,7 +34,7 @@ impl FixedLengthBytes for Commitment {
         if let Some(pt) = G1Affine::from_compressed(buf).into() {
             Ok(Self(pt))
         } else {
-            Err(err_msg!(InvalidCommitment))
+            Err(err_msg!(Invalid))
         }
     }
 
@@ -65,7 +68,7 @@ where
 {
     /// Create a new commitment builder
     pub fn new(generators: &'g G) -> Self {
-        Self::custom(generators)
+        Self::new_sized(generators)
     }
 }
 
@@ -75,7 +78,7 @@ where
     S: Seq<(Message, Blinding)>,
 {
     /// Create a new commitment builder with a specific backing sequence type
-    pub fn custom(generators: &'g G) -> Self {
+    pub fn new_sized(generators: &'g G) -> Self {
         Self {
             accum_commitment: AccumG1::zero(),
             accum_c1: AccumG1::zero(),
@@ -199,15 +202,15 @@ where
         challenge: ProofChallenge,
     ) -> Result<(Blinding, Commitment, CommitmentProof<S>), Error> {
         let c = challenge.0;
-        let mut resp = Vec::with_capacity(self.messages.len() + 1);
-        resp.push(self.s_blind + c * self.s_prime)?;
+        let mut m_resp = Vec::with_capacity(self.messages.len() + 1);
+        m_resp.push(self.s_blind + c * self.s_prime)?;
         for (msg, m_rand) in self.messages.iter().copied() {
-            resp.push(m_rand.0 + c * msg.0)?;
+            m_resp.push(m_rand.0 + c * msg.0)?;
         }
         Ok((
             self.s_prime.into(),
             self.commitment,
-            CommitmentProof { resp },
+            CommitmentProof { m_resp },
         ))
     }
 }
@@ -216,23 +219,27 @@ impl<S> CreateChallenge for CommitmentProofContext<S>
 where
     S: Seq<(Message, Blinding)>,
 {
-    fn write_challenge_bytes(
-        &self,
-        writer: &mut dyn WriteBuffer,
-    ) -> Result<(), askar_crypto::Error> {
+    fn write_challenge_bytes(&self, writer: &mut dyn WriteBuffer) -> Result<(), Error> {
         writer.buffer_write(&self.commitment.0.to_uncompressed())?;
         writer.buffer_write(&self.c1.to_uncompressed())?;
         Ok(())
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug)]
 /// A proof of a commitment to hidden messages for signing
-pub struct CommitmentProof<S = DefaultSeq<32>>
+pub struct CommitmentProof<S>
 where
     S: Seq<Scalar>,
 {
-    pub(crate) resp: Vec<Scalar, S>,
+    pub(crate) m_resp: Vec<Scalar, S>,
+}
+
+impl CommitmentProof<DefaultSeq<32>> {
+    /// Convert a signature proof of knowledge from a byte slice
+    pub fn from_bytes(buf: &[u8]) -> Result<Self, Error> {
+        Self::from_bytes_sized(buf)
+    }
 }
 
 impl<S> CommitmentProof<S>
@@ -254,12 +261,9 @@ where
     {
         let verifier = self.verifier(generators, commitment, committed_indices, challenge)?;
         if verifier.create_challenge(nonce) != challenge {
-            return Err(err_msg!(
-                InvalidProof,
-                "Commitment proof challenge mismatch"
-            ));
+            return Err(err_msg!(Invalid, "Commitment proof challenge mismatch"));
         }
-        Ok(())
+        verifier.verify()
     }
 
     /// Create a verifier for the commitment proof
@@ -282,7 +286,46 @@ where
             challenge,
         )
     }
+
+    /// Write the commitment proof of knowledge to an output buffer
+    pub fn write_bytes(&self, buf: &mut dyn WriteBuffer) -> Result<(), Error> {
+        buf.buffer_write(&(self.m_resp.len() as u32).to_be_bytes())?;
+        for resp in self.m_resp.iter() {
+            resp.write_bytes(&mut *buf)?;
+        }
+        Ok(())
+    }
+
+    #[cfg(feature = "alloc")]
+    /// Output the signature proof of knowledge as a byte vec
+    pub fn to_bytes(&self) -> Result<StdVec<u8>, Error> {
+        let mut out = StdVec::with_capacity(self.m_resp.len() * 32 + 4);
+        self.write_bytes(&mut out)?;
+        Ok(out)
+    }
+
+    /// Convert a signature proof of knowledge from a byte slice
+    pub fn from_bytes_sized(buf: &[u8]) -> Result<Self, Error> {
+        let mut cur = Cursor::new(buf);
+        let m_len = u32::from_be_bytes(*cur.read_fixed()?) as usize;
+        let mut m_resp = Vec::with_capacity(m_len);
+        for _ in 0..m_len {
+            m_resp.push(Scalar::read_bytes(&mut cur)?)?;
+        }
+        Ok(Self { m_resp })
+    }
 }
+
+impl<S, T> PartialEq<CommitmentProof<T>> for CommitmentProof<S>
+where
+    S: Seq<Scalar>,
+    T: Seq<Scalar>,
+{
+    fn eq(&self, other: &CommitmentProof<T>) -> bool {
+        &*self.m_resp == &*other.m_resp
+    }
+}
+impl<S> Eq for CommitmentProof<S> where S: Seq<Scalar> {}
 
 #[derive(Clone, Debug)]
 /// A verifier for a commitment proof of knowledge
@@ -304,22 +347,19 @@ impl CommitmentProofVerifier {
         S: Seq<Scalar>,
         I: Iterator<Item = usize>,
     {
-        if proof.resp.len() < 1 {
-            return Err(err_msg!(InvalidProof, "Invalid proof response count"));
+        if proof.m_resp.len() < 1 {
+            return Err(err_msg!(Invalid, "Invalid proof response count"));
         }
 
         let mut accum_c1 = AccumG1::from(
             &[
                 (commitment.0.into(), -challenge.0),
-                (generators.blinding(), proof.resp[0]),
+                (generators.blinding(), proof.m_resp[0]),
             ][..],
         );
-        for (index, resp) in committed_indices.zip(proof.resp[1..].iter().copied()) {
+        for (index, resp) in committed_indices.zip(proof.m_resp[1..].iter().copied()) {
             if index >= generators.message_count() {
-                return Err(err_msg!(
-                    InvalidProof,
-                    "Message index exceeds generator count"
-                ));
+                return Err(err_msg!(Invalid, "Message index exceeds generator count"));
             }
             accum_c1.push(generators.message(index), resp);
         }
@@ -333,15 +373,14 @@ impl CommitmentProofVerifier {
     /// Verify the public parameters of the commitment proof of knowledge
     /// NOTE: MUST verify that the Fiat-Shamir challenge value matches as well
     pub fn verify(&self) -> Result<(), Error> {
+        // no other verification to perform, but staying consistent
+        // with the SignatureProofVerifier interface here
         Ok(())
     }
 }
 
 impl CreateChallenge for CommitmentProofVerifier {
-    fn write_challenge_bytes(
-        &self,
-        writer: &mut dyn WriteBuffer,
-    ) -> Result<(), askar_crypto::Error> {
+    fn write_challenge_bytes(&self, writer: &mut dyn WriteBuffer) -> Result<(), Error> {
         writer.buffer_write(&self.commitment.to_uncompressed())?;
         writer.buffer_write(&self.c1.to_uncompressed())?;
         Ok(())

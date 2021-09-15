@@ -39,14 +39,14 @@ impl<'de> JwkParts<'de> {
     /// Parse a JWK from a string reference
     pub fn from_str(jwk: &'de str) -> Result<Self, Error> {
         let (parts, _read) =
-            serde_json_core::from_str(jwk).map_err(err_map!(InvalidData, "Error parsing JWK"))?;
+            serde_json_core::from_str(jwk).map_err(err_map!(Invalid, "Error parsing JWK"))?;
         Ok(parts)
     }
 
     /// Parse a JWK from a byte slice
     pub fn from_slice(jwk: &'de [u8]) -> Result<Self, Error> {
         let (parts, _read) =
-            serde_json_core::from_slice(jwk).map_err(err_map!(InvalidData, "Error parsing JWK"))?;
+            serde_json_core::from_slice(jwk).map_err(err_map!(Invalid, "Error parsing JWK"))?;
         Ok(parts)
     }
 }
@@ -73,13 +73,13 @@ impl OptAttr<'_> {
         if let Some(s) = self.0 {
             let max_input = (output.len() * 4 + 2) / 3; // ceil(4*n/3)
             if s.len() > max_input {
-                Err(err_msg!(InvalidData, "Base64 length exceeds max"))
+                Err(err_msg!(Invalid, "Base64 length exceeds max"))
             } else {
                 base64::decode_config_slice(s, base64::URL_SAFE_NO_PAD, output)
-                    .map_err(|_| err_msg!(InvalidData, "Base64 decode error"))
+                    .map_err(|_| err_msg!(Invalid, "Base64 decoding error"))
             }
         } else {
-            Err(err_msg!(InvalidData, "Empty attribute"))
+            Err(err_msg!(Invalid, "Empty attribute"))
         }
     }
 }

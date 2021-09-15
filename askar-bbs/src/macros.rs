@@ -9,7 +9,7 @@ macro_rules! impl_scalar_type {
 
             type Buffer = [u8; 32];
 
-            fn from_bytes(buf: &Self::Buffer) -> Result<Self, $crate::error::Error> {
+            fn from_bytes(buf: &Self::Buffer) -> Result<Self, $crate::Error> {
                 let mut b = *buf;
                 b.reverse(); // into little-endian
                 if let Some(s) = bls12_381::Scalar::from_bytes(&b).into() {

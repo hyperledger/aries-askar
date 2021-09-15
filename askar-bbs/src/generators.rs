@@ -8,7 +8,7 @@ use bls12_381::{
 
 use crate::{
     collect::{DefaultSeq, Seq, Vec},
-    error::Error,
+    Error,
 };
 
 const DST_G1_V1: &'static [u8] = b"BLS12381G1_XOF:SHAKE256_SSWU_RO_BBS+_SIGNATURES:1_0_0";

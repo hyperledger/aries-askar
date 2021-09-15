@@ -2,10 +2,12 @@
 #[test]
 fn prove_single_signature_hidden_message() {
     use askar_bbs::{
-        CreateChallenge, DynGenerators, Message, Nonce, SignatureBuilder, SignatureProver,
+        CreateChallenge, DynGenerators, Message, Nonce, SignatureBuilder, SignatureProof,
+        SignatureProver,
     };
     use askar_crypto::{
         alg::bls::{BlsKeyPair, G2},
+        buffer::Writer,
         repr::KeySecretBytes,
     };
     use hex_literal::hex;
@@ -36,4 +38,13 @@ fn prove_single_signature_hidden_message() {
     let challenge_v = verifier.create_challenge(nonce);
     verifier.verify().expect("Error verifying signature PoK");
     assert_eq!(challenge, challenge_v);
+
+    // test serialization round trip
+    let mut buf = [0u8; 1024];
+    let mut w = Writer::from_slice(&mut buf);
+    proof.write_bytes(&mut w).expect("Error serializing proof");
+    let proof_len = w.position();
+    let proof_de =
+        SignatureProof::from_bytes(&buf[..proof_len]).expect("Error deserializing proof");
+    assert_eq!(proof, proof_de);
 }

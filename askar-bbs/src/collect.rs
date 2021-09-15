@@ -6,7 +6,7 @@ use core::{
     slice::Iter,
 };
 
-use crate::error::Error;
+use crate::Error;
 
 // NOTE: in future, it should be possible to simplify this with GATs
 

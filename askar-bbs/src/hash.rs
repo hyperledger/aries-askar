@@ -9,6 +9,8 @@ use sha3::{
     Sha3XofReader, Shake256,
 };
 
+use crate::Error;
+
 #[derive(Clone, Debug)]
 pub(crate) struct HashScalar<'d> {
     hasher: Shake256,
@@ -52,7 +54,7 @@ impl HashScalar<'_> {
 }
 
 impl WriteBuffer for HashScalar<'_> {
-    fn buffer_write(&mut self, data: &[u8]) -> Result<(), askar_crypto::Error> {
+    fn buffer_write(&mut self, data: &[u8]) -> Result<(), Error> {
         self.update(data);
         Ok(())
     }

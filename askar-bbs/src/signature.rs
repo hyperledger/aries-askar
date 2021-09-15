@@ -8,11 +8,11 @@ use subtle::ConstantTimeEq;
 
 use crate::{
     commitment::{Blinding, Commitment},
-    error::Error,
     generators::Generators,
     hash::HashScalar,
     io::FixedLengthBytes,
     util::AccumG1,
+    Error,
 };
 
 const SIGNATURE_LENGTH: usize = 48 + 32 + 32;
@@ -73,7 +73,7 @@ impl FixedLengthBytes for Signature {
         if let (Some(a), Some(e), Some(s)) = (a.into(), e.into(), s.into()) {
             Ok(Self { a, e, s })
         } else {
-            Err(err_msg!(InvalidSignature))
+            Err(err_msg!(Invalid))
         }
     }
 }
@@ -249,7 +249,7 @@ impl<G: Generators> SignatureVerifier<'_, G> {
         if valid {
             Ok(())
         } else {
-            Err(err_msg!(InvalidSignature))
+            Err(err_msg!(Invalid))
         }
     }
 }
