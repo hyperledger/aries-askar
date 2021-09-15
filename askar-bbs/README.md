@@ -5,7 +5,7 @@
 
 The `askar-bbs` crate provides support for BBS+ signature generation and verification used by [`aries-askar`](https://github.com/hyperledger/aries-askar).
 
-The implementation will be targeting the 2022 standard which is in progress.
+The implementation will be targeting the 2022 standard which is in progress. Please **DO NOT** use this crate and expect it to be compatible with the released version just yet.
 
 ## no-std
 
