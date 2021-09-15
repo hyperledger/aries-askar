@@ -1,10 +1,13 @@
 #[cfg(feature = "alloc")]
 use alloc::vec::Vec as StdVec;
 
-use askar_crypto::{buffer::WriteBuffer, random::default_rng};
+use askar_crypto::buffer::WriteBuffer;
 use bls12_381::{G1Affine, G1Projective, Scalar};
 use group::Curve;
 use rand::{CryptoRng, Rng};
+
+#[cfg(feature = "getrandom")]
+use askar_crypto::random::default_rng;
 
 use crate::{
     challenge::{CreateChallenge, ProofChallenge},

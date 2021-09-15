@@ -4,11 +4,13 @@ use alloc::vec::Vec as StdVec;
 use askar_crypto::{
     alg::bls::{BlsKeyPair, G2},
     buffer::WriteBuffer,
-    random::default_rng,
 };
 use bls12_381::{pairing, G1Affine, G1Projective, G2Affine, Scalar};
 use rand::{CryptoRng, Rng};
 use subtle::ConstantTimeEq;
+
+#[cfg(feature = "getrandom")]
+use askar_crypto::random::default_rng;
 
 use crate::{
     challenge::{CreateChallenge, ProofChallenge},

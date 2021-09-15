@@ -1,7 +1,9 @@
-use askar_crypto::random::default_rng;
 use bls12_381::{G1Projective, Scalar};
 use ff::Field;
 use rand::{CryptoRng, Rng};
+
+#[cfg(feature = "getrandom")]
+use askar_crypto::random::default_rng;
 
 pub(crate) fn random_nonce<R: CryptoRng + Rng>(mut rng: R) -> Scalar {
     let mut r;

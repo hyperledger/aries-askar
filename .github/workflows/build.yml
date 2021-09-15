@@ -61,11 +61,17 @@ jobs:
           command: test
           args: --workspace
 
-      - name: Test no_std
+      - name: Test askar-crypto no_std
         uses: actions-rs/cargo@v1
         with:
           command: test
           args: --manifest-path ./askar-crypto/Cargo.toml --no-default-features
+
+      - name: Test askar-bbs no_std
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: --manifest-path ./askar-bbs/Cargo.toml --no-default-features
 
   test-postgres:
     name: Postgres
