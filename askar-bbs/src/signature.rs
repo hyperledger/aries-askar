@@ -1,6 +1,7 @@
-use core::convert::TryInto;
-
-use askar_crypto::alg::bls::{BlsKeyPair, G2};
+use askar_crypto::{
+    alg::bls::{BlsKeyPair, G2},
+    buffer::Writer,
+};
 use bls12_381::{pairing, G1Affine, G1Projective, G2Affine, G2Projective, Scalar};
 use group::Curve;
 use subtle::ConstantTimeEq;
@@ -9,7 +10,7 @@ use crate::{
     commitment::{Blinding, Commitment},
     generators::Generators,
     hash::HashScalar,
-    io::FixedLengthBytes,
+    io::{CompressedBytes, Cursor, FixedLengthBytes},
     util::AccumG1,
     Error,
 };
@@ -52,28 +53,19 @@ impl FixedLengthBytes for Signature {
 
     fn with_bytes<R>(&self, f: impl FnOnce(&Self::Buffer) -> R) -> R {
         let mut buf = [0u8; Self::LENGTH];
-        buf[..48].copy_from_slice(&self.a.to_compressed()[..]);
-        buf[48..80].copy_from_slice(&self.e.to_bytes()[..]);
-        buf[48..80].reverse(); // into big endian
-        buf[80..].copy_from_slice(&self.s.to_bytes()[..]);
-        buf[80..].reverse(); // into big endian
+        let mut w = Writer::from_slice(&mut buf);
+        self.a.write_compressed(&mut w).unwrap();
+        self.e.write_bytes(&mut w).unwrap();
+        self.s.write_bytes(&mut w).unwrap();
         f(&buf)
     }
 
-    fn from_bytes(sig: &Self::Buffer) -> Result<Self, Error> {
-        let buf = sig.as_ref();
-        let a = G1Affine::from_compressed(&buf[..48].try_into().unwrap());
-        let mut scalar: [u8; 32] = buf[48..80].try_into().unwrap();
-        scalar.reverse(); // from big endian
-        let e = Scalar::from_bytes(&scalar);
-        scalar.copy_from_slice(&buf[80..]);
-        scalar.reverse(); // from big endian
-        let s = Scalar::from_bytes(&scalar);
-        if let (Some(a), Some(e), Some(s)) = (a.into(), e.into(), s.into()) {
-            Ok(Self { a, e, s })
-        } else {
-            Err(err_msg!(Invalid))
-        }
+    fn from_bytes(buf: &Self::Buffer) -> Result<Self, Error> {
+        let mut cur = Cursor::new(buf);
+        let a = G1Affine::read_compressed(&mut cur)?;
+        let e = Scalar::read_bytes(&mut cur)?;
+        let s = Scalar::read_bytes(&mut cur)?;
+        Ok(Self { a, e, s })
     }
 }
 

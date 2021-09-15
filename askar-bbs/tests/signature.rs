@@ -1,8 +1,12 @@
 #[test]
 fn sign_verify_expected() {
-    use askar_bbs::{DynGenerators, Message, SignatureBuilder, SignatureVerifier};
+    use askar_bbs::{
+        io::FixedLengthBytes, DynGenerators, Message, Signature, SignatureBuilder,
+        SignatureVerifier,
+    };
     use askar_crypto::{
         alg::bls::{BlsKeyPair, G2},
+        buffer::Writer,
         repr::KeySecretBytes,
     };
     use hex_literal::hex;
@@ -24,4 +28,14 @@ fn sign_verify_expected() {
         .append_messages(messages.iter().copied())
         .expect("Error verifying signature");
     verifier.verify(&sig).expect("Error verifying signature");
+
+    // test serialization round trip
+    let mut buf = [0u8; 112];
+    let mut w = Writer::from_slice(&mut buf);
+    sig.write_bytes(&mut w)
+        .expect("Error serializing signature");
+    let sig_len = w.position();
+    assert_eq!(sig_len, 112);
+    let sig_de = Signature::from_bytes(&buf).expect("Error deserializing signature");
+    assert_eq!(sig, sig_de);
 }
