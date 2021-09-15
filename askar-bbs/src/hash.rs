@@ -4,6 +4,7 @@ use core::fmt::{self, Debug, Formatter};
 
 use askar_crypto::buffer::WriteBuffer;
 use bls12_381::Scalar;
+use ff::Field;
 use sha3::{
     digest::{ExtendableOutput, Update, XofReader},
     Sha3XofReader, Shake256,
@@ -65,8 +66,13 @@ pub(crate) struct HashScalarRead(Sha3XofReader);
 impl HashScalarRead {
     pub fn next(&mut self) -> Scalar {
         let mut buf = [0u8; 64];
-        self.0.read(&mut buf);
-        Scalar::from_bytes_wide(&buf)
+        loop {
+            self.0.read(&mut buf);
+            let s = Scalar::from_bytes_wide(&buf);
+            if !bool::from(s.is_zero()) {
+                break s;
+            }
+        }
     }
 }
 
