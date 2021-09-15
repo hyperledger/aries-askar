@@ -10,19 +10,12 @@ macro_rules! impl_scalar_type {
             type Buffer = [u8; 32];
 
             fn from_bytes(buf: &Self::Buffer) -> Result<Self, $crate::Error> {
-                let mut b = *buf;
-                b.reverse(); // into little-endian
-                if let Some(s) = bls12_381::Scalar::from_bytes(&b).into() {
-                    Ok(Self(s))
-                } else {
-                    Err(err_msg!(Usage, "Scalar bytes not in canonical format"))
-                }
+                let s = <bls12_381::Scalar as $crate::io::FixedLengthBytes>::from_bytes(buf)?;
+                Ok(Self(s))
             }
 
             fn with_bytes<R>(&self, f: impl FnOnce(&Self::Buffer) -> R) -> R {
-                let mut b = self.0.to_bytes();
-                b.reverse(); // into big-endian
-                f(&b)
+                <bls12_381::Scalar as $crate::io::FixedLengthBytes>::with_bytes(&self.0, f)
             }
         }
 
