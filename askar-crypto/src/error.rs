@@ -8,6 +8,9 @@ use std::error::Error as StdError;
 /// The possible kinds of error produced by the crate
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ErrorKind {
+    /// Custom error, for use external integrations
+    Custom,
+
     /// An encryption or decryption operation failed
     Encryption,
 
@@ -15,7 +18,7 @@ pub enum ErrorKind {
     ExceededBuffer,
 
     /// The provided input was invalid
-    InvalidData,
+    Invalid,
 
     /// The provided key was invalid
     InvalidKeyData,
@@ -40,9 +43,10 @@ impl ErrorKind {
     /// Convert the error kind to a string reference
     pub fn as_str(&self) -> &'static str {
         match self {
+            Self::Custom => "Custom error",
             Self::Encryption => "Encryption error",
-            Self::ExceededBuffer => "Exceeded allocated buffer",
-            Self::InvalidData => "Invalid data",
+            Self::ExceededBuffer => "Exceeded buffer size",
+            Self::Invalid => "Invalid input",
             Self::InvalidNonce => "Invalid encryption nonce",
             Self::InvalidKeyData => "Invalid key data",
             Self::MissingSecretKey => "Missing secret key",
@@ -139,16 +143,20 @@ impl From<ErrorKind> for Error {
     }
 }
 
+#[macro_export]
+/// Assemble an error kind and optional message
 macro_rules! err_msg {
     ($kind:ident) => {
-        $crate::error::Error::from($crate::error::ErrorKind::$kind)
+        $crate::Error::from($crate::ErrorKind::$kind)
     };
     ($kind:ident, $msg:expr) => {
-        $crate::error::Error::from_msg($crate::error::ErrorKind::$kind, $msg)
+        $crate::Error::from_msg($crate::ErrorKind::$kind, $msg)
     };
 }
 
 #[cfg(feature = "std")]
+/// Map an external error
+#[macro_export]
 macro_rules! err_map {
     ($($params:tt)*) => {
         |err| err_msg!($($params)*).with_cause(err)
@@ -156,6 +164,8 @@ macro_rules! err_map {
 }
 
 #[cfg(not(feature = "std"))]
+/// Map an external error
+#[macro_export]
 macro_rules! err_map {
     ($($params:tt)*) => {
         |_| err_msg!($($params)*)

@@ -49,7 +49,7 @@ where
             hasher.hash_params(params);
             let hashed = hasher.finish_pass();
             let cp_size = hashed.len().min(remain);
-            &output[..cp_size].copy_from_slice(&hashed[..cp_size]);
+            output[..cp_size].copy_from_slice(&hashed[..cp_size]);
             output = &mut output[cp_size..];
             remain -= cp_size;
         }

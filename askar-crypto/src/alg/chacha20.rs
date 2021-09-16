@@ -184,7 +184,7 @@ impl<T: Chacha20Type> KeyAeadInPlace for Chacha20Key<T> {
         let nonce = GenericArray::from_slice(nonce);
         let buf_len = buffer.as_ref().len();
         if buf_len < TagSize::<T>::USIZE {
-            return Err(err_msg!(InvalidData, "Invalid size for encrypted data"));
+            return Err(err_msg!(Invalid, "Invalid size for encrypted data"));
         }
         let tag_start = buf_len - TagSize::<T>::USIZE;
         let mut tag = GenericArray::default();

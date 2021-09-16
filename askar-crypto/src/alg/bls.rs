@@ -12,7 +12,7 @@ use bls12_381::{G1Affine, G1Projective, G2Affine, G2Projective, Scalar};
 use group::GroupEncoding;
 use sha2::Sha256;
 use subtle::ConstantTimeEq;
-use zeroize::Zeroizing;
+use zeroize::{Zeroize, Zeroizing};
 
 use crate::generic_array::{
     typenum::{self, Unsigned, U144, U32, U48, U96},
@@ -32,13 +32,14 @@ use crate::{
 pub const JWK_KEY_TYPE: &'static str = "EC";
 
 /// A BLS12-381 key pair
-#[derive(Clone)]
+#[derive(Clone, Zeroize)]
 pub struct BlsKeyPair<Pk: BlsPublicKeyType> {
     secret: Option<BlsSecretKey>,
     public: Pk::Buffer,
 }
 
 impl<Pk: BlsPublicKeyType> BlsKeyPair<Pk> {
+    /// Generate a new BLS key from a seed according to the KeyGen algorithm
     pub fn from_seed(seed: &[u8]) -> Result<Self, Error> {
         Ok(Self::from_secret_key(BlsSecretKey::generate(
             BlsKeyGen::new(seed)?,
@@ -60,6 +61,16 @@ impl<Pk: BlsPublicKeyType> BlsKeyPair<Pk> {
         } else {
             Err(err_msg!(InvalidKeyData, "invalid BLS keypair"))
         }
+    }
+
+    /// Accessor for the associated public key
+    pub fn bls_public_key(&self) -> &Pk::Buffer {
+        &self.public
+    }
+
+    /// Accessor for the associated secret key value, if any
+    pub fn bls_secret_scalar(&self) -> Option<&Scalar> {
+        self.secret.as_ref().map(|s| &s.0)
     }
 }
 
@@ -190,7 +201,7 @@ impl<Pk: BlsPublicKeyType> FromJwk for BlsKeyPair<Pk> {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Zeroize)]
 #[repr(transparent)]
 pub(crate) struct BlsSecretKey(Scalar);
 
@@ -214,13 +225,22 @@ impl BlsSecretKey {
     }
 }
 
-// bls-signatures draft 4 version (incompatible with earlier)
+impl Drop for BlsSecretKey {
+    fn drop(&mut self) {
+        self.zeroize();
+    }
+}
+
+/// A key material generator compatible with KeyGen from the
+/// bls-signatures RFC draft 4 (incompatible with earlier)
+#[derive(Debug, Clone)]
 pub struct BlsKeyGen<'g> {
     salt: Option<GenericArray<u8, U32>>,
     ikm: &'g [u8],
 }
 
 impl<'g> BlsKeyGen<'g> {
+    /// Construct a new `BlsKeyGen` from a seed value
     pub fn new(ikm: &'g [u8]) -> Result<Self, Error> {
         if ikm.len() < 32 {
             return Err(err_msg!(Usage, "Insufficient length for seed"));
@@ -249,7 +269,7 @@ impl KeyMaterial for BlsKeyGen<'_> {
 /// Trait implemented by supported BLS public key types
 pub trait BlsPublicKeyType: 'static {
     /// The concrete key representation
-    type Buffer: Clone + Debug + PartialEq + Sized;
+    type Buffer: Clone + Debug + PartialEq + Sized + Zeroize;
 
     /// The size of the serialized public key
     type BufferSize: ArrayLength<u8>;
@@ -337,7 +357,7 @@ impl BlsPublicKeyType for G2 {
 pub struct G1G2;
 
 impl BlsPublicKeyType for G1G2 {
-    type Buffer = (G1Affine, G2Affine);
+    type Buffer = G1G2Pair;
     type BufferSize = U144;
 
     const ALG_TYPE: BlsCurves = BlsCurves::G1G2;
@@ -355,7 +375,7 @@ impl BlsPublicKeyType for G1G2 {
 
     #[inline]
     fn from_secret_scalar(secret: &Scalar) -> Self::Buffer {
-        (
+        G1G2Pair(
             G1Affine::from(G1Projective::generator() * secret),
             G2Affine::from(G2Projective::generator() * secret),
         )
@@ -370,7 +390,7 @@ impl BlsPublicKeyType for G1G2 {
         let g2: Option<G2Affine> =
             G2Affine::from_compressed(TryInto::<&[u8; 96]>::try_into(&key[48..]).unwrap()).into();
         if let (Some(g1), Some(g2)) = (g1, g2) {
-            Ok((g1, g2))
+            Ok(G1G2Pair(g1, g2))
         } else {
             Err(err_msg!(InvalidKeyData))
         }
@@ -414,6 +434,10 @@ impl From<&BlsKeyPair<G1G2>> for BlsKeyPair<G2> {
         }
     }
 }
+
+#[derive(Clone, Debug, PartialEq, Eq, Zeroize)]
+/// A utility struct combining G1 and G2 public keys
+pub struct G1G2Pair(G1Affine, G2Affine);
 
 #[cfg(test)]
 mod tests {

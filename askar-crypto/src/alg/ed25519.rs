@@ -7,7 +7,7 @@ use core::{
 
 use curve25519_dalek::edwards::CompressedEdwardsY;
 use ed25519_dalek::{ExpandedSecretKey, PublicKey, SecretKey, Signature};
-use sha2::{self, Digest};
+use sha2::Digest;
 use subtle::ConstantTimeEq;
 use x25519_dalek::{PublicKey as XPublicKey, StaticSecret as XSecretKey};
 

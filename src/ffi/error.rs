@@ -21,6 +21,7 @@ pub enum ErrorCode {
     NotFound = 6,
     Unexpected = 7,
     Unsupported = 8,
+    Custom = 100,
 }
 
 impl From<ErrorKind> for ErrorCode {
@@ -28,6 +29,7 @@ impl From<ErrorKind> for ErrorCode {
         match kind {
             ErrorKind::Backend => ErrorCode::Backend,
             ErrorKind::Busy => ErrorCode::Busy,
+            ErrorKind::Custom => ErrorCode::Custom,
             ErrorKind::Duplicate => ErrorCode::Duplicate,
             ErrorKind::Encryption => ErrorCode::Encryption,
             ErrorKind::Input => ErrorCode::Input,
