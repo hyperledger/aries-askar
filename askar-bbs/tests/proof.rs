@@ -3,7 +3,7 @@
 fn prove_single_signature_hidden_message() {
     use askar_bbs::{
         CreateChallenge, DynGenerators, Message, Nonce, SignatureBuilder, SignatureProof,
-        SignatureProver,
+        SignatureProver, SIGNATURE_PROOF_DST_G1,
     };
     use askar_crypto::{
         alg::bls::{BlsKeyPair, G2},
@@ -24,21 +24,23 @@ fn prove_single_signature_hidden_message() {
         .expect("Error building signature");
     let sig = builder.to_signature().expect("Error creating signature");
 
+    // verifier creates a nonce for the proof presentation
     let nonce = Nonce::random();
+
+    // prover constructs the proof and challenge value for an independent proof
     let mut prover = SignatureProver::new(&gens, &sig);
     prover.push_hidden_message(messages[0]).unwrap();
     prover.push_message(messages[1]).unwrap();
-    let prepare = prover.prepare().unwrap();
-    let challenge = prepare
-        .create_challenge(nonce)
-        .expect("Error creating proof challenge");
-    let proof = prepare.complete(challenge).unwrap();
+    let (challenge, proof) = prover
+        .complete(nonce)
+        .expect("Error creating signature pok");
 
+    // verifier checks the proof with the challenge value
     let mut verifier = proof.verifier(&gens, &keypair, challenge).unwrap();
     verifier.push_hidden_count(1).unwrap();
     verifier.push_revealed(messages[1]).unwrap();
     let challenge_v = verifier
-        .create_challenge(nonce)
+        .create_challenge(nonce, Some(SIGNATURE_PROOF_DST_G1))
         .expect("Error creating verification challenge");
     verifier
         .verify(challenge_v)
@@ -85,6 +87,9 @@ fn multi_proof_matching_hidden_message() {
     let sig_2 = SignatureBuilder::sign(&gens_2, &keypair, messages_2.iter().copied())
         .expect("Error creating signature");
 
+    // verifier creates a nonce for the proof presentation
+    let nonce = Nonce::random();
+
     // a common blinding value for the two messages to be proven equal
     let msg_blind = Blinding::random();
 
@@ -102,9 +107,6 @@ fn multi_proof_matching_hidden_message() {
         .unwrap();
     prover_2.push_message(messages_2[2]).unwrap();
     let prepare_2 = prover_2.prepare().unwrap();
-
-    // verifier creates a nonce for the proof presentation
-    let nonce = Nonce::random();
 
     // prover creates a combined challenge value for the two sub-proofs
     let challenge = ProofChallenge::create(&[&prepare_1, &prepare_2], nonce, Some(b"proof DST"))

@@ -23,8 +23,8 @@ impl ProofChallenge {
 /// Support for outputting bytes for use in proof challenge generation
 pub trait CreateChallenge {
     /// Create a new independent proof challenge
-    fn create_challenge(&self, nonce: Nonce) -> Result<ProofChallenge, Error> {
-        let mut c_hash = HashScalar::new(None);
+    fn create_challenge(&self, nonce: Nonce, dst: Option<&[u8]>) -> Result<ProofChallenge, Error> {
+        let mut c_hash = HashScalar::new(dst);
         self.write_challenge_bytes(&mut c_hash)?;
         c_hash.update(&nonce.0.to_bytes());
         Ok(ProofChallenge(c_hash.finalize().next()))

@@ -43,7 +43,7 @@ fn criterion_benchmark(c: &mut Criterion) {
                         }
                     }
                     let ctx = prover.prepare().unwrap();
-                    let challenge = ctx.create_challenge(nonce).unwrap();
+                    let challenge = ctx.create_challenge(nonce, None).unwrap();
                     let _proof = ctx.complete(challenge).unwrap();
                 });
             },
@@ -59,7 +59,7 @@ fn criterion_benchmark(c: &mut Criterion) {
             }
         }
         let ctx = prover.prepare().unwrap();
-        let challenge = ctx.create_challenge(nonce).unwrap();
+        let challenge = ctx.create_challenge(nonce, None).unwrap();
         let proof = ctx.complete(challenge).unwrap();
         c.bench_function(
             &format!("verify signature pok for {} messages", message_count),
@@ -70,7 +70,7 @@ fn criterion_benchmark(c: &mut Criterion) {
                     for index in hidden_count..messages.len() {
                         verifier.push_revealed(messages[index]).unwrap();
                     }
-                    let challenge_v = verifier.create_challenge(nonce).unwrap();
+                    let challenge_v = verifier.create_challenge(nonce, None).unwrap();
                     verifier
                         .verify(challenge_v)
                         .expect("Error verifying signature PoK")

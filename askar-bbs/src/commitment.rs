@@ -19,6 +19,9 @@ use crate::{
     Error,
 };
 
+/// A standard domain-specific input for use in blinded message commitment proofs
+pub const COMMITMENT_PROOF_DST_G1: &[u8] = b"BLS12381G1_BBS+_SIGNATURES_COMMITMENT_POK:1_0_0";
+
 const G1_COMPRESSED_SIZE: usize = 48;
 
 /// A nonce value used as a blinding
@@ -177,7 +180,7 @@ where
         nonce: Nonce,
     ) -> Result<(ProofChallenge, Blinding, Commitment, CommitmentProof<S>), Error> {
         let context = self.prepare_with_rng(rng)?;
-        let challenge = context.create_challenge(nonce)?;
+        let challenge = context.create_challenge(nonce, Some(COMMITMENT_PROOF_DST_G1))?;
         let (blinding, commitment, proof) = context.complete(challenge)?;
         Ok((challenge, blinding, commitment, proof))
     }
@@ -266,7 +269,7 @@ where
         I: IntoIterator<Item = usize>,
     {
         let verifier = self.verifier(generators, commitment, committed_indices, challenge)?;
-        let challenge_v = verifier.create_challenge(nonce)?;
+        let challenge_v = verifier.create_challenge(nonce, Some(COMMITMENT_PROOF_DST_G1))?;
         verifier.verify(challenge_v)
     }
 

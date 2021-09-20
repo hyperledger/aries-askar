@@ -23,6 +23,9 @@ use crate::{
     Error,
 };
 
+/// A standard domain-specific input for use in signature proofs of knowledge
+pub const SIGNATURE_PROOF_DST_G1: &[u8] = b"BLS12381G1_BBS+_SIGNATURES_POK:1_0_0";
+
 #[derive(Clone, Debug)]
 /// Generate a signature proof of knowledge
 pub struct SignatureProver<'g, G, S = DefaultSeq<128>>
@@ -204,7 +207,7 @@ where
         S: Seq<Scalar>,
     {
         let context = self.prepare_with_rng(rng)?;
-        let challenge = context.create_challenge(nonce)?;
+        let challenge = context.create_challenge(nonce, Some(SIGNATURE_PROOF_DST_G1))?;
         let proof = context.complete(challenge)?;
         Ok((challenge, proof))
     }
@@ -311,23 +314,6 @@ impl<S> SignatureProof<S>
 where
     S: Seq<Scalar>,
 {
-    /// Verify an independent commitment proof
-    pub fn verify<G, I>(
-        &self,
-        generators: &G,
-        keypair: &BlsKeyPair<G2>,
-        challenge: ProofChallenge,
-        nonce: Nonce,
-    ) -> Result<(), Error>
-    where
-        G: Generators,
-        I: IntoIterator<Item = usize>,
-    {
-        let verifier = self.verifier(generators, keypair, challenge)?;
-        let challenge_v = verifier.create_challenge(nonce)?;
-        verifier.verify(challenge_v)
-    }
-
     /// Create a verifier for the signature proof of knowledge
     pub fn verifier<'v, G>(
         &'v self,
@@ -431,7 +417,7 @@ where
     generators: &'v G,
     proof: &'v SignatureProof<S>,
     keypair: &'v BlsKeyPair<G2>,
-    challenge: Scalar,
+    neg_challenge: Scalar,
     c1: G1Projective,
     accum_c2: AccumG1,
     hidden_count: usize,
@@ -451,7 +437,7 @@ where
     ) -> Result<Self, Error> {
         let ProofPublicParams { a_prime, a_bar, d } = proof.params;
         let challenge = challenge.0;
-        let neg_c = -challenge;
+        let neg_challenge = -challenge; // negated early for multiplying
 
         let h0 = generators.blinding();
         let c1 = AccumG1::calc(&[
@@ -463,15 +449,15 @@ where
             &[
                 (d.into(), proof.r3_resp),
                 (h0, proof.s_resp),
-                (G1Projective::generator(), neg_c),
+                (G1Projective::generator(), neg_challenge),
             ][..],
         );
 
         Ok(Self {
-            challenge: neg_c, // negate early for multiplying
             generators,
             keypair,
             proof,
+            neg_challenge,
             c1,
             accum_c2,
             hidden_count: 0,
@@ -492,7 +478,7 @@ where
             return Err(err_msg!(Usage, "Message index exceeds generator count"));
         }
         self.accum_c2
-            .push(self.generators.message(c), message.0 * self.challenge);
+            .push(self.generators.message(c), message.0 * self.neg_challenge);
         self.message_count = c + 1;
         Ok(())
     }
@@ -531,15 +517,8 @@ where
         Ok(())
     }
 
-    /// Verify the public parameters of the signature proof of knowledge
+    /// Verify the signature proof of knowledge
     pub fn verify(&self, challenge_v: ProofChallenge) -> Result<(), Error> {
-        // the challenge value is negated on this struct, so compare the sum to zero
-        if challenge_v.0 + self.challenge != Scalar::zero() {
-            return Err(err_msg!(
-                Invalid,
-                "Signature proof of knowledge challenge mismatch"
-            ));
-        }
         if self.message_count != self.generators.message_count() {
             return Err(err_msg!(
                 Invalid,
@@ -550,6 +529,13 @@ where
             return Err(err_msg!(
                 Invalid,
                 "Number of hidden messages does not correspond with responses"
+            ));
+        }
+        // the challenge value is negated on this struct, so compare the sum to zero
+        if challenge_v.0 + self.neg_challenge != Scalar::zero() {
+            return Err(err_msg!(
+                Invalid,
+                "Signature proof of knowledge challenge mismatch"
             ));
         }
 

@@ -11,7 +11,10 @@ use crate::{
     Error,
 };
 
-const DST_G1_V1: &'static [u8] = b"BLS12381G1_XOF:SHAKE256_SSWU_RO_BBS+_SIGNATURES:1_0_0";
+/// A standard domain-specific input for use in signature message generators
+pub const GENERATORS_DST_G1: &'static [u8] =
+    b"BLS12381G1_XOF:SHAKE256_SSWU_RO_BBS+_SIGNATURES:1_0_0";
+
 const G2_UNCOMPRESSED_SIZE: usize = 192;
 
 /// Message generators used in signature building and verification
@@ -154,7 +157,7 @@ impl Generators for DynGenerators {
 
         <G1Projective as HashToCurve<ExpandMsgXof<sha3::Shake256>>>::hash_to_curve(
             &hash_buf[..],
-            DST_G1_V1,
+            GENERATORS_DST_G1,
         )
     }
 

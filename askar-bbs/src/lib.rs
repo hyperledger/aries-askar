@@ -24,18 +24,21 @@ pub mod collect;
 mod commitment;
 pub use commitment::{
     Blinding, Commitment, CommitmentBuilder, CommitmentProof, CommitmentProofContext,
-    CommitmentProofVerifier,
+    CommitmentProofVerifier, COMMITMENT_PROOF_DST_G1,
 };
 
 mod generators;
-pub use generators::{DynGenerators, Generators, GeneratorsSeq, VecGenerators};
+pub use generators::{DynGenerators, Generators, GeneratorsSeq, VecGenerators, GENERATORS_DST_G1};
 
 pub mod hash;
 
 pub mod io;
 
 mod proof;
-pub use proof::{SignatureProof, SignatureProofContext, SignatureProofVerifier, SignatureProver};
+pub use proof::{
+    SignatureProof, SignatureProofContext, SignatureProofVerifier, SignatureProver,
+    SIGNATURE_PROOF_DST_G1,
+};
 
 mod signature;
 pub use signature::{Message, Signature, SignatureBuilder, SignatureVerifier};
