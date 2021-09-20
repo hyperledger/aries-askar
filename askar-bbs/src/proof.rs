@@ -19,7 +19,7 @@ use crate::{
     generators::Generators,
     io::{CompressedBytes, Cursor, FixedLengthBytes},
     signature::{Message, Signature},
-    util::{random_nonce, AccumG1, Nonce},
+    util::{random_scalar, AccumG1, Nonce},
     Error,
 };
 
@@ -99,7 +99,7 @@ where
     #[cfg(feature = "getrandom")]
     /// Push a hidden signed message
     pub fn push_hidden_message(&mut self, message: Message) -> Result<(), Error> {
-        self.push_hidden_message_with(message, Blinding::new())
+        self.push_hidden_message_with(message, Blinding::random())
     }
 
     /// Push a hidden signed message with a specific blinding value
@@ -142,13 +142,13 @@ where
         self.accum_b.push(self.generators.blinding(), s);
         let b = self.accum_b.sum();
         let h0 = self.generators.blinding();
-        let r1 = random_nonce(&mut rng);
-        let r2 = random_nonce(&mut rng);
+        let r1 = random_scalar(&mut rng);
+        let r2 = random_scalar(&mut rng);
         let r3 = r1.invert().unwrap();
-        let e_rand = random_nonce(&mut rng);
-        let r2_rand = random_nonce(&mut rng);
-        let r3_rand = random_nonce(&mut rng);
-        let s_rand = random_nonce(&mut rng);
+        let e_rand = random_scalar(&mut rng);
+        let r2_rand = random_scalar(&mut rng);
+        let r3_rand = random_scalar(&mut rng);
+        let s_rand = random_scalar(&mut rng);
 
         let b_r1 = b * r1;
         let a_prime = a * r1;
@@ -204,7 +204,7 @@ where
         S: Seq<Scalar>,
     {
         let context = self.prepare_with_rng(rng)?;
-        let challenge = context.create_challenge(nonce);
+        let challenge = context.create_challenge(nonce)?;
         let proof = context.complete(challenge)?;
         Ok((challenge, proof))
     }
@@ -324,13 +324,8 @@ where
         I: IntoIterator<Item = usize>,
     {
         let verifier = self.verifier(generators, keypair, challenge)?;
-        if verifier.create_challenge(nonce) != challenge {
-            return Err(err_msg!(
-                Invalid,
-                "Signature proof of knowledge challenge mismatch"
-            ));
-        }
-        Ok(())
+        let challenge_v = verifier.create_challenge(nonce)?;
+        verifier.verify(challenge_v)
     }
 
     /// Create a verifier for the signature proof of knowledge
@@ -398,6 +393,15 @@ where
             s_resp,
             m_resp,
         })
+    }
+
+    /// Get the response value from the post-challenge phase of the sigma protocol
+    /// for a given message index
+    pub fn get_response(&self, index: usize) -> Result<Blinding, Error> {
+        self.m_resp
+            .get(index)
+            .map(Blinding::from)
+            .ok_or_else(|| err_msg!(Usage, "Invalid index for hidden message"))
     }
 }
 
@@ -528,8 +532,14 @@ where
     }
 
     /// Verify the public parameters of the signature proof of knowledge
-    /// NOTE: MUST verify that the Fiat-Shamir challenge value matches as well
-    pub fn verify(&self) -> Result<(), Error> {
+    pub fn verify(&self, challenge_v: ProofChallenge) -> Result<(), Error> {
+        // the challenge value is negated on this struct, so compare the sum to zero
+        if challenge_v.0 + self.challenge != Scalar::zero() {
+            return Err(err_msg!(
+                Invalid,
+                "Signature proof of knowledge challenge mismatch"
+            ));
+        }
         if self.message_count != self.generators.message_count() {
             return Err(err_msg!(
                 Invalid,

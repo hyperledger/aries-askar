@@ -26,8 +26,8 @@ fn criterion_benchmark(c: &mut Criterion) {
 
         let mut signer = SignatureBuilder::new(&gens, &keypair);
         signer.append_messages(messages.iter().copied()).unwrap();
-        let sig = signer.sign().unwrap();
-        let nonce = Nonce::new();
+        let sig = signer.to_signature().unwrap();
+        let nonce = Nonce::random();
 
         c.bench_function(
             &format!("create signature pok for {} messages", message_count),
@@ -43,7 +43,7 @@ fn criterion_benchmark(c: &mut Criterion) {
                         }
                     }
                     let ctx = prover.prepare().unwrap();
-                    let challenge = ctx.create_challenge(nonce);
+                    let challenge = ctx.create_challenge(nonce).unwrap();
                     let _proof = ctx.complete(challenge).unwrap();
                 });
             },
@@ -59,7 +59,7 @@ fn criterion_benchmark(c: &mut Criterion) {
             }
         }
         let ctx = prover.prepare().unwrap();
-        let challenge = ctx.create_challenge(nonce);
+        let challenge = ctx.create_challenge(nonce).unwrap();
         let proof = ctx.complete(challenge).unwrap();
         c.bench_function(
             &format!("verify signature pok for {} messages", message_count),
@@ -70,9 +70,10 @@ fn criterion_benchmark(c: &mut Criterion) {
                     for index in hidden_count..messages.len() {
                         verifier.push_revealed(messages[index]).unwrap();
                     }
-                    let v_challenge = verifier.create_challenge(nonce);
-                    verifier.verify().unwrap();
-                    assert_eq!(challenge, v_challenge);
+                    let challenge_v = verifier.create_challenge(nonce).unwrap();
+                    verifier
+                        .verify(challenge_v)
+                        .expect("Error verifying signature PoK")
                 });
             },
         );

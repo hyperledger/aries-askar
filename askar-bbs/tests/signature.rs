@@ -17,11 +17,8 @@ fn sign_verify_expected() {
     .unwrap();
     let messages = [Message::hash("hello")];
     let gens = DynGenerators::new(&keypair, messages.len());
-    let mut builder = SignatureBuilder::new(&gens, &keypair);
-    builder
-        .append_messages(messages.iter().copied())
-        .expect("Error building signature");
-    let sig = builder.sign().expect("Error creating signature");
+    let sig = SignatureBuilder::sign(&gens, &keypair, messages.iter().copied())
+        .expect("Error creating signature");
 
     let mut verifier = SignatureVerifier::new(&gens, &keypair);
     verifier

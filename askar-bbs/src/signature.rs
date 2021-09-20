@@ -94,6 +94,17 @@ impl<'g, G: Generators> SignatureBuilder<'g, G> {
         Self::from_accum(generators, key, G1Projective::generator() + commitment.0)
     }
 
+    /// Utility method to sign a set of messages with no blinded commitment
+    pub fn sign(
+        generators: &'g G,
+        key: &'g BlsKeyPair<G2>,
+        messages: impl IntoIterator<Item = Message>,
+    ) -> Result<Signature, Error> {
+        let mut slf = Self::from_accum(generators, key, G1Projective::generator());
+        slf.append_messages(messages)?;
+        slf.to_signature()
+    }
+
     #[inline]
     fn from_accum(generators: &'g G, key: &'g BlsKeyPair<G2>, sum: G1Projective) -> Self {
         Self {
@@ -146,7 +157,7 @@ impl<G: Generators> SignatureBuilder<'_, G> {
     }
 
     /// Create a signature from the builder
-    pub fn sign(self) -> Result<Signature, Error> {
+    pub fn to_signature(&self) -> Result<Signature, Error> {
         if self.message_count != self.generators.message_count() {
             return Err(err_msg!(
                 Usage,
@@ -189,6 +200,17 @@ impl<'g, G: Generators> SignatureVerifier<'g, G> {
             key,
             message_count: 0,
         }
+    }
+
+    /// Utility method to create a new verifier from a set of messages
+    pub fn new_with_messages(
+        generators: &'g G,
+        key: &'g BlsKeyPair<G2>,
+        messages: impl IntoIterator<Item = Message>,
+    ) -> Result<Self, Error> {
+        let mut slf = Self::new(generators, key);
+        slf.append_messages(messages)?;
+        Ok(slf)
     }
 }
 

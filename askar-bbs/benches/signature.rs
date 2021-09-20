@@ -25,13 +25,13 @@ fn criterion_benchmark(c: &mut Criterion) {
             b.iter(|| {
                 let mut signer = SignatureBuilder::new(&gens, &keypair);
                 signer.append_messages(messages.iter().copied()).unwrap();
-                signer.sign().unwrap();
+                signer.to_signature().unwrap();
             });
         });
 
         let mut signer = SignatureBuilder::new(&gens, &keypair);
         signer.append_messages(messages.iter().copied()).unwrap();
-        let sig = signer.sign().unwrap();
+        let sig = signer.to_signature().unwrap();
         c.bench_function(&format!("verify for {} messages", message_count), |b| {
             b.iter(|| {
                 let mut verifier = SignatureVerifier::new(&gens, &keypair);

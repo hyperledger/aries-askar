@@ -5,7 +5,7 @@ use subtle::ConstantTimeEq;
 #[cfg(feature = "getrandom")]
 use askar_crypto::random::default_rng;
 
-pub(crate) fn random_nonce<R: CryptoRng + Rng>(mut rng: R) -> Scalar {
+pub(crate) fn random_scalar<R: CryptoRng + Rng>(mut rng: R) -> Scalar {
     let mut buf = [0u8; 64];
     let mut s;
     loop {
@@ -22,13 +22,13 @@ impl_scalar_type!(Nonce, "A nonce used in proof verification");
 impl Nonce {
     #[cfg(feature = "getrandom")]
     /// Generate a new random nonce value
-    pub fn new() -> Self {
-        Self(random_nonce(default_rng()))
+    pub fn random() -> Self {
+        Self(random_scalar(default_rng()))
     }
 
     /// Generate a new random nonce value from a specific RNG
-    pub fn new_with_rng(rng: impl CryptoRng + Rng) -> Self {
-        Self(random_nonce(rng))
+    pub fn random_with_rng(rng: impl CryptoRng + Rng) -> Self {
+        Self(random_scalar(rng))
     }
 }
 

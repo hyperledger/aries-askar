@@ -20,7 +20,7 @@ fn criterion_benchmark(c: &mut Criterion) {
             .to_vec()
             .unwrap();
         let commit_msg = Message::from(OsRng.next_u64());
-        let nonce = Nonce::new();
+        let nonce = Nonce::random();
 
         if message_count == 5 {
             c.bench_function("create commitment", |b| {
@@ -54,14 +54,14 @@ fn criterion_benchmark(c: &mut Criterion) {
                 let mut signer = SignatureBuilder::from_commitment(&gens, &keypair, commitment);
                 signer.push_committed_count(1).unwrap();
                 signer.append_messages(messages.iter().copied()).unwrap();
-                signer.sign().unwrap()
+                signer.to_signature().unwrap()
             });
         });
 
         let mut signer = SignatureBuilder::from_commitment(&gens, &keypair, commitment);
         signer.push_committed_count(1).unwrap();
         signer.append_messages(messages.iter().copied()).unwrap();
-        let sig = signer.sign().unwrap();
+        let sig = signer.to_signature().unwrap();
 
         c.bench_function(
             &format!("unblind and verify for {} messages", message_count),

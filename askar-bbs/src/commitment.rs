@@ -15,7 +15,7 @@ use crate::{
     generators::Generators,
     io::{Cursor, FixedLengthBytes},
     signature::Message,
-    util::{random_nonce, AccumG1, Nonce},
+    util::{random_scalar, AccumG1, Nonce},
     Error,
 };
 
@@ -99,7 +99,7 @@ where
     #[cfg(feature = "getrandom")]
     /// Add a hidden message with a random blinding value
     pub fn add_message(&mut self, index: usize, message: Message) -> Result<(), Error> {
-        self.add_message_with(index, message, Blinding::new())
+        self.add_message_with(index, message, Blinding::random())
     }
 
     /// Add a hidden message with a pre-selected blinding value
@@ -142,8 +142,8 @@ where
         }
 
         let h0 = self.generators.blinding();
-        let s_prime = random_nonce(&mut rng); // s'
-        let s_blind = random_nonce(&mut rng); // s~
+        let s_prime = random_scalar(&mut rng); // s'
+        let s_blind = random_scalar(&mut rng); // s~
         self.accum_commitment.push(h0, s_prime);
         self.accum_c1.push(h0, s_blind);
 
@@ -177,7 +177,7 @@ where
         nonce: Nonce,
     ) -> Result<(ProofChallenge, Blinding, Commitment, CommitmentProof<S>), Error> {
         let context = self.prepare_with_rng(rng)?;
-        let challenge = context.create_challenge(nonce);
+        let challenge = context.create_challenge(nonce)?;
         let (blinding, commitment, proof) = context.complete(challenge)?;
         Ok((challenge, blinding, commitment, proof))
     }
@@ -207,15 +207,15 @@ where
         challenge: ProofChallenge,
     ) -> Result<(Blinding, Commitment, CommitmentProof<S>), Error> {
         let c = challenge.0;
-        let mut m_resp = Vec::with_capacity(self.messages.len() + 1);
-        m_resp.push(self.s_blind + c * self.s_prime)?;
+        let s_resp = self.s_blind + c * self.s_prime;
+        let mut m_resp = Vec::with_capacity(self.messages.len());
         for (msg, m_rand) in self.messages.iter().copied() {
             m_resp.push(m_rand.0 + c * msg.0)?;
         }
         Ok((
             self.s_prime.into(),
             self.commitment,
-            CommitmentProof { m_resp },
+            CommitmentProof { s_resp, m_resp },
         ))
     }
 }
@@ -237,6 +237,7 @@ pub struct CommitmentProof<S>
 where
     S: Seq<Scalar>,
 {
+    pub(crate) s_resp: Scalar,
     pub(crate) m_resp: Vec<Scalar, S>,
 }
 
@@ -265,10 +266,8 @@ where
         I: IntoIterator<Item = usize>,
     {
         let verifier = self.verifier(generators, commitment, committed_indices, challenge)?;
-        if verifier.create_challenge(nonce) != challenge {
-            return Err(err_msg!(Invalid, "Commitment proof challenge mismatch"));
-        }
-        verifier.verify()
+        let challenge_v = verifier.create_challenge(nonce)?;
+        verifier.verify(challenge_v)
     }
 
     /// Create a verifier for the commitment proof
@@ -294,7 +293,8 @@ where
 
     /// Write the commitment proof of knowledge to an output buffer
     pub fn write_bytes(&self, buf: &mut dyn WriteBuffer) -> Result<(), Error> {
-        buf.buffer_write(&(self.m_resp.len() as u32).to_be_bytes())?;
+        buf.buffer_write(&((self.m_resp.len() + 1) as u32).to_be_bytes())?;
+        self.s_resp.write_bytes(&mut *buf)?;
         for resp in self.m_resp.iter() {
             resp.write_bytes(&mut *buf)?;
         }
@@ -304,7 +304,7 @@ where
     #[cfg(feature = "alloc")]
     /// Output the signature proof of knowledge as a byte vec
     pub fn to_bytes(&self) -> Result<StdVec<u8>, Error> {
-        let mut out = StdVec::with_capacity(self.m_resp.len() * 32 + 4);
+        let mut out = StdVec::with_capacity(4 + (1 + self.m_resp.len()) * 32);
         self.write_bytes(&mut out)?;
         Ok(out)
     }
@@ -312,12 +312,26 @@ where
     /// Convert a signature proof of knowledge from a byte slice
     pub fn from_bytes_sized(buf: &[u8]) -> Result<Self, Error> {
         let mut cur = Cursor::new(buf);
-        let m_len = u32::from_be_bytes(*cur.read_fixed()?) as usize;
+        let mut m_len = u32::from_be_bytes(*cur.read_fixed()?) as usize;
+        if m_len < 2 {
+            return Err(err_msg!(Invalid, "Invalid proof response count"));
+        }
+        let s_resp = Scalar::read_bytes(&mut cur)?;
+        m_len -= 1;
         let mut m_resp = Vec::with_capacity(m_len);
         for _ in 0..m_len {
             m_resp.push(Scalar::read_bytes(&mut cur)?)?;
         }
-        Ok(Self { m_resp })
+        Ok(Self { s_resp, m_resp })
+    }
+
+    /// Get the response value from the post-challenge phase of the sigma protocol
+    /// for a given message index
+    pub fn get_response(&self, index: usize) -> Result<Blinding, Error> {
+        self.m_resp
+            .get(index)
+            .map(Blinding::from)
+            .ok_or_else(|| err_msg!(Usage, "Invalid index for committed message"))
     }
 }
 
@@ -327,7 +341,7 @@ where
     T: Seq<Scalar>,
 {
     fn eq(&self, other: &CommitmentProof<T>) -> bool {
-        &*self.m_resp == &*other.m_resp
+        self.s_resp == other.s_resp && &*self.m_resp == &*other.m_resp
     }
 }
 impl<S> Eq for CommitmentProof<S> where S: Seq<Scalar> {}
@@ -335,6 +349,7 @@ impl<S> Eq for CommitmentProof<S> where S: Seq<Scalar> {}
 #[derive(Clone, Debug)]
 /// A verifier for a commitment proof of knowledge
 pub struct CommitmentProofVerifier {
+    challenge: Scalar,
     commitment: G1Affine,
     c1: G1Affine,
 }
@@ -352,17 +367,13 @@ impl CommitmentProofVerifier {
         S: Seq<Scalar>,
         I: Iterator<Item = usize>,
     {
-        if proof.m_resp.len() < 1 {
-            return Err(err_msg!(Invalid, "Invalid proof response count"));
-        }
-
         let mut accum_c1 = AccumG1::from(
             &[
                 (commitment.0.into(), -challenge.0),
-                (generators.blinding(), proof.m_resp[0]),
+                (generators.blinding(), proof.s_resp),
             ][..],
         );
-        for (index, resp) in committed_indices.zip(proof.m_resp[1..].iter().copied()) {
+        for (index, resp) in committed_indices.zip(proof.m_resp.iter().copied()) {
             if index >= generators.message_count() {
                 return Err(err_msg!(Invalid, "Message index exceeds generator count"));
             }
@@ -370,16 +381,17 @@ impl CommitmentProofVerifier {
         }
 
         Ok(Self {
+            challenge: challenge.0,
             commitment: commitment.0,
             c1: accum_c1.sum().to_affine(),
         })
     }
 
     /// Verify the public parameters of the commitment proof of knowledge
-    /// NOTE: MUST verify that the Fiat-Shamir challenge value matches as well
-    pub fn verify(&self) -> Result<(), Error> {
-        // no other verification to perform, but staying consistent
-        // with the SignatureProofVerifier interface here
+    pub fn verify(&self, challenge_v: ProofChallenge) -> Result<(), Error> {
+        if challenge_v.0 != self.challenge {
+            return Err(err_msg!(Invalid, "Commitment proof challenge mismatch"));
+        }
         Ok(())
     }
 }

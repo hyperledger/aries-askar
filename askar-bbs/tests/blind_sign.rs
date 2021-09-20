@@ -15,7 +15,7 @@ use askar_crypto::{
 fn test_commitment_verify() {
     let keypair = BlsKeyPair::<G2>::random().unwrap();
     let gens = DynGenerators::new(&keypair, 5);
-    let nonce = Nonce::new();
+    let nonce = Nonce::random();
     let commit_messages = [(0, Message::hash(b"hello"))];
     let mut committer = CommitmentBuilder::new(&gens);
     for (index, message) in commit_messages.iter().copied() {
@@ -45,7 +45,7 @@ fn test_blind_signature() {
 
     let keypair = BlsKeyPair::<G2>::random().unwrap();
     let gens = DynGenerators::new(&keypair, 2);
-    let nonce = Nonce::new();
+    let nonce = Nonce::random();
     let commit_messages = [(0, Message::hash(b"hello"))];
     let mut committer = CommitmentBuilder::new(&gens);
     for (index, message) in commit_messages.iter().copied() {
@@ -64,7 +64,7 @@ fn test_blind_signature() {
     signer
         .append_messages(sign_messages.iter().copied())
         .unwrap();
-    let blind_signature = signer.sign().expect("Error creating signature");
+    let blind_signature = signer.to_signature().expect("Error creating signature");
 
     let signature = blind_signature.unblind(blinding);
     let mut verifier = SignatureVerifier::new(&gens, &keypair);

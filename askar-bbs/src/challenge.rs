@@ -4,14 +4,30 @@ use crate::{hash::HashScalar, util::Nonce, Error};
 
 impl_scalar_type!(ProofChallenge, "Fiat-Shamir proof challenge value");
 
+impl ProofChallenge {
+    /// Create a new proof challenge value from a set of prepared proofs
+    pub fn create(
+        proofs: &[&dyn CreateChallenge],
+        nonce: Nonce,
+        dst: Option<&[u8]>,
+    ) -> Result<Self, Error> {
+        let mut c_hash = HashScalar::new(dst);
+        for proof in proofs {
+            proof.write_challenge_bytes(&mut c_hash)?;
+        }
+        c_hash.update(&nonce.0.to_bytes());
+        Ok(ProofChallenge(c_hash.finalize().next()))
+    }
+}
+
 /// Support for outputting bytes for use in proof challenge generation
 pub trait CreateChallenge {
     /// Create a new independent proof challenge
-    fn create_challenge(&self, nonce: Nonce) -> ProofChallenge {
+    fn create_challenge(&self, nonce: Nonce) -> Result<ProofChallenge, Error> {
         let mut c_hash = HashScalar::new(None);
-        self.write_challenge_bytes(&mut c_hash).unwrap();
+        self.write_challenge_bytes(&mut c_hash)?;
         c_hash.update(&nonce.0.to_bytes());
-        ProofChallenge(c_hash.finalize().next())
+        Ok(ProofChallenge(c_hash.finalize().next()))
     }
 
     /// Write the challenge bytes to a target
