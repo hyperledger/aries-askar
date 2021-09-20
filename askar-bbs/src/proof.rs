@@ -517,6 +517,11 @@ where
         Ok(())
     }
 
+    /// Complete the proof challenge value for an independent proof
+    pub fn complete(&self, nonce: Nonce) -> Result<ProofChallenge, Error> {
+        self.create_challenge(nonce, Some(SIGNATURE_PROOF_DST_G1))
+    }
+
     /// Verify the signature proof of knowledge
     pub fn verify(&self, challenge_v: ProofChallenge) -> Result<(), Error> {
         if self.message_count != self.generators.message_count() {

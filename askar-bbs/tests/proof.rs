@@ -2,8 +2,7 @@
 #[test]
 fn prove_single_signature_hidden_message() {
     use askar_bbs::{
-        CreateChallenge, DynGenerators, Message, Nonce, SignatureBuilder, SignatureProof,
-        SignatureProver, SIGNATURE_PROOF_DST_G1,
+        DynGenerators, Message, Nonce, SignatureBuilder, SignatureProof, SignatureProver,
     };
     use askar_crypto::{
         alg::bls::{BlsKeyPair, G2},
@@ -40,7 +39,7 @@ fn prove_single_signature_hidden_message() {
     verifier.push_hidden_count(1).unwrap();
     verifier.push_revealed(messages[1]).unwrap();
     let challenge_v = verifier
-        .create_challenge(nonce, Some(SIGNATURE_PROOF_DST_G1))
+        .complete(nonce)
         .expect("Error creating verification challenge");
     verifier
         .verify(challenge_v)
@@ -70,6 +69,7 @@ fn multi_proof_matching_hidden_message() {
     };
     use hex_literal::hex;
 
+    let test_proof_dst = b"test proof";
     let keypair = BlsKeyPair::<G2>::from_secret_bytes(&hex!(
         "0011223344556677889900112233445566778899001122334455667788990011"
     ))
@@ -109,7 +109,7 @@ fn multi_proof_matching_hidden_message() {
     let prepare_2 = prover_2.prepare().unwrap();
 
     // prover creates a combined challenge value for the two sub-proofs
-    let challenge = ProofChallenge::create(&[&prepare_1, &prepare_2], nonce, Some(b"proof DST"))
+    let challenge = ProofChallenge::create(&[&prepare_1, &prepare_2], nonce, Some(test_proof_dst))
         .expect("Error creating proof challenge");
     let proof_1 = prepare_1
         .complete(challenge)
@@ -128,7 +128,7 @@ fn multi_proof_matching_hidden_message() {
 
     // now verifier computes the challenge value
     let challenge_v =
-        ProofChallenge::create(&[&verifier_1, &verifier_2], nonce, Some(b"proof DST"))
+        ProofChallenge::create(&[&verifier_1, &verifier_2], nonce, Some(test_proof_dst))
             .expect("Error creating proof challenge");
     // check the proofs
     verifier_1

@@ -390,12 +390,13 @@ impl CommitmentProofVerifier {
         })
     }
 
-    /// Verify the public parameters of the commitment proof of knowledge
+    /// Verify the commitment proof of knowledge
     pub fn verify(&self, challenge_v: ProofChallenge) -> Result<(), Error> {
         if challenge_v.0 != self.challenge {
-            return Err(err_msg!(Invalid, "Commitment proof challenge mismatch"));
+            Err(err_msg!(Invalid, "Commitment proof challenge mismatch"))
+        } else {
+            Ok(())
         }
-        Ok(())
     }
 }
 
