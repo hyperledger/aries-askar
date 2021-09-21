@@ -32,3 +32,12 @@ This crate provides implementations of the [ECDH-ES](https://tools.ietf.org/html
 ## no-std
 
 This crate supports the optional `alloc` feature, gating types and operations that depend on a global allocator. The `std` feature depends on `alloc`, and adds support for `std::error::Error`.
+
+## License
+
+Licensed under either of
+
+- Apache License, Version 2.0 ([LICENSE-APACHE](https://github.com/hyperledger/aries-askar/blob/main/LICENSE-APACHE) or http://www.apache.org/licenses/LICENSE-2.0)
+- MIT license ([LICENSE-MIT](https://github.com/hyperledger/aries-askar/blob/main/LICENSE-MIT) or http://opensource.org/licenses/MIT)
+
+at your option.
