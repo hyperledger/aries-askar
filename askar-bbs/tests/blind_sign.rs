@@ -25,7 +25,7 @@ fn test_commitment_verify() {
         .complete(nonce)
         .expect("Error completing commitment");
     proof
-        .verify(&gens, commitment, [0].iter().cloned(), challenge, nonce)
+        .verify(&gens, commitment, [0].iter().copied(), challenge, nonce)
         .expect("Error verifying commitment");
 
     // test serialization round trip
@@ -41,8 +41,6 @@ fn test_commitment_verify() {
 #[cfg(feature = "getrandom")]
 #[test]
 fn test_blind_signature() {
-    use askar_bbs::SignatureVerifier;
-
     let keypair = BlsKeyPair::<G2>::random().unwrap();
     let gens = DynGenerators::new(&keypair, 2);
     let nonce = Nonce::random();
@@ -55,7 +53,7 @@ fn test_blind_signature() {
         .complete(nonce)
         .expect("Error completing commitment");
     proof
-        .verify(&gens, commitment, [0].iter().cloned(), challenge, nonce)
+        .verify(&gens, commitment, [0].iter().copied(), challenge, nonce)
         .expect("Error verifying commitment");
 
     let sign_messages = [Message::hash(b"world")];
@@ -67,12 +65,10 @@ fn test_blind_signature() {
     let blind_signature = signer.to_signature().expect("Error creating signature");
 
     let signature = blind_signature.unblind(blinding);
-    let mut verifier = SignatureVerifier::new(&gens, &keypair);
+    let mut verifier = signature.verifier(&gens);
     verifier.push_message(commit_messages[0].1).unwrap();
     verifier
         .append_messages(sign_messages.iter().copied())
         .unwrap();
-    verifier
-        .verify(&signature)
-        .expect("Error verifying signature");
+    verifier.verify().expect("Error verifying signature");
 }

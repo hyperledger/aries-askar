@@ -3,7 +3,7 @@ use core::fmt::Debug;
 use askar_crypto::alg::bls::{BlsKeyPair, G2};
 use bls12_381::{
     hash_to_curve::{ExpandMsgXof, HashToCurve},
-    G1Projective,
+    G1Projective, G2Affine,
 };
 
 use crate::{
@@ -33,6 +33,9 @@ pub trait Generators: Clone + Debug {
 
     /// The number of message generators, not including the blinding
     fn message_count(&self) -> usize;
+
+    /// The public key associated with the generators
+    fn public_key(&self) -> G2Affine;
 
     /// Fetch a zero-based message generator
     fn generator(&self, index: usize) -> G1Projective;
@@ -85,6 +88,7 @@ where
     S: Seq<G1Projective>,
 {
     h: Vec<G1Projective, S>,
+    pk: G2Affine,
 }
 
 impl<S> Clone for GeneratorsSeq<S>
@@ -93,7 +97,10 @@ where
     Vec<G1Projective, S>: Clone,
 {
     fn clone(&self) -> Self {
-        Self { h: self.h.clone() }
+        Self {
+            h: self.h.clone(),
+            pk: self.pk.clone(),
+        }
     }
 }
 
@@ -108,6 +115,10 @@ where
     fn message_count(&self) -> usize {
         self.h.len() - 1
     }
+
+    fn public_key(&self) -> G2Affine {
+        self.pk
+    }
 }
 
 impl<S> GeneratorsSeq<S>
@@ -118,6 +129,7 @@ where
     pub fn copy_from<G: Generators>(gens: &G) -> Result<Self, Error> {
         Ok(Self {
             h: Vec::from_iter(gens.iter())?,
+            pk: gens.public_key(),
         })
     }
 }
@@ -126,7 +138,7 @@ where
 /// A dynamic (not pre-computed) message generator source
 pub struct DynGenerators {
     count: usize,
-    pk: [u8; G2_UNCOMPRESSED_SIZE],
+    pk: G2Affine,
 }
 
 impl DynGenerators {
@@ -134,7 +146,7 @@ impl DynGenerators {
     pub fn new(pk: &BlsKeyPair<G2>, message_count: usize) -> Self {
         Self {
             count: message_count,
-            pk: pk.bls_public_key().to_uncompressed(),
+            pk: *pk.bls_public_key(),
         }
     }
 
@@ -149,7 +161,7 @@ impl Generators for DynGenerators {
         const HASH_BUF_SIZE: usize = 10 + G2_UNCOMPRESSED_SIZE;
 
         let mut hash_buf = [0u8; HASH_BUF_SIZE];
-        hash_buf[..G2_UNCOMPRESSED_SIZE].copy_from_slice(&self.pk[..]);
+        hash_buf[..G2_UNCOMPRESSED_SIZE].copy_from_slice(&self.pk.to_uncompressed()[..]);
         hash_buf[(G2_UNCOMPRESSED_SIZE + 1)..(G2_UNCOMPRESSED_SIZE + 5)]
             .copy_from_slice(&(index as u32).to_be_bytes()[..]);
         hash_buf[(G2_UNCOMPRESSED_SIZE + 6)..(G2_UNCOMPRESSED_SIZE + 10)]
@@ -163,5 +175,9 @@ impl Generators for DynGenerators {
 
     fn message_count(&self) -> usize {
         self.count
+    }
+
+    fn public_key(&self) -> G2Affine {
+        self.pk
     }
 }

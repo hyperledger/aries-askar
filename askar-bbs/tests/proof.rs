@@ -1,9 +1,7 @@
 #[cfg(feature = "getrandom")]
 #[test]
 fn prove_single_signature_hidden_message() {
-    use askar_bbs::{
-        DynGenerators, Message, Nonce, SignatureBuilder, SignatureProof, SignatureProver,
-    };
+    use askar_bbs::{DynGenerators, Message, Nonce, SignatureBuilder, SignatureProof};
     use askar_crypto::{
         alg::bls::{BlsKeyPair, G2},
         buffer::Writer,
@@ -27,7 +25,7 @@ fn prove_single_signature_hidden_message() {
     let nonce = Nonce::random();
 
     // prover constructs the proof and challenge value for an independent proof
-    let mut prover = SignatureProver::new(&gens, &sig);
+    let mut prover = sig.prover(&gens);
     prover.push_hidden_message(messages[0]).unwrap();
     prover.push_message(messages[1]).unwrap();
     let (challenge, proof) = prover
@@ -35,7 +33,7 @@ fn prove_single_signature_hidden_message() {
         .expect("Error creating signature pok");
 
     // verifier checks the proof with the challenge value
-    let mut verifier = proof.verifier(&gens, &keypair, challenge).unwrap();
+    let mut verifier = proof.verifier(&gens, challenge).unwrap();
     verifier.push_hidden_count(1).unwrap();
     verifier.push_revealed(messages[1]).unwrap();
     let challenge_v = verifier
@@ -60,9 +58,7 @@ fn prove_single_signature_hidden_message() {
 #[cfg(feature = "getrandom")]
 #[test]
 fn multi_proof_matching_hidden_message() {
-    use askar_bbs::{
-        Blinding, DynGenerators, Message, Nonce, ProofChallenge, SignatureBuilder, SignatureProver,
-    };
+    use askar_bbs::{Blinding, DynGenerators, Message, Nonce, ProofChallenge, SignatureBuilder};
     use askar_crypto::{
         alg::bls::{BlsKeyPair, G2},
         repr::KeySecretBytes,
@@ -94,13 +90,13 @@ fn multi_proof_matching_hidden_message() {
     let msg_blind = Blinding::random();
 
     // construct provers for the two signatures
-    let mut prover_1 = SignatureProver::new(&gens_1, &sig_1);
+    let mut prover_1 = sig_1.prover(&gens_1);
     prover_1
         .push_hidden_message_with(messages_1[0], msg_blind)
         .unwrap();
     prover_1.push_message(messages_1[1]).unwrap();
     let prepare_1 = prover_1.prepare().unwrap();
-    let mut prover_2 = SignatureProver::new(&gens_2, &sig_2);
+    let mut prover_2 = sig_2.prover(&gens_2);
     prover_2.push_hidden_message(messages_2[0]).unwrap();
     prover_2
         .push_hidden_message_with(messages_2[1], msg_blind)
@@ -119,10 +115,10 @@ fn multi_proof_matching_hidden_message() {
         .expect("Error completing signature pok");
 
     // construct verifiers for the two sub-proofs
-    let mut verifier_1 = proof_1.verifier(&gens_1, &keypair, challenge).unwrap();
+    let mut verifier_1 = proof_1.verifier(&gens_1, challenge).unwrap();
     verifier_1.push_hidden_count(1).unwrap();
     verifier_1.push_revealed(messages_1[1]).unwrap();
-    let mut verifier_2 = proof_2.verifier(&gens_2, &keypair, challenge).unwrap();
+    let mut verifier_2 = proof_2.verifier(&gens_2, challenge).unwrap();
     verifier_2.push_hidden_count(2).unwrap();
     verifier_2.push_revealed(messages_2[2]).unwrap();
 

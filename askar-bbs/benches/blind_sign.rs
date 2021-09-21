@@ -1,9 +1,7 @@
 #[macro_use]
 extern crate criterion;
 
-use askar_bbs::{
-    CommitmentBuilder, DynGenerators, Message, Nonce, SignatureBuilder, SignatureVerifier,
-};
+use askar_bbs::{CommitmentBuilder, DynGenerators, Message, Nonce, SignatureBuilder};
 use askar_crypto::{
     alg::bls::{BlsKeyPair, G2},
     repr::KeyGen,
@@ -68,10 +66,10 @@ fn criterion_benchmark(c: &mut Criterion) {
             |b| {
                 b.iter(|| {
                     let sig = sig.unblind(blinding);
-                    let mut verifier = SignatureVerifier::new(&gens, &keypair);
+                    let mut verifier = sig.verifier(&gens);
                     verifier.push_message(commit_msg).unwrap();
                     verifier.append_messages(messages.iter().copied()).unwrap();
-                    verifier.verify(&sig).unwrap();
+                    verifier.verify().unwrap()
                 });
             },
         );

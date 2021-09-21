@@ -1,9 +1,7 @@
 #[macro_use]
 extern crate criterion;
 
-use askar_bbs::{
-    CreateChallenge, DynGenerators, Message, Nonce, SignatureBuilder, SignatureProver,
-};
+use askar_bbs::{CreateChallenge, DynGenerators, Message, Nonce, SignatureBuilder};
 use askar_crypto::{
     alg::bls::{BlsKeyPair, G2},
     repr::KeyGen,
@@ -33,7 +31,7 @@ fn criterion_benchmark(c: &mut Criterion) {
             &format!("create signature pok for {} messages", message_count),
             |b| {
                 b.iter(|| {
-                    let mut prover = SignatureProver::new(&gens, &sig);
+                    let mut prover = sig.prover(&gens);
                     let hidden_count = message_count / 2;
                     for (index, msg) in messages.iter().enumerate() {
                         if index < hidden_count {
@@ -49,7 +47,7 @@ fn criterion_benchmark(c: &mut Criterion) {
             },
         );
 
-        let mut prover = SignatureProver::new(&gens, &sig);
+        let mut prover = sig.prover(&gens);
         let hidden_count = message_count / 2;
         for (index, msg) in messages.iter().enumerate() {
             if index < hidden_count {
@@ -65,7 +63,7 @@ fn criterion_benchmark(c: &mut Criterion) {
             &format!("verify signature pok for {} messages", message_count),
             |b| {
                 b.iter(|| {
-                    let mut verifier = proof.verifier(&gens, &keypair, challenge).unwrap();
+                    let mut verifier = proof.verifier(&gens, challenge).unwrap();
                     verifier.push_hidden_count(hidden_count).unwrap();
                     for index in hidden_count..messages.len() {
                         verifier.push_revealed(messages[index]).unwrap();

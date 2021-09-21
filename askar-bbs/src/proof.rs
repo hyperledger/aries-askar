@@ -1,10 +1,7 @@
 #[cfg(feature = "alloc")]
 use alloc::vec::Vec as StdVec;
 
-use askar_crypto::{
-    alg::bls::{BlsKeyPair, G2},
-    buffer::WriteBuffer,
-};
+use askar_crypto::buffer::WriteBuffer;
 use bls12_381::{pairing, G1Affine, G1Projective, G2Affine, Scalar};
 use rand::{CryptoRng, Rng};
 use subtle::ConstantTimeEq;
@@ -38,7 +35,7 @@ where
     count: usize,
     generators: &'g G,
     hidden: Vec<(Message, Blinding), S>,
-    sig: Signature,
+    signature: Signature,
 }
 
 impl<'g, G> SignatureProver<'g, G>
@@ -67,7 +64,7 @@ where
             count: 0,
             generators,
             hidden: Vec::new(),
-            sig: *signature,
+            signature: *signature,
         }
     }
 }
@@ -141,7 +138,7 @@ where
             ));
         }
 
-        let Signature { a, e, s } = self.sig;
+        let Signature { a, e, s } = self.signature;
         self.accum_b.push(self.generators.blinding(), s);
         let b = self.accum_b.sum();
         let h0 = self.generators.blinding();
@@ -318,13 +315,12 @@ where
     pub fn verifier<'v, G>(
         &'v self,
         generators: &'v G,
-        keypair: &'v BlsKeyPair<G2>,
         challenge: ProofChallenge,
     ) -> Result<SignatureProofVerifier<'v, G, S>, Error>
     where
         G: Generators,
     {
-        SignatureProofVerifier::new(generators, self, keypair, challenge)
+        SignatureProofVerifier::new(generators, self, challenge)
     }
 
     /// Write the signature proof of knowledge to an output buffer
@@ -416,7 +412,6 @@ where
 {
     generators: &'v G,
     proof: &'v SignatureProof<S>,
-    keypair: &'v BlsKeyPair<G2>,
     neg_challenge: Scalar,
     c1: G1Projective,
     accum_c2: AccumG1,
@@ -432,7 +427,6 @@ where
     pub(crate) fn new(
         generators: &'v G,
         proof: &'v SignatureProof<S>,
-        keypair: &'v BlsKeyPair<G2>,
         challenge: ProofChallenge,
     ) -> Result<Self, Error> {
         let ProofPublicParams { a_prime, a_bar, d } = proof.params;
@@ -455,7 +449,6 @@ where
 
         Ok(Self {
             generators,
-            keypair,
             proof,
             neg_challenge,
             c1,
@@ -545,7 +538,7 @@ where
         }
 
         let ProofPublicParams { a_prime, a_bar, .. } = self.proof.params;
-        let check_pair = pairing(&a_prime, self.keypair.bls_public_key())
+        let check_pair = pairing(&a_prime, &self.generators.public_key())
             .ct_eq(&pairing(&a_bar, &G2Affine::generator()));
 
         let verify: bool = (!a_prime.is_identity() & check_pair).into();

@@ -1,9 +1,6 @@
 #[test]
 fn sign_verify_expected() {
-    use askar_bbs::{
-        io::FixedLengthBytes, DynGenerators, Message, Signature, SignatureBuilder,
-        SignatureVerifier,
-    };
+    use askar_bbs::{io::FixedLengthBytes, DynGenerators, Message, Signature, SignatureBuilder};
     use askar_crypto::{
         alg::bls::{BlsKeyPair, G2},
         buffer::Writer,
@@ -20,11 +17,11 @@ fn sign_verify_expected() {
     let sig = SignatureBuilder::sign(&gens, &keypair, messages.iter().copied())
         .expect("Error creating signature");
 
-    let mut verifier = SignatureVerifier::new(&gens, &keypair);
+    let mut verifier = sig.verifier(&gens);
     verifier
         .append_messages(messages.iter().copied())
         .expect("Error verifying signature");
-    verifier.verify(&sig).expect("Error verifying signature");
+    verifier.verify().expect("Error verifying signature");
 
     // test serialization round trip
     let mut buf = [0u8; 112];
