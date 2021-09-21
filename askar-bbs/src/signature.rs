@@ -11,6 +11,7 @@ use crate::{
     generators::Generators,
     hash::HashScalar,
     io::{CompressedBytes, Cursor, FixedLengthBytes},
+    proof::SignatureProver,
     util::AccumG1,
     Error,
 };
@@ -35,6 +36,14 @@ pub struct Signature {
 }
 
 impl Signature {
+    /// Create a prover for this signature
+    pub fn prover<'g, G>(&self, generators: &'g G) -> SignatureProver<'g, G>
+    where
+        G: Generators,
+    {
+        SignatureProver::new(generators, &self)
+    }
+
     /// Unblind a signature created against a commitment
     pub fn unblind(self, blinding: Blinding) -> Self {
         let Signature { a, e, s } = self;
@@ -43,6 +52,28 @@ impl Signature {
             e,
             s: s + blinding.0,
         }
+    }
+
+    /// Verify a signature with a set of known messages
+    pub fn verify<G>(
+        &self,
+        generators: &G,
+        messages: impl IntoIterator<Item = Message>,
+    ) -> Result<(), Error>
+    where
+        G: Generators,
+    {
+        let mut verifier = SignatureVerifier::new(generators, self);
+        verifier.append_messages(messages)?;
+        verifier.verify()
+    }
+
+    /// Create a new signature verifier
+    pub fn verifier<'g, G>(&self, generators: &'g G) -> SignatureVerifier<'g, G>
+    where
+        G: Generators,
+    {
+        SignatureVerifier::new(generators, self)
     }
 }
 
@@ -92,6 +123,17 @@ impl<'g, G: Generators> SignatureBuilder<'g, G> {
         commitment: Commitment,
     ) -> Self {
         Self::from_accum(generators, key, G1Projective::generator() + commitment.0)
+    }
+
+    /// Utility method to sign a set of messages with no blinded commitment
+    pub fn sign(
+        generators: &'g G,
+        key: &'g BlsKeyPair<G2>,
+        messages: impl IntoIterator<Item = Message>,
+    ) -> Result<Signature, Error> {
+        let mut slf = Self::from_accum(generators, key, G1Projective::generator());
+        slf.append_messages(messages)?;
+        slf.to_signature()
     }
 
     #[inline]
@@ -146,7 +188,7 @@ impl<G: Generators> SignatureBuilder<'_, G> {
     }
 
     /// Create a signature from the builder
-    pub fn sign(self) -> Result<Signature, Error> {
+    pub fn to_signature(&self) -> Result<Signature, Error> {
         if self.message_count != self.generators.message_count() {
             return Err(err_msg!(
                 Usage,
@@ -176,18 +218,18 @@ impl<G: Generators> SignatureBuilder<'_, G> {
 pub struct SignatureVerifier<'g, G: Generators> {
     accum_b: AccumG1,
     generators: &'g G,
-    key: &'g BlsKeyPair<G2>,
     message_count: usize,
+    signature: Signature,
 }
 
 impl<'g, G: Generators> SignatureVerifier<'g, G> {
     /// Create a new signature verifier
-    pub fn new(generators: &'g G, key: &'g BlsKeyPair<G2>) -> Self {
+    pub fn new(generators: &'g G, signature: &Signature) -> Self {
         Self {
             accum_b: AccumG1::new_with(G1Projective::generator()),
             generators,
-            key,
             message_count: 0,
+            signature: *signature,
         }
     }
 }
@@ -221,19 +263,18 @@ impl<G: Generators> SignatureVerifier<'_, G> {
     }
 
     /// Verify a signature
-    pub fn verify(&self, signature: &Signature) -> Result<(), Error> {
+    pub fn verify(&self) -> Result<(), Error> {
         if self.message_count != self.generators.message_count() {
             return Err(err_msg!(
                 Usage,
                 "Message count does not match generator count"
             ));
         }
-        let b = self
-            .accum_b
-            .sum_with(self.generators.blinding(), signature.s);
+        let Signature { a, e, s } = self.signature;
+        let b = self.accum_b.sum_with(self.generators.blinding(), s);
         let valid: bool = pairing(
-            &signature.a,
-            &(G2Projective::generator() * signature.e + self.key.bls_public_key()).to_affine(),
+            &a,
+            &(G2Projective::generator() * e + self.generators.public_key()).to_affine(),
         )
         .ct_eq(&pairing(&b.to_affine(), &G2Affine::generator()))
         .into();

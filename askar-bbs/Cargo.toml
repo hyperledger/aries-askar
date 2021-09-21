@@ -17,7 +17,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 [features]
 default = ["alloc", "getrandom"]
 alloc = ["askar-crypto/alloc"]
-std = ["alloc", "askar-crypto/std", "rand/std", "sha3/std"]
+std = ["alloc", "askar-crypto/std", "getrandom", "rand/std", "sha3/std"]
 getrandom = ["askar-crypto/getrandom", "rand/getrandom"]
 
 [dependencies]

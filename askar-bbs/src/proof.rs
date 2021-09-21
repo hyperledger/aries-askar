@@ -1,10 +1,7 @@
 #[cfg(feature = "alloc")]
 use alloc::vec::Vec as StdVec;
 
-use askar_crypto::{
-    alg::bls::{BlsKeyPair, G2},
-    buffer::WriteBuffer,
-};
+use askar_crypto::buffer::WriteBuffer;
 use bls12_381::{pairing, G1Affine, G1Projective, G2Affine, Scalar};
 use rand::{CryptoRng, Rng};
 use subtle::ConstantTimeEq;
@@ -19,9 +16,12 @@ use crate::{
     generators::Generators,
     io::{CompressedBytes, Cursor, FixedLengthBytes},
     signature::{Message, Signature},
-    util::{random_nonce, AccumG1, Nonce},
+    util::{random_scalar, AccumG1, Nonce},
     Error,
 };
+
+/// A standard domain-specific input for use in signature proofs of knowledge
+pub const SIGNATURE_PROOF_DST_G1: &[u8] = b"BLS12381G1_BBS+_SIGNATURES_POK:1_0_0";
 
 #[derive(Clone, Debug)]
 /// Generate a signature proof of knowledge
@@ -35,7 +35,7 @@ where
     count: usize,
     generators: &'g G,
     hidden: Vec<(Message, Blinding), S>,
-    sig: Signature,
+    signature: Signature,
 }
 
 impl<'g, G> SignatureProver<'g, G>
@@ -64,7 +64,7 @@ where
             count: 0,
             generators,
             hidden: Vec::new(),
-            sig: *signature,
+            signature: *signature,
         }
     }
 }
@@ -99,7 +99,7 @@ where
     #[cfg(feature = "getrandom")]
     /// Push a hidden signed message
     pub fn push_hidden_message(&mut self, message: Message) -> Result<(), Error> {
-        self.push_hidden_message_with(message, Blinding::new())
+        self.push_hidden_message_with(message, Blinding::random())
     }
 
     /// Push a hidden signed message with a specific blinding value
@@ -138,17 +138,17 @@ where
             ));
         }
 
-        let Signature { a, e, s } = self.sig;
+        let Signature { a, e, s } = self.signature;
         self.accum_b.push(self.generators.blinding(), s);
         let b = self.accum_b.sum();
         let h0 = self.generators.blinding();
-        let r1 = random_nonce(&mut rng);
-        let r2 = random_nonce(&mut rng);
+        let r1 = random_scalar(&mut rng);
+        let r2 = random_scalar(&mut rng);
         let r3 = r1.invert().unwrap();
-        let e_rand = random_nonce(&mut rng);
-        let r2_rand = random_nonce(&mut rng);
-        let r3_rand = random_nonce(&mut rng);
-        let s_rand = random_nonce(&mut rng);
+        let e_rand = random_scalar(&mut rng);
+        let r2_rand = random_scalar(&mut rng);
+        let r3_rand = random_scalar(&mut rng);
+        let s_rand = random_scalar(&mut rng);
 
         let b_r1 = b * r1;
         let a_prime = a * r1;
@@ -204,7 +204,7 @@ where
         S: Seq<Scalar>,
     {
         let context = self.prepare_with_rng(rng)?;
-        let challenge = context.create_challenge(nonce);
+        let challenge = context.create_challenge(nonce, Some(SIGNATURE_PROOF_DST_G1))?;
         let proof = context.complete(challenge)?;
         Ok((challenge, proof))
     }
@@ -311,39 +311,16 @@ impl<S> SignatureProof<S>
 where
     S: Seq<Scalar>,
 {
-    /// Verify an independent commitment proof
-    pub fn verify<G, I>(
-        &self,
-        generators: &G,
-        keypair: &BlsKeyPair<G2>,
-        challenge: ProofChallenge,
-        nonce: Nonce,
-    ) -> Result<(), Error>
-    where
-        G: Generators,
-        I: IntoIterator<Item = usize>,
-    {
-        let verifier = self.verifier(generators, keypair, challenge)?;
-        if verifier.create_challenge(nonce) != challenge {
-            return Err(err_msg!(
-                Invalid,
-                "Signature proof of knowledge challenge mismatch"
-            ));
-        }
-        Ok(())
-    }
-
     /// Create a verifier for the signature proof of knowledge
     pub fn verifier<'v, G>(
         &'v self,
         generators: &'v G,
-        keypair: &'v BlsKeyPair<G2>,
         challenge: ProofChallenge,
     ) -> Result<SignatureProofVerifier<'v, G, S>, Error>
     where
         G: Generators,
     {
-        SignatureProofVerifier::new(generators, self, keypair, challenge)
+        SignatureProofVerifier::new(generators, self, challenge)
     }
 
     /// Write the signature proof of knowledge to an output buffer
@@ -399,6 +376,15 @@ where
             m_resp,
         })
     }
+
+    /// Get the response value from the post-challenge phase of the sigma protocol
+    /// for a given message index
+    pub fn get_response(&self, index: usize) -> Result<Blinding, Error> {
+        self.m_resp
+            .get(index)
+            .map(Blinding::from)
+            .ok_or_else(|| err_msg!(Usage, "Invalid index for hidden message"))
+    }
 }
 
 impl<S, T> PartialEq<SignatureProof<T>> for SignatureProof<S>
@@ -426,8 +412,7 @@ where
 {
     generators: &'v G,
     proof: &'v SignatureProof<S>,
-    keypair: &'v BlsKeyPair<G2>,
-    challenge: Scalar,
+    neg_challenge: Scalar,
     c1: G1Projective,
     accum_c2: AccumG1,
     hidden_count: usize,
@@ -442,12 +427,11 @@ where
     pub(crate) fn new(
         generators: &'v G,
         proof: &'v SignatureProof<S>,
-        keypair: &'v BlsKeyPair<G2>,
         challenge: ProofChallenge,
     ) -> Result<Self, Error> {
         let ProofPublicParams { a_prime, a_bar, d } = proof.params;
         let challenge = challenge.0;
-        let neg_c = -challenge;
+        let neg_challenge = -challenge; // negated early for multiplying
 
         let h0 = generators.blinding();
         let c1 = AccumG1::calc(&[
@@ -459,15 +443,14 @@ where
             &[
                 (d.into(), proof.r3_resp),
                 (h0, proof.s_resp),
-                (G1Projective::generator(), neg_c),
+                (G1Projective::generator(), neg_challenge),
             ][..],
         );
 
         Ok(Self {
-            challenge: neg_c, // negate early for multiplying
             generators,
-            keypair,
             proof,
+            neg_challenge,
             c1,
             accum_c2,
             hidden_count: 0,
@@ -488,7 +471,7 @@ where
             return Err(err_msg!(Usage, "Message index exceeds generator count"));
         }
         self.accum_c2
-            .push(self.generators.message(c), message.0 * self.challenge);
+            .push(self.generators.message(c), message.0 * self.neg_challenge);
         self.message_count = c + 1;
         Ok(())
     }
@@ -527,9 +510,13 @@ where
         Ok(())
     }
 
-    /// Verify the public parameters of the signature proof of knowledge
-    /// NOTE: MUST verify that the Fiat-Shamir challenge value matches as well
-    pub fn verify(&self) -> Result<(), Error> {
+    /// Complete the proof challenge value for an independent proof
+    pub fn complete(&self, nonce: Nonce) -> Result<ProofChallenge, Error> {
+        self.create_challenge(nonce, Some(SIGNATURE_PROOF_DST_G1))
+    }
+
+    /// Verify the signature proof of knowledge
+    pub fn verify(&self, challenge_v: ProofChallenge) -> Result<(), Error> {
         if self.message_count != self.generators.message_count() {
             return Err(err_msg!(
                 Invalid,
@@ -542,9 +529,16 @@ where
                 "Number of hidden messages does not correspond with responses"
             ));
         }
+        // the challenge value is negated on this struct, so compare the sum to zero
+        if challenge_v.0 + self.neg_challenge != Scalar::zero() {
+            return Err(err_msg!(
+                Invalid,
+                "Signature proof of knowledge challenge mismatch"
+            ));
+        }
 
         let ProofPublicParams { a_prime, a_bar, .. } = self.proof.params;
-        let check_pair = pairing(&a_prime, self.keypair.bls_public_key())
+        let check_pair = pairing(&a_prime, &self.generators.public_key())
             .ct_eq(&pairing(&a_bar, &G2Affine::generator()));
 
         let verify: bool = (!a_prime.is_identity() & check_pair).into();
