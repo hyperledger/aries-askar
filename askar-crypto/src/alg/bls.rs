@@ -29,7 +29,7 @@ use crate::{
 };
 
 /// The 'kty' value of a BLS key JWK
-pub const JWK_KEY_TYPE: &'static str = "EC";
+pub const JWK_KEY_TYPE: &'static str = "OKP";
 
 /// A BLS12-381 key pair
 #[derive(Clone, Zeroize)]
@@ -175,6 +175,12 @@ impl<Pk: BlsPublicKeyType> ToJwk for BlsKeyPair<Pk> {
 
 impl<Pk: BlsPublicKeyType> FromJwk for BlsKeyPair<Pk> {
     fn from_jwk_parts(jwk: JwkParts<'_>) -> Result<Self, Error> {
+        if jwk.kty != JWK_KEY_TYPE {
+            return Err(err_msg!(InvalidKeyData, "Unsupported key type"));
+        }
+        if jwk.crv != Pk::JWK_CURVE {
+            return Err(err_msg!(InvalidKeyData, "Unsupported key algorithm"));
+        }
         ArrayKey::<Pk::BufferSize>::temp(|pk_arr| {
             if jwk.x.decode_base64(pk_arr)? != pk_arr.len() {
                 Err(err_msg!(InvalidKeyData))
@@ -523,7 +529,7 @@ mod tests {
 
         let jwk = kp.to_jwk_public(None).expect("Error converting key to JWK");
         let jwk = JwkParts::from_str(&jwk).expect("Error parsing JWK");
-        assert_eq!(jwk.kty, "EC");
+        assert_eq!(jwk.kty, JWK_KEY_TYPE);
         assert_eq!(jwk.crv, G1::JWK_CURVE);
         assert_eq!(
             jwk.x,
@@ -535,7 +541,7 @@ mod tests {
 
         let jwk = kp.to_jwk_secret(None).expect("Error converting key to JWK");
         let jwk = JwkParts::from_slice(&jwk).expect("Error parsing JWK");
-        assert_eq!(jwk.kty, "EC");
+        assert_eq!(jwk.kty, JWK_KEY_TYPE);
         assert_eq!(jwk.crv, G1::JWK_CURVE);
         assert_eq!(
             jwk.x,

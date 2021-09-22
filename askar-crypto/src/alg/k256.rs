@@ -256,6 +256,12 @@ impl ToJwk for K256KeyPair {
 
 impl FromJwk for K256KeyPair {
     fn from_jwk_parts(jwk: JwkParts<'_>) -> Result<Self, Error> {
+        if jwk.kty != JWK_KEY_TYPE {
+            return Err(err_msg!(InvalidKeyData, "Unsupported key type"));
+        }
+        if jwk.crv != JWK_CURVE {
+            return Err(err_msg!(InvalidKeyData, "Unsupported key algorithm"));
+        }
         let pk_x = ArrayKey::<FieldSize>::try_new_with(|arr| {
             if jwk.x.decode_base64(arr)? != arr.len() {
                 Err(err_msg!(InvalidKeyData))
@@ -334,7 +340,7 @@ mod tests {
 
         let jwk = sk.to_jwk_public(None).expect("Error converting key to JWK");
         let jwk = JwkParts::from_str(&jwk).expect("Error parsing JWK");
-        assert_eq!(jwk.kty, "EC");
+        assert_eq!(jwk.kty, JWK_KEY_TYPE);
         assert_eq!(jwk.crv, JWK_CURVE);
         assert_eq!(jwk.x, test_pub_b64.0);
         assert_eq!(jwk.y, test_pub_b64.1);
@@ -344,7 +350,7 @@ mod tests {
 
         let jwk = sk.to_jwk_secret(None).expect("Error converting key to JWK");
         let jwk = JwkParts::from_slice(&jwk).expect("Error parsing JWK");
-        assert_eq!(jwk.kty, "EC");
+        assert_eq!(jwk.kty, JWK_KEY_TYPE);
         assert_eq!(jwk.crv, JWK_CURVE);
         assert_eq!(jwk.x, test_pub_b64.0);
         assert_eq!(jwk.y, test_pub_b64.1);

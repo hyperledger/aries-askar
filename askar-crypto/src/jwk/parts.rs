@@ -21,6 +21,8 @@ pub struct JwkParts<'a> {
     pub kty: &'a str,
     /// Key ID
     pub kid: OptAttr<'a>,
+    /// Key algorithm
+    pub alg: OptAttr<'a>,
     /// Curve type
     pub crv: OptAttr<'a>,
     /// Curve key public x coordinate
@@ -141,6 +143,7 @@ impl<'de> Visitor<'de> for JwkMapVisitor<'de> {
     {
         let mut kty = None;
         let mut kid = None;
+        let mut alg = None;
         let mut crv = None;
         let mut x = None;
         let mut y = None;
@@ -152,6 +155,7 @@ impl<'de> Visitor<'de> for JwkMapVisitor<'de> {
             match key {
                 "kty" => kty = Some(access.next_value()?),
                 "kid" => kid = Some(access.next_value()?),
+                "alg" => alg = Some(access.next_value()?),
                 "crv" => crv = Some(access.next_value()?),
                 "x" => x = Some(access.next_value()?),
                 "y" => y = Some(access.next_value()?),
@@ -178,6 +182,7 @@ impl<'de> Visitor<'de> for JwkMapVisitor<'de> {
             Ok(JwkParts {
                 kty,
                 kid: kid.into(),
+                alg: alg.into(),
                 crv: crv.into(),
                 x: x.into(),
                 y: y.into(),
@@ -206,6 +211,9 @@ impl Serialize for JwkParts<'_> {
         S: Serializer,
     {
         let mut map = serializer.serialize_map(None)?;
+        if let Some(alg) = self.alg.to_option() {
+            map.serialize_entry("alg", alg)?;
+        }
         if let Some(crv) = self.crv.to_option() {
             map.serialize_entry("crv", crv)?;
         }
