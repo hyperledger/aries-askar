@@ -269,6 +269,12 @@ impl ToJwk for Ed25519KeyPair {
 
 impl FromJwk for Ed25519KeyPair {
     fn from_jwk_parts(jwk: JwkParts<'_>) -> Result<Self, Error> {
+        if jwk.kty != JWK_KEY_TYPE {
+            return Err(err_msg!(InvalidKeyData, "Unsupported key type"));
+        }
+        if jwk.crv != JWK_CURVE {
+            return Err(err_msg!(InvalidKeyData, "Unsupported key algorithm"));
+        }
         ArrayKey::<U32>::temp(|pk_arr| {
             if jwk.x.decode_base64(pk_arr)? != pk_arr.len() {
                 Err(err_msg!(InvalidKeyData))
@@ -373,7 +379,7 @@ mod tests {
             .to_jwk_secret(None)
             .expect("Error converting private key to JWK");
         let jwk = JwkParts::from_slice(&jwk).expect("Error parsing JWK output");
-        assert_eq!(jwk.kty, "OKP");
+        assert_eq!(jwk.kty, JWK_KEY_TYPE);
         assert_eq!(jwk.crv, JWK_CURVE);
         assert_eq!(jwk.x, test_pub_b64);
         assert_eq!(jwk.d, test_pvt_b64);

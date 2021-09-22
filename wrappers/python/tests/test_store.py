@@ -220,7 +220,6 @@ async def test_profile(store: Store):
         # Test accessing profile after re-opening
         key = raw_key()
         store_2 = await Store.open(TEST_STORE_URI, "raw", key)
-        print("try profile", profile)
         async with store_2.session(profile) as session:
             # Should not find previously stored record
             assert (

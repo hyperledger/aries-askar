@@ -524,11 +524,11 @@ fn from_jwk_any<R: AllocKey>(jwk: JwkParts<'_>) -> Result<R, Error> {
             X25519KeyPair::from_jwk_parts(jwk).map(R::alloc_key)
         }
         #[cfg(feature = "bls")]
-        ("EC", c) if c == G1::JWK_CURVE => BlsKeyPair::<G1>::from_jwk_parts(jwk).map(R::alloc_key),
+        ("OKP", c) if c == G1::JWK_CURVE => BlsKeyPair::<G1>::from_jwk_parts(jwk).map(R::alloc_key),
         #[cfg(feature = "bls")]
-        ("EC", c) if c == G2::JWK_CURVE => BlsKeyPair::<G2>::from_jwk_parts(jwk).map(R::alloc_key),
+        ("OKP", c) if c == G2::JWK_CURVE => BlsKeyPair::<G2>::from_jwk_parts(jwk).map(R::alloc_key),
         #[cfg(feature = "bls")]
-        ("EC", c) if c == G1G2::JWK_CURVE => {
+        ("OKP", c) if c == G1G2::JWK_CURVE => {
             BlsKeyPair::<G1G2>::from_jwk_parts(jwk).map(R::alloc_key)
         }
         #[cfg(feature = "k256")]
