@@ -2,7 +2,7 @@
 
 use core::fmt::{self, Debug, Formatter};
 
-use aead::{Aead, AeadInPlace, NewAead};
+use aead::{AeadCore, AeadInPlace, NewAead};
 use chacha20poly1305::{ChaCha20Poly1305, XChaCha20Poly1305};
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
@@ -25,7 +25,7 @@ pub static JWK_KEY_TYPE: &'static str = "oct";
 /// Trait implemented by supported ChaCha20 algorithms
 pub trait Chacha20Type: 'static {
     /// The AEAD implementation
-    type Aead: NewAead + Aead + AeadInPlace;
+    type Aead: NewAead + AeadCore + AeadInPlace;
 
     /// The associated algorithm type
     const ALG_TYPE: Chacha20Types;
@@ -57,9 +57,9 @@ impl Chacha20Type for XC20P {
 
 type KeyType<A> = ArrayKey<<<A as Chacha20Type>::Aead as NewAead>::KeySize>;
 
-type NonceSize<A> = <<A as Chacha20Type>::Aead as Aead>::NonceSize;
+type NonceSize<A> = <<A as Chacha20Type>::Aead as AeadCore>::NonceSize;
 
-type TagSize<A> = <<A as Chacha20Type>::Aead as Aead>::TagSize;
+type TagSize<A> = <<A as Chacha20Type>::Aead as AeadCore>::TagSize;
 
 /// A ChaCha20 symmetric encryption key
 #[derive(Serialize, Deserialize, Zeroize)]

@@ -6,7 +6,7 @@ use aead::generic_array::ArrayLength;
 use aes_core::{Aes128, Aes256};
 use block_modes::{
     block_padding::Pkcs7,
-    cipher::{BlockCipher, NewBlockCipher},
+    cipher::{BlockCipher, BlockDecrypt, BlockEncrypt, NewBlockCipher},
     BlockMode, Cbc,
 };
 use digest::{BlockInput, FixedOutput, Reset, Update};
@@ -69,7 +69,7 @@ where
 impl<C, D> KeyAeadInPlace for AesKey<AesCbcHmac<C, D>>
 where
     AesCbcHmac<C, D>: AesType,
-    C: BlockCipher + NewBlockCipher,
+    C: BlockCipher + NewBlockCipher + BlockEncrypt + BlockDecrypt,
     D: Update + BlockInput + FixedOutput + Reset + Default + Clone,
     C::KeySize: core::ops::Shl<consts::B1>,
     <C::KeySize as core::ops::Shl<consts::B1>>::Output: ArrayLength<u8>,

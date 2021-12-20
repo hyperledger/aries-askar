@@ -3,7 +3,7 @@
 use core::{convert::TryInto, marker::PhantomData};
 
 use aes_core::{Aes128, Aes256};
-use block_modes::cipher::{BlockCipher, NewBlockCipher};
+use block_modes::cipher::{BlockCipher, BlockDecrypt, BlockEncrypt, NewBlockCipher};
 use subtle::ConstantTimeEq;
 
 use super::{AesKey, AesType, NonceSize, TagSize};
@@ -54,7 +54,9 @@ impl<C> KeyAeadInPlace for AesKey<AesKeyWrap<C>>
 where
     AesKeyWrap<C>: AesType,
     C: NewBlockCipher<KeySize = <AesKeyWrap<C> as AesType>::KeySize>
-        + BlockCipher<BlockSize = consts::U16>,
+        + BlockCipher<BlockSize = consts::U16>
+        + BlockDecrypt
+        + BlockEncrypt,
 {
     fn encrypt_in_place(
         &self,
