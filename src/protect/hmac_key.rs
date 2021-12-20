@@ -3,10 +3,8 @@ use std::{
     marker::PhantomData,
 };
 
-use hmac::{
-    digest::{BlockInput, FixedOutput, Reset, Update},
-    Hmac, Mac, NewMac,
-};
+use digest::crypto_common::BlockSizeUser;
+use hmac::{digest::Digest, Mac, SimpleHmac};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -77,7 +75,7 @@ impl<H, L: ArrayLength<u8>> KeyGen for HmacKey<H, L> {
 }
 
 pub trait HmacDerive {
-    type Hash: BlockInput + Default + Reset + Update + Clone + FixedOutput;
+    type Hash: Digest + BlockSizeUser;
     type Key: AsRef<[u8]>;
 
     fn hmac_deriver<'d>(&'d self, inputs: &'d [&'d [u8]])
@@ -86,7 +84,7 @@ pub trait HmacDerive {
 
 impl<H, L: ArrayLength<u8>> HmacDerive for HmacKey<H, L>
 where
-    H: BlockInput + Default + Reset + Update + Clone + FixedOutput,
+    H: Digest + BlockSizeUser,
 {
     type Hash = H;
     type Key = Self;
@@ -113,7 +111,7 @@ pub struct HmacDeriver<'d, H, K: ?Sized> {
 impl<H, K> KeyDerivation for HmacDeriver<'_, H, K>
 where
     K: AsRef<[u8]> + ?Sized,
-    H: BlockInput + Default + Reset + Update + Clone + FixedOutput,
+    H: Digest + BlockSizeUser,
 {
     fn derive_key_bytes(&mut self, key_output: &mut [u8]) -> Result<(), crypto::Error> {
         if key_output.len() > H::OutputSize::USIZE {
@@ -122,7 +120,7 @@ where
                 "invalid length for hmac output",
             ));
         }
-        let mut hmac = Hmac::<H>::new_from_slice(self.key.as_ref()).map_err(|_| {
+        let mut hmac = SimpleHmac::<H>::new_from_slice(self.key.as_ref()).map_err(|_| {
             crypto::Error::from_msg(crypto::ErrorKind::Encryption, "invalid length for hmac key")
         })?;
         for msg in self.inputs {

@@ -9,8 +9,8 @@ use block_modes::{
     cipher::{BlockCipher, BlockDecrypt, BlockEncrypt, NewBlockCipher},
     BlockMode, Cbc,
 };
-use digest::{BlockInput, FixedOutput, Reset, Update};
-use hmac::{Hmac, Mac, NewMac};
+use digest::{crypto_common::BlockSizeUser, Digest};
+use hmac::{Mac, SimpleHmac};
 use subtle::ConstantTimeEq;
 
 use super::{AesKey, AesType, NonceSize, TagSize};
@@ -70,7 +70,7 @@ impl<C, D> KeyAeadInPlace for AesKey<AesCbcHmac<C, D>>
 where
     AesCbcHmac<C, D>: AesType,
     C: BlockCipher + NewBlockCipher + BlockEncrypt + BlockDecrypt,
-    D: Update + BlockInput + FixedOutput + Reset + Default + Clone,
+    D: Digest + BlockSizeUser,
     C::KeySize: core::ops::Shl<consts::B1>,
     <C::KeySize as core::ops::Shl<consts::B1>>::Output: ArrayLength<u8>,
 {
@@ -106,7 +106,7 @@ where
             .map_err(|_| err_msg!(Encryption, "AES-CBC encryption error"))?;
         let ctext_end = msg_len + pad_len;
 
-        let mut hmac = Hmac::<D>::new_from_slice(&self.0[..C::KeySize::USIZE])
+        let mut hmac = SimpleHmac::<D>::new_from_slice(&self.0[..C::KeySize::USIZE])
             .expect("Incompatible HMAC key length");
         hmac.update(aad);
         hmac.update(nonce.as_ref());
@@ -141,7 +141,7 @@ where
         let ctext_end = buf_len - TagSize::<Self>::USIZE;
         let tag = GenericArray::<u8, TagSize<Self>>::from_slice(&buffer.as_ref()[ctext_end..]);
 
-        let mut hmac = Hmac::<D>::new_from_slice(&self.0[..C::KeySize::USIZE])
+        let mut hmac = SimpleHmac::<D>::new_from_slice(&self.0[..C::KeySize::USIZE])
             .expect("Incompatible HMAC key length");
         hmac.update(aad);
         hmac.update(nonce.as_ref());

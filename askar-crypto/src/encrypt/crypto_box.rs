@@ -5,7 +5,7 @@ use crate::{
     generic_array::{typenum::Unsigned, GenericArray},
 };
 use aead::{AeadCore, AeadInPlace};
-use blake2::{digest::Update, digest::VariableOutput, VarBlake2b};
+use blake2::{digest::Update, digest::VariableOutput, Blake2bVar};
 use crypto_box_rs::{self as cbox, SalsaBox};
 
 use crate::{
@@ -91,11 +91,11 @@ pub fn crypto_box_seal_nonce(
     ephemeral_pk: &[u8],
     recip_pk: &[u8],
 ) -> Result<[u8; CBOX_NONCE_LENGTH], Error> {
-    let mut key_hash = VarBlake2b::new(CBOX_NONCE_LENGTH).unwrap();
+    let mut key_hash = Blake2bVar::new(CBOX_NONCE_LENGTH).unwrap();
     key_hash.update(ephemeral_pk);
     key_hash.update(recip_pk);
     let mut nonce = [0u8; CBOX_NONCE_LENGTH];
-    key_hash.finalize_variable(|hash| nonce.copy_from_slice(hash));
+    key_hash.finalize_variable(&mut nonce).unwrap();
     Ok(nonce)
 }
 

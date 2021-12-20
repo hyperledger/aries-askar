@@ -2,7 +2,7 @@
 
 use core::{fmt::Debug, marker::PhantomData};
 
-use digest::Digest;
+use digest::{Digest, FixedOutputReset};
 
 use crate::generic_array::{typenum::Unsigned, GenericArray};
 
@@ -29,7 +29,7 @@ pub struct ConcatKDFParams<'p> {
 
 impl<H> ConcatKDF<H>
 where
-    H: Digest,
+    H: Digest + FixedOutputReset,
 {
     /// Perform the key derivation and write the result to the provided buffer
     pub fn derive_key(
@@ -98,7 +98,10 @@ impl<H: Digest> ConcatKDFHash<H> {
     }
 
     /// Complete this pass of the key derivation, returning the result
-    pub fn finish_pass(&mut self) -> GenericArray<u8, H::OutputSize> {
+    pub fn finish_pass(&mut self) -> GenericArray<u8, H::OutputSize>
+    where
+        H: FixedOutputReset,
+    {
         self.hasher.finalize_reset()
     }
 }
