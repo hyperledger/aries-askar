@@ -68,17 +68,16 @@ impl KeyDerivation for Argon2<'_> {
                 "Output length exceeds max for argon2i hash"
             ));
         }
-        let context = argon2::Argon2::new(
-            None,
-            self.params.time_cost,
-            self.params.mem_cost,
-            1,
+        let mut pbuild = argon2::ParamsBuilder::new();
+        pbuild.m_cost(self.params.mem_cost).unwrap();
+        pbuild.t_cost(self.params.time_cost).unwrap();
+        argon2::Argon2::new(
+            self.params.alg,
             self.params.version,
+            pbuild.params().unwrap(),
         )
-        .map_err(|_| err_msg!(Unexpected, "Error creating hasher"))?;
-        context
-            .hash_password_into(self.params.alg, self.password, self.salt, &[], key_output)
-            .map_err(|_| err_msg!(Unexpected, "Error deriving key"))
+        .hash_password_into(self.password, self.salt, key_output)
+        .map_err(|_| err_msg!(Unexpected, "Error deriving key"))
     }
 }
 

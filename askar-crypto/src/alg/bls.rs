@@ -261,7 +261,7 @@ impl KeyMaterial for BlsKeyGen<'_> {
 
         self.salt.replace(match self.salt {
             None => Sha256::digest(SALT),
-            Some(salt) => Sha256::digest(salt.as_ref()),
+            Some(salt) => Sha256::digest(salt),
         });
         let mut extract = hkdf::HkdfExtract::<Sha256>::new(Some(self.salt.as_ref().unwrap()));
         extract.input_ikm(self.ikm);

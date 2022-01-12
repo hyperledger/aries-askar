@@ -2,7 +2,7 @@
 
 use core::fmt::{self, Debug, Formatter};
 
-use aead::{generic_array::ArrayLength, AeadInPlace, NewAead};
+use aead::{generic_array::ArrayLength, AeadCore, AeadInPlace, NewAead};
 use aes_gcm::{Aes128Gcm, Aes256Gcm};
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
@@ -174,9 +174,9 @@ impl AesType for A256Gcm {
 }
 
 // generic implementation applying to AesGcm
-impl<T: AeadInPlace + AesType> KeyAeadMeta for AesKey<T> {
-    type NonceSize = <T as AeadInPlace>::NonceSize;
-    type TagSize = <T as AeadInPlace>::TagSize;
+impl<T: AeadCore + AesType> KeyAeadMeta for AesKey<T> {
+    type NonceSize = <T as AeadCore>::NonceSize;
+    type TagSize = <T as AeadCore>::TagSize;
 }
 
 // generic implementation applying to AesGcm

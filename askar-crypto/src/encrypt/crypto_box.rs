@@ -4,8 +4,8 @@ use crate::{
     buffer::Writer,
     generic_array::{typenum::Unsigned, GenericArray},
 };
-use aead::AeadInPlace;
-use blake2::{digest::Update, digest::VariableOutput, VarBlake2b};
+use aead::{AeadCore, AeadInPlace};
+use blake2::{digest::Update, digest::VariableOutput, Blake2bVar};
 use crypto_box_rs::{self as cbox, SalsaBox};
 
 use crate::{
@@ -22,9 +22,9 @@ pub const CBOX_KEY_LENGTH: usize = crate::alg::x25519::PUBLIC_KEY_LENGTH;
 /// The length of the salsa box tag
 pub const CBOX_TAG_LENGTH: usize = TagSize::<SalsaBox>::USIZE;
 
-type NonceSize<A> = <A as AeadInPlace>::NonceSize;
+type NonceSize<A> = <A as AeadCore>::NonceSize;
 
-type TagSize<A> = <A as AeadInPlace>::TagSize;
+type TagSize<A> = <A as AeadCore>::TagSize;
 
 #[inline]
 fn secret_key_from(kp: &X25519KeyPair) -> Result<cbox::SecretKey, Error> {
@@ -53,7 +53,8 @@ pub fn crypto_box<B: ResizeBuffer>(
 ) -> Result<(), Error> {
     let sender_sk = secret_key_from(sender_sk)?;
     let nonce = nonce_from(nonce)?;
-    let box_inst = SalsaBox::new(&recip_pk.public, &sender_sk);
+    let pk = recip_pk.public.to_bytes().into();
+    let box_inst = SalsaBox::new(&pk, &sender_sk);
     let tag = box_inst
         .encrypt_in_place_detached(nonce, &[], buffer.as_mut())
         .map_err(|_| err_msg!(Encryption, "Crypto box AEAD encryption error"))?;
@@ -76,7 +77,8 @@ pub fn crypto_box_open<B: ResizeBuffer>(
     }
     // the tag is prepended
     let tag = GenericArray::clone_from_slice(&buffer.as_ref()[..CBOX_TAG_LENGTH]);
-    let box_inst = SalsaBox::new(&sender_pk.public, &recip_sk);
+    let pk = sender_pk.public.to_bytes().into();
+    let box_inst = SalsaBox::new(&pk, &recip_sk);
     box_inst
         .decrypt_in_place_detached(nonce, &[], &mut buffer.as_mut()[CBOX_TAG_LENGTH..], &tag)
         .map_err(|_| err_msg!(Encryption, "Crypto box AEAD decryption error"))?;
@@ -89,11 +91,11 @@ pub fn crypto_box_seal_nonce(
     ephemeral_pk: &[u8],
     recip_pk: &[u8],
 ) -> Result<[u8; CBOX_NONCE_LENGTH], Error> {
-    let mut key_hash = VarBlake2b::new(CBOX_NONCE_LENGTH).unwrap();
+    let mut key_hash = Blake2bVar::new(CBOX_NONCE_LENGTH).unwrap();
     key_hash.update(ephemeral_pk);
     key_hash.update(recip_pk);
     let mut nonce = [0u8; CBOX_NONCE_LENGTH];
-    key_hash.finalize_variable(|hash| nonce.copy_from_slice(hash));
+    key_hash.finalize_variable(&mut nonce).unwrap();
     Ok(nonce)
 }
 

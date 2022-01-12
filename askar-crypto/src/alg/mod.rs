@@ -39,6 +39,9 @@ pub mod ed25519;
 #[cfg_attr(docsrs, doc(cfg(feature = "ed25519")))]
 pub mod x25519;
 
+#[cfg(feature = "ec_curves")]
+mod ec_common;
+
 #[cfg(feature = "k256")]
 #[cfg_attr(docsrs, doc(cfg(feature = "k256")))]
 pub mod k256;
