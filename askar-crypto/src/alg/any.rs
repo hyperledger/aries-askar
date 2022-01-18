@@ -74,7 +74,7 @@ impl AnyKey {
     }
 
     #[inline]
-    fn key_type_id(&self) -> TypeId {
+    pub fn key_type_id(&self) -> TypeId {
         self.0.as_any().type_id()
     }
 }
@@ -524,11 +524,15 @@ fn from_jwk_any<R: AllocKey>(jwk: JwkParts<'_>) -> Result<R, Error> {
             X25519KeyPair::from_jwk_parts(jwk).map(R::alloc_key)
         }
         #[cfg(feature = "bls")]
-        ("OKP", c) if c == G1::JWK_CURVE => BlsKeyPair::<G1>::from_jwk_parts(jwk).map(R::alloc_key),
+        ("OKP" | "EC", c) if c == G1::JWK_CURVE => {
+            BlsKeyPair::<G1>::from_jwk_parts(jwk).map(R::alloc_key)
+        }
         #[cfg(feature = "bls")]
-        ("OKP", c) if c == G2::JWK_CURVE => BlsKeyPair::<G2>::from_jwk_parts(jwk).map(R::alloc_key),
+        ("OKP" | "EC", c) if c == G2::JWK_CURVE => {
+            BlsKeyPair::<G2>::from_jwk_parts(jwk).map(R::alloc_key)
+        }
         #[cfg(feature = "bls")]
-        ("OKP", c) if c == G1G2::JWK_CURVE => {
+        ("OKP" | "EC", c) if c == G1G2::JWK_CURVE => {
             BlsKeyPair::<G1G2>::from_jwk_parts(jwk).map(R::alloc_key)
         }
         #[cfg(feature = "k256")]

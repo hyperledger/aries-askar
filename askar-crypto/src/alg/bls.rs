@@ -175,7 +175,10 @@ impl<Pk: BlsPublicKeyType> ToJwk for BlsKeyPair<Pk> {
 
 impl<Pk: BlsPublicKeyType> FromJwk for BlsKeyPair<Pk> {
     fn from_jwk_parts(jwk: JwkParts<'_>) -> Result<Self, Error> {
-        if jwk.kty != JWK_KEY_TYPE {
+        if jwk.kty != JWK_KEY_TYPE &&
+            /* compatibility with previous version */
+            jwk.kty != "EC"
+        {
             return Err(err_msg!(InvalidKeyData, "Unsupported key type"));
         }
         if jwk.crv != Pk::JWK_CURVE {
@@ -556,5 +559,28 @@ mod tests {
         //     kp.to_keypair_bytes().unwrap(),
         //     sk_load.to_keypair_bytes().unwrap()
         // );
+    }
+
+    #[cfg(feature = "any_key")]
+    #[test]
+    // test loading of a key with the EC key type
+    fn g1_jwk_any_compat() {
+        use crate::alg::{any::AnyKey, BlsCurves, KeyAlg};
+        use alloc::boxed::Box;
+
+        let test_jwk_compat = r#"
+            {
+                "crv": "BLS12381_G1",
+                "kty": "EC",
+                "x": "osl1NIZnkmrPEvPuywBQROCKept9lfML0oG1VEUQc2ei5dBVi-eUPIvRP5oacDb7"
+            }"#;
+        let key = Box::<AnyKey>::from_jwk(test_jwk_compat).expect("Error decoding BLS key JWK");
+        assert_eq!(key.algorithm(), KeyAlg::Bls12_381(BlsCurves::G1));
+        let as_bls = key
+            .downcast_ref::<BlsKeyPair<G1>>()
+            .expect("Error downcasting BLS key");
+        let _ = as_bls
+            .to_jwk_public(None)
+            .expect("Error converting key to JWK");
     }
 }
