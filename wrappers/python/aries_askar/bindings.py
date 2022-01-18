@@ -526,6 +526,7 @@ def _create_callback(cb_type: CFUNCTYPE, fut: asyncio.Future, post_process=None)
 def do_call(fn_name, *args):
     """Perform a synchronous library function call."""
     lib_fn = getattr(get_library(), fn_name)
+    lib_fn.restype = c_int64
     result = lib_fn(*args)
     if result:
         raise get_current_error(True)
@@ -536,6 +537,7 @@ def do_call_async(
 ) -> asyncio.Future:
     """Perform an asynchronous library function call."""
     lib_fn = getattr(get_library(), fn_name)
+    lib_fn.restype = c_int64
     loop = asyncio.get_event_loop()
     fut = loop.create_future()
     cf_args = [None, c_int64, c_int64]
