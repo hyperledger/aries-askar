@@ -3,7 +3,7 @@ members = ["askar-bbs", "askar-crypto"]
 
 [package]
 name = "aries-askar"
-version = "0.2.3"
+version = "0.2.4"
 authors = ["Hyperledger Aries Contributors <aries@lists.hyperledger.org>"]
 edition = "2018"
 description = "Hyperledger Aries Askar secure storage"
@@ -43,7 +43,7 @@ async-stream = "0.3"
 bs58 = "0.4"
 chrono = "0.4"
 digest = "0.10"
-env_logger = { version = "0.7", optional = true }
+env_logger = { version = "0.9", optional = true }
 ffi-support = { version = "0.4", optional = true }
 futures-lite = "1.11"
 hex = "0.4"
