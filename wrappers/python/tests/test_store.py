@@ -1,8 +1,10 @@
 import os
 
-from pytest import fixture, mark
+from pytest import mark, raises
+import pytest_asyncio
 
 from aries_askar import (
+    AskarError,
     KeyAlg,
     Key,
     Store,
@@ -22,7 +24,7 @@ def raw_key() -> str:
     return Store.generate_raw_key(b"00000000000000000000000000000My1")
 
 
-@fixture
+@pytest_asyncio.fixture
 async def store() -> Store:
     key = raw_key()
     store = await Store.provision(TEST_STORE_URI, "raw", key, recreate=True)
@@ -229,4 +231,38 @@ async def test_profile(store: Store):
             ) == 1
         await store_2.close()
 
+    with raises(AskarError, match="Duplicate"):
+        _ = await store.create_profile(profile)
+
+    # check profile is still usable
+    async with store.session(profile) as session:
+        assert (
+            await session.count(
+                TEST_ENTRY["category"], {"~plaintag": "a", "enctag": "b"}
+            )
+        ) == 1
+
     await store.remove_profile(profile)
+
+    # profile key is cached
+    async with store.session(profile) as session:
+        assert (
+            await session.count(
+                TEST_ENTRY["category"], {"~plaintag": "a", "enctag": "b"}
+            )
+        ) == 0
+
+    with raises(AskarError, match="not found"):
+        async with store.session("unknown profile") as session:
+            await session.count(
+                TEST_ENTRY["category"], {"~plaintag": "a", "enctag": "b"}
+            )
+
+    await store.create_profile(profile)
+
+    async with store.session(profile) as session:
+        assert (
+            await session.count(
+                TEST_ENTRY["category"], {"~plaintag": "a", "enctag": "b"}
+            )
+        ) == 0
