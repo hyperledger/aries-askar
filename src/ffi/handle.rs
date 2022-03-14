@@ -1,4 +1,4 @@
-use std::{marker::PhantomData, mem, sync::Arc};
+use std::{fmt::Display, marker::PhantomData, mem, sync::Arc};
 
 use crate::error::Error;
 
@@ -48,7 +48,7 @@ impl<T> std::fmt::Display for ArcHandle<T> {
     }
 }
 
-pub trait ResourceHandle: Copy + Ord + From<usize> {
+pub trait ResourceHandle: Copy + Ord + From<usize> + Display {
     fn invalid() -> Self {
         Self::from(0)
     }

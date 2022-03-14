@@ -67,7 +67,7 @@ class SessionHandle(c_size_t):
 
     async def close(self, commit: bool = False):
         """Close the session."""
-        if not getattr(self, "_closed", False):
+        if not getattr(self, "_closed", False) and self:
             await do_call_async(
                 "askar_session_close",
                 self,

@@ -84,17 +84,12 @@ where
         handle
     }
 
-    pub async fn remove(&self, handle: K) -> Result<V, Error> {
-        Arc::try_unwrap(
-            self.map
-                .write()
-                .await
-                .remove(&handle)
-                .ok_or_else(|| err_msg!("Invalid resource handle"))?
-                .1,
-        )
-        .map(|item| item.into_inner().unwrap())
-        .map_err(|_| err_msg!(Busy, "Resource handle in use"))
+    pub async fn remove(&self, handle: K) -> Option<Result<V, Error>> {
+        self.map.write().await.remove(&handle).map(|(_s, v)| {
+            Arc::try_unwrap(v)
+                .map(|item| item.into_inner().unwrap())
+                .map_err(|_| err_msg!(Busy, "Resource handle in use"))
+        })
     }
 
     pub async fn borrow(&self, handle: K) -> Result<TryMutexGuard<V>, Error> {
@@ -502,8 +497,13 @@ pub extern "C" fn askar_scan_free(handle: ScanHandle) -> ErrorCode {
     catch_err! {
         trace!("Close scan");
         spawn_ok(async move {
-            FFI_SCANS.remove(handle).await.ok();
-            info!("Closed scan {}", handle);
+            // the Scan may have been removed due to the Store being closed
+            if let Some(scan) = FFI_SCANS.remove(handle).await {
+                scan.ok();
+                info!("Closed scan {}", handle);
+            } else {
+                info!("Scan not found for closing: {}", handle);
+            }
         });
         Ok(ErrorCode::Success)
     }
@@ -996,15 +996,20 @@ pub extern "C" fn askar_session_close(
         });
         spawn_ok(async move {
             let result = async {
-                let session = FFI_SESSIONS.remove(handle).await?;
-                if commit == 0 {
-                    // not necessary - rollback is automatic for txn,
-                    // and for regular session there is no action to perform
-                    // > session.rollback().await?;
+                // the Session may have been removed due to the Store being closed
+                if let Some(session) = FFI_SESSIONS.remove(handle).await {
+                    let session = session?;
+                    if commit == 0 {
+                        // not necessary - rollback is automatic for txn,
+                        // and for regular session there is no action to perform
+                        // > session.rollback().await?;
+                    } else {
+                        session.commit().await?;
+                    }
+                    info!("Closed session {}", handle);
                 } else {
-                    session.commit().await?;
+                    info!("Session not found for closing: {}", handle);
                 }
-                info!("Closed session {}", handle);
                 Ok(())
             }.await;
             if let Some(cb) = cb {

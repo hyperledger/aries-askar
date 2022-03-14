@@ -569,7 +569,7 @@ class Session:
 
     async def close(self):
         if self._handle:
-            await self.handle.close(commit=False)
+            await self._handle.close(commit=False)
             self._handle = None
 
     def __repr__(self) -> str:
