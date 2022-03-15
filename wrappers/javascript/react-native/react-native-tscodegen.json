@@ -1,0 +1,7 @@
+{
+  "libraryName": "AriesAskar",
+  "outputDirectory": "./cpp/generated",
+  "moduleSpecName": "AriesAskar",
+  "generators": ["modulesCxx"],
+  "inputFile": "./src/turboModule.ts"
+}
