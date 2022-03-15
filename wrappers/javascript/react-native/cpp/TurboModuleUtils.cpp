@@ -9,7 +9,7 @@ void TurboModuleUtils::installTurboModule(
   std::shared_ptr<AriesAskarCxx> turboModule =
       std::make_shared<AriesAskarCxx>(jsCallInvoker);
 
-  // Register bbsSignatures instance as global.`NAME`
+  // Register ariesAskar instance as global._ariesAskar
   rt.global().setProperty(rt, "_ariesAskar",
                           jsi::Object::createFromHostObject(rt, turboModule));
 }
