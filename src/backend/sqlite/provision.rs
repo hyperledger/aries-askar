@@ -50,8 +50,9 @@ impl SqliteStoreOptions {
 
     async fn pool(&self, auto_create: bool) -> std::result::Result<SqlitePool, SqlxError> {
         #[allow(unused_mut)]
-        let mut conn_opts =
-            SqliteConnectOptions::from_str(self.path.as_ref())?.create_if_missing(auto_create);
+        let mut conn_opts = SqliteConnectOptions::from_str(self.path.as_ref())?
+            .create_if_missing(auto_create)
+            .shared_cache(true);
         #[cfg(feature = "log")]
         {
             conn_opts.log_statements(log::LevelFilter::Debug);
