@@ -157,7 +157,7 @@ async def test_transaction_conflict(store: Store):
         await txn.commit()
 
     INC_COUNT = 500
-    TASKS = 50
+    TASKS = 20
 
     async def inc():
         for _ in range(INC_COUNT):
@@ -194,7 +194,7 @@ async def test_transaction_conflict_threaded(store: Store):
         await txn.commit()
 
     INC_COUNT = 500
-    TASKS = 50
+    TASKS = 20
 
     async def inc():
         for _ in range(INC_COUNT):
