@@ -77,9 +77,9 @@ default-features = false
 features = ["chrono", "runtime-tokio-rustls"]
 optional = true
 
-[profile.release]
-lto = true
-codegen-units = 1
+# [profile.release]
+# lto = true
+# codegen-units = 1
 
 [[test]]
 name = "backends"
