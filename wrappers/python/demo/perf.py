@@ -32,21 +32,36 @@ async def perf_test():
     store = await Store.provision(REPO_URI, "raw", key, recreate=True)
 
     insert_start = time.perf_counter()
+    async with store.session() as session:
+        for idx in range(PERF_ROWS):
+            await session.insert(
+                "seq",
+                f"name-{idx}",
+                b"value",
+                {"~plaintag": "a", "enctag": "b"},
+            )
+    dur = time.perf_counter() - insert_start
+    print(f"sequential insert duration ({PERF_ROWS} rows): {dur:0.2f}s")
+
+    insert_start = time.perf_counter()
     async with store.transaction() as txn:
-        # ^ faster within a transaction
+        # ^ should be faster within a transaction
         for idx in range(PERF_ROWS):
             await txn.insert(
-                "category", f"name-{idx}", b"value", {"~plaintag": "a", "enctag": "b"}
+                "txn",
+                f"name-{idx}",
+                b"value",
+                {"~plaintag": "a", "enctag": "b"},
             )
         await txn.commit()
     dur = time.perf_counter() - insert_start
-    print(f"insert duration ({PERF_ROWS} rows): {dur:0.2f}s")
+    print(f"transaction batch insert duration ({PERF_ROWS} rows): {dur:0.2f}s")
 
+    tags = 0
     fetch_start = time.perf_counter()
     async with store as session:
-        tags = 0
         for idx in range(PERF_ROWS):
-            entry = await session.fetch("category", f"name-{idx}")
+            entry = await session.fetch("seq", f"name-{idx}")
             tags += len(entry.tags)
     dur = time.perf_counter() - fetch_start
     print(f"fetch duration ({PERF_ROWS} rows, {tags} tags): {dur:0.2f}s")
@@ -54,11 +69,35 @@ async def perf_test():
     rc = 0
     tags = 0
     scan_start = time.perf_counter()
-    async for row in store.scan("category", {"~plaintag": "a", "enctag": "b"}):
+    async for row in store.scan("seq", {"~plaintag": "a", "enctag": "b"}):
         rc += 1
         tags += len(row.tags)
     dur = time.perf_counter() - scan_start
     print(f"scan duration ({rc} rows, {tags} tags): {dur:0.2f}s")
+
+    async with store as session:
+        await session.insert("seq", "count", "0", {"~plaintag": "a", "enctag": "b"})
+        update_start = time.perf_counter()
+        count = 0
+        for idx in range(PERF_ROWS):
+            count += 1
+            await session.replace(
+                "seq", "count", str(count), {"~plaintag": "a", "enctag": "b"}
+            )
+    dur = time.perf_counter() - update_start
+    print(f"unchecked update duration ({PERF_ROWS} rows): {dur:0.2f}s")
+
+    async with store as session:
+        await session.insert("txn", "count", "0", {"~plaintag": "a", "enctag": "b"})
+    update_start = time.perf_counter()
+    for idx in range(PERF_ROWS):
+        async with store.transaction() as txn:
+            row = await txn.fetch("txn", "count", for_update=True)
+            count = str(int(row.value) + 1)
+            await txn.replace("txn", "count", count, {"~plaintag": "a", "enctag": "b"})
+            await txn.commit()
+    dur = time.perf_counter() - update_start
+    print(f"transactional update duration ({PERF_ROWS} rows): {dur:0.2f}s")
 
     await store.close()
 
