@@ -49,11 +49,14 @@ const FETCH_QUERY_UPDATE: &'static str = "SELECT id, value,
         FROM items_tags it WHERE it.item_id = i.id) tags
     FROM items i
     WHERE profile_id = $1 AND kind = $2 AND category = $3 AND name = $4
-    AND (expiry IS NULL OR expiry > CURRENT_TIMESTAMP) FOR UPDATE";
+    AND (expiry IS NULL OR expiry > CURRENT_TIMESTAMP) FOR NO KEY UPDATE";
 const INSERT_QUERY: &'static str =
     "INSERT INTO items (profile_id, kind, category, name, value, expiry)
     VALUES ($1, $2, $3, $4, $5, $6)
     ON CONFLICT DO NOTHING RETURNING id";
+const UPDATE_QUERY: &'static str = "UPDATE items SET value=$5, expiry=$6
+    WHERE profile_id=$1 AND kind=$2 AND category=$3 AND name=$4
+    RETURNING id";
 const SCAN_QUERY: &'static str = "SELECT id, name, value,
     (SELECT ARRAY_TO_STRING(ARRAY_AGG(it.plaintext || ':'
         || ENCODE(it.name, 'hex') || ':' || ENCODE(it.value, 'hex')), ',')
@@ -64,6 +67,8 @@ const DELETE_ALL_QUERY: &'static str = "DELETE FROM items i
     WHERE i.profile_id = $1 AND i.kind = $2 AND i.category = $3";
 const TAG_INSERT_QUERY: &'static str = "INSERT INTO items_tags
     (item_id, name, value, plaintext) VALUES ($1, $2, $3, $4)";
+const TAG_DELETE_QUERY: &'static str = "DELETE FROM items_tags
+    WHERE item_id=$1";
 
 mod provision;
 pub use provision::PostgresStoreOptions;
@@ -500,8 +505,7 @@ impl QueryBackend for DbSession<Postgres> {
 
                     let mut active = acquire_session(&mut *self).await?;
                     let mut txn = active.as_transaction().await?;
-                    perform_remove(&mut txn, kind, &enc_category, &enc_name, false).await?;
-                    perform_insert(
+                    perform_update(
                         &mut txn,
                         kind,
                         &enc_category,
@@ -639,6 +643,44 @@ async fn perform_insert<'q>(
     Ok(())
 }
 
+async fn perform_update<'q>(
+    active: &mut DbSessionActive<'q, Postgres>,
+    kind: EntryKind,
+    enc_category: &[u8],
+    enc_name: &[u8],
+    enc_value: &[u8],
+    enc_tags: Option<Vec<EncEntryTag>>,
+    expiry_ms: Option<i64>,
+) -> Result<(), Error> {
+    trace!("Update entry");
+    let row_id: i64 = sqlx::query_scalar(UPDATE_QUERY)
+        .bind(active.profile_id)
+        .bind(kind as i16)
+        .bind(enc_category)
+        .bind(enc_name)
+        .bind(enc_value)
+        .bind(expiry_ms.map(expiry_timestamp).transpose()?)
+        .fetch_one(active.connection_mut())
+        .await
+        .map_err(|_| err_msg!(NotFound, "Error updating existing row"))?;
+    sqlx::query(TAG_DELETE_QUERY)
+        .bind(row_id)
+        .execute(active.connection_mut())
+        .await?;
+    if let Some(tags) = enc_tags {
+        for tag in tags {
+            sqlx::query(TAG_INSERT_QUERY)
+                .bind(row_id)
+                .bind(&tag.name)
+                .bind(&tag.value)
+                .bind(tag.plaintext as i16)
+                .execute(active.connection_mut())
+                .await?;
+        }
+    }
+    Ok(())
+}
+
 async fn perform_remove<'q>(
     active: &mut DbSessionActive<'q, Postgres>,
     kind: EntryKind,
@@ -690,7 +732,7 @@ fn perform_scan<'q>(
         params.push(enc_category);
         let mut query = extend_query::<PostgresStore>(SCAN_QUERY, &mut params, tag_filter, offset, limit)?;
         if for_update {
-            query.push_str(" FOR UPDATE");
+            query.push_str(" FOR NO KEY UPDATE");
         }
         let mut batch = Vec::with_capacity(PAGE_SIZE);
 
