@@ -184,54 +184,6 @@ async def test_transaction_conflict(store: Store):
 
 
 @mark.asyncio
-async def test_transaction_conflict_threaded(store: Store):
-    async with store.transaction() as txn:
-        await txn.insert(
-            TEST_ENTRY["category"],
-            TEST_ENTRY["name"],
-            "0",
-        )
-        await txn.commit()
-
-    INC_COUNT = 500
-    TASKS = 20
-
-    async def inc():
-        for _ in range(INC_COUNT):
-            async with store.transaction() as txn:
-                row = await txn.fetch(
-                    TEST_ENTRY["category"], TEST_ENTRY["name"], for_update=True
-                )
-                if not row:
-                    raise Exception("Row not found")
-                new_value = str(int(row.value) + 1)
-                await txn.replace(TEST_ENTRY["category"], TEST_ENTRY["name"], new_value)
-                await txn.commit()
-
-    def proc():
-        loop = asyncio.new_event_loop()
-        loop.run_until_complete(inc())
-
-    tasks = []
-    for _ in range(TASKS):
-        th = threading.Thread(target=proc)
-        th.start()
-        tasks.append(th)
-
-    # This will pause the current event loop, but that shouldn't be a problem
-    for task in tasks:
-        task.join()
-
-    # Check all the updates completed
-    async with store.session() as session:
-        result = await session.fetch(
-            TEST_ENTRY["category"],
-            TEST_ENTRY["name"],
-        )
-        assert int(result.value) == INC_COUNT * TASKS
-
-
-@mark.asyncio
 async def test_key_store(store: Store):
     # test key operations in a new session
     async with store as session:
