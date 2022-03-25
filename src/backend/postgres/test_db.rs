@@ -81,6 +81,32 @@ impl TestDB {
             lock_txn: Some(lock_txn),
         })
     }
+
+    async fn close_internal(
+        mut lock_txn: Option<PgConnection>,
+        mut inst: Option<Store<PostgresStore>>,
+    ) -> Result<(), Error> {
+        if let Some(lock_txn) = lock_txn.take() {
+            lock_txn.close().await?;
+        }
+        if let Some(inst) = inst.take() {
+            timeout(Duration::from_secs(30), inst.close())
+                .await
+                .ok_or_else(|| {
+                    err_msg!(
+                        Backend,
+                        "Timed out waiting for the pool connection to close"
+                    )
+                })??;
+        }
+        Ok(())
+    }
+
+    /// Explicitly close the test database
+    pub async fn close(mut self) -> Result<(), Error> {
+        Self::close_internal(self.lock_txn.take(), self.inst.take()).await?;
+        Ok(())
+    }
 }
 
 impl std::ops::Deref for TestDB {
@@ -93,20 +119,13 @@ impl std::ops::Deref for TestDB {
 
 impl Drop for TestDB {
     fn drop(&mut self) {
-        if let Some(lock_txn) = self.lock_txn.take() {
+        if self.lock_txn.is_some() || self.inst.is_some() {
+            let lock_txn = self.lock_txn.take();
+            let inst = self.inst.take();
             spawn_ok(async {
-                lock_txn
-                    .close()
+                Self::close_internal(lock_txn, inst)
                     .await
                     .expect("Error closing database connection");
-            });
-        }
-        if let Some(inst) = self.inst.take() {
-            spawn_ok(async {
-                timeout(Duration::from_secs(30), inst.close())
-                    .await
-                    .expect("Timed out waiting for the pool connection to close")
-                    .expect("Error closing connection pool");
             });
         }
     }

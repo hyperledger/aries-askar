@@ -1,8 +1,13 @@
-use aries_askar::{Backend, Entry, EntryTag, ErrorKind, Store, TagFilter};
+use std::{fmt::Debug, future::Future, ops::Deref, pin::Pin, sync::Arc};
+
+use aries_askar::{Backend, Entry, EntryTag, Error, ErrorKind, Store, TagFilter};
+
+use tokio::task::spawn;
 
 const ERR_PROFILE: &'static str = "Error creating profile";
 const ERR_SESSION: &'static str = "Error starting session";
 const ERR_TRANSACTION: &'static str = "Error starting transaction";
+const ERR_COMMIT: &'static str = "Error committing transaction";
 const ERR_COUNT: &'static str = "Error performing count";
 const ERR_FETCH: &'static str = "Error fetching test row";
 const ERR_FETCH_ALL: &'static str = "Error fetching all test rows";
@@ -18,7 +23,22 @@ const ERR_SCAN_NEXT: &'static str = "Error fetching scan rows";
 // const ERR_SIGN: &'static str = "Error signing message";
 // const ERR_VERIFY: &'static str = "Error verifying signature";
 
-pub async fn db_create_remove_profile<DB: Backend>(db: &Store<DB>) {
+pub trait TestStore: Clone + Deref<Target = Store<Self::DB>> + Send + Sync {
+    type DB: Backend + Debug + 'static;
+
+    fn close(self) -> Pin<Box<dyn Future<Output = Result<(), Error>>>>;
+}
+
+impl<B: Backend + Debug + 'static> TestStore for Arc<Store<B>> {
+    type DB = B;
+
+    fn close(self) -> Pin<Box<dyn Future<Output = Result<(), Error>>>> {
+        let db = Arc::try_unwrap(self).unwrap();
+        Box::pin(db.close())
+    }
+}
+
+pub async fn db_create_remove_profile(db: impl TestStore) {
     let profile = db.create_profile(None).await.expect(ERR_PROFILE);
     assert_eq!(
         db.remove_profile(profile)
@@ -34,13 +54,13 @@ pub async fn db_create_remove_profile<DB: Backend>(db: &Store<DB>) {
     );
 }
 
-pub async fn db_fetch_fail<DB: Backend>(db: &Store<DB>) {
+pub async fn db_fetch_fail(db: impl TestStore) {
     let mut conn = db.session(None).await.expect(ERR_SESSION);
     let result = conn.fetch("cat", "name", false).await.expect(ERR_FETCH);
     assert_eq!(result.is_none(), true);
 }
 
-pub async fn db_insert_fetch<DB: Backend>(db: &Store<DB>) {
+pub async fn db_insert_fetch(db: impl TestStore) {
     let test_row = Entry::new(
         "category",
         "name",
@@ -78,7 +98,7 @@ pub async fn db_insert_fetch<DB: Backend>(db: &Store<DB>) {
     assert_eq!(rows[0], test_row);
 }
 
-pub async fn db_insert_duplicate<DB: Backend>(db: &Store<DB>) {
+pub async fn db_insert_duplicate(db: impl TestStore) {
     let test_row = Entry::new("category", "name", "value", Vec::new());
 
     let mut conn = db.session(None).await.expect(ERR_SESSION);
@@ -106,7 +126,7 @@ pub async fn db_insert_duplicate<DB: Backend>(db: &Store<DB>) {
     assert_eq!(err.kind(), ErrorKind::Duplicate);
 }
 
-pub async fn db_insert_remove<DB: Backend>(db: &Store<DB>) {
+pub async fn db_insert_remove(db: impl TestStore) {
     let test_row = Entry::new("category", "name", "value", Vec::new());
 
     let mut conn = db.session(None).await.expect(ERR_SESSION);
@@ -126,14 +146,14 @@ pub async fn db_insert_remove<DB: Backend>(db: &Store<DB>) {
         .expect(ERR_REQ_ROW);
 }
 
-pub async fn db_remove_missing<DB: Backend>(db: &Store<DB>) {
+pub async fn db_remove_missing(db: impl TestStore) {
     let mut conn = db.session(None).await.expect(ERR_SESSION);
 
     let err = conn.remove("cat", "name").await.expect_err(ERR_REQ_ERR);
     assert_eq!(err.kind(), ErrorKind::NotFound);
 }
 
-pub async fn db_replace_fetch<DB: Backend>(db: &Store<DB>) {
+pub async fn db_replace_fetch(db: impl TestStore) {
     let test_row = Entry::new("category", "name", "value", Vec::new());
 
     let mut conn = db.session(None).await.expect(ERR_SESSION);
@@ -168,7 +188,7 @@ pub async fn db_replace_fetch<DB: Backend>(db: &Store<DB>) {
     assert_eq!(row, replace_row);
 }
 
-pub async fn db_replace_missing<DB: Backend>(db: &Store<DB>) {
+pub async fn db_replace_missing(db: impl TestStore) {
     let test_row = Entry::new("category", "name", "value", Vec::new());
 
     let mut conn = db.session(None).await.expect(ERR_SESSION);
@@ -186,7 +206,7 @@ pub async fn db_replace_missing<DB: Backend>(db: &Store<DB>) {
     assert_eq!(err.kind(), ErrorKind::NotFound);
 }
 
-pub async fn db_count<DB: Backend>(db: &Store<DB>) {
+pub async fn db_count(db: impl TestStore) {
     let category = "category".to_string();
     let test_rows = vec![Entry::new(&category, "name", "value", Vec::new())];
 
@@ -213,7 +233,7 @@ pub async fn db_count<DB: Backend>(db: &Store<DB>) {
     assert_eq!(count, 0);
 }
 
-pub async fn db_count_exist<DB: Backend>(db: &Store<DB>) {
+pub async fn db_count_exist(db: impl TestStore) {
     let test_row = Entry::new(
         "category",
         "name",
@@ -352,7 +372,7 @@ pub async fn db_count_exist<DB: Backend>(db: &Store<DB>) {
     );
 }
 
-pub async fn db_scan<DB: Backend>(db: &Store<DB>) {
+pub async fn db_scan(db: impl TestStore) {
     let category = "category".to_string();
     let test_rows = vec![Entry::new(
         &category,
@@ -400,7 +420,7 @@ pub async fn db_scan<DB: Backend>(db: &Store<DB>) {
     assert_eq!(rows, None);
 }
 
-pub async fn db_remove_all<DB: Backend>(db: &Store<DB>) {
+pub async fn db_remove_all(db: impl TestStore) {
     let test_rows = vec![
         Entry::new(
             "category",
@@ -460,7 +480,7 @@ pub async fn db_remove_all<DB: Backend>(db: &Store<DB>) {
     assert_eq!(removed, 2);
 }
 
-// pub async fn db_keypair_create_fetch<DB: Backend>(db: &Store<DB>) {
+// pub async fn db_keypair_create_fetch(db: impl TestStore) {
 //     let mut conn = db.session(None).await.expect(ERR_SESSION);
 
 //     let metadata = "meta".to_owned();
@@ -477,7 +497,7 @@ pub async fn db_remove_all<DB: Backend>(db: &Store<DB>) {
 //     assert_eq!(Some(key_info), found);
 // }
 
-// pub async fn db_keypair_sign_verify<DB: Backend>(db: &Store<DB>) {
+// pub async fn db_keypair_sign_verify(db: impl TestStore) {
 //     let mut conn = db.session(None).await.expect(ERR_SESSION);
 
 //     let key_info = conn
@@ -520,7 +540,7 @@ pub async fn db_remove_all<DB: Backend>(db: &Store<DB>) {
 //     assert_eq!(err.kind(), ErrorKind::Input);
 // }
 
-// pub async fn db_keypair_pack_unpack_anon<DB: Backend>(db: &Store<DB>) {
+// pub async fn db_keypair_pack_unpack_anon(db: impl TestStore) {
 //     let mut conn = db.session(None).await.expect(ERR_SESSION);
 
 //     let recip_key = conn
@@ -541,7 +561,7 @@ pub async fn db_remove_all<DB: Backend>(db: &Store<DB>) {
 //     assert_eq!(p_send, None);
 // }
 
-// pub async fn db_keypair_pack_unpack_auth<DB: Backend>(db: &Store<DB>) {
+// pub async fn db_keypair_pack_unpack_auth(db: impl TestStore) {
 //     let mut conn = db.session(None).await.expect(ERR_SESSION);
 
 //     let sender_key = conn
@@ -570,7 +590,7 @@ pub async fn db_remove_all<DB: Backend>(db: &Store<DB>) {
 //     assert_eq!(p_send.map(|k| k.to_string()), Some(sender_key.ident));
 // }
 
-pub async fn db_txn_rollback<DB: Backend>(db: &Store<DB>) {
+pub async fn db_txn_rollback(db: impl TestStore) {
     let test_row = Entry::new("category", "name", "value", Vec::new());
 
     let mut conn = db.transaction(None).await.expect(ERR_TRANSACTION);
@@ -598,7 +618,7 @@ pub async fn db_txn_rollback<DB: Backend>(db: &Store<DB>) {
     assert_eq!(row, None);
 }
 
-pub async fn db_txn_drop<DB: Backend>(db: &Store<DB>) {
+pub async fn db_txn_drop(db: impl TestStore) {
     let test_row = Entry::new("category", "name", "value", Vec::new());
 
     let mut conn = db
@@ -628,7 +648,7 @@ pub async fn db_txn_drop<DB: Backend>(db: &Store<DB>) {
 }
 
 // test that session does NOT have transaction rollback behaviour
-pub async fn db_session_drop<DB: Backend>(db: &Store<DB>) {
+pub async fn db_session_drop(db: impl TestStore) {
     let test_row = Entry::new("category", "name", "value", Vec::new());
 
     let mut conn = db.session(None).await.expect(ERR_SESSION);
@@ -654,7 +674,7 @@ pub async fn db_session_drop<DB: Backend>(db: &Store<DB>) {
     assert_eq!(row, Some(test_row));
 }
 
-pub async fn db_txn_commit<DB: Backend>(db: &Store<DB>) {
+pub async fn db_txn_commit(db: impl TestStore) {
     let test_row = Entry::new("category", "name", "value", Vec::new());
 
     let mut conn = db.transaction(None).await.expect(ERR_TRANSACTION);
@@ -669,7 +689,7 @@ pub async fn db_txn_commit<DB: Backend>(db: &Store<DB>) {
     .await
     .expect(ERR_INSERT);
 
-    conn.commit().await.expect("Error committing transaction");
+    conn.commit().await.expect(ERR_COMMIT);
 
     let mut conn = db.session(None).await.expect(ERR_SESSION);
 
@@ -680,7 +700,7 @@ pub async fn db_txn_commit<DB: Backend>(db: &Store<DB>) {
     assert_eq!(row, Some(test_row));
 }
 
-pub async fn db_txn_fetch_for_update<DB: Backend>(db: &Store<DB>) {
+pub async fn db_txn_fetch_for_update(db: impl TestStore) {
     let test_row = Entry::new("category", "name", "value", Vec::new());
 
     let mut conn = db.transaction(None).await.expect(ERR_TRANSACTION);
@@ -711,5 +731,78 @@ pub async fn db_txn_fetch_for_update<DB: Backend>(db: &Store<DB>) {
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0], test_row);
 
-    conn.commit().await.expect("Error committing transaction");
+    conn.commit().await.expect(ERR_COMMIT);
+}
+
+pub async fn db_txn_contention(db: impl TestStore + 'static) {
+    let test_row = Entry::new(
+        "category",
+        "count",
+        "0",
+        vec![
+            EntryTag::Encrypted("t1".to_string(), "v1".to_string()),
+            EntryTag::Plaintext("t2".to_string(), "v2".to_string()),
+        ],
+    );
+
+    let mut conn = db.transaction(None).await.expect(ERR_TRANSACTION);
+
+    conn.insert(
+        &test_row.category,
+        &test_row.name,
+        &test_row.value,
+        Some(test_row.tags.as_slice()),
+        None,
+    )
+    .await
+    .expect(ERR_INSERT);
+
+    conn.commit().await.expect(ERR_COMMIT);
+
+    const TASKS: usize = 25;
+    const INC: usize = 500;
+
+    async fn inc(db: impl TestStore, category: String, name: String) {
+        for _ in 0..INC {
+            let mut conn = db.transaction(None).await.expect(ERR_TRANSACTION);
+            let row = conn
+                .fetch(&category, &name, true)
+                .await
+                .expect(ERR_FETCH)
+                .expect(ERR_REQ_ROW);
+            let val: usize = str::parse(row.value.as_opt_str().unwrap()).unwrap();
+            conn.replace(
+                &category,
+                &name,
+                &format!("{}", val + 1).as_bytes(),
+                Some(row.tags.as_slice()),
+                None,
+            )
+            .await
+            .expect(ERR_REPLACE);
+            conn.commit().await.expect(ERR_COMMIT);
+        }
+    }
+
+    let mut tasks = vec![];
+    for _ in 0..TASKS {
+        tasks.push(spawn(inc(
+            db.clone(),
+            test_row.category.clone(),
+            test_row.name.clone(),
+        )));
+    }
+    // JoinSet is not stable yet, just await all the tasks
+    for task in tasks {
+        task.await.unwrap();
+    }
+
+    // check the total
+    let mut conn = db.session(None).await.expect(ERR_SESSION);
+    let row = conn
+        .fetch(&test_row.category, &test_row.name, false)
+        .await
+        .expect(ERR_FETCH)
+        .expect(ERR_REQ_ROW);
+    assert_eq!(row.value, format!("{}", TASKS * INC).as_bytes());
 }

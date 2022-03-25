@@ -1,19 +1,27 @@
 mod utils;
 
+const ERR_CLOSE: &'static str = "Error closing database";
+
 macro_rules! backend_tests {
     ($init:expr) => {
         use aries_askar::future::block_on;
+        use std::sync::Arc;
+        use $crate::utils::TestStore;
 
         #[test]
         fn init() {
-            block_on($init);
+            block_on(async {
+                let db = $init.await;
+                db.close().await.expect(ERR_CLOSE);
+            });
         }
 
         #[test]
         fn create_remove_profile() {
             block_on(async {
                 let db = $init.await;
-                super::utils::db_create_remove_profile(&db).await;
+                super::utils::db_create_remove_profile(db.clone()).await;
+                db.close().await.expect(ERR_CLOSE);
             })
         }
 
@@ -21,7 +29,8 @@ macro_rules! backend_tests {
         fn fetch_fail() {
             block_on(async {
                 let db = $init.await;
-                super::utils::db_fetch_fail(&db).await;
+                super::utils::db_fetch_fail(db.clone()).await;
+                db.close().await.expect(ERR_CLOSE);
             })
         }
 
@@ -29,7 +38,8 @@ macro_rules! backend_tests {
         fn insert_fetch() {
             block_on(async {
                 let db = $init.await;
-                super::utils::db_insert_fetch(&db).await;
+                super::utils::db_insert_fetch(db.clone()).await;
+                db.close().await.expect(ERR_CLOSE);
             })
         }
 
@@ -37,7 +47,8 @@ macro_rules! backend_tests {
         fn insert_duplicate() {
             block_on(async {
                 let db = $init.await;
-                super::utils::db_insert_duplicate(&db).await;
+                super::utils::db_insert_duplicate(db.clone()).await;
+                db.close().await.expect(ERR_CLOSE);
             })
         }
 
@@ -45,7 +56,8 @@ macro_rules! backend_tests {
         fn insert_remove() {
             block_on(async {
                 let db = $init.await;
-                super::utils::db_insert_remove(&db).await;
+                super::utils::db_insert_remove(db.clone()).await;
+                db.close().await.expect(ERR_CLOSE);
             })
         }
 
@@ -53,7 +65,8 @@ macro_rules! backend_tests {
         fn remove_missing() {
             block_on(async {
                 let db = $init.await;
-                super::utils::db_remove_missing(&db).await;
+                super::utils::db_remove_missing(db.clone()).await;
+                db.close().await.expect(ERR_CLOSE);
             })
         }
 
@@ -61,7 +74,8 @@ macro_rules! backend_tests {
         fn replace_fetch() {
             block_on(async {
                 let db = $init.await;
-                super::utils::db_replace_fetch(&db).await;
+                super::utils::db_replace_fetch(db.clone()).await;
+                db.close().await.expect(ERR_CLOSE);
             })
         }
 
@@ -69,7 +83,8 @@ macro_rules! backend_tests {
         fn replace_missing() {
             block_on(async {
                 let db = $init.await;
-                super::utils::db_replace_missing(&db).await;
+                super::utils::db_replace_missing(db.clone()).await;
+                db.close().await.expect(ERR_CLOSE);
             })
         }
 
@@ -77,7 +92,8 @@ macro_rules! backend_tests {
         fn count() {
             block_on(async {
                 let db = $init.await;
-                super::utils::db_count(&db).await;
+                super::utils::db_count(db.clone()).await;
+                db.close().await.expect(ERR_CLOSE);
             })
         }
 
@@ -85,7 +101,8 @@ macro_rules! backend_tests {
         fn count_exist() {
             block_on(async {
                 let db = $init.await;
-                super::utils::db_count_exist(&db).await;
+                super::utils::db_count_exist(db.clone()).await;
+                db.close().await.expect(ERR_CLOSE);
             })
         }
 
@@ -93,7 +110,8 @@ macro_rules! backend_tests {
         fn scan() {
             block_on(async {
                 let db = $init.await;
-                super::utils::db_scan(&db).await;
+                super::utils::db_scan(db.clone()).await;
+                db.close().await.expect(ERR_CLOSE);
             })
         }
 
@@ -101,7 +119,8 @@ macro_rules! backend_tests {
         fn remove_all() {
             block_on(async {
                 let db = $init.await;
-                super::utils::db_remove_all(&db).await;
+                super::utils::db_remove_all(db.clone()).await;
+                db.close().await.expect(ERR_CLOSE);
             })
         }
 
@@ -109,7 +128,8 @@ macro_rules! backend_tests {
         // fn keypair_create_fetch() {
         //     block_on(async {
         //         let db = $init.await;
-        //         super::utils::db_keypair_create_fetch(&db).await;
+        //         super::utils::db_keypair_create_fetch(db.clone()).await;
+        //         db.close().await.expect(ERR_CLOSE);
         //     })
         // }
 
@@ -117,7 +137,8 @@ macro_rules! backend_tests {
         // fn keypair_sign_verify() {
         //     block_on(async {
         //         let db = $init.await;
-        //         super::utils::db_keypair_sign_verify(&db).await;
+        //         super::utils::db_keypair_sign_verify(db.clone()).await;
+        //         db.close().await.expect(ERR_CLOSE);
         //     })
         // }
 
@@ -125,7 +146,8 @@ macro_rules! backend_tests {
         // fn keypair_pack_unpack_anon() {
         //     block_on(async {
         //         let db = $init.await;
-        //         super::utils::db_keypair_pack_unpack_anon(&db).await;
+        //         super::utils::db_keypair_pack_unpack_anon(db.clone()).await;
+        //         db.close().await.expect(ERR_CLOSE);
         //     })
         // }
 
@@ -133,7 +155,8 @@ macro_rules! backend_tests {
         // fn keypair_pack_unpack_auth() {
         //     block_on(async {
         //         let db = $init.await;
-        //         super::utils::db_keypair_pack_unpack_auth(&db).await;
+        //         super::utils::db_keypair_pack_unpack_auth(db).await;
+        //         db.close().await.expect(ERR_CLOSE);
         //     })
         // }
 
@@ -141,7 +164,8 @@ macro_rules! backend_tests {
         fn txn_rollback() {
             block_on(async {
                 let db = $init.await;
-                super::utils::db_txn_rollback(&db).await;
+                super::utils::db_txn_rollback(db.clone()).await;
+                db.close().await.expect(ERR_CLOSE);
             })
         }
 
@@ -149,7 +173,8 @@ macro_rules! backend_tests {
         fn txn_drop() {
             block_on(async {
                 let db = $init.await;
-                super::utils::db_txn_drop(&db).await;
+                super::utils::db_txn_drop(db.clone()).await;
+                db.close().await.expect(ERR_CLOSE);
             })
         }
 
@@ -157,7 +182,8 @@ macro_rules! backend_tests {
         fn session_drop() {
             block_on(async {
                 let db = $init.await;
-                super::utils::db_session_drop(&db).await;
+                super::utils::db_session_drop(db.clone()).await;
+                db.close().await.expect(ERR_CLOSE);
             })
         }
 
@@ -165,7 +191,8 @@ macro_rules! backend_tests {
         fn txn_commit() {
             block_on(async {
                 let db = $init.await;
-                super::utils::db_txn_commit(&db).await;
+                super::utils::db_txn_commit(db.clone()).await;
+                db.close().await.expect(ERR_CLOSE);
             })
         }
 
@@ -173,7 +200,17 @@ macro_rules! backend_tests {
         fn txn_fetch_for_update() {
             block_on(async {
                 let db = $init.await;
-                super::utils::db_txn_fetch_for_update(&db).await;
+                super::utils::db_txn_fetch_for_update(db.clone()).await;
+                db.close().await.expect(ERR_CLOSE);
+            })
+        }
+
+        #[test]
+        fn txn_contention() {
+            block_on(async {
+                let db = $init.await;
+                super::utils::db_txn_contention(db.clone()).await;
+                db.close().await.expect(ERR_CLOSE);
             })
         }
     };
@@ -244,7 +281,7 @@ mod sqlite {
     #[test]
     fn rekey_db() {
         log_init();
-        let fname = format!("sqlite-test-{}.db", uuid::Uuid::new_v4().to_string());
+        let fname = format!("sqlite-rekey-{}.db", uuid::Uuid::new_v4().to_string());
         let key1 = generate_raw_store_key(None).expect("Error creating raw key");
         let key2 = generate_raw_store_key(None).expect("Error creating raw key");
         assert_ne!(key1, key2);
@@ -280,13 +317,40 @@ mod sqlite {
         })
     }
 
-    async fn init_db() -> Store<SqliteStore> {
+    #[test]
+    fn file_db_contention() {
+        log_init();
+        let fname = format!("sqlite-contend-{}.db", uuid::Uuid::new_v4().to_string());
+        let key = generate_raw_store_key(None).expect("Error creating raw key");
+
+        block_on(async move {
+            let store = SqliteStoreOptions::new(fname.as_str())
+                .expect("Error initializing sqlite store options")
+                .provision_backend(StoreKeyMethod::RawKey, key.as_ref(), None, true)
+                .await
+                .expect("Error provisioning sqlite store");
+
+            let db = std::sync::Arc::new(store);
+            super::utils::db_txn_contention(db.clone()).await;
+            db.close().await.expect("Error closing sqlite store");
+
+            SqliteStoreOptions::new(fname.as_str())
+                .expect("Error initializing sqlite store options")
+                .remove_backend()
+                .await
+                .expect("Error removing sqlite store");
+        });
+    }
+
+    async fn init_db() -> Arc<Store<SqliteStore>> {
         log_init();
         let key = generate_raw_store_key(None).expect("Error creating raw key");
-        SqliteStoreOptions::in_memory()
-            .provision(StoreKeyMethod::RawKey, key, None, false)
-            .await
-            .expect("Error provisioning sqlite store")
+        Arc::new(
+            SqliteStoreOptions::in_memory()
+                .provision(StoreKeyMethod::RawKey, key, None, false)
+                .await
+                .expect("Error provisioning sqlite store"),
+        )
     }
 
     backend_tests!(init_db());
@@ -315,15 +379,38 @@ mod sqlite {
 
 #[cfg(feature = "pg_test")]
 mod postgres {
-    use aries_askar::backend::postgres::test_db::TestDB;
+    use aries_askar::{backend::postgres::test_db::TestDB, postgres::PostgresStore, Store};
+    use std::{future::Future, ops::Deref, pin::Pin};
 
     use super::*;
 
-    async fn init_db() -> TestDB {
+    #[derive(Clone, Debug)]
+    struct Wrap(Arc<TestDB>);
+
+    impl Deref for Wrap {
+        type Target = Store<PostgresStore>;
+
+        fn deref(&self) -> &Self::Target {
+            &**self.0
+        }
+    }
+
+    impl TestStore for Wrap {
+        type DB = PostgresStore;
+
+        fn close(self) -> Pin<Box<dyn Future<Output = Result<(), aries_askar::Error>>>> {
+            let db = Arc::try_unwrap(self.0).unwrap();
+            Box::pin(db.close())
+        }
+    }
+
+    async fn init_db() -> Wrap {
         log_init();
-        TestDB::provision()
-            .await
-            .expect("Error provisioning postgres test database")
+        Wrap(Arc::new(
+            TestDB::provision()
+                .await
+                .expect("Error provisioning postgres test database"),
+        ))
     }
 
     backend_tests!(init_db());
