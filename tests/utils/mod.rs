@@ -1,6 +1,9 @@
 use std::{fmt::Debug, future::Future, ops::Deref, pin::Pin, sync::Arc};
 
-use aries_askar::{Backend, Entry, EntryTag, Error, ErrorKind, Store, TagFilter};
+use aries_askar::{
+    kms::{KeyAlg, LocalKey},
+    Backend, Entry, EntryTag, Error, ErrorKind, Store, TagFilter,
+};
 
 use tokio::task::spawn;
 
@@ -18,10 +21,10 @@ const ERR_REPLACE: &'static str = "Error replacing test row";
 const ERR_REMOVE_ALL: &'static str = "Error removing test rows";
 const ERR_SCAN: &'static str = "Error starting scan";
 const ERR_SCAN_NEXT: &'static str = "Error fetching scan rows";
-// const ERR_CREATE_KEYPAIR: &'static str = "Error creating keypair";
-// const ERR_FETCH_KEY: &'static str = "Error fetching key";
-// const ERR_SIGN: &'static str = "Error signing message";
-// const ERR_VERIFY: &'static str = "Error verifying signature";
+const ERR_CREATE_KEYPAIR: &'static str = "Error creating keypair";
+const ERR_INSERT_KEY: &'static str = "Error inserting key";
+const ERR_FETCH_KEY: &'static str = "Error fetching key";
+const ERR_LOAD_KEY: &'static str = "Error loading key";
 
 pub trait TestStore: Clone + Deref<Target = Store<Self::DB>> + Send + Sync {
     type DB: Backend + Debug + 'static;
@@ -480,115 +483,28 @@ pub async fn db_remove_all(db: impl TestStore) {
     assert_eq!(removed, 2);
 }
 
-// pub async fn db_keypair_create_fetch(db: impl TestStore) {
-//     let mut conn = db.session(None).await.expect(ERR_SESSION);
+pub async fn db_keypair_insert_fetch(db: impl TestStore) {
+    let keypair = LocalKey::generate(KeyAlg::Ed25519, false).expect(ERR_CREATE_KEYPAIR);
 
-//     let metadata = "meta".to_owned();
-//     let key_info = conn
-//         .create_keypair(KeyAlg::Ed25519, Some(&metadata), None, None)
-//         .await
-//         .expect(ERR_CREATE_KEYPAIR);
-//     assert_eq!(key_info.params.metadata, Some(metadata));
+    let mut conn = db.session(None).await.expect(ERR_SESSION);
 
-//     let found = conn
-//         .fetch_key(key_info.category.clone(), &key_info.ident, false)
-//         .await
-//         .expect(ERR_FETCH_KEY);
-//     assert_eq!(Some(key_info), found);
-// }
+    let key_name = "testkey";
+    let metadata = "meta";
+    conn.insert_key(&key_name, &keypair, Some(metadata), None, None)
+        .await
+        .expect(ERR_INSERT_KEY);
 
-// pub async fn db_keypair_sign_verify(db: impl TestStore) {
-//     let mut conn = db.session(None).await.expect(ERR_SESSION);
-
-//     let key_info = conn
-//         .create_keypair(KeyAlg::Ed25519, None, None, None)
-//         .await
-//         .expect(ERR_CREATE_KEYPAIR);
-
-//     let message = b"message".to_vec();
-//     let sig = conn
-//         .sign_message(&key_info.ident, &message)
-//         .await
-//         .expect(ERR_SIGN);
-
-//     assert_eq!(
-//         verify_signature(&key_info.ident, &message, &sig).expect(ERR_VERIFY),
-//         true
-//     );
-
-//     assert_eq!(
-//         verify_signature(&key_info.ident, b"bad input", &sig).expect(ERR_VERIFY),
-//         false
-//     );
-
-//     assert_eq!(
-//         verify_signature(
-//             &key_info.ident,
-//             // [0u8; 64]
-//             b"xt19s1sp2UZCGhy9rNyb1FtxdKiDGZZPNFnc1KiM9jYYEuHxuwNeFf1oQKsn8zv6yvYBGhXa83288eF4MqN1oDq",
-//             &sig
-//         ).expect(ERR_VERIFY),
-//         false
-//     );
-
-//     assert_eq!(
-//         verify_signature(&key_info.ident, &message, b"bad sig").is_err(),
-//         true
-//     );
-
-//     let err = verify_signature("not a key", &message, &sig).expect_err(ERR_REQ_ERR);
-//     assert_eq!(err.kind(), ErrorKind::Input);
-// }
-
-// pub async fn db_keypair_pack_unpack_anon(db: impl TestStore) {
-//     let mut conn = db.session(None).await.expect(ERR_SESSION);
-
-//     let recip_key = conn
-//         .create_keypair(KeyAlg::Ed25519, None, None, None)
-//         .await
-//         .expect(ERR_CREATE_KEYPAIR);
-
-//     let msg = b"message".to_vec();
-
-//     let packed = conn
-//         .pack_message(vec![recip_key.ident.as_str()], None, &msg)
-//         .await
-//         .expect(ERR_PACK);
-
-//     let (unpacked, p_recip, p_send) = conn.unpack_message(&packed).await.expect(ERR_UNPACK);
-//     assert_eq!(unpacked, msg);
-//     assert_eq!(p_recip.to_string(), recip_key.ident);
-//     assert_eq!(p_send, None);
-// }
-
-// pub async fn db_keypair_pack_unpack_auth(db: impl TestStore) {
-//     let mut conn = db.session(None).await.expect(ERR_SESSION);
-
-//     let sender_key = conn
-//         .create_keypair(KeyAlg::Ed25519, None, None, None)
-//         .await
-//         .expect(ERR_CREATE_KEYPAIR);
-//     let recip_key = conn
-//         .create_keypair(KeyAlg::Ed25519, None, None, None)
-//         .await
-//         .expect(ERR_CREATE_KEYPAIR);
-
-//     let msg = b"message".to_vec();
-
-//     let packed = conn
-//         .pack_message(
-//             vec![recip_key.ident.as_str()],
-//             Some(&sender_key.ident),
-//             &msg,
-//         )
-//         .await
-//         .expect(ERR_PACK);
-
-//     let (unpacked, p_recip, p_send) = conn.unpack_message(&packed).await.expect(ERR_UNPACK);
-//     assert_eq!(unpacked, msg);
-//     assert_eq!(p_recip.to_string(), recip_key.ident);
-//     assert_eq!(p_send.map(|k| k.to_string()), Some(sender_key.ident));
-// }
+    let found = conn
+        .fetch_key(&key_name, false)
+        .await
+        .expect(ERR_FETCH_KEY)
+        .expect(ERR_REQ_ROW);
+    assert_eq!(found.algorithm(), Some(KeyAlg::Ed25519.as_str()));
+    assert_eq!(found.name(), key_name);
+    assert_eq!(found.metadata(), Some(metadata));
+    assert_eq!(found.is_local(), true);
+    found.load_local_key().expect(ERR_LOAD_KEY);
+}
 
 pub async fn db_txn_rollback(db: impl TestStore) {
     let test_row = Entry::new("category", "name", "value", Vec::new());
