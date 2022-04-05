@@ -234,9 +234,9 @@ jobs:
           python setup.py bdist_wheel --python-tag=py3 --plat-name=${{ matrix.plat-name }}
           pip install pytest pytest-asyncio dist/*
           echo "-- Test SQLite in-memory --"
-          python -m pytest --log-cli-level=DEBUG
+          python -m pytest --log-cli-level=WARNING
           echo "-- Test SQLite file DB --"
-          TEST_STORE_URI=sqlite://test.db python -m pytest --log-cli-level=DEBUG
+          TEST_STORE_URI=sqlite://test.db python -m pytest --log-cli-level=WARNING
         working-directory: wrappers/python
         env:
           no_proxy: "*" # python issue 30385
@@ -249,7 +249,7 @@ jobs:
           sudo systemctl start postgresql.service
           pg_isready
           sudo -u postgres psql -c "ALTER USER postgres WITH PASSWORD 'postgres'"
-          python -m pytest --log-cli-level=DEBUG
+          python -m pytest --log-cli-level=WARNING
         working-directory: wrappers/python
         env:
           no_proxy: "*" # python issue 30385
