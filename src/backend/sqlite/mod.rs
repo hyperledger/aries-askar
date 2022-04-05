@@ -47,6 +47,9 @@ const FETCH_QUERY: &'static str = "SELECT i.id, i.value,
 const INSERT_QUERY: &'static str =
     "INSERT OR IGNORE INTO items (profile_id, kind, category, name, value, expiry)
     VALUES (?1, ?2, ?3, ?4, ?5, ?6)";
+const UPDATE_QUERY: &'static str =
+    "UPDATE items SET value=?5, expiry=?6 WHERE profile_id=?1 AND kind=?2
+    AND category=?3 AND name=?4 RETURNING id";
 const SCAN_QUERY: &'static str = "SELECT i.id, i.name, i.value,
     (SELECT GROUP_CONCAT(it.plaintext || ':' || HEX(it.name) || ':' || HEX(it.value))
         FROM items_tags it WHERE it.item_id = i.id) AS tags
@@ -56,6 +59,8 @@ const DELETE_ALL_QUERY: &'static str = "DELETE FROM items AS i
     WHERE i.profile_id = ?1 AND i.kind = ?2 AND i.category = ?3";
 const TAG_INSERT_QUERY: &'static str = "INSERT INTO items_tags
     (item_id, name, value, plaintext) VALUES (?1, ?2, ?3, ?4)";
+const TAG_DELETE_QUERY: &'static str = "DELETE FROM items_tags
+    WHERE item_id=?1";
 
 /// A Sqlite database store
 pub struct SqliteStore {
@@ -435,9 +440,6 @@ impl QueryBackend for DbSession<Sqlite> {
                     .await?;
                     let mut active = acquire_session(&mut *self).await?;
                     let mut txn = active.as_transaction().await?;
-                    if op == EntryOperation::Replace {
-                        perform_remove(&mut txn, kind, &enc_category, &enc_name, false).await?;
-                    }
                     perform_insert(
                         &mut txn,
                         kind,
@@ -446,6 +448,7 @@ impl QueryBackend for DbSession<Sqlite> {
                         &enc_value,
                         enc_tags,
                         expiry_ms,
+                        op == EntryOperation::Insert,
                     )
                     .await?;
                     txn.commit().await?;
@@ -484,8 +487,10 @@ impl ExtDatabase for Sqlite {
         Box::pin(async move {
             <Sqlite as Database>::TransactionManager::begin(&mut *conn).await?;
             if !nested {
-                sqlx::query("ROLLBACK").execute(&mut *conn).await?;
-                sqlx::query("BEGIN IMMEDIATE").execute(conn).await?;
+                // a no-op write transaction
+                sqlx::query("DELETE FROM config WHERE 0")
+                    .execute(&mut *conn)
+                    .await?;
             }
             Ok(())
         })
@@ -540,21 +545,41 @@ async fn perform_insert<'q>(
     enc_value: &[u8],
     enc_tags: Option<Vec<EncEntryTag>>,
     expiry_ms: Option<i64>,
+    new_row: bool,
 ) -> Result<(), Error> {
-    trace!("Insert entry");
-    let done = sqlx::query(INSERT_QUERY)
-        .bind(active.profile_id)
-        .bind(kind as i16)
-        .bind(enc_category)
-        .bind(enc_name)
-        .bind(enc_value)
-        .bind(expiry_ms.map(expiry_timestamp).transpose()?)
-        .execute(active.connection_mut())
-        .await?;
-    if done.rows_affected() == 0 {
-        return Err(err_msg!(Duplicate, "Duplicate row"));
-    }
-    let row_id = done.last_insert_rowid();
+    let row_id = if new_row {
+        trace!("Insert entry");
+        let done = sqlx::query(INSERT_QUERY)
+            .bind(active.profile_id)
+            .bind(kind as i16)
+            .bind(enc_category)
+            .bind(enc_name)
+            .bind(enc_value)
+            .bind(expiry_ms.map(expiry_timestamp).transpose()?)
+            .execute(active.connection_mut())
+            .await?;
+        if done.rows_affected() == 0 {
+            return Err(err_msg!(Duplicate, "Duplicate row"));
+        }
+        done.last_insert_rowid()
+    } else {
+        trace!("Update entry");
+        let row_id: i64 = sqlx::query_scalar(UPDATE_QUERY)
+            .bind(active.profile_id)
+            .bind(kind as i16)
+            .bind(enc_category)
+            .bind(enc_name)
+            .bind(enc_value)
+            .bind(expiry_ms.map(expiry_timestamp).transpose()?)
+            .fetch_one(active.connection_mut())
+            .await
+            .map_err(|_| err_msg!(NotFound, "Error updating existing row"))?;
+        sqlx::query(TAG_DELETE_QUERY)
+            .bind(row_id)
+            .execute(active.connection_mut())
+            .await?;
+        row_id
+    };
     if let Some(tags) = enc_tags {
         for tag in tags {
             sqlx::query(TAG_INSERT_QUERY)
