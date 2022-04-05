@@ -1,9 +1,8 @@
 use std::{collections::BTreeMap, os::raw::c_char, ptr, str::FromStr, sync::Arc};
 
-use async_lock::RwLock;
+use async_lock::{Mutex as TryMutex, MutexGuardArc as TryMutexGuard, RwLock};
 use ffi_support::{rust_string_to_c, ByteBuffer, FfiStr};
 use once_cell::sync::Lazy;
-use option_lock::{Mutex as TryMutex, MutexGuardArc as TryMutexGuard};
 
 use super::{
     error::set_last_error,
@@ -87,7 +86,7 @@ where
     pub async fn remove(&self, handle: K) -> Option<Result<V, Error>> {
         self.map.write().await.remove(&handle).map(|(_s, v)| {
             Arc::try_unwrap(v)
-                .map(|item| item.into_inner().unwrap())
+                .map(|item| item.into_inner())
                 .map_err(|_| err_msg!(Busy, "Resource handle in use"))
         })
     }
@@ -100,7 +99,7 @@ where
             .ok_or_else(|| err_msg!("Invalid resource handle"))?
             .1
             .try_lock_arc()
-            .map_err(|_| err_msg!(Busy, "Resource handle in use"))
+            .ok_or_else(|| err_msg!(Busy, "Resource handle in use"))
     }
 
     pub async fn remove_all(&self, store: StoreHandle) -> Result<(), Error> {
