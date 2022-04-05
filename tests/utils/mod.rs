@@ -759,18 +759,23 @@ pub async fn db_txn_contention(db: impl TestStore + 'static) {
 
     conn.commit().await.expect(ERR_COMMIT);
 
-    const TASKS: usize = 25;
-    const INC: usize = 500;
+    const TASKS: usize = 10;
+    const INC: usize = 1000;
 
-    async fn inc(db: impl TestStore, category: String, name: String) {
+    async fn inc(db: impl TestStore, category: String, name: String) -> Result<(), &'static str> {
+        // try to avoid panics in this section, as they will be raised on a tokio worker thread
         for _ in 0..INC {
             let mut conn = db.transaction(None).await.expect(ERR_TRANSACTION);
             let row = conn
                 .fetch(&category, &name, true)
                 .await
-                .expect(ERR_FETCH)
-                .expect(ERR_REQ_ROW);
-            let val: usize = str::parse(row.value.as_opt_str().unwrap()).unwrap();
+                .map_err(|e| {
+                    log::error!("{:?}", e);
+                    ERR_FETCH
+                })?
+                .ok_or(ERR_REQ_ROW)?;
+            let val: usize = str::parse(row.value.as_opt_str().ok_or("Non-string counter value")?)
+                .map_err(|_| "Error parsing counter value")?;
             conn.replace(
                 &category,
                 &name,
@@ -779,9 +784,13 @@ pub async fn db_txn_contention(db: impl TestStore + 'static) {
                 None,
             )
             .await
-            .expect(ERR_REPLACE);
-            conn.commit().await.expect(ERR_COMMIT);
+            .map_err(|e| {
+                log::error!("{:?}", e);
+                ERR_REPLACE
+            })?;
+            conn.commit().await.map_err(|_| ERR_COMMIT)?;
         }
+        Ok(())
     }
 
     let mut tasks = vec![];
@@ -792,9 +801,12 @@ pub async fn db_txn_contention(db: impl TestStore + 'static) {
             test_row.name.clone(),
         )));
     }
+
     // JoinSet is not stable yet, just await all the tasks
     for task in tasks {
-        task.await.unwrap();
+        if let Err(s) = task.await.unwrap() {
+            panic!("Error in concurrent update task: {}", s);
+        }
     }
 
     // check the total
