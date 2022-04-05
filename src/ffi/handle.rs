@@ -1,4 +1,4 @@
-use std::{fmt::Display, marker::PhantomData, mem, sync::Arc};
+use std::{fmt::Display, marker::PhantomData, sync::Arc};
 
 use crate::error::Error;
 
@@ -18,16 +18,15 @@ impl<T> ArcHandle<T> {
     pub fn load(&self) -> Result<Arc<T>, Error> {
         self.validate()?;
         let slf = unsafe { Arc::from_raw(self.0 as *const T) };
-        let copy = slf.clone();
-        mem::forget(slf); // Arc::increment_strong_count(..) in 1.51
-        Ok(copy)
+        unsafe { Arc::increment_strong_count(self.0 as *const T) };
+        Ok(slf)
     }
 
     pub fn remove(&self) {
         if self.0 != 0 {
             unsafe {
                 // Drop the initial reference. There could be others outstanding.
-                Arc::from_raw(self.0 as *const T);
+                Arc::decrement_strong_count(self.0 as *const T);
             }
         }
     }
