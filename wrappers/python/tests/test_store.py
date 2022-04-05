@@ -1,6 +1,5 @@
 import asyncio
 import os
-import threading
 
 from pytest import mark, raises
 import pytest_asyncio
@@ -27,6 +26,7 @@ def raw_key() -> str:
 
 
 @pytest_asyncio.fixture
+@mark.asyncio
 async def store() -> Store:
     key = raw_key()
     store = await Store.provision(TEST_STORE_URI, "raw", key, recreate=True)
@@ -156,8 +156,8 @@ async def test_transaction_conflict(store: Store):
         )
         await txn.commit()
 
-    INC_COUNT = 500
-    TASKS = 20
+    INC_COUNT = 1000
+    TASKS = 10
 
     async def inc():
         for _ in range(INC_COUNT):
