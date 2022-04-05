@@ -450,7 +450,7 @@ impl QueryBackend for DbSession<Postgres> {
         let name = ProfileKey::prepare_input(name.as_bytes());
 
         match operation {
-            EntryOperation::Insert => {
+            op @ EntryOperation::Insert | op @ EntryOperation::Replace => {
                 let value = ProfileKey::prepare_input(value.unwrap());
                 let tags = tags.map(prepare_tags);
                 Box::pin(async move {
@@ -478,41 +478,7 @@ impl QueryBackend for DbSession<Postgres> {
                         &enc_value,
                         enc_tags,
                         expiry_ms,
-                    )
-                    .await?;
-                    txn.commit().await?;
-                    Ok(())
-                })
-            }
-            EntryOperation::Replace => {
-                let value = ProfileKey::prepare_input(value.unwrap());
-                let tags = tags.map(prepare_tags);
-                Box::pin(async move {
-                    let (_, key) = acquire_key(&mut *self).await?;
-                    let (enc_category, enc_name, enc_value, enc_tags) = unblock(move || {
-                        let enc_value =
-                            key.encrypt_entry_value(category.as_ref(), name.as_ref(), value)?;
-                        Result::<_, Error>::Ok((
-                            key.encrypt_entry_category(category)?,
-                            key.encrypt_entry_name(name)?,
-                            enc_value,
-                            tags.transpose()?
-                                .map(|t| key.encrypt_entry_tags(t))
-                                .transpose()?,
-                        ))
-                    })
-                    .await?;
-
-                    let mut active = acquire_session(&mut *self).await?;
-                    let mut txn = active.as_transaction().await?;
-                    perform_update(
-                        &mut txn,
-                        kind,
-                        &enc_category,
-                        &enc_name,
-                        &enc_value,
-                        enc_tags,
-                        expiry_ms,
+                        op == EntryOperation::Insert,
                     )
                     .await?;
                     txn.commit().await?;
@@ -617,56 +583,38 @@ async fn perform_insert<'q>(
     enc_value: &[u8],
     enc_tags: Option<Vec<EncEntryTag>>,
     expiry_ms: Option<i64>,
+    new_row: bool,
 ) -> Result<(), Error> {
-    trace!("Insert entry");
-    let row_id: i64 = sqlx::query_scalar(INSERT_QUERY)
-        .bind(active.profile_id)
-        .bind(kind as i16)
-        .bind(enc_category)
-        .bind(enc_name)
-        .bind(enc_value)
-        .bind(expiry_ms.map(expiry_timestamp).transpose()?)
-        .fetch_optional(active.connection_mut())
-        .await?
-        .ok_or_else(|| err_msg!(Duplicate, "Duplicate row"))?;
-    if let Some(tags) = enc_tags {
-        for tag in tags {
-            sqlx::query(TAG_INSERT_QUERY)
-                .bind(row_id)
-                .bind(&tag.name)
-                .bind(&tag.value)
-                .bind(tag.plaintext as i16)
-                .execute(active.connection_mut())
-                .await?;
-        }
-    }
-    Ok(())
-}
-
-async fn perform_update<'q>(
-    active: &mut DbSessionActive<'q, Postgres>,
-    kind: EntryKind,
-    enc_category: &[u8],
-    enc_name: &[u8],
-    enc_value: &[u8],
-    enc_tags: Option<Vec<EncEntryTag>>,
-    expiry_ms: Option<i64>,
-) -> Result<(), Error> {
-    trace!("Update entry");
-    let row_id: i64 = sqlx::query_scalar(UPDATE_QUERY)
-        .bind(active.profile_id)
-        .bind(kind as i16)
-        .bind(enc_category)
-        .bind(enc_name)
-        .bind(enc_value)
-        .bind(expiry_ms.map(expiry_timestamp).transpose()?)
-        .fetch_one(active.connection_mut())
-        .await
-        .map_err(|_| err_msg!(NotFound, "Error updating existing row"))?;
-    sqlx::query(TAG_DELETE_QUERY)
-        .bind(row_id)
-        .execute(active.connection_mut())
-        .await?;
+    let row_id = if new_row {
+        trace!("Insert entry");
+        sqlx::query_scalar(INSERT_QUERY)
+            .bind(active.profile_id)
+            .bind(kind as i16)
+            .bind(enc_category)
+            .bind(enc_name)
+            .bind(enc_value)
+            .bind(expiry_ms.map(expiry_timestamp).transpose()?)
+            .fetch_optional(active.connection_mut())
+            .await?
+            .ok_or_else(|| err_msg!(Duplicate, "Duplicate row"))?
+    } else {
+        trace!("Update entry");
+        let row_id: i64 = sqlx::query_scalar(UPDATE_QUERY)
+            .bind(active.profile_id)
+            .bind(kind as i16)
+            .bind(enc_category)
+            .bind(enc_name)
+            .bind(enc_value)
+            .bind(expiry_ms.map(expiry_timestamp).transpose()?)
+            .fetch_one(active.connection_mut())
+            .await
+            .map_err(|_| err_msg!(NotFound, "Error updating existing row"))?;
+        sqlx::query(TAG_DELETE_QUERY)
+            .bind(row_id)
+            .execute(active.connection_mut())
+            .await?;
+        row_id
+    };
     if let Some(tags) = enc_tags {
         for tag in tags {
             sqlx::query(TAG_INSERT_QUERY)
