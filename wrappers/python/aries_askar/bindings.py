@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import sys
+
 from ctypes import (
     _SimpleCData,
     Array,
@@ -24,21 +25,14 @@ from ctypes import (
 )
 from ctypes.util import find_library
 from typing import Optional, Tuple, Union
+from weakref import finalize
 
 from .error import AskarError, AskarErrorCode
 from .types import EntryOperation, KeyAlg, SeedMethod
 
 
-CALLBACKS = {}
-INVOKE = {}
-LIB: CDLL = None
+LIB: "Lib" = None
 LOGGER = logging.getLogger(__name__)
-LOG_LEVELS = {
-    1: logging.ERROR,
-    2: logging.WARNING,
-    3: logging.INFO,
-    4: logging.DEBUG,
-}
 MODULE_NAME = __name__.split(".")[0]
 
 
@@ -136,6 +130,8 @@ class ByteBuffer(Structure):
 
 
 class FfiStr:
+    """A string value allocated by Python."""
+
     def __init__(self, value=None):
         if value is None:
             value = c_char_p()
@@ -301,6 +297,7 @@ class ArcHandle(Structure):
     _fields_ = [
         ("value", c_size_t),
     ]
+    _dtor_: str = None
 
     def __init__(self, value=0):
         if isinstance(value, c_size_t):
@@ -308,6 +305,7 @@ class ArcHandle(Structure):
         if not isinstance(value, int):
             raise ValueError("Invalid handle")
         super().__init__(value)
+        finalize(self, self._cleanup)
 
     @classmethod
     def from_param(cls, param):
@@ -315,12 +313,16 @@ class ArcHandle(Structure):
             return param
         return cls(param)
 
-    def __bool__(self):
+    def __bool__(self) -> bool:
         return bool(self.value)
 
     def __repr__(self) -> str:
         """Format handle as a string."""
         return f"{self.__class__.__name__}({self.value})"
+
+    def _cleanup(self):
+        if self.value and self.__class__._dtor_:
+            invoke_dtor(self.__class__._dtor_, self)
 
 
 class StoreHandle(ArcHandle):
@@ -332,7 +334,7 @@ class StoreHandle(ArcHandle):
             await invoke_async("askar_store_close", (StoreHandle,), self)
             self.value = 0
 
-    def __del__(self):
+    def _cleanup(self):
         """Close the store when there are no more references to this object."""
         if self:
             invoke_dtor(
@@ -358,7 +360,7 @@ class SessionHandle(ArcHandle):
             )
             self.value = 0
 
-    def __del__(self):
+    def _cleanup(self):
         """Close the session when there are no more references to this object."""
         if self:
             invoke_dtor(
@@ -374,13 +376,13 @@ class SessionHandle(ArcHandle):
 class ScanHandle(ArcHandle):
     """Handle for an active Store scan instance."""
 
-    def __del__(self):
-        """Close the scan when there are no more references to this object."""
-        invoke_dtor("askar_scan_free", self)
+    _dtor_ = "askar_scan_free"
 
 
 class EntryListHandle(ArcHandle):
     """Handle for an active EntryList instance."""
+
+    _dtor_ = "askar_entry_list_free"
 
     def get_category(self, index: int) -> str:
         """Get the entry category."""
@@ -437,13 +439,11 @@ class EntryListHandle(ArcHandle):
             tags = dict()
         return tags
 
-    def __del__(self):
-        """Free the entry set when there are no more references."""
-        invoke_dtor("askar_entry_list_free", self)
-
 
 class KeyEntryListHandle(ArcHandle):
     """Handle for an active KeyEntryList instance."""
+
+    _dtor_ = "askar_key_entry_list_free"
 
     def get_algorithm(self, index: int) -> str:
         """Get the key algorithm."""
@@ -505,68 +505,77 @@ class KeyEntryListHandle(ArcHandle):
         )
         return handle
 
-    def __del__(self):
-        """Free the key entry set when there are no more references."""
-        invoke_dtor("askar_key_entry_list_free", self)
-
 
 class LocalKeyHandle(ArcHandle):
     """Handle for an active LocalKey instance."""
 
-    def __del__(self):
-        """Free the key when there are no more references."""
-        invoke_dtor("askar_key_free", self)
+    _dtor_ = "askar_key_free"
 
 
-def get_library() -> CDLL:
-    """Return the CDLL instance, loading it if necessary."""
-    global LIB
-    if LIB is None:
-        LIB = _load_library("aries_askar")
-        _init_logger()
-    return LIB
+class Lib:
+    """Aries-Askar library instance."""
 
+    LOG_LEVELS = {
+        1: logging.ERROR,
+        2: logging.WARNING,
+        3: logging.INFO,
+        4: logging.DEBUG,
+    }
 
-def _load_library(lib_name: str) -> CDLL:
-    """Load the CDLL library.
-    The python module directory is searched first, followed by the usual
-    library resolution for the current system.
-    """
-    lib_prefix_mapping = {"win32": ""}
-    lib_suffix_mapping = {"darwin": ".dylib", "win32": ".dll"}
-    try:
-        os_name = sys.platform
-        lib_prefix = lib_prefix_mapping.get(os_name, "lib")
-        lib_suffix = lib_suffix_mapping.get(os_name, ".so")
-        lib_path = os.path.join(
-            os.path.dirname(__file__), f"{lib_prefix}{lib_name}{lib_suffix}"
-        )
-        return CDLL(lib_path)
-    except KeyError:
-        LOGGER.debug("Unknown platform for shared library")
-    except OSError:
-        LOGGER.warning("Library not loaded from python package")
+    def __init__(self):
+        """Initializer."""
+        self._cdll = None
+        self._callbacks = {}
+        self._methods = {}
+        self._dtor = None
+        self._log_cb = None
+        self._log_enabled_cb = None
+        self._load_library("aries_askar")
+        self._init_logger()
+        finalize(self, self._cleanup)
 
-    lib_path = find_library(lib_name)
-    if not lib_path:
-        raise AskarError(
-            AskarErrorCode.WRAPPER, f"Library not found in path: {lib_path}"
-        )
-    try:
-        return CDLL(lib_path)
-    except OSError as e:
-        raise AskarError(
-            AskarErrorCode.WRAPPER, f"Error loading library: {lib_path}"
-        ) from e
+    def _load_library(self, lib_name: str):
+        """Load the CDLL library.
 
+        The python module directory is searched first, followed by the usual
+        library resolution for the current system.
+        """
+        lib_prefix_mapping = {"win32": ""}
+        lib_suffix_mapping = {"darwin": ".dylib", "win32": ".dll"}
+        try:
+            os_name = sys.platform
+            lib_prefix = lib_prefix_mapping.get(os_name, "lib")
+            lib_suffix = lib_suffix_mapping.get(os_name, ".so")
+            lib_path = os.path.join(
+                os.path.dirname(__file__), f"{lib_prefix}{lib_name}{lib_suffix}"
+            )
+            self._cdll = CDLL(lib_path)
+            return
+        except KeyError:
+            LOGGER.debug("Unknown platform for shared library")
+        except OSError:
+            LOGGER.warning("Library not loaded from python package")
 
-def _init_logger():
-    logger = logging.getLogger(MODULE_NAME)
-    if logging.getLevelName("TRACE") == "Level TRACE":
-        # avoid redefining TRACE if another library has added it
-        logging.addLevelName(5, "TRACE")
+        lib_path = find_library(lib_name)
+        if not lib_path:
+            raise AskarError(
+                AskarErrorCode.WRAPPER, f"Library not found in path: {lib_path}"
+            )
+        try:
+            self._cdll = CDLL(lib_path)
+        except OSError as e:
+            raise AskarError(
+                AskarErrorCode.WRAPPER, f"Error loading library: {lib_path}"
+            ) from e
 
-    if not hasattr(_init_logger, "log_cb"):
+    def _init_logger(self):
+        if self._log_cb:
+            return
+
+        logger = logging.getLogger(MODULE_NAME)
+        if logging.getLevelName("TRACE") == "Level TRACE":
+            # avoid redefining TRACE if another library has added it
+            logging.addLevelName(5, "TRACE")
 
         @CFUNCTYPE(
             None, c_void_p, c_int32, c_char_p, c_char_p, c_char_p, c_char_p, c_int32
@@ -576,180 +585,218 @@ def _init_logger():
             level: int,
             target: c_char_p,
             message: c_char_p,
-            module_path: c_char_p,
+            _module_path: c_char_p,
             file_name: c_char_p,
             line: int,
         ):
             logger.getChild("native." + target.decode().replace("::", ".")).log(
-                LOG_LEVELS.get(level, level),
+                Lib.LOG_LEVELS.get(level, level),
                 "\t%s:%d | %s",
                 file_name.decode() if file_name else None,
                 line,
                 message.decode(),
             )
 
-        _init_logger.log_cb = _log_cb
+        self._log_cb = _log_cb
 
         @CFUNCTYPE(c_int8, c_void_p, c_int32)
         def _enabled_cb(_context, level: int) -> bool:
-            return logger.isEnabledFor(LOG_LEVELS.get(level, level))
+            return self._cdll and logger.isEnabledFor(Lib.LOG_LEVELS.get(level, level))
 
-        _init_logger.enabled_cb = _enabled_cb
+        self._log_enabled_cb = _enabled_cb
 
-    if os.getenv("RUST_LOG"):
-        # level from environment
-        level = -1
-    else:
-        # inherit current level from logger
-        level = _convert_log_level(logger.level or logger.parent.level)
+        if os.getenv("RUST_LOG"):
+            # level from environment
+            level = -1
+        else:
+            # inherit current level from logger
+            level = Lib._convert_log_level(logger.level or logger.parent.level)
 
-    invoke(
-        "askar_set_custom_logger",
-        (c_void_p, c_void_p, c_void_p, c_void_p, c_int32),
-        None,  # context
-        _init_logger.log_cb,
-        _init_logger.enabled_cb,
-        None,  # flush
-        level,
-    )
+        set_logger = self._method(
+            "askar_set_custom_logger", (c_void_p, c_void_p, c_void_p, c_void_p, c_int32)
+        )
+        if set_logger(
+            None,  # context
+            self._log_cb,
+            self._log_enabled_cb,
+            None,  # flush
+            level,
+        ):
+            raise self._get_current_error(True)
+
+        try:
+            self._dtor = self._method("askar_clear_custom_logger", None, restype=None)
+        except AttributeError:
+            # method is new as of 0.2.5
+            pass
+
+    def invoke(self, name, argtypes, *args):
+        """Perform a synchronous library function call."""
+        method = self._method(name, argtypes)
+        args = Lib._load_method_arguments(name, argtypes, args)
+        result = method(*args)
+        if result:
+            raise self._get_current_error(True)
+
+    def invoke_async(self, name: str, argtypes, *args, return_type=None):
+        """Perform an asynchronous library function call."""
+        method = self._method(name, (*argtypes, c_void_p, c_int64))
+        loop = asyncio.get_event_loop()
+        fut = loop.create_future()
+        cf_args = [c_int64, c_int64]
+        if return_type:
+            cf_args.append(return_type)
+        cb_type = CFUNCTYPE(None, *cf_args)  # could be cached
+        cb_res = self._create_callback(cb_type, loop, fut)
+        args = Lib._load_method_arguments(name, argtypes, args)
+        # save a reference to the callback function and arguments to avoid GC
+        self._callbacks[fut] = (cb_res, args)
+        result = method(*args, cb_res, 0)  # not making use of callback ID
+        if result:
+            # FFI must not execute the callback if an error is returned
+            err = self._get_current_error(True)
+            self._fulfill_future(fut, None, err)
+        return fut
+
+    def set_max_log_level(self, level: Union[str, int, None]):
+        set_level = Lib._convert_log_level(level)
+        self.invoke("askar_set_max_log_level", (c_int32,), set_level)
+
+    @classmethod
+    def _convert_log_level(cls, level: Union[str, int, None]):
+        if level is None or level == "-1":
+            return -1
+        else:
+            if isinstance(level, str):
+                level = level.upper()
+            name = logging.getLevelName(level)
+            for k, v in cls.LOG_LEVELS.items():
+                if logging.getLevelName(v) == name:
+                    return k
+        return 0
+
+    def version(self) -> str:
+        """Get the version of the installed aries-askar library."""
+        return str(
+            self._method(
+                "askar_version",
+                None,
+                restype=StrBuffer,
+            )()
+        )
+
+    def _method(self, name, argtypes, *, restype=c_int64):
+        method = self._methods.get(name)
+        if not method:
+            method = getattr(self._cdll, name)
+            if argtypes:
+                method.argtypes = argtypes
+            method.restype = restype
+            self._methods[name] = method
+        return method
+
+    @classmethod
+    def _load_method_arguments(cls, name, argtypes, args):
+        """Preload argument values to avoid freeing any intermediate data."""
+        if not argtypes:
+            return args
+        if len(args) != len(argtypes):
+            raise ValueError(f"{name}: Arguments length does not match argtypes length")
+        return [
+            arg if issubclass(argtype, _SimpleCData) else argtype.from_param(arg)
+            for (arg, argtype) in zip(args, argtypes)
+        ]
+
+    def _create_callback(
+        self,
+        cb_type: CFUNCTYPE,
+        loop: asyncio.AbstractEventLoop,
+        fut: asyncio.Future,
+    ):
+        """Create a callback to handle the response from an async library method."""
+
+        def _cb(cb_id: int, err: int, result=None):
+            """Callback function passed to the CFUNCTYPE for invocation."""
+            assert cb_id == 0
+            exc = self._get_current_error(True) if err else None
+            loop.call_soon_threadsafe(self._fulfill_future, fut, result, exc)
+
+        res = cb_type(_cb)
+        return res
+
+    def _fulfill_future(self, fut: asyncio.Future, result, err: Exception = None):
+        """Resolve a callback future given the result and exception, if any."""
+        if not self._callbacks.pop(fut, None):
+            LOGGER.info("callback already fulfilled")
+            return
+        if fut.cancelled():
+            LOGGER.debug("callback previously cancelled")
+        elif err:
+            fut.set_exception(err)
+        else:
+            fut.set_result(result)
+
+    def _get_current_error(self, expect: bool = False) -> Optional[AskarError]:
+        """
+        Get the error result from the previous failed API method.
+
+        Args:
+            expect: Return a default error message if none is found
+        """
+        err_json = StrBuffer()
+        method = self._method("askar_get_current_error", (POINTER(c_char_p),))
+        if not method(byref(err_json)):
+            try:
+                msg = json.loads(err_json.value)
+            except json.JSONDecodeError:
+                LOGGER.warning("JSON decode error for askar_get_current_error")
+                msg = None
+            if msg and "message" in msg and "code" in msg:
+                return AskarError(
+                    AskarErrorCode(msg["code"]), msg["message"], msg.get("extra")
+                )
+            if not expect:
+                return None
+        return AskarError(AskarErrorCode.WRAPPER, "Unknown error")
+
+    def _cleanup(self):
+        if self._cdll and self._dtor:
+            self._dtor()
+            self._dtor = None
+        self._cdll = None
+
+    def __del__(self):
+        self._cleanup()
+
+
+def get_library(init: bool = True) -> Lib:
+    """Return the library instance, loading it if necessary."""
+    global LIB
+    if LIB is None and init:
+        LIB = Lib()
+    return LIB
 
 
 def set_max_log_level(level: Union[str, int, None]):
-    get_library()  # ensure logger is initialized
-    set_level = _convert_log_level(level)
-    invoke("askar_set_max_log_level", (c_int32,), set_level)
-
-
-def _convert_log_level(level: Union[str, int, None]):
-    if level is None or level == "-1":
-        return -1
-    else:
-        if isinstance(level, str):
-            level = level.upper()
-        name = logging.getLevelName(level)
-        for k, v in LOG_LEVELS.items():
-            if logging.getLevelName(v) == name:
-                return k
-    return 0
-
-
-def _fulfill_future(fut: asyncio.Future, result, err: Exception = None):
-    """Resolve a callback future given the result and exception, if any."""
-    if not CALLBACKS.pop(fut, None):
-        LOGGER.info("callback already fulfilled")
-        return
-    if fut.cancelled():
-        LOGGER.debug("callback previously cancelled")
-    elif err:
-        fut.set_exception(err)
-    else:
-        fut.set_result(result)
-
-
-def _create_callback(
-    cb_type: CFUNCTYPE,
-    loop: asyncio.AbstractEventLoop,
-    fut: asyncio.Future,
-):
-    """Create a callback to handle the response from an async library method."""
-
-    def _cb(cb_id: int, err: int, result=None):
-        """Callback function passed to the CFUNCTYPE for invocation."""
-        assert cb_id == 0
-        exc = get_current_error() if err else None
-        loop.call_soon_threadsafe(_fulfill_future, fut, result, exc)
-
-    res = cb_type(_cb)
-    return res
-
-
-def _get_library_method(name: str, argtypes, *, restype=c_int64):
-    method = INVOKE.get(name)
-    if not method:
-        method = getattr(get_library(), name)
-        method.argtypes = argtypes
-        method.restype = restype
-        INVOKE[name] = method
-    return method
-
-
-def _load_method_arguments(name, argtypes, args):
-    """Preload argument values to avoid freeing any intermediate data."""
-    if not argtypes:
-        return args
-    if len(args) != len(argtypes):
-        raise ValueError(f"{name}: Arguments length does not match argtypes length")
-    return [
-        arg if issubclass(argtype, _SimpleCData) else argtype.from_param(arg)
-        for (arg, argtype) in zip(args, argtypes)
-    ]
+    """Set the maximum logging level."""
+    get_library().set_max_log_level(level)
 
 
 def invoke(name, argtypes, *args):
     """Perform a synchronous library function call."""
-    method = _get_library_method(name, argtypes)
-    args = _load_method_arguments(name, argtypes, args)
-    result = method(*args)
-    if result:
-        raise get_current_error(True)
+    get_library().invoke(name, argtypes, *args)
 
 
-def invoke_async(name: str, argtypes, *args, return_type=None):
+def invoke_async(name: str, argtypes, *args, return_type=None) -> asyncio.Future:
     """Perform an asynchronous library function call."""
-    method = _get_library_method(name, (*argtypes, c_void_p, c_int64))
-    loop = asyncio.get_event_loop()
-    fut = loop.create_future()
-    cf_args = [c_int64, c_int64]
-    if return_type:
-        cf_args.append(return_type)
-    cb_type = CFUNCTYPE(None, *cf_args)  # could be cached
-    cb_res = _create_callback(cb_type, loop, fut)
-    args = _load_method_arguments(name, argtypes, args)
-    # save a reference to the callback function and arguments to avoid GC
-    CALLBACKS[fut] = (cb_res, args)
-    result = method(*args, cb_res, 0)  # not making use of callback ID
-    if result:
-        # FFI must not execute the callback if an error is returned
-        err = get_current_error(True)
-        _fulfill_future(fut, None, err)
-    return fut
+    return get_library().invoke_async(name, argtypes, *args, return_type=return_type)
 
 
 def invoke_dtor(name: str, *values, argtypes=None):
-    method = INVOKE.get(name)
-    if not method:
-        lib = get_library()
-        if not lib:
-            return
-        method = getattr(lib, name)
-        if argtypes:
-            method.argtypes = argtypes
-        method.restype = None
-        INVOKE[name] = method
-    method(*values)
-
-
-def get_current_error(expect: bool = False) -> Optional[AskarError]:
-    """
-    Get the error result from the previous failed API method.
-
-    Args:
-        expect: Return a default error message if none is found
-    """
-    err_json = StrBuffer()
-    if not LIB or not LIB.askar_get_current_error(byref(err_json)):
-        try:
-            msg = json.loads(err_json.value)
-        except json.JSONDecodeError:
-            LOGGER.warning("JSON decode error for askar_get_current_error")
-            msg = None
-        if msg and "message" in msg and "code" in msg:
-            return AskarError(
-                AskarErrorCode(msg["code"]), msg["message"], msg.get("extra")
-            )
-        if not expect:
-            return None
-    return AskarError(AskarErrorCode.WRAPPER, "Unknown error")
+    lib = get_library(False)
+    if lib:
+        method = lib._method(name, argtypes, restype=None)
+        method(*values)
 
 
 def generate_raw_key(seed: Union[str, bytes] = None) -> str:
@@ -766,9 +813,7 @@ def generate_raw_key(seed: Union[str, bytes] = None) -> str:
 
 def version() -> str:
     """Get the version of the installed aries-askar library."""
-    lib = get_library()
-    lib.askar_version.restype = c_void_p
-    return str(StrBuffer(lib.askar_version()))
+    return get_library().version()
 
 
 async def store_open(
