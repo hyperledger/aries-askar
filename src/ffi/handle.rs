@@ -1,39 +1,41 @@
-use std::{fmt::Display, marker::PhantomData, sync::Arc};
+use std::{fmt::Display, marker::PhantomData, ptr, sync::Arc};
 
 use crate::error::Error;
 
-#[repr(transparent)]
-pub struct ArcHandle<T>(usize, PhantomData<T>);
+#[repr(C)]
+pub struct ArcHandle<T>(*const T, PhantomData<T>);
 
 impl<T> ArcHandle<T> {
     pub fn invalid() -> Self {
-        Self(0, PhantomData)
+        Self(ptr::null(), PhantomData)
     }
 
     pub fn create(value: T) -> Self {
         let results = Arc::into_raw(Arc::new(value));
-        Self(results as usize, PhantomData)
+        Self(results, PhantomData)
     }
 
     pub fn load(&self) -> Result<Arc<T>, Error> {
         self.validate()?;
-        let slf = unsafe { Arc::from_raw(self.0 as *const T) };
-        unsafe { Arc::increment_strong_count(self.0 as *const T) };
-        Ok(slf)
+        unsafe {
+            let result = Arc::from_raw(self.0);
+            Arc::increment_strong_count(self.0);
+            Ok(result)
+        }
     }
 
     pub fn remove(&self) {
-        if self.0 != 0 {
-            unsafe {
+        unsafe {
+            if !self.0.is_null() {
                 // Drop the initial reference. There could be others outstanding.
-                Arc::decrement_strong_count(self.0 as *const T);
+                Arc::decrement_strong_count(self.0);
             }
         }
     }
 
     #[inline]
     pub fn validate(&self) -> Result<(), Error> {
-        if self.0 == 0 {
+        if self.0.is_null() {
             Err(err_msg!("Invalid handle"))
         } else {
             Ok(())
@@ -43,7 +45,7 @@ impl<T> ArcHandle<T> {
 
 impl<T> std::fmt::Display for ArcHandle<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Handle({:p})", self.0 as *const T)
+        write!(f, "Handle({:p})", self.0)
     }
 }
 
@@ -61,7 +63,7 @@ macro_rules! new_sequence_handle (($newtype:ident, $counter:ident) => (
     static $counter: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-    #[repr(transparent)]
+    #[repr(C)]
     pub struct $newtype(pub usize);
 
     impl $crate::ffi::ResourceHandle for $newtype {
