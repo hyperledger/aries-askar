@@ -47,6 +47,12 @@ impl SecretBytes {
         Self(v)
     }
 
+    /// Accessor for the current capacity of the buffer
+    #[inline]
+    pub fn capacity(&self) -> usize {
+        self.0.capacity()
+    }
+
     /// Accessor for the length of the buffer contents
     #[inline]
     pub fn len(&self) -> usize {
@@ -66,7 +72,7 @@ impl SecretBytes {
         } else if cap > 0 && min_cap >= cap {
             // allocate a new buffer and copy the secure data over
             let new_cap = min_cap.max(cap * 2).max(32);
-            let mut buf = SecretBytes::with_capacity(new_cap);
+            let mut buf = Self::with_capacity(new_cap);
             buf.0.extend_from_slice(&self.0[..]);
             mem::swap(&mut buf, self);
             // old buf zeroized on drop
@@ -93,19 +99,23 @@ impl SecretBytes {
         self.ensure_capacity(self.len() + extra)
     }
 
-    /// Convert this buffer into a boxed slice
-    pub fn into_boxed_slice(mut self) -> Box<[u8]> {
+    /// Shrink the buffer capacity to match the length
+    pub fn shrink_to_fit(&mut self) {
         let len = self.0.len();
         if self.0.capacity() > len {
             // copy to a smaller buffer (capacity is not tracked for boxed slice)
             // and proceed with the normal zeroize on drop
-            let mut v = Vec::with_capacity(len);
-            v.append(&mut self.0);
-            v.into_boxed_slice()
-        } else {
-            // no realloc and copy needed
-            self.into_vec().into_boxed_slice()
+            let mut buf = Self::with_capacity(len);
+            buf.0.extend_from_slice(&self.0[..]);
+            mem::swap(&mut buf, self);
+            // old buf zeroized on drop
         }
+    }
+
+    /// Convert this buffer into a boxed slice
+    pub fn into_boxed_slice(mut self) -> Box<[u8]> {
+        self.shrink_to_fit();
+        self.into_vec().into_boxed_slice()
     }
 
     /// Unwrap this buffer into a Vec<u8>
@@ -114,7 +124,6 @@ impl SecretBytes {
         // FIXME zeroize extra capacity in case it was used previously?
         let mut v = Vec::new(); // note: no heap allocation for empty vec
         mem::swap(&mut v, &mut self.0);
-        mem::forget(self);
         v
     }
 
