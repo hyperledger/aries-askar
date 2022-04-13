@@ -79,8 +79,6 @@ class FfiByteBuffer:
         elif isinstance(value, bytes):
             dlen = len(value)
             data = c_char_p(value)
-            b = c_void_p.from_buffer(data)
-            del b
         else:
             raise TypeError(f"Expected str or bytes value, got {type(value)}")
         self._dlen = dlen
@@ -655,8 +653,9 @@ def _create_callback(
 ):
     """Create a callback to handle the response from an async library method."""
 
-    def _cb(_id: int, err: int, result=None):
+    def _cb(cb_id: int, err: int, result=None):
         """Callback function passed to the CFUNCTYPE for invocation."""
+        assert cb_id == 0
         exc = get_current_error() if err else None
         loop.call_soon_threadsafe(_fulfill_future, fut, result, exc)
 
