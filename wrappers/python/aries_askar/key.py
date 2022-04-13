@@ -4,14 +4,14 @@ from typing import Union
 
 from . import bindings
 
-from .bindings import Encrypted
+from .bindings import Encrypted, LocalKeyHandle
 from .types import KeyAlg, SeedMethod
 
 
 class Key:
     """An active key or keypair instance."""
 
-    def __init__(self, handle: bindings.LocalKeyHandle):
+    def __init__(self, handle: LocalKeyHandle):
         """Initialize the Key instance."""
         self._handle = handle
 
@@ -42,7 +42,7 @@ class Key:
         return cls(bindings.key_from_jwk(jwk))
 
     @property
-    def handle(self) -> bindings.LocalKeyHandle:
+    def handle(self) -> LocalKeyHandle:
         """Accessor for the key handle."""
         return self._handle
 
@@ -52,7 +52,7 @@ class Key:
         return KeyAlg.from_key_alg(alg)
 
     @property
-    def ephemeral(self) -> "Key":
+    def ephemeral(self) -> bool:
         return bindings.key_get_ephemeral(self._handle)
 
     def convert_key(self, alg: Union[str, KeyAlg]) -> "Key":

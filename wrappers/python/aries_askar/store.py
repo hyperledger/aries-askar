@@ -9,6 +9,7 @@ from cached_property import cached_property
 from . import bindings
 
 from .bindings import (
+    ByteBuffer,
     EntryListHandle,
     KeyEntryListHandle,
     ScanHandle,
@@ -46,7 +47,7 @@ class Entry:
         return bytes(self.raw_value)
 
     @cached_property
-    def raw_value(self) -> memoryview:
+    def raw_value(self) -> ByteBuffer:
         """Accessor for the entry raw value."""
         return self._list.get_value(self._pos)
 
@@ -101,7 +102,20 @@ class EntryList:
         return Entry(self._handle, index)
 
     def __iter__(self):
-        return self
+        return IterEntryList(self)
+
+    def __len__(self) -> int:
+        return self._len
+
+    def __repr__(self) -> str:
+        return f"<EntryList(handle={self._handle}, pos={self._pos}, len={self._len})>"
+
+
+class IterEntryList:
+    def __init__(self, list: EntryList):
+        self._handle = list._handle
+        self._len = list._len
+        self._pos = 0
 
     def __next__(self):
         if self._pos < self._len:
@@ -110,12 +124,6 @@ class EntryList:
             return entry
         else:
             raise StopIteration
-
-    def __len__(self) -> int:
-        return self._len
-
-    def __repr__(self) -> str:
-        return f"<EntryList(handle={self._handle}, pos={self._pos}, len={self._len})>"
 
 
 class KeyEntry:
@@ -184,15 +192,7 @@ class KeyEntryList:
         return KeyEntry(self._handle, index)
 
     def __iter__(self):
-        return self
-
-    def __next__(self):
-        if self._pos < self._len:
-            entry = KeyEntry(self._handle, self._pos)
-            self._pos += 1
-            return entry
-        else:
-            raise StopIteration
+        return IterKeyEntryList(self)
 
     def __len__(self) -> int:
         return self._len
@@ -201,6 +201,21 @@ class KeyEntryList:
         return (
             f"<KeyEntryList(handle={self._handle}, pos={self._pos}, len={self._len})>"
         )
+
+
+class IterKeyEntryList:
+    def __init__(self, list: KeyEntryList):
+        self._handle = list._handle
+        self._len = list._len
+        self._pos = 0
+
+    def __next__(self):
+        if self._pos < self._len:
+            entry = KeyEntry(self._handle, self._pos)
+            self._pos += 1
+            return entry
+        else:
+            raise StopIteration
 
 
 class Scan:
@@ -216,9 +231,9 @@ class Scan:
         limit: int = None,
     ):
         """Initialize the Scan instance."""
-        self.params = (store, profile, category, tag_filter, offset, limit)
+        self._params = (store, profile, category, tag_filter, offset, limit)
         self._handle: ScanHandle = None
-        self._buffer: EntryList = None
+        self._buffer: IterEntryList = None
 
     @property
     def handle(self) -> ScanHandle:
@@ -230,7 +245,8 @@ class Scan:
 
     async def __anext__(self):
         if self._handle is None:
-            (store, profile, category, tag_filter, offset, limit) = self.params
+            (store, profile, category, tag_filter, offset, limit) = self._params
+            self._params = None
             if not store.handle:
                 raise AskarError(
                     AskarErrorCode.WRAPPER, "Cannot scan from closed store"
@@ -239,7 +255,7 @@ class Scan:
                 store.handle, profile, category, tag_filter, offset, limit
             )
             list_handle = await bindings.scan_next(self._handle)
-            self._buffer = EntryList(list_handle) if list_handle else None
+            self._buffer = iter(EntryList(list_handle)) if list_handle else None
         while True:
             if not self._buffer:
                 raise StopAsyncIteration
@@ -247,7 +263,7 @@ class Scan:
             if row:
                 return row
             list_handle = await bindings.scan_next(self._handle)
-            self._buffer = EntryList(list_handle) if list_handle else None
+            self._buffer = iter(EntryList(list_handle)) if list_handle else None
 
     async def fetch_all(self) -> Sequence[Entry]:
         rows = []
@@ -407,7 +423,7 @@ class Session:
         result_handle = await bindings.session_fetch(
             self._handle, category, name, for_update
         )
-        return next(EntryList(result_handle, 1), None) if result_handle else None
+        return next(iter(EntryList(result_handle, 1)), None) if result_handle else None
 
     async def fetch_all(
         self,
@@ -508,7 +524,9 @@ class Session:
                 AskarErrorCode.WRAPPER, "Cannot fetch key from closed session"
             )
         result_handle = await bindings.session_fetch_key(self._handle, name, for_update)
-        return next(KeyEntryList(result_handle, 1)) if result_handle else None
+        return (
+            next(iter(KeyEntryList(result_handle, 1)), None) if result_handle else None
+        )
 
     async def fetch_all_keys(
         self,

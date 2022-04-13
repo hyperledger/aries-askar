@@ -113,6 +113,8 @@ def test_ecdh_1pu_direct():
         KeyAlg.A256GCM, ephem_key, alice_key, bob_jwk, message, aad=protected_b64
     )
     ciphertext, tag, nonce = encrypted_msg.parts
+    print("enc", *encrypted_msg.parts)
+    print("enc", *encrypted_msg.parts)
 
     # switch to receiver
 

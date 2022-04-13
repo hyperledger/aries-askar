@@ -6,12 +6,14 @@ import logging
 import os
 import sys
 from ctypes import (
+    _SimpleCData,
     Array,
     CDLL,
     CFUNCTYPE,
     POINTER,
     Structure,
     byref,
+    cast,
     c_char_p,
     c_int8,
     c_int32,
@@ -28,6 +30,7 @@ from .types import EntryOperation, KeyAlg, SeedMethod
 
 
 CALLBACKS = {}
+INVOKE = {}
 LIB: CDLL = None
 LOGGER = logging.getLogger(__name__)
 LOG_LEVELS = {
@@ -39,217 +42,68 @@ LOG_LEVELS = {
 MODULE_NAME = __name__.split(".")[0]
 
 
-class StoreHandle(c_size_t):
-    """Index of an active Store instance."""
-
-    def __repr__(self) -> str:
-        """Format store handle as a string."""
-        return f"{self.__class__.__name__}({self.value})"
-
-    async def close(self):
-        """Close the store, waiting for any active connections."""
-        if not getattr(self, "_closed", False):
-            await do_call_async("askar_store_close", self)
-            setattr(self, "_closed", True)
-
-    def __del__(self):
-        """Close the store when there are no more references to this object."""
-        if not getattr(self, "_closed", False) and self:
-            do_call("askar_store_close", self, c_void_p())
-
-
-class SessionHandle(c_size_t):
-    """Index of an active Session/Transaction instance."""
-
-    def __repr__(self) -> str:
-        """Format session handle as a string."""
-        return f"{self.__class__.__name__}({self.value})"
-
-    async def close(self, commit: bool = False):
-        """Close the session."""
-        if not getattr(self, "_closed", False) and self:
-            await do_call_async(
-                "askar_session_close",
-                self,
-                c_int8(commit),
-            )
-            setattr(self, "_closed", True)
-
-    def __del__(self):
-        """Close the session when there are no more references to this object."""
-        if not getattr(self, "_closed", False) and self:
-            do_call("askar_session_close", self, c_int8(0), c_void_p())
-
-
-class ScanHandle(c_size_t):
-    """Index of an active Store scan instance."""
-
-    def __repr__(self) -> str:
-        """Format scan handle as a string."""
-        return f"{self.__class__.__name__}({self.value})"
-
-    def __del__(self):
-        """Close the scan when there are no more references to this object."""
-        if self:
-            get_library().askar_scan_free(self)
-
-
-class EntryListHandle(c_size_t):
-    """Pointer to an active EntryList instance."""
-
-    def get_category(self, index: int) -> str:
-        """Get the entry category."""
-        cat = StrBuffer()
-        do_call(
-            "askar_entry_list_get_category",
-            self,
-            c_int32(index),
-            byref(cat),
-        )
-        return str(cat)
-
-    def get_name(self, index: int) -> str:
-        """Get the entry name."""
-        name = StrBuffer()
-        do_call(
-            "askar_entry_list_get_name",
-            self,
-            c_int32(index),
-            byref(name),
-        )
-        return str(name)
-
-    def get_value(self, index: int) -> memoryview:
-        """Get the entry value."""
-        val = ByteBuffer()
-        do_call("askar_entry_list_get_value", self, c_int32(index), byref(val))
-        return memoryview(val.raw)
-
-    def get_tags(self, index: int) -> dict:
-        """Get the entry tags."""
-        tags = StrBuffer()
-        do_call(
-            "askar_entry_list_get_tags",
-            self,
-            c_int32(index),
-            byref(tags),
-        )
-        if tags:
-            tags = json.loads(tags.value)
-            for t in tags:
-                if isinstance(tags[t], list):
-                    tags[t] = set(tags[t])
-        else:
-            tags = dict()
-        return tags
-
-    def __repr__(self) -> str:
-        """Format entry list handle as a string."""
-        return f"{self.__class__.__name__}({self.value})"
-
-    def __del__(self):
-        """Free the entry set when there are no more references."""
-        if self:
-            get_library().askar_entry_list_free(self)
-
-
-class KeyEntryListHandle(c_size_t):
-    """Pointer to an active KeyEntryList instance."""
-
-    def get_algorithm(self, index: int) -> str:
-        """Get the key algorithm."""
-        name = StrBuffer()
-        do_call(
-            "askar_key_entry_list_get_algorithm",
-            self,
-            c_int32(index),
-            byref(name),
-        )
-        return str(name)
-
-    def get_name(self, index: int) -> str:
-        """Get the key name."""
-        name = StrBuffer()
-        do_call(
-            "askar_key_entry_list_get_name",
-            self,
-            c_int32(index),
-            byref(name),
-        )
-        return str(name)
-
-    def get_metadata(self, index: int) -> str:
-        """Get for the key metadata."""
-        metadata = StrBuffer()
-        do_call(
-            "askar_key_entry_list_get_metadata",
-            self,
-            c_int32(index),
-            byref(metadata),
-        )
-        return str(metadata)
-
-    def get_tags(self, index: int) -> dict:
-        """Get the key tags."""
-        tags = StrBuffer()
-        do_call(
-            "askar_key_entry_list_get_tags",
-            self,
-            c_int32(index),
-            byref(tags),
-        )
-        return json.loads(tags.value) if tags else None
-
-    def load_key(self, index: int) -> "LocalKeyHandle":
-        """Load the key instance."""
-        handle = LocalKeyHandle()
-        do_call(
-            "askar_key_entry_list_load_local",
-            self,
-            c_int32(index),
-            byref(handle),
-        )
-        return handle
-
-    def __repr__(self) -> str:
-        """Format key entry list handle as a string."""
-        return f"{self.__class__.__name__}({self.value})"
-
-    def __del__(self):
-        """Free the key entry set when there are no more references."""
-        if self:
-            get_library().askar_key_entry_list_free(self)
-
-
-class LocalKeyHandle(c_size_t):
-    """Pointer to an active LocalKey instance."""
-
-    def __repr__(self) -> str:
-        """Format key handle as a string."""
-        return f"{self.__class__.__name__}({self.value})"
-
-    def __del__(self):
-        """Free the key when there are no more references."""
-        if self:
-            get_library().askar_key_free(self)
-
-
-class FfiByteBuffer(Structure):
-    """A byte buffer allocated by python."""
-
-    _fields_ = [
-        ("len", c_int64),
-        ("value", POINTER(c_ubyte)),
-    ]
-
-
 class RawBuffer(Structure):
     """A byte buffer allocated by the library."""
 
     _fields_ = [
         ("len", c_int64),
-        ("data", c_void_p),
+        ("data", POINTER(c_ubyte)),
     ]
+
+    def __bytes__(self) -> bytes:
+        if not self.len:
+            return b""
+        return bytes(self.array)
+
+    def __len__(self) -> int:
+        return int(self.len)
+
+    @property
+    def array(self) -> Array:
+        return cast(self.data, POINTER(c_ubyte * self.len)).contents
+
+
+class FfiByteBuffer:
+    """A byte buffer allocated by Python."""
+
+    def __init__(self, value):
+        if isinstance(value, str):
+            value = value.encode("utf-8")
+
+        if value is None:
+            dlen = 0
+            data = c_char_p()
+        elif isinstance(value, memoryview):
+            dlen = value.nbytes
+            data = c_char_p(value.tobytes())
+        elif isinstance(value, bytes):
+            dlen = len(value)
+            data = c_char_p(value)
+            b = c_void_p.from_buffer(data)
+            del b
+        else:
+            raise TypeError(f"Expected str or bytes value, got {type(value)}")
+        self._dlen = dlen
+        self._data = data
+
+    def __bytes__(self) -> bytes:
+        if not self._data:
+            return b""
+        return self._data.value
+
+    def __len__(self) -> int:
+        return self._dlen
+
+    @property
+    def _as_parameter_(self) -> RawBuffer:
+        buf = RawBuffer(len=self._dlen, data=cast(self._data, POINTER(c_ubyte)))
+        return buf
+
+    @classmethod
+    def from_param(cls, value):
+        if isinstance(value, (ByteBuffer, FfiByteBuffer)):
+            return value
+        return cls(value)
 
 
 class ByteBuffer(Structure):
@@ -258,30 +112,89 @@ class ByteBuffer(Structure):
     _fields_ = [("buffer", RawBuffer)]
 
     @property
-    def raw(self) -> Array:
-        ret = (c_ubyte * self.buffer.len).from_address(self.buffer.data)
-        setattr(ret, "_ref_", self)  # ensure buffer is not dropped
-        return ret
+    def array(self) -> Array:
+        return self.buffer.array
+
+    @property
+    def view(self) -> memoryview:
+        return memoryview(self.array)
 
     def __bytes__(self) -> bytes:
-        return bytes(self.raw)
+        return bytes(self.buffer)
+
+    def __len__(self) -> int:
+        return len(self.buffer)
+
+    def __getitem__(self, idx) -> bytes:
+        return bytes(self.buffer.array[idx])
 
     def __repr__(self) -> str:
         """Format byte buffer as a string."""
-        return repr(bytes(self))
+        return f"{self.__class__.__name__}({bytes(self)})"
 
     def __del__(self):
         """Call the byte buffer destructor when this instance is released."""
-        get_library().askar_buffer_free(self.buffer)
+        invoke_dtor("askar_buffer_free", self.buffer)
+
+
+class FfiStr:
+    def __init__(self, value=None):
+        if value is None:
+            value = c_char_p()
+        elif isinstance(value, c_char_p):
+            pass
+        else:
+            if isinstance(value, str):
+                value = value.encode("utf-8")
+            if not isinstance(value, bytes):
+                raise TypeError(f"Expected string value, got {type(value)}")
+            value = c_char_p(value)
+        self.value = value
+
+    @classmethod
+    def from_param(cls, value):
+        if isinstance(value, cls):
+            return value
+        return cls(value)
+
+    @property
+    def _as_parameter_(self):
+        return self.value
+
+    def __repr__(self) -> str:
+        """Format handle as a string."""
+        return f"{self.__class__.__name__}({self.value})"
+
+
+class FfiJson:
+    @classmethod
+    def from_param(cls, value):
+        if isinstance(value, FfiStr):
+            return value
+        if isinstance(value, dict):
+            value = json.dumps(value)
+        return FfiStr(value)
+
+
+class FfiTagsJson:
+    @classmethod
+    def from_param(cls, tags):
+        if isinstance(tags, FfiStr):
+            return tags
+        if tags:
+            tags = json.dumps(
+                {
+                    name: (list(value) if isinstance(value, set) else value)
+                    for name, value in tags.items()
+                }
+            )
+        else:
+            tags = None
+        return FfiStr(tags)
 
 
 class StrBuffer(c_char_p):
     """A string allocated by the library."""
-
-    @classmethod
-    def from_param(cls):
-        """Returns the type ctypes should use for loading the result."""
-        return c_void_p
 
     def is_none(self) -> bool:
         """Check if the returned string pointer is null."""
@@ -304,7 +217,8 @@ class StrBuffer(c_char_p):
 
     def __del__(self):
         """Call the string destructor when this instance is released."""
-        get_library().askar_string_free(self)
+        if self:
+            invoke_dtor("askar_string_free", self)
 
 
 class AeadParams(Structure):
@@ -333,8 +247,7 @@ class Encrypted(Structure):
     ]
 
     def __getitem__(self, idx) -> bytes:
-        arr = (c_ubyte * self.buffer.len).from_address(self.buffer.data)
-        return bytes(arr[idx])
+        return bytes(self.buffer.array[idx])
 
     def __bytes__(self) -> bytes:
         """Convert to bytes."""
@@ -381,7 +294,230 @@ class Encrypted(Structure):
 
     def __del__(self):
         """Call the byte buffer destructor when this instance is released."""
-        get_library().askar_buffer_free(self.buffer)
+        invoke_dtor("askar_buffer_free", self.buffer)
+
+
+class ArcHandle(Structure):
+    """Base class for handle instances."""
+
+    _fields_ = [
+        ("value", c_size_t),
+    ]
+
+    def __init__(self, value=0):
+        if isinstance(value, c_size_t):
+            value = value.value
+        if not isinstance(value, int):
+            raise ValueError("Invalid handle")
+        super().__init__(value)
+
+    @classmethod
+    def from_param(cls, param):
+        if isinstance(param, cls):
+            return param
+        return cls(param)
+
+    def __bool__(self):
+        return bool(self.value)
+
+    def __repr__(self) -> str:
+        """Format handle as a string."""
+        return f"{self.__class__.__name__}({self.value})"
+
+
+class StoreHandle(ArcHandle):
+    """Handle for an active Store instance."""
+
+    async def close(self):
+        """Close the store, waiting for any active connections."""
+        if self:
+            await invoke_async("askar_store_close", (StoreHandle,), self)
+            self.value = 0
+
+    def __del__(self):
+        """Close the store when there are no more references to this object."""
+        if self:
+            invoke_dtor(
+                "askar_store_close",
+                self,
+                None,
+                0,
+                argtypes=(StoreHandle, c_void_p, c_int64),
+            )
+
+
+class SessionHandle(ArcHandle):
+    """Handle for an active Session/Transaction instance."""
+
+    async def close(self, commit: bool = False):
+        """Close the session."""
+        if self:
+            await invoke_async(
+                "askar_session_close",
+                (SessionHandle, c_int8),
+                self,
+                commit,
+            )
+            self.value = 0
+
+    def __del__(self):
+        """Close the session when there are no more references to this object."""
+        if self:
+            invoke_dtor(
+                "askar_session_close",
+                self,
+                0,
+                None,
+                0,
+                argtypes=(SessionHandle, c_int8, c_void_p, c_int64),
+            )
+
+
+class ScanHandle(ArcHandle):
+    """Handle for an active Store scan instance."""
+
+    def __del__(self):
+        """Close the scan when there are no more references to this object."""
+        invoke_dtor("askar_scan_free", self)
+
+
+class EntryListHandle(ArcHandle):
+    """Handle for an active EntryList instance."""
+
+    def get_category(self, index: int) -> str:
+        """Get the entry category."""
+        cat = StrBuffer()
+        invoke(
+            "askar_entry_list_get_category",
+            (EntryListHandle, c_int32, POINTER(c_char_p)),
+            self,
+            index,
+            byref(cat),
+        )
+        return str(cat)
+
+    def get_name(self, index: int) -> str:
+        """Get the entry name."""
+        name = StrBuffer()
+        invoke(
+            "askar_entry_list_get_name",
+            (EntryListHandle, c_int32, POINTER(c_char_p)),
+            self,
+            index,
+            byref(name),
+        )
+        return str(name)
+
+    def get_value(self, index: int) -> ByteBuffer:
+        """Get the entry value."""
+        val = ByteBuffer()
+        invoke(
+            "askar_entry_list_get_value",
+            (EntryListHandle, c_int32, POINTER(ByteBuffer)),
+            self,
+            index,
+            byref(val),
+        )
+        return val
+
+    def get_tags(self, index: int) -> dict:
+        """Get the entry tags."""
+        tags = StrBuffer()
+        invoke(
+            "askar_entry_list_get_tags",
+            (EntryListHandle, c_int32, POINTER(c_char_p)),
+            self,
+            index,
+            byref(tags),
+        )
+        if tags:
+            tags = json.loads(tags.value)
+            for t in tags:
+                if isinstance(tags[t], list):
+                    tags[t] = set(tags[t])
+        else:
+            tags = dict()
+        return tags
+
+    def __del__(self):
+        """Free the entry set when there are no more references."""
+        invoke_dtor("askar_entry_list_free", self)
+
+
+class KeyEntryListHandle(ArcHandle):
+    """Handle for an active KeyEntryList instance."""
+
+    def get_algorithm(self, index: int) -> str:
+        """Get the key algorithm."""
+        name = StrBuffer()
+        invoke(
+            "askar_key_entry_list_get_algorithm",
+            (KeyEntryListHandle, c_int32, POINTER(c_char_p)),
+            self,
+            index,
+            byref(name),
+        )
+        return str(name)
+
+    def get_name(self, index: int) -> str:
+        """Get the key name."""
+        name = StrBuffer()
+        invoke(
+            "askar_key_entry_list_get_name",
+            (KeyEntryListHandle, c_int32, POINTER(c_char_p)),
+            self,
+            index,
+            byref(name),
+        )
+        return str(name)
+
+    def get_metadata(self, index: int) -> str:
+        """Get for the key metadata."""
+        metadata = StrBuffer()
+        invoke(
+            "askar_key_entry_list_get_metadata",
+            (KeyEntryListHandle, c_int32, POINTER(c_char_p)),
+            self,
+            index,
+            byref(metadata),
+        )
+        return str(metadata)
+
+    def get_tags(self, index: int) -> dict:
+        """Get the key tags."""
+        tags = StrBuffer()
+        invoke(
+            "askar_key_entry_list_get_tags",
+            (KeyEntryListHandle, c_int32, POINTER(c_char_p)),
+            self,
+            index,
+            byref(tags),
+        )
+        return json.loads(tags.value) if tags else None
+
+    def load_key(self, index: int) -> "LocalKeyHandle":
+        """Load the key instance."""
+        handle = LocalKeyHandle()
+        invoke(
+            "askar_key_entry_list_load_local",
+            (KeyEntryListHandle, c_int32, POINTER(LocalKeyHandle)),
+            self,
+            index,
+            byref(handle),
+        )
+        return handle
+
+    def __del__(self):
+        """Free the key entry set when there are no more references."""
+        invoke_dtor("askar_key_entry_list_free", self)
+
+
+class LocalKeyHandle(ArcHandle):
+    """Handle for an active LocalKey instance."""
+
+    def __del__(self):
+        """Free the key when there are no more references."""
+        invoke_dtor("askar_key_free", self)
 
 
 def get_library() -> CDLL:
@@ -432,31 +568,35 @@ def _init_logger():
         # avoid redefining TRACE if another library has added it
         logging.addLevelName(5, "TRACE")
 
-    def _enabled(_context, level: int) -> bool:
-        return logger.isEnabledFor(LOG_LEVELS.get(level, level))
+    if not hasattr(_init_logger, "log_cb"):
 
-    def _log(
-        _context,
-        level: int,
-        target: c_char_p,
-        message: c_char_p,
-        module_path: c_char_p,
-        file_name: c_char_p,
-        line: int,
-    ):
-        logger.getChild("native." + target.decode().replace("::", ".")).log(
-            LOG_LEVELS.get(level, level),
-            "\t%s:%d | %s",
-            file_name.decode() if file_name else None,
-            line,
-            message.decode(),
+        @CFUNCTYPE(
+            None, c_void_p, c_int32, c_char_p, c_char_p, c_char_p, c_char_p, c_int32
         )
+        def _log_cb(
+            _context,
+            level: int,
+            target: c_char_p,
+            message: c_char_p,
+            module_path: c_char_p,
+            file_name: c_char_p,
+            line: int,
+        ):
+            logger.getChild("native." + target.decode().replace("::", ".")).log(
+                LOG_LEVELS.get(level, level),
+                "\t%s:%d | %s",
+                file_name.decode() if file_name else None,
+                line,
+                message.decode(),
+            )
 
-    _init_logger.enabled_cb = CFUNCTYPE(c_int8, c_void_p, c_int32)(_enabled)
+        _init_logger.log_cb = _log_cb
 
-    _init_logger.log_cb = CFUNCTYPE(
-        None, c_void_p, c_int32, c_char_p, c_char_p, c_char_p, c_char_p, c_int32
-    )(_log)
+        @CFUNCTYPE(c_int8, c_void_p, c_int32)
+        def _enabled_cb(_context, level: int) -> bool:
+            return logger.isEnabledFor(LOG_LEVELS.get(level, level))
+
+        _init_logger.enabled_cb = _enabled_cb
 
     if os.getenv("RUST_LOG"):
         # level from environment
@@ -465,20 +605,21 @@ def _init_logger():
         # inherit current level from logger
         level = _convert_log_level(logger.level or logger.parent.level)
 
-    do_call(
+    invoke(
         "askar_set_custom_logger",
-        c_void_p(),  # context
+        (c_void_p, c_void_p, c_void_p, c_void_p, c_int32),
+        None,  # context
         _init_logger.log_cb,
         _init_logger.enabled_cb,
-        c_void_p(),  # flush
-        c_int32(level),
+        None,  # flush
+        level,
     )
 
 
 def set_max_log_level(level: Union[str, int, None]):
     get_library()  # ensure logger is initialized
     set_level = _convert_log_level(level)
-    do_call("askar_set_max_log_level", c_int32(set_level))
+    invoke("askar_set_max_log_level", (c_int32,), set_level)
 
 
 def _convert_log_level(level: Union[str, int, None]):
@@ -496,6 +637,9 @@ def _convert_log_level(level: Union[str, int, None]):
 
 def _fulfill_future(fut: asyncio.Future, result, err: Exception = None):
     """Resolve a callback future given the result and exception, if any."""
+    if not CALLBACKS.pop(fut, None):
+        LOGGER.info("callback already fulfilled")
+        return
     if fut.cancelled():
         LOGGER.debug("callback previously cancelled")
     elif err:
@@ -504,107 +648,86 @@ def _fulfill_future(fut: asyncio.Future, result, err: Exception = None):
         fut.set_result(result)
 
 
-def _create_callback(cb_type: CFUNCTYPE, fut: asyncio.Future, post_process=None):
+def _create_callback(
+    cb_type: CFUNCTYPE,
+    loop: asyncio.AbstractEventLoop,
+    fut: asyncio.Future,
+):
     """Create a callback to handle the response from an async library method."""
 
-    def _cb(id: int, err: int, result=None):
+    def _cb(_id: int, err: int, result=None):
         """Callback function passed to the CFUNCTYPE for invocation."""
-        if post_process:
-            result = post_process(result)
         exc = get_current_error() if err else None
-        try:
-            (loop, _cb) = CALLBACKS.pop(fut)
-        except KeyError:
-            LOGGER.debug("callback already fulfilled")
-            return
-        loop.call_soon_threadsafe(lambda: _fulfill_future(fut, result, exc))
+        loop.call_soon_threadsafe(_fulfill_future, fut, result, exc)
 
     res = cb_type(_cb)
     return res
 
 
-def do_call(fn_name, *args):
+def _get_library_method(name: str, argtypes, *, restype=c_int64):
+    method = INVOKE.get(name)
+    if not method:
+        method = getattr(get_library(), name)
+        method.argtypes = argtypes
+        method.restype = restype
+        INVOKE[name] = method
+    return method
+
+
+def _load_method_arguments(name, argtypes, args):
+    """Preload argument values to avoid freeing any intermediate data."""
+    if not argtypes:
+        return args
+    if len(args) != len(argtypes):
+        raise ValueError(f"{name}: Arguments length does not match argtypes length")
+    return [
+        arg if issubclass(argtype, _SimpleCData) else argtype.from_param(arg)
+        for (arg, argtype) in zip(args, argtypes)
+    ]
+
+
+def invoke(name, argtypes, *args):
     """Perform a synchronous library function call."""
-    lib_fn = getattr(get_library(), fn_name)
-    lib_fn.restype = c_int64
-    result = lib_fn(*args)
+    method = _get_library_method(name, argtypes)
+    args = _load_method_arguments(name, argtypes, args)
+    result = method(*args)
     if result:
         raise get_current_error(True)
 
 
-def do_call_async(
-    fn_name, *args, return_type=None, post_process=None
-) -> asyncio.Future:
+def invoke_async(name: str, argtypes, *args, return_type=None):
     """Perform an asynchronous library function call."""
-    lib_fn = getattr(get_library(), fn_name)
-    lib_fn.restype = c_int64
+    method = _get_library_method(name, (*argtypes, c_void_p, c_int64))
     loop = asyncio.get_event_loop()
     fut = loop.create_future()
-    cf_args = [None, c_int64, c_int64]
+    cf_args = [c_int64, c_int64]
     if return_type:
         cf_args.append(return_type)
-    cb_type = CFUNCTYPE(*cf_args)  # could be cached
-    cb_res = _create_callback(cb_type, fut, post_process)
-    # keep a reference to the callback function to avoid it being freed
-    CALLBACKS[fut] = (loop, cb_res)
-    result = lib_fn(*args, cb_res, c_void_p())  # not making use of callback ID
+    cb_type = CFUNCTYPE(None, *cf_args)  # could be cached
+    cb_res = _create_callback(cb_type, loop, fut)
+    args = _load_method_arguments(name, argtypes, args)
+    # save a reference to the callback function and arguments to avoid GC
+    CALLBACKS[fut] = (cb_res, args)
+    result = method(*args, cb_res, 0)  # not making use of callback ID
     if result:
-        # callback will not be executed
-        if CALLBACKS.pop(fut):
-            fut.set_exception(get_current_error())
+        # FFI must not execute the callback if an error is returned
+        err = get_current_error(True)
+        _fulfill_future(fut, None, err)
     return fut
 
 
-def encode_str(arg: Optional[Union[str, bytes]]) -> c_char_p:
-    """
-    Encode an optional input argument as a string.
-
-    Returns: None if the argument is None, otherwise the value encoded utf-8.
-    """
-    if arg is None:
-        return c_char_p()
-    if isinstance(arg, str):
-        arg = arg.encode("utf-8")
-    return c_char_p(arg)
-
-
-def encode_bytes(
-    arg: Optional[Union[str, bytes, ByteBuffer, FfiByteBuffer]]
-) -> Union[FfiByteBuffer, ByteBuffer]:
-    if isinstance(arg, ByteBuffer) or isinstance(arg, FfiByteBuffer):
-        return arg
-    buf = FfiByteBuffer()
-    if isinstance(arg, memoryview):
-        buf.len = arg.nbytes
-        if arg.contiguous and not arg.readonly:
-            buf.value = (c_ubyte * buf.len).from_buffer(arg.obj)
-        else:
-            buf.value = (c_ubyte * buf.len).from_buffer_copy(arg.obj)
-    elif isinstance(arg, bytearray):
-        buf.len = len(arg)
-        if buf.len > 0:
-            buf.value = (c_ubyte * buf.len).from_buffer(arg)
-    elif arg is not None:
-        if isinstance(arg, str):
-            arg = arg.encode("utf-8")
-        buf.len = len(arg)
-        if buf.len > 0:
-            buf.value = (c_ubyte * buf.len).from_buffer_copy(arg)
-    return buf
-
-
-def encode_tags(tags: Optional[dict]) -> c_char_p:
-    """Encode the tags as a JSON string."""
-    if tags:
-        tags = json.dumps(
-            {
-                name: (list(value) if isinstance(value, set) else value)
-                for name, value in tags.items()
-            }
-        )
-    else:
-        tags = None
-    return encode_str(tags)
+def invoke_dtor(name: str, *values, argtypes=None):
+    method = INVOKE.get(name)
+    if not method:
+        lib = get_library()
+        if not lib:
+            return
+        method = getattr(lib, name)
+        if argtypes:
+            method.argtypes = argtypes
+        method.restype = None
+        INVOKE[name] = method
+    method(*values)
 
 
 def get_current_error(expect: bool = False) -> Optional[AskarError]:
@@ -615,7 +738,7 @@ def get_current_error(expect: bool = False) -> Optional[AskarError]:
         expect: Return a default error message if none is found
     """
     err_json = StrBuffer()
-    if not get_library().askar_get_current_error(byref(err_json)):
+    if not LIB or not LIB.askar_get_current_error(byref(err_json)):
         try:
             msg = json.loads(err_json.value)
         except json.JSONDecodeError:
@@ -633,7 +756,12 @@ def get_current_error(expect: bool = False) -> Optional[AskarError]:
 def generate_raw_key(seed: Union[str, bytes] = None) -> str:
     """Generate a new raw store wrapping key."""
     key = StrBuffer()
-    do_call("askar_store_generate_raw_key", encode_bytes(seed), byref(key))
+    invoke(
+        "askar_store_generate_raw_key",
+        (FfiByteBuffer, POINTER(c_char_p)),
+        seed,
+        byref(key),
+    )
     return str(key)
 
 
@@ -648,12 +776,13 @@ async def store_open(
     uri: str, key_method: str = None, pass_key: str = None, profile: str = None
 ) -> StoreHandle:
     """Open an existing Store and return the open handle."""
-    return await do_call_async(
+    return await invoke_async(
         "askar_store_open",
-        encode_str(uri),
-        encode_str(key_method and key_method.lower()),
-        encode_str(pass_key),
-        encode_str(profile),
+        (FfiStr, FfiStr, FfiStr, FfiStr),
+        uri,
+        key_method and key_method.lower(),
+        pass_key,
+        profile,
         return_type=StoreHandle,
     )
 
@@ -666,13 +795,14 @@ async def store_provision(
     recreate: bool = False,
 ) -> StoreHandle:
     """Provision a new Store and return the open handle."""
-    return await do_call_async(
+    return await invoke_async(
         "askar_store_provision",
-        encode_str(uri),
-        encode_str(key_method and key_method.lower()),
-        encode_str(pass_key),
-        encode_str(profile),
-        c_int8(recreate),
+        (FfiStr, FfiStr, FfiStr, FfiStr, c_int8),
+        uri,
+        key_method and key_method.lower(),
+        pass_key,
+        profile,
+        recreate,
         return_type=StoreHandle,
     )
 
@@ -680,10 +810,11 @@ async def store_provision(
 async def store_create_profile(handle: StoreHandle, name: str = None) -> str:
     """Create a new profile in a Store."""
     return str(
-        await do_call_async(
+        await invoke_async(
             "askar_store_create_profile",
+            (StoreHandle, FfiStr),
             handle,
-            encode_str(name),
+            name,
             return_type=StrBuffer,
         )
     )
@@ -692,8 +823,9 @@ async def store_create_profile(handle: StoreHandle, name: str = None) -> str:
 async def store_get_profile_name(handle: StoreHandle) -> str:
     """Get the name of the default Store instance profile."""
     return str(
-        await do_call_async(
+        await invoke_async(
             "askar_store_get_profile_name",
+            (StoreHandle,),
             handle,
             return_type=StrBuffer,
         )
@@ -703,10 +835,11 @@ async def store_get_profile_name(handle: StoreHandle) -> str:
 async def store_remove_profile(handle: StoreHandle, name: str) -> bool:
     """Remove an existing profile from a Store."""
     return (
-        await do_call_async(
+        await invoke_async(
             "askar_store_remove_profile",
+            (StoreHandle, FfiStr),
             handle,
-            encode_str(name),
+            name,
             return_type=c_int8,
         )
         != 0
@@ -719,20 +852,23 @@ async def store_rekey(
     pass_key: str = None,
 ) -> StoreHandle:
     """Replace the store key on a Store."""
-    return await do_call_async(
+    return await invoke_async(
         "askar_store_rekey",
+        (StoreHandle, FfiStr, FfiStr),
         handle,
-        encode_str(key_method and key_method.lower()),
-        encode_str(pass_key),
+        key_method and key_method.lower(),
+        pass_key,
+        return_type=c_int8,
     )
 
 
 async def store_remove(uri: str) -> bool:
     """Remove an existing Store, if any."""
     return (
-        await do_call_async(
+        await invoke_async(
             "askar_store_remove",
-            encode_str(uri),
+            (FfiStr,),
+            uri,
             return_type=c_int8,
         )
         != 0
@@ -743,11 +879,12 @@ async def session_start(
     handle: StoreHandle, profile: Optional[str] = None, as_transaction: bool = False
 ) -> SessionHandle:
     """Start a new session with an open Store."""
-    return await do_call_async(
+    return await invoke_async(
         "askar_session_start",
+        (StoreHandle, FfiStr, c_int8),
         handle,
-        encode_str(profile),
-        c_int8(as_transaction),
+        profile,
+        as_transaction,
         return_type=SessionHandle,
     )
 
@@ -756,13 +893,14 @@ async def session_count(
     handle: SessionHandle, category: str, tag_filter: Union[str, dict] = None
 ) -> int:
     """Count rows in the Store."""
-    category = encode_str(category)
-    if isinstance(tag_filter, dict):
-        tag_filter = json.dumps(tag_filter)
-    tag_filter = encode_str(tag_filter)
     return int(
-        await do_call_async(
-            "askar_session_count", handle, category, tag_filter, return_type=c_int64
+        await invoke_async(
+            "askar_session_count",
+            (SessionHandle, FfiStr, FfiJson),
+            handle,
+            category,
+            tag_filter,
+            return_type=c_int64,
         )
     )
 
@@ -771,14 +909,13 @@ async def session_fetch(
     handle: SessionHandle, category: str, name: str, for_update: bool = False
 ) -> EntryListHandle:
     """Fetch a row from the Store."""
-    category = encode_str(category)
-    name = encode_str(name)
-    return await do_call_async(
+    return await invoke_async(
         "askar_session_fetch",
+        (SessionHandle, FfiStr, FfiStr, c_int8),
         handle,
         category,
         name,
-        c_int8(for_update),
+        for_update,
         return_type=EntryListHandle,
     )
 
@@ -791,15 +928,14 @@ async def session_fetch_all(
     for_update: bool = False,
 ) -> EntryListHandle:
     """Fetch all matching rows in the Store."""
-    if isinstance(tag_filter, dict):
-        tag_filter = json.dumps(tag_filter)
-    return await do_call_async(
+    return await invoke_async(
         "askar_session_fetch_all",
+        (SessionHandle, FfiStr, FfiJson, c_int64, c_int8),
         handle,
-        encode_str(category),
-        encode_str(tag_filter),
-        c_int64(limit if limit is not None else -1),
-        c_int8(for_update),
+        category,
+        tag_filter,
+        limit if limit is not None else -1,
+        for_update,
         return_type=EntryListHandle,
     )
 
@@ -810,14 +946,13 @@ async def session_remove_all(
     tag_filter: Union[str, dict] = None,
 ) -> int:
     """Remove all matching rows in the Store."""
-    if isinstance(tag_filter, dict):
-        tag_filter = json.dumps(tag_filter)
     return int(
-        await do_call_async(
+        await invoke_async(
             "askar_session_remove_all",
+            (SessionHandle, FfiStr, FfiJson),
             handle,
-            encode_str(category),
-            encode_str(tag_filter),
+            category,
+            tag_filter,
             return_type=c_int64,
         )
     )
@@ -834,15 +969,16 @@ async def session_update(
 ):
     """Update a Store by inserting, updating, or removing a record."""
 
-    return await do_call_async(
+    return await invoke_async(
         "askar_session_update",
+        (SessionHandle, c_int8, FfiStr, FfiStr, FfiByteBuffer, FfiTagsJson, c_int64),
         handle,
-        c_int8(operation.value),
-        encode_str(category),
-        encode_str(name),
-        encode_bytes(value),
-        encode_tags(tags),
-        c_int64(-1 if expiry_ms is None else expiry_ms),
+        operation.value,
+        category,
+        name,
+        value,
+        tags,
+        -1 if expiry_ms is None else expiry_ms,
     )
 
 
@@ -854,30 +990,29 @@ async def session_insert_key(
     tags: dict = None,
     expiry_ms: Optional[int] = None,
 ):
-    await do_call_async(
+    return await invoke_async(
         "askar_session_insert_key",
+        (SessionHandle, LocalKeyHandle, FfiStr, FfiStr, FfiTagsJson, c_int64),
         handle,
         key_handle,
-        encode_str(name),
-        encode_str(metadata),
-        encode_tags(tags),
-        c_int64(-1 if expiry_ms is None else expiry_ms),
-        return_type=c_void_p,
+        name,
+        metadata,
+        tags,
+        -1 if expiry_ms is None else expiry_ms,
     )
 
 
 async def session_fetch_key(
     handle: SessionHandle, name: str, for_update: bool = False
-) -> Optional[KeyEntryListHandle]:
-    ptr = await do_call_async(
+) -> KeyEntryListHandle:
+    return await invoke_async(
         "askar_session_fetch_key",
+        (SessionHandle, FfiStr, c_int8),
         handle,
-        encode_str(name),
-        c_int8(for_update),
-        return_type=c_void_p,
+        name,
+        for_update,
+        return_type=KeyEntryListHandle,
     )
-    if ptr:
-        return KeyEntryListHandle(ptr)
 
 
 async def session_fetch_all_keys(
@@ -887,20 +1022,19 @@ async def session_fetch_all_keys(
     tag_filter: Union[str, dict] = None,
     limit: int = None,
     for_update: bool = False,
-) -> EntryListHandle:
+) -> KeyEntryListHandle:
     """Fetch all matching keys in the Store."""
     if isinstance(alg, KeyAlg):
         alg = alg.value
-    if isinstance(tag_filter, dict):
-        tag_filter = json.dumps(tag_filter)
-    return await do_call_async(
+    return await invoke_async(
         "askar_session_fetch_all_keys",
+        (SessionHandle, FfiStr, FfiStr, FfiJson, c_int64, c_int8),
         handle,
-        encode_str(alg),
-        encode_str(thumbprint),
-        encode_str(tag_filter),
-        c_int64(limit if limit is not None else -1),
-        c_int8(for_update),
+        alg,
+        thumbprint,
+        tag_filter,
+        limit if limit is not None else -1,
+        for_update,
         return_type=KeyEntryListHandle,
     )
 
@@ -912,21 +1046,23 @@ async def session_update_key(
     tags: dict = None,
     expiry_ms: Optional[int] = None,
 ):
-    await do_call_async(
+    await invoke_async(
         "askar_session_update_key",
+        (SessionHandle, FfiStr, FfiStr, FfiTagsJson, c_int64),
         handle,
-        encode_str(name),
-        encode_str(metadata),
-        encode_tags(tags),
-        c_int64(-1 if expiry_ms is None else expiry_ms),
+        name,
+        metadata,
+        tags,
+        -1 if expiry_ms is None else expiry_ms,
     )
 
 
 async def session_remove_key(handle: SessionHandle, name: str):
-    await do_call_async(
+    await invoke_async(
         "askar_session_remove_key",
+        (SessionHandle, FfiStr),
         handle,
-        encode_str(name),
+        name,
     )
 
 
@@ -939,35 +1075,44 @@ async def scan_start(
     limit: int = None,
 ) -> ScanHandle:
     """Create a new Scan against the Store."""
-    if isinstance(tag_filter, dict):
-        tag_filter = json.dumps(tag_filter)
-    tag_filter = encode_str(tag_filter)
-    return await do_call_async(
+    return await invoke_async(
         "askar_scan_start",
+        (StoreHandle, FfiStr, FfiStr, FfiJson, c_int64, c_int64),
         handle,
-        encode_str(profile),
-        encode_str(category),
+        profile,
+        category,
         tag_filter,
-        c_int64(offset or 0),
-        c_int64(limit if limit is not None else -1),
+        offset or 0,
+        limit if limit is not None else -1,
         return_type=ScanHandle,
     )
 
 
-async def scan_next(handle: StoreHandle) -> Optional[EntryListHandle]:
-    handle = await do_call_async("askar_scan_next", handle, return_type=EntryListHandle)
-    return handle or None
+async def scan_next(handle: ScanHandle) -> EntryListHandle:
+    return await invoke_async(
+        "askar_scan_next", (ScanHandle,), handle, return_type=EntryListHandle
+    )
 
 
 def entry_list_count(handle: EntryListHandle) -> int:
     len = c_int32()
-    do_call("askar_entry_list_count", handle, byref(len))
+    invoke(
+        "askar_entry_list_count",
+        (EntryListHandle, POINTER(c_int32)),
+        handle,
+        byref(len),
+    )
     return len.value
 
 
-def key_entry_list_count(handle: EntryListHandle) -> int:
+def key_entry_list_count(handle: KeyEntryListHandle) -> int:
     len = c_int32()
-    do_call("askar_key_entry_list_count", handle, byref(len))
+    invoke(
+        "askar_key_entry_list_count",
+        (KeyEntryListHandle, POINTER(c_int32)),
+        handle,
+        byref(len),
+    )
     return len.value
 
 
@@ -975,7 +1120,13 @@ def key_generate(alg: Union[str, KeyAlg], ephemeral: bool = False) -> LocalKeyHa
     handle = LocalKeyHandle()
     if isinstance(alg, KeyAlg):
         alg = alg.value
-    do_call("askar_key_generate", encode_str(alg), c_int8(ephemeral), byref(handle))
+    invoke(
+        "askar_key_generate",
+        (FfiStr, c_int8, POINTER(LocalKeyHandle)),
+        alg,
+        ephemeral,
+        byref(handle),
+    )
     return handle
 
 
@@ -989,11 +1140,12 @@ def key_from_seed(
         alg = alg.value
     if isinstance(method, SeedMethod):
         method = method.value
-    do_call(
+    invoke(
         "askar_key_from_seed",
-        encode_str(alg),
-        encode_bytes(seed),
-        encode_str(method),
+        (FfiStr, FfiByteBuffer, FfiStr, POINTER(LocalKeyHandle)),
+        alg,
+        seed,
+        method,
         byref(handle),
     )
     return handle
@@ -1005,10 +1157,11 @@ def key_from_public_bytes(
     handle = LocalKeyHandle()
     if isinstance(alg, KeyAlg):
         alg = alg.value
-    do_call(
+    invoke(
         "askar_key_from_public_bytes",
-        encode_str(alg),
-        encode_bytes(public),
+        (FfiStr, FfiByteBuffer, POINTER(LocalKeyHandle)),
+        alg,
+        public,
         byref(handle),
     )
     return handle
@@ -1016,8 +1169,9 @@ def key_from_public_bytes(
 
 def key_get_public_bytes(handle: LocalKeyHandle) -> ByteBuffer:
     buf = ByteBuffer()
-    do_call(
+    invoke(
         "askar_key_get_public_bytes",
+        (LocalKeyHandle, POINTER(ByteBuffer)),
         handle,
         byref(buf),
     )
@@ -1030,10 +1184,11 @@ def key_from_secret_bytes(
     handle = LocalKeyHandle()
     if isinstance(alg, KeyAlg):
         alg = alg.value
-    do_call(
+    invoke(
         "askar_key_from_secret_bytes",
-        encode_str(alg),
-        encode_bytes(secret),
+        (FfiStr, FfiByteBuffer, POINTER(LocalKeyHandle)),
+        alg,
+        secret,
         byref(handle),
     )
     return handle
@@ -1041,8 +1196,9 @@ def key_from_secret_bytes(
 
 def key_get_secret_bytes(handle: LocalKeyHandle) -> ByteBuffer:
     buf = ByteBuffer()
-    do_call(
+    invoke(
         "askar_key_get_secret_bytes",
+        (LocalKeyHandle, POINTER(ByteBuffer)),
         handle,
         byref(buf),
     )
@@ -1053,7 +1209,12 @@ def key_from_jwk(jwk: Union[dict, str, bytes]) -> LocalKeyHandle:
     handle = LocalKeyHandle()
     if isinstance(jwk, dict):
         jwk = json.dumps(jwk)
-    do_call("askar_key_from_jwk", encode_bytes(jwk), byref(handle))
+    invoke(
+        "askar_key_from_jwk",
+        (FfiByteBuffer, POINTER(LocalKeyHandle)),
+        jwk,
+        byref(handle),
+    )
     return handle
 
 
@@ -1061,7 +1222,13 @@ def key_convert(handle: LocalKeyHandle, alg: Union[str, KeyAlg]) -> LocalKeyHand
     key = LocalKeyHandle()
     if isinstance(alg, KeyAlg):
         alg = alg.value
-    do_call("askar_key_convert", handle, encode_str(alg), byref(key))
+    invoke(
+        "askar_key_convert",
+        (LocalKeyHandle, FfiStr, POINTER(LocalKeyHandle)),
+        handle,
+        alg,
+        byref(key),
+    )
     return key
 
 
@@ -1071,21 +1238,36 @@ def key_exchange(
     key = LocalKeyHandle()
     if isinstance(alg, KeyAlg):
         alg = alg.value
-    do_call(
-        "askar_key_from_key_exchange", encode_str(alg), sk_handle, pk_handle, byref(key)
+    invoke(
+        "askar_key_from_key_exchange",
+        (FfiStr, LocalKeyHandle, LocalKeyHandle, POINTER(LocalKeyHandle)),
+        alg,
+        sk_handle,
+        pk_handle,
+        byref(key),
     )
     return key
 
 
 def key_get_algorithm(handle: LocalKeyHandle) -> str:
     alg = StrBuffer()
-    do_call("askar_key_get_algorithm", handle, byref(alg))
+    invoke(
+        "askar_key_get_algorithm",
+        (LocalKeyHandle, POINTER(c_char_p)),
+        handle,
+        byref(alg),
+    )
     return str(alg)
 
 
 def key_get_ephemeral(handle: LocalKeyHandle) -> bool:
     eph = c_int8()
-    do_call("askar_key_get_ephemeral", handle, byref(eph))
+    invoke(
+        "askar_key_get_ephemeral",
+        (LocalKeyHandle, POINTER(c_int8)),
+        handle,
+        byref(eph),
+    )
     return eph.value != 0
 
 
@@ -1093,13 +1275,24 @@ def key_get_jwk_public(handle: LocalKeyHandle, alg: Union[str, KeyAlg] = None) -
     jwk = StrBuffer()
     if isinstance(alg, KeyAlg):
         alg = alg.value
-    do_call("askar_key_get_jwk_public", handle, encode_str(alg), byref(jwk))
+    invoke(
+        "askar_key_get_jwk_public",
+        (LocalKeyHandle, FfiStr, POINTER(c_char_p)),
+        handle,
+        alg,
+        byref(jwk),
+    )
     return str(jwk)
 
 
 def key_get_jwk_secret(handle: LocalKeyHandle) -> ByteBuffer:
     sec = ByteBuffer()
-    do_call("askar_key_get_jwk_secret", handle, byref(sec))
+    invoke(
+        "askar_key_get_jwk_secret",
+        (LocalKeyHandle, POINTER(ByteBuffer)),
+        handle,
+        byref(sec),
+    )
     return sec
 
 
@@ -1109,19 +1302,35 @@ def key_get_jwk_thumbprint(
     thumb = StrBuffer()
     if isinstance(alg, KeyAlg):
         alg = alg.value
-    do_call("askar_key_get_jwk_thumbprint", handle, encode_str(alg), byref(thumb))
+    invoke(
+        "askar_key_get_jwk_thumbprint",
+        (LocalKeyHandle, FfiStr, POINTER(c_char_p)),
+        handle,
+        alg,
+        byref(thumb),
+    )
     return str(thumb)
 
 
 def key_aead_get_params(handle: LocalKeyHandle) -> AeadParams:
     params = AeadParams()
-    do_call("askar_key_aead_get_params", handle, byref(params))
+    invoke(
+        "askar_key_aead_get_params",
+        (LocalKeyHandle, POINTER(AeadParams)),
+        handle,
+        byref(params),
+    )
     return params
 
 
 def key_aead_random_nonce(handle: LocalKeyHandle) -> ByteBuffer:
     nonce = ByteBuffer()
-    do_call("askar_key_aead_random_nonce", handle, byref(nonce))
+    invoke(
+        "askar_key_aead_random_nonce",
+        (LocalKeyHandle, POINTER(ByteBuffer)),
+        handle,
+        byref(nonce),
+    )
     return nonce
 
 
@@ -1132,12 +1341,19 @@ def key_aead_encrypt(
     aad: Optional[Union[bytes, ByteBuffer]],
 ) -> Encrypted:
     enc = Encrypted()
-    do_call(
+    invoke(
         "askar_key_aead_encrypt",
+        (
+            LocalKeyHandle,
+            FfiByteBuffer,
+            FfiByteBuffer,
+            FfiByteBuffer,
+            POINTER(Encrypted),
+        ),
         handle,
-        encode_bytes(input),
-        encode_bytes(nonce),
-        encode_bytes(aad),
+        input,
+        nonce,
+        aad,
         byref(enc),
     )
     return enc
@@ -1152,14 +1368,23 @@ def key_aead_decrypt(
 ) -> ByteBuffer:
     dec = ByteBuffer()
     if isinstance(ciphertext, Encrypted):
+        nonce = ciphertext.nonce
         ciphertext = ciphertext.ciphertext_tag
-    do_call(
+    invoke(
         "askar_key_aead_decrypt",
+        (
+            LocalKeyHandle,
+            FfiByteBuffer,
+            FfiByteBuffer,
+            FfiByteBuffer,
+            FfiByteBuffer,
+            POINTER(ByteBuffer),
+        ),
         handle,
-        encode_bytes(ciphertext),
-        encode_bytes(nonce),
-        encode_bytes(tag),
-        encode_bytes(aad),
+        ciphertext,
+        nonce,
+        tag,
+        aad,
         byref(dec),
     )
     return dec
@@ -1171,11 +1396,12 @@ def key_sign_message(
     sig_type: Optional[str],
 ) -> ByteBuffer:
     sig = ByteBuffer()
-    do_call(
+    invoke(
         "askar_key_sign_message",
+        (LocalKeyHandle, FfiByteBuffer, FfiStr, POINTER(ByteBuffer)),
         handle,
-        encode_bytes(message),
-        encode_str(sig_type),
+        message,
+        sig_type,
         byref(sig),
     )
     return sig
@@ -1188,12 +1414,13 @@ def key_verify_signature(
     sig_type: Optional[str],
 ) -> bool:
     verify = c_int8()
-    do_call(
+    invoke(
         "askar_key_verify_signature",
+        (LocalKeyHandle, FfiByteBuffer, FfiByteBuffer, FfiStr, POINTER(c_int8)),
         handle,
-        encode_bytes(message),
-        encode_bytes(signature),
-        encode_str(sig_type),
+        message,
+        signature,
+        sig_type,
         byref(verify),
     )
     return verify.value != 0
@@ -1205,11 +1432,12 @@ def key_wrap_key(
     nonce: Optional[Union[bytes, ByteBuffer]],
 ) -> Encrypted:
     wrapped = Encrypted()
-    do_call(
+    invoke(
         "askar_key_wrap_key",
+        (LocalKeyHandle, LocalKeyHandle, FfiByteBuffer, POINTER(Encrypted)),
         handle,
         other,
-        encode_bytes(nonce),
+        nonce,
         byref(wrapped),
     )
     return wrapped
@@ -1227,13 +1455,21 @@ def key_unwrap_key(
         alg = alg.value
     if isinstance(ciphertext, Encrypted):
         ciphertext = ciphertext.ciphertext_tag
-    do_call(
+    invoke(
         "askar_key_unwrap_key",
+        (
+            LocalKeyHandle,
+            FfiStr,
+            FfiByteBuffer,
+            FfiByteBuffer,
+            FfiByteBuffer,
+            POINTER(LocalKeyHandle),
+        ),
         handle,
-        encode_str(alg),
-        encode_bytes(ciphertext),
-        encode_bytes(nonce),
-        encode_bytes(tag),
+        alg,
+        ciphertext,
+        nonce,
+        tag,
         byref(result),
     )
     return result
@@ -1241,8 +1477,9 @@ def key_unwrap_key(
 
 def key_crypto_box_random_nonce() -> ByteBuffer:
     buf = ByteBuffer()
-    do_call(
+    invoke(
         "askar_key_crypto_box_random_nonce",
+        (POINTER(ByteBuffer),),
         byref(buf),
     )
     return buf
@@ -1255,12 +1492,19 @@ def key_crypto_box(
     nonce: Union[bytes, ByteBuffer],
 ) -> ByteBuffer:
     buf = ByteBuffer()
-    do_call(
+    invoke(
         "askar_key_crypto_box",
+        (
+            LocalKeyHandle,
+            LocalKeyHandle,
+            FfiByteBuffer,
+            FfiByteBuffer,
+            POINTER(ByteBuffer),
+        ),
         recip_handle,
         sender_handle,
-        encode_bytes(message),
-        encode_bytes(nonce),
+        message,
+        nonce,
         byref(buf),
     )
     return buf
@@ -1273,12 +1517,19 @@ def key_crypto_box_open(
     nonce: Union[bytes, ByteBuffer],
 ) -> ByteBuffer:
     buf = ByteBuffer()
-    do_call(
+    invoke(
         "askar_key_crypto_box_open",
+        (
+            LocalKeyHandle,
+            LocalKeyHandle,
+            FfiByteBuffer,
+            FfiByteBuffer,
+            POINTER(ByteBuffer),
+        ),
         recip_handle,
         sender_handle,
-        encode_bytes(message),
-        encode_bytes(nonce),
+        message,
+        nonce,
         byref(buf),
     )
     return buf
@@ -1289,10 +1540,11 @@ def key_crypto_box_seal(
     message: Union[bytes, str, ByteBuffer],
 ) -> ByteBuffer:
     buf = ByteBuffer()
-    do_call(
+    invoke(
         "askar_key_crypto_box_seal",
+        (LocalKeyHandle, FfiByteBuffer, POINTER(ByteBuffer)),
         handle,
-        encode_bytes(message),
+        message,
         byref(buf),
     )
     return buf
@@ -1303,10 +1555,11 @@ def key_crypto_box_seal_open(
     ciphertext: Union[bytes, ByteBuffer],
 ) -> ByteBuffer:
     buf = ByteBuffer()
-    do_call(
+    invoke(
         "askar_key_crypto_box_seal_open",
+        (LocalKeyHandle, FfiByteBuffer, POINTER(ByteBuffer)),
         handle,
-        encode_bytes(ciphertext),
+        ciphertext,
         byref(buf),
     )
     return buf
@@ -1324,15 +1577,25 @@ def key_derive_ecdh_es(
     key = LocalKeyHandle()
     if isinstance(key_alg, KeyAlg):
         key_alg = key_alg.value
-    do_call(
+    invoke(
         "askar_key_derive_ecdh_es",
-        encode_str(key_alg),
+        (
+            FfiStr,
+            LocalKeyHandle,
+            LocalKeyHandle,
+            FfiByteBuffer,
+            FfiByteBuffer,
+            FfiByteBuffer,
+            c_int8,
+            POINTER(LocalKeyHandle),
+        ),
+        key_alg,
         ephem_key,
         receiver_key,
-        encode_bytes(alg_id),
-        encode_bytes(apu),
-        encode_bytes(apv),
-        c_int8(receive),
+        alg_id,
+        apu,
+        apv,
+        receive,
         byref(key),
     )
     return key
@@ -1352,17 +1615,29 @@ def key_derive_ecdh_1pu(
     key = LocalKeyHandle()
     if isinstance(key_alg, KeyAlg):
         key_alg = key_alg.value
-    do_call(
+    invoke(
         "askar_key_derive_ecdh_1pu",
-        encode_str(key_alg),
+        (
+            FfiStr,
+            LocalKeyHandle,
+            LocalKeyHandle,
+            LocalKeyHandle,
+            FfiByteBuffer,
+            FfiByteBuffer,
+            FfiByteBuffer,
+            FfiByteBuffer,
+            c_int8,
+            POINTER(LocalKeyHandle),
+        ),
+        key_alg,
         ephem_key,
         sender_key,
         receiver_key,
-        encode_bytes(alg_id),
-        encode_bytes(apu),
-        encode_bytes(apv),
-        encode_bytes(cc_tag),
-        c_int8(receive),
+        alg_id,
+        apu,
+        apv,
+        cc_tag,
+        receive,
         byref(key),
     )
     return key

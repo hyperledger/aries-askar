@@ -5,10 +5,10 @@ from .key import Key
 from .types import KeyAlg
 
 
-def _load_key(key: Union[dict, str, Key]) -> Key:
-    if isinstance(key, (str, dict)):
-        key = Key.from_jwk(key)
-    return key
+def _load_key(key: Union[dict, str, bytes, Key]) -> Key:
+    if isinstance(key, Key):
+        return key
+    return Key.from_jwk(key)
 
 
 class EcdhEs:
