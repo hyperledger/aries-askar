@@ -32,6 +32,7 @@ ffi_support::define_string_destructor!(askar_string_free);
 
 pub struct EnsureCallback<T, F: Fn(Result<T, Error>)> {
     f: F,
+    resolved: bool,
     _pd: PhantomData<T>,
 }
 
@@ -39,20 +40,23 @@ impl<T, F: Fn(Result<T, Error>)> EnsureCallback<T, F> {
     pub fn new(f: F) -> Self {
         Self {
             f,
+            resolved: false,
             _pd: PhantomData,
         }
     }
 
-    pub fn resolve(self, value: Result<T, Error>) {
+    pub fn resolve(mut self, value: Result<T, Error>) {
+        self.resolved = true;
         (self.f)(value);
-        std::mem::forget(self);
     }
 }
 
 impl<T, F: Fn(Result<T, Error>)> Drop for EnsureCallback<T, F> {
     fn drop(&mut self) {
         // if std::thread::panicking()  - capture trace?
-        (self.f)(Err(err_msg!(Unexpected)));
+        if !self.resolved {
+            (self.f)(Err(err_msg!(Unexpected)));
+        }
     }
 }
 
