@@ -16,7 +16,7 @@ name: "Aries-Askar"
 
 jobs:
   check:
-    name: Run Checks
+    name: Run checks
     strategy:
       fail-fast: false
       matrix:
@@ -71,7 +71,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: test
-          args: --workspace --features pg_test -- --nocapture --test-threads 1
+          args: --workspace --features pg_test -- --nocapture --test-threads 1 --skip contention
         env:
           POSTGRES_URL: postgres://postgres:postgres@localhost:5432/test-db
           RUST_BACKTRACE: full
@@ -82,7 +82,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: test
-          args: --workspace -- --nocapture --test-threads 1
+          args: --workspace -- --nocapture --test-threads 1 --skip contention
         env:
           RUST_BACKTRACE: full
           # RUST_LOG: debug
@@ -100,7 +100,7 @@ jobs:
           args: --manifest-path ./askar-bbs/Cargo.toml --no-default-features
 
   build-manylinux:
-    name: Build Library
+    name: Build (manylinux)
     needs: [check]
 
     strategy:
@@ -125,10 +125,10 @@ jobs:
           toolchain: 1.56
           override: true
 
-      # - name: Cache cargo resources
-      #   uses: Swatinem/rust-cache@v1
-      #   with:
-      #     sharedKey: check
+      - name: Cache cargo resources
+        uses: Swatinem/rust-cache@v1
+        with:
+          sharedKey: check
 
       - name: Build library
         env:
@@ -142,8 +142,8 @@ jobs:
           name: library-${{ runner.os }}
           path: target/release/${{ matrix.lib }}
 
-  build-other:
-    name: Build Library
+  build-native:
+    name: Build (native)
     needs: [check]
 
     strategy:
@@ -171,10 +171,10 @@ jobs:
           toolchain: ${{ matrix.toolchain }}
           override: true
 
-      # - name: Cache cargo resources
-      #   uses: Swatinem/rust-cache@v1
-      #   with:
-      #     sharedKey: check
+      - name: Cache cargo resources
+        uses: Swatinem/rust-cache@v1
+        with:
+          sharedKey: check
 
       - name: Build library
         env:
@@ -190,8 +190,8 @@ jobs:
           path: target/release/${{ matrix.lib }}
 
   build-py:
-    name: Build Python
-    needs: [build-manylinux, build-other]
+    name: Build Python packages
+    needs: [build-manylinux, build-native]
 
     strategy:
       fail-fast: false
@@ -234,9 +234,9 @@ jobs:
           python setup.py bdist_wheel --python-tag=py3 --plat-name=${{ matrix.plat-name }}
           pip install pytest pytest-asyncio dist/*
           echo "-- Test SQLite in-memory --"
-          python -m pytest --log-cli-level=WARNING
+          python -m pytest --log-cli-level=WARNING -k "not contention"
           echo "-- Test SQLite file DB --"
-          TEST_STORE_URI=sqlite://test.db python -m pytest --log-cli-level=WARNING
+          TEST_STORE_URI=sqlite://test.db python -m pytest --log-cli-level=WARNING -k "not contention"
         working-directory: wrappers/python
         env:
           no_proxy: "*" # python issue 30385
@@ -249,7 +249,7 @@ jobs:
           sudo systemctl start postgresql.service
           pg_isready
           sudo -u postgres psql -c "ALTER USER postgres WITH PASSWORD 'postgres'"
-          python -m pytest --log-cli-level=WARNING
+          python -m pytest --log-cli-level=WARNING -k "not contention"
         working-directory: wrappers/python
         env:
           no_proxy: "*" # python issue 30385
