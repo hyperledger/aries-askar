@@ -1,18 +1,18 @@
-use std::{fmt::Display, marker::PhantomData, ptr, sync::Arc};
+use std::{fmt::Display, ptr, sync::Arc};
 
 use crate::error::Error;
 
 #[repr(C)]
-pub struct ArcHandle<T>(*const T, PhantomData<T>);
+pub struct ArcHandle<T: Send>(*const T);
 
-impl<T> ArcHandle<T> {
+impl<T: Send> ArcHandle<T> {
     pub fn invalid() -> Self {
-        Self(ptr::null(), PhantomData)
+        Self(ptr::null())
     }
 
     pub fn create(value: T) -> Self {
         let results = Arc::into_raw(Arc::new(value));
-        Self(results, PhantomData)
+        Self(results)
     }
 
     pub fn load(&self) -> Result<Arc<T>, Error> {
@@ -43,7 +43,7 @@ impl<T> ArcHandle<T> {
     }
 }
 
-impl<T> std::fmt::Display for ArcHandle<T> {
+impl<T: Send> std::fmt::Display for ArcHandle<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Handle({:p})", self.0)
     }
