@@ -112,7 +112,7 @@ async def test_scan(store: Store):
 
 
 @mark.asyncio
-async def test_transaction_basic(store: Store):
+async def test_txn_basic(store: Store):
     async with store.transaction() as txn:
 
         # Insert a new entry
@@ -147,7 +147,7 @@ async def test_transaction_basic(store: Store):
 
 
 @mark.asyncio
-async def test_transaction_conflict(store: Store):
+async def test_txn_contention(store: Store):
     async with store.transaction() as txn:
         await txn.insert(
             TEST_ENTRY["category"],
