@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import itertools
 import logging
 import os
 import sys
@@ -33,7 +34,6 @@ from .error import AskarError, AskarErrorCode
 from .types import EntryOperation, KeyAlg, SeedMethod
 
 
-LIB: "Lib" = None
 LOGGER = logging.getLogger(__name__)
 MODULE_NAME = __name__.split(".")[0]
 
@@ -105,6 +105,10 @@ class ByteBuffer(Structure):
 
     _fields_ = [("buffer", RawBuffer)]
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        finalize(self, self._cleanup)
+
     @property
     def array(self) -> Array:
         return self.buffer.array
@@ -126,7 +130,7 @@ class ByteBuffer(Structure):
         """Format byte buffer as a string."""
         return f"{self.__class__.__name__}({bytes(self)})"
 
-    def __del__(self):
+    def _cleanup(self):
         """Call the byte buffer destructor when this instance is released."""
         invoke_dtor("askar_buffer_free", self.buffer)
 
@@ -192,6 +196,10 @@ class FfiTagsJson:
 class StrBuffer(c_char_p):
     """A string allocated by the library."""
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        finalize(self, self._cleanup)
+
     def is_none(self) -> bool:
         """Check if the returned string pointer is null."""
         return self.value is None
@@ -211,7 +219,7 @@ class StrBuffer(c_char_p):
         val = self.opt_str()
         return val if val is not None else ""
 
-    def __del__(self):
+    def _cleanup(self):
         """Call the string destructor when this instance is released."""
         if self:
             invoke_dtor("askar_string_free", self)
@@ -241,6 +249,10 @@ class Encrypted(Structure):
         ("tag_pos", c_int64),
         ("nonce_pos", c_int64),
     ]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        finalize(self, self._cleanup)
 
     def __getitem__(self, idx) -> bytes:
         return bytes(self.buffer.array[idx])
@@ -288,7 +300,7 @@ class Encrypted(Structure):
             f" nonce={self.nonce})>"
         )
 
-    def __del__(self):
+    def _cleanup(self):
         """Call the byte buffer destructor when this instance is released."""
         invoke_dtor("askar_buffer_free", self.buffer)
 
@@ -530,13 +542,21 @@ class Lib:
         """Initializer."""
         self._cdll = None
         self._callbacks = {}
+        self._cb_id = itertools.count(0)
+        self._cfuncs = {}
         self._methods = {}
         self._dtor = None
         self._log_cb = None
         self._log_enabled_cb = None
-        self._load_library(self.__class__.LIB_NAME)
-        self._init_logger()
+        # This is called prior to any related object finalizers,
+        # and before the library itself is loaded.
         finalize(self, self._cleanup)
+
+    def load(self):
+        """Load the library."""
+        if not self._cdll:
+            self._load_library(self.__class__.LIB_NAME)
+            self._init_logger()
 
     def _load_library(self, lib_name: str):
         """Load the CDLL library.
@@ -581,9 +601,10 @@ class Lib:
             # avoid redefining TRACE if another library has added it
             logging.addLevelName(5, "TRACE")
 
-        @CFUNCTYPE(
+        self._log_cb_t = CFUNCTYPE(
             None, c_void_p, c_int32, c_char_p, c_char_p, c_char_p, c_char_p, c_int32
         )
+
         def _log_cb(
             _context,
             level: int,
@@ -601,13 +622,14 @@ class Lib:
                 message.decode(),
             )
 
-        self._log_cb = _log_cb
+        self._log_cb = self._log_cb_t(_log_cb)
 
-        @CFUNCTYPE(c_int8, c_void_p, c_int32)
+        self._log_enabled_cb_t = CFUNCTYPE(c_int8, c_void_p, c_int32)
+
         def _enabled_cb(_context, level: int) -> bool:
             return self._cdll and logger.isEnabledFor(Lib.LOG_LEVELS.get(level, level))
 
-        self._log_enabled_cb = _enabled_cb
+        self._log_enabled_cb = self._log_enabled_cb_t(_enabled_cb)
 
         if os.getenv("RUST_LOG"):
             # level from environment
@@ -647,18 +669,26 @@ class Lib:
         method = self._method(name, (*argtypes, c_void_p, c_int64))
         loop = asyncio.get_event_loop()
         fut = loop.create_future()
-        cf_args = [c_int64, c_int64]
-        if return_type:
-            cf_args.append(return_type)
-        cb_type = CFUNCTYPE(None, *cf_args)  # could be cached
-        cb_res = self._create_callback(cb_type, loop, fut)
+        cfunc = self._cfuncs.get(name)
+        if cfunc:
+            cb_res = cfunc[1]
+        else:
+            cf_args = [c_int64, c_int64]
+            if return_type:
+                cf_args.append(return_type)
+            cb_type = CFUNCTYPE(None, *cf_args)
+            cb_res = cb_type(self._handle_callback)
+            # must maintain a reference to cb_type as well, otherwise
+            # it may be freed, resulting in memory errors.
+            self._cfuncs[name] = (cb_type, cb_res)
         args = Lib._load_method_arguments(name, argtypes, args)
-        # save a reference to the callback function and arguments to avoid GC
-        self._callbacks[fut] = (cb_res, args)
-        result = method(*args, cb_res, 0)  # not making use of callback ID
+        cb_id = next(self._cb_id)
+        self._callbacks[cb_id] = (loop, fut, args)
+        result = method(*args, cb_res, cb_id)
         if result:
             # FFI must not execute the callback if an error is returned
             err = self._get_current_error(True)
+            self._callbacks.pop(cb_id)
             self._fulfill_future(fut, None, err)
         return fut
 
@@ -711,28 +741,17 @@ class Lib:
             for (arg, argtype) in zip(args, argtypes)
         ]
 
-    def _create_callback(
-        self,
-        cb_type: CFUNCTYPE,
-        loop: asyncio.AbstractEventLoop,
-        fut: asyncio.Future,
-    ):
-        """Create a callback to handle the response from an async library method."""
-
-        def _cb(cb_id: int, err: int, result=None):
-            """Callback function passed to the CFUNCTYPE for invocation."""
-            assert cb_id == 0
-            exc = self._get_current_error(True) if err else None
-            loop.call_soon_threadsafe(self._fulfill_future, fut, result, exc)
-
-        res = cb_type(_cb)
-        return res
+    def _handle_callback(self, cb_id: int, err: int, result=None):
+        exc = self._get_current_error(True) if err else None
+        cb = self._callbacks.pop(cb_id, None)
+        if not cb:
+            LOGGER.info("Callback already fulfilled: %s", cb_id)
+            return
+        (loop, fut, _) = cb
+        loop.call_soon_threadsafe(self._fulfill_future, fut, result, exc)
 
     def _fulfill_future(self, fut: asyncio.Future, result, err: Exception = None):
         """Resolve a callback future given the result and exception, if any."""
-        if not self._callbacks.pop(fut, None):
-            LOGGER.info("callback already fulfilled")
-            return
         if fut.cancelled():
             LOGGER.debug("callback previously cancelled")
         elif err:
@@ -782,15 +801,15 @@ class Lib:
             self._dtor = None
         self._cdll = None
 
-    def __del__(self):
-        self._cleanup()
+
+LIB = Lib()
 
 
 def get_library(init: bool = True) -> Lib:
     """Return the library instance, loading it if necessary."""
     global LIB
-    if LIB is None and init:
-        LIB = Lib()
+    if LIB and init:
+        LIB.load()
     return LIB
 
 
