@@ -5,6 +5,8 @@ import json
 import logging
 import os
 import sys
+import threading
+import time
 
 from ctypes import (
     _SimpleCData,
@@ -323,6 +325,7 @@ class ArcHandle(Structure):
     def _cleanup(self):
         if self.value and self.__class__._dtor_:
             invoke_dtor(self.__class__._dtor_, self)
+        self.value = 0
 
 
 class StoreHandle(ArcHandle):
@@ -513,8 +516,9 @@ class LocalKeyHandle(ArcHandle):
 
 
 class Lib:
-    """Aries-Askar library instance."""
+    """The loaded library instance."""
 
+    LIB_NAME = "aries_askar"
     LOG_LEVELS = {
         1: logging.ERROR,
         2: logging.WARNING,
@@ -530,7 +534,7 @@ class Lib:
         self._dtor = None
         self._log_cb = None
         self._log_enabled_cb = None
-        self._load_library("aries_askar")
+        self._load_library(self.__class__.LIB_NAME)
         self._init_logger()
         finalize(self, self._cleanup)
 
@@ -676,7 +680,7 @@ class Lib:
         return 0
 
     def version(self) -> str:
-        """Get the version of the installed aries-askar library."""
+        """Get the version of the installed library."""
         return str(
             self._method(
                 "askar_version",
@@ -759,7 +763,20 @@ class Lib:
                 return None
         return AskarError(AskarErrorCode.WRAPPER, "Unknown error")
 
+    def _wait_callbacks(self):
+        while self._callbacks:
+            time.sleep(0.01)
+
     def _cleanup(self):
+        if self._callbacks:
+            th = threading.Thread(target=self._wait_callbacks)
+            th.start()
+            th.join(timeout=1.0)
+            if th.is_alive():
+                LOGGER.error(
+                    "%s: Timed out waiting for callbacks to complete",
+                    self.__class__.LIB_NAME,
+                )
         if self._cdll and self._dtor:
             self._dtor()
             self._dtor = None
@@ -812,7 +829,7 @@ def generate_raw_key(seed: Union[str, bytes] = None) -> str:
 
 
 def version() -> str:
-    """Get the version of the installed aries-askar library."""
+    """Get the version of the installed library."""
     return get_library().version()
 
 
