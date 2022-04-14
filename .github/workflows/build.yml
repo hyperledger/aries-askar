@@ -65,24 +65,14 @@ jobs:
           sudo systemctl start postgresql.service
           pg_isready
           sudo -u postgres psql -c "ALTER USER postgres WITH PASSWORD 'postgres'"
+          echo "POSTGRES_URL=postgres://postgres:postgres@localhost:5432/test-db" >> $GITHUB_ENV
+          echo "TEST_FEATURES=pg_test" >> $GITHUB_ENV
 
-      - if: "runner.os == 'Linux'"
-        name: Test with postgres
+      - name: Run tests
         uses: actions-rs/cargo@v1
         with:
           command: test
-          args: --workspace --features pg_test -- --nocapture --test-threads 1 --skip contention
-        env:
-          POSTGRES_URL: postgres://postgres:postgres@localhost:5432/test-db
-          RUST_BACKTRACE: full
-          # RUST_LOG: debug
-
-      - if: "runner.os != 'Linux'"
-        name: Test without postgres
-        uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: --workspace -- --nocapture --test-threads 1 --skip contention
+          args: --workspace --features "${{ env.TEST_FEATURES }}" -- --nocapture --test-threads 1 --skip contention
         env:
           RUST_BACKTRACE: full
           # RUST_LOG: debug
@@ -228,38 +218,41 @@ jobs:
           name: library-${{ runner.os }}
           path: wrappers/python/aries_askar/
 
-      - name: Build and test python package
+      - if: "runner.os == 'Linux'"
+        name: Start postgres (Linux)
+        run: |
+          sudo systemctl start postgresql.service
+          pg_isready
+          sudo -u postgres psql -c "ALTER USER postgres WITH PASSWORD 'postgres'"
+          echo "POSTGRES_URL=postgres://postgres:postgres@localhost:5432/test-db" >> $GITHUB_ENV
+
+      - name: Build package
         shell: sh
         run: |
           python setup.py bdist_wheel --python-tag=py3 --plat-name=${{ matrix.plat-name }}
+        working-directory: wrappers/python
+
+      - if: "runner.os == 'Linux'"
+        name: Audit wheel
+        run: auditwheel show wrappers/python/dist/*
+
+      - name: Test package
+        shell: sh
+        run: |
           pip install pytest pytest-asyncio dist/*
           echo "-- Test SQLite in-memory --"
           python -m pytest --log-cli-level=WARNING -k "not contention"
           echo "-- Test SQLite file DB --"
           TEST_STORE_URI=sqlite://test.db python -m pytest --log-cli-level=WARNING -k "not contention"
+          if [ -n "$POSTGRES_URL" ]; then
+            echo "-- Test Postgres DB --"
+            TEST_STORE_URI="$POSTGRES_URL" python -m pytest --log-cli-level=WARNING -k "not contention"
+          fi
         working-directory: wrappers/python
         env:
           no_proxy: "*" # python issue 30385
           RUST_BACKTRACE: full
           # RUST_LOG: debug
-
-      - if: "runner.os == 'Linux'"
-        name: Test postgres
-        run: |
-          sudo systemctl start postgresql.service
-          pg_isready
-          sudo -u postgres psql -c "ALTER USER postgres WITH PASSWORD 'postgres'"
-          python -m pytest --log-cli-level=WARNING -k "not contention"
-        working-directory: wrappers/python
-        env:
-          no_proxy: "*" # python issue 30385
-          RUST_BACKTRACE: full
-          # RUST_LOG: debug
-          TEST_STORE_URI: postgres://postgres:postgres@localhost:5432/test-db
-
-      - if: "runner.os == 'Linux'"
-        name: Audit wheel
-        run: auditwheel show wrappers/python/dist/*
 
       - name: Upload python package
         uses: actions/upload-artifact@v2
