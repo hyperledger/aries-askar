@@ -1,4 +1,4 @@
-use std::{fmt::Display, ptr, sync::Arc};
+use std::{fmt::Display, mem, ptr, sync::Arc};
 
 use crate::error::Error;
 
@@ -18,9 +18,8 @@ impl<T: Send> ArcHandle<T> {
     pub fn load(&self) -> Result<Arc<T>, Error> {
         self.validate()?;
         unsafe {
-            let result = Arc::from_raw(self.0);
-            Arc::increment_strong_count(self.0);
-            Ok(result)
+            let result = mem::ManuallyDrop::new(Arc::from_raw(self.0));
+            Ok((&*result).clone())
         }
     }
 
