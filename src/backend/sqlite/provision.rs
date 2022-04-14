@@ -93,13 +93,8 @@ impl SqliteStoreOptions {
             DEFAULT_JOURNAL_MODE
         };
         let locking_mode = if let Some(mode) = opts.query.remove("locking_mode") {
-            if mode.eq_ignore_ascii_case("exclusive") {
-                SqliteLockingMode::Exclusive
-            } else if mode.eq_ignore_ascii_case("normal") {
-                SqliteLockingMode::Normal
-            } else {
-                return Err(err_msg!(Input, "Error parsing 'locking_mode' parameter"));
-            }
+            SqliteLockingMode::from_str(&mode)
+                .map_err(err_map!(Input, "Error parsing 'locking_mode' parameter"))?
         } else {
             DEFAULT_LOCKING_MODE
         };
@@ -136,10 +131,10 @@ impl SqliteStoreOptions {
             .create_if_missing(auto_create)
             .auto_vacuum(SqliteAutoVacuum::Incremental)
             .busy_timeout(self.busy_timeout)
-            .journal_mode(self.journal_mode.clone())
-            .locking_mode(self.locking_mode.clone())
+            .journal_mode(self.journal_mode)
+            .locking_mode(self.locking_mode)
             .shared_cache(self.shared_cache)
-            .synchronous(self.synchronous.clone());
+            .synchronous(self.synchronous);
         #[cfg(feature = "log")]
         {
             conn_opts.log_statements(log::LevelFilter::Debug);
