@@ -1,6 +1,6 @@
 """aries-askar Python wrapper library"""
 
-from .bindings import version, Encrypted
+from .bindings import Encrypted, version
 from .error import AskarError, AskarErrorCode
 from .key import Key
 from .store import Entry, EntryList, KeyEntry, KeyEntryList, Session, Store

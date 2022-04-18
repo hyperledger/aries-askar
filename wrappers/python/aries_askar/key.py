@@ -3,8 +3,7 @@
 from typing import Union
 
 from . import bindings
-
-from .bindings import Encrypted, LocalKeyHandle
+from .bindings import AeadParams, Encrypted, LocalKeyHandle
 from .types import KeyAlg, SeedMethod
 
 
@@ -76,7 +75,7 @@ class Key:
     def get_jwk_thumbprint(self, alg: Union[str, KeyAlg] = None) -> str:
         return bindings.key_get_jwk_thumbprint(self._handle, alg)
 
-    def aead_params(self) -> bindings.AeadParams:
+    def aead_params(self) -> AeadParams:
         return bindings.key_aead_get_params(self._handle)
 
     def aead_random_nonce(self) -> bytes:

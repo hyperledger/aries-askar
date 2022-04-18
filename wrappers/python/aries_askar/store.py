@@ -3,11 +3,11 @@
 import json
 
 from typing import Optional, Sequence, Union
+from weakref import ref
 
 from cached_property import cached_property
 
 from . import bindings
-
 from .bindings import (
     ByteBuffer,
     EntryListHandle,
@@ -47,7 +47,7 @@ class Entry:
         return bytes(self.raw_value)
 
     @cached_property
-    def raw_value(self) -> ByteBuffer:
+    def raw_value(self) -> memoryview:
         """Accessor for the entry raw value."""
         return self._list.get_value(self._pos)
 
@@ -333,11 +333,13 @@ class Store:
 
     async def __aenter__(self) -> "Session":
         if not self._opener:
-            self._opener = OpenSession(self, None, False)
+            self._opener = OpenSession(self._handle, None, False)
         return await self._opener.__aenter__()
 
     async def __aexit__(self, exc_type, exc, tb):
-        return await self._opener.__aexit__(exc_type, exc, tb)
+        opener = self._opener
+        self._opener = None
+        return await opener.__aexit__(exc_type, exc, tb)
 
     async def create_profile(self, name: str = None) -> str:
         return await bindings.store_create_profile(self._handle, name)
@@ -366,10 +368,10 @@ class Store:
         return Scan(self, profile, category, tag_filter, offset, limit)
 
     def session(self, profile: str = None) -> "OpenSession":
-        return OpenSession(self, profile, False)
+        return OpenSession(self._handle, profile, False)
 
     def transaction(self, profile: str = None) -> "OpenSession":
-        return OpenSession(self, profile, True)
+        return OpenSession(self._handle, profile, True)
 
     async def close(self, *, remove: bool = False) -> bool:
         """Close and free the pool instance."""
@@ -389,7 +391,7 @@ class Store:
 class Session:
     """An opened Session instance."""
 
-    def __init__(self, store: Store, handle: SessionHandle, is_txn: bool):
+    def __init__(self, store: StoreHandle, handle: SessionHandle, is_txn: bool):
         """Initialize the Session instance."""
         self._store = store
         self._handle = handle
@@ -404,11 +406,6 @@ class Session:
     def handle(self) -> SessionHandle:
         """Accessor for the SessionHandle instance."""
         return self._handle
-
-    @property
-    def store(self) -> Store:
-        """Accessor for the Store instance."""
-        return self._store
 
     async def count(self, category: str, tag_filter: Union[str, dict] = None) -> int:
         if not self._handle:
@@ -595,39 +592,38 @@ class Session:
 
 
 class OpenSession:
-    def __init__(self, store: Store, profile: Optional[str], is_txn: bool):
+    def __init__(self, store: StoreHandle, profile: Optional[str], is_txn: bool):
         """Initialize the OpenSession instance."""
         self._store = store
         self._profile = profile
         self._is_txn = is_txn
-        self._session = None
+        self._session: Session = None
 
     @property
     def is_transaction(self) -> bool:
         return self._is_txn
 
     async def _open(self) -> Session:
-        if not self._store.handle:
+        if not self._store:
             raise AskarError(
                 AskarErrorCode.WRAPPER, "Cannot start session from closed store"
             )
         if self._session:
             raise AskarError(AskarErrorCode.WRAPPER, "Session already opened")
-        self._session = Session(
+        return Session(
             self._store,
-            await bindings.session_start(
-                self._store.handle, self._profile, self._is_txn
-            ),
+            await bindings.session_start(self._store, self._profile, self._is_txn),
             self._is_txn,
         )
-        return self._session
 
     def __await__(self) -> Session:
         return self._open().__await__()
 
     async def __aenter__(self) -> Session:
-        return await self._open()
+        self._session = await self._open()
+        return self._session
 
     async def __aexit__(self, exc_type, exc, tb):
-        await self._session.close()
+        session = self._session
         self._session = None
+        await session.close()
