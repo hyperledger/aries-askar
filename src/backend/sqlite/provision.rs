@@ -45,17 +45,7 @@ pub struct SqliteStoreOptions {
 
 impl Default for SqliteStoreOptions {
     fn default() -> Self {
-        Self {
-            in_memory: true,
-            path: ":memory:".into(),
-            busy_timeout: DEFAULT_BUSY_TIMEOUT,
-            max_connections: num_cpus::get() as u32,
-            min_connections: DEFAULT_MIN_CONNECTIONS,
-            journal_mode: DEFAULT_JOURNAL_MODE,
-            locking_mode: DEFAULT_LOCKING_MODE,
-            shared_cache: DEFAULT_SHARED_CACHE,
-            synchronous: DEFAULT_SYNCHRONOUS,
-        }
+        Self::new(":memory:").expect("Error initializing with default options")
     }
 }
 
