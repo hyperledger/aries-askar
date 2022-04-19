@@ -1,11 +1,15 @@
 use std::ffi::CString;
 use std::os::raw::{c_char, c_void};
 use std::ptr;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use log::{LevelFilter, Metadata, Record};
+use once_cell::sync::OnceCell;
 
 use super::error::ErrorCode;
 use crate::error::Error;
+
+static LOGGER: OnceCell<CustomLogger> = OnceCell::new();
 
 pub type EnabledCallback = extern "C" fn(context: *const c_void, level: i32) -> i8;
 
@@ -26,6 +30,7 @@ pub struct CustomLogger {
     enabled: Option<EnabledCallback>,
     log: LogCallback,
     flush: Option<FlushCallback>,
+    disabled: AtomicBool,
 }
 
 impl CustomLogger {
@@ -40,13 +45,20 @@ impl CustomLogger {
             enabled,
             log,
             flush,
+            disabled: AtomicBool::new(false),
         }
+    }
+
+    fn disable(&self) {
+        self.disabled.store(false, Ordering::Release);
     }
 }
 
 impl log::Log for CustomLogger {
     fn enabled(&self, metadata: &Metadata<'_>) -> bool {
-        if let Some(enabled_cb) = self.enabled {
+        if !self.disabled.load(Ordering::Acquire) {
+            false
+        } else if let Some(enabled_cb) = self.enabled {
             enabled_cb(self.context, metadata.level() as i32) != 0
         } else {
             true
@@ -98,8 +110,11 @@ pub extern "C" fn askar_set_custom_logger(
 ) -> ErrorCode {
     catch_err! {
         let max_level = get_level_filter(max_level)?;
-        let logger = CustomLogger::new(context, enabled, log, flush);
-        log::set_boxed_logger(Box::new(logger)).map_err(err_map!(Unexpected))?;
+        if LOGGER.set(CustomLogger::new(context, enabled, log, flush)).is_err() {
+            return Err(err_msg!(Input, "Repeated logger initialization"));
+        }
+        log::set_logger(LOGGER.get().unwrap()).map_err(
+            |_| err_msg!(Input, "Repeated logger initialization"))?;
         log::set_max_level(max_level);
         debug!("Initialized custom logger");
         Ok(ErrorCode::Success)
@@ -107,9 +122,18 @@ pub extern "C" fn askar_set_custom_logger(
 }
 
 #[no_mangle]
+pub extern "C" fn askar_clear_custom_logger() {
+    debug!("Removing custom logger");
+    if let Some(logger) = LOGGER.get() {
+        logger.disable();
+    }
+}
+
+#[no_mangle]
 pub extern "C" fn askar_set_default_logger() -> ErrorCode {
     catch_err! {
-        env_logger::init();
+        env_logger::try_init().map_err(
+            |_| err_msg!(Input, "Repeated logger initialization"))?;
         debug!("Initialized default logger");
         Ok(ErrorCode::Success)
     }

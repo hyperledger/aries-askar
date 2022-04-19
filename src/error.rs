@@ -84,7 +84,10 @@ impl Error {
         self.message.as_ref().map(String::as_str)
     }
 
-    pub(crate) fn with_cause<T: Into<Box<dyn StdError + Send + Sync>>>(mut self, err: T) -> Self {
+    pub(crate) fn with_cause<T: Into<Box<dyn StdError + Send + Sync + 'static>>>(
+        mut self,
+        err: T,
+    ) -> Self {
         self.cause = Some(err.into());
         self
     }
@@ -108,7 +111,7 @@ impl StdError for Error {
     fn source(&self) -> Option<&(dyn StdError + 'static)> {
         self.cause
             .as_ref()
-            .map(|err| unsafe { std::mem::transmute(&**err) })
+            .map(|err| &**err as &(dyn StdError + 'static))
     }
 }
 

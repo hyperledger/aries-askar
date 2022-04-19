@@ -4,6 +4,7 @@ use core::convert::TryFrom;
 use core::{
     any::{Any, TypeId},
     fmt::Debug,
+    panic::{RefUnwindSafe, UnwindSafe},
 };
 
 #[cfg(feature = "aes")]
@@ -54,10 +55,10 @@ use super::EcCurves;
 use crate::kdf::{FromKeyDerivation, FromKeyExchange};
 
 #[derive(Debug)]
-pub struct KeyT<T: AnyKeyAlg + Send + Sync + ?Sized>(T);
+pub struct KeyT<T: AnyKeyAlg + Send + Sync + RefUnwindSafe + UnwindSafe + ?Sized>(T);
 
 /// The type-erased representation for a concrete key instance
-pub type AnyKey = KeyT<dyn AnyKeyAlg + Send + Sync>;
+pub type AnyKey = KeyT<dyn AnyKeyAlg + Send + Sync + RefUnwindSafe + UnwindSafe>;
 
 impl AnyKey {
     pub fn algorithm(&self) -> KeyAlg {
@@ -78,12 +79,6 @@ impl AnyKey {
         self.0.as_any().type_id()
     }
 }
-
-// key instances are immutable
-#[cfg(feature = "std")]
-impl std::panic::UnwindSafe for AnyKey {}
-#[cfg(feature = "std")]
-impl std::panic::RefUnwindSafe for AnyKey {}
 
 /// Create `AnyKey` instances from various sources
 pub trait AnyKeyCreate: Sized {
@@ -108,7 +103,7 @@ pub trait AnyKeyCreate: Sized {
     fn from_secret_bytes(alg: KeyAlg, secret: &[u8]) -> Result<Self, Error>;
 
     /// Convert from a concrete key instance
-    fn from_key<K: HasKeyAlg + Send + Sync + 'static>(key: K) -> Self;
+    fn from_key<K: HasKeyAlg + Send + Sync + RefUnwindSafe + UnwindSafe + 'static>(key: K) -> Self;
 
     /// Create a new key instance from a key exchange
     fn from_key_exchange<Sk, Pk>(alg: KeyAlg, secret: &Sk, public: &Pk) -> Result<Self, Error>
@@ -137,7 +132,7 @@ impl AnyKeyCreate for Box<AnyKey> {
     }
 
     #[inline(always)]
-    fn from_key<K: HasKeyAlg + Send + Sync + 'static>(key: K) -> Self {
+    fn from_key<K: HasKeyAlg + Send + Sync + RefUnwindSafe + UnwindSafe + 'static>(key: K) -> Self {
         Box::new(KeyT(key))
     }
 
@@ -172,7 +167,7 @@ impl AnyKeyCreate for Arc<AnyKey> {
     }
 
     #[inline(always)]
-    fn from_key<K: HasKeyAlg + Send + Sync + 'static>(key: K) -> Self {
+    fn from_key<K: HasKeyAlg + Send + Sync + RefUnwindSafe + UnwindSafe + 'static>(key: K) -> Self {
         Arc::new(KeyT(key))
     }
 
@@ -819,19 +814,19 @@ impl KeySigVerify for AnyKey {
 
 // may want to implement in-place initialization to avoid copies
 trait AllocKey {
-    fn alloc_key<K: AnyKeyAlg + Send + Sync>(key: K) -> Self;
+    fn alloc_key<K: AnyKeyAlg + Send + Sync + RefUnwindSafe + UnwindSafe>(key: K) -> Self;
 }
 
 impl AllocKey for Arc<AnyKey> {
     #[inline(always)]
-    fn alloc_key<K: AnyKeyAlg + Send + Sync>(key: K) -> Self {
+    fn alloc_key<K: AnyKeyAlg + Send + Sync + RefUnwindSafe + UnwindSafe>(key: K) -> Self {
         Self::from_key(key)
     }
 }
 
 impl AllocKey for Box<AnyKey> {
     #[inline(always)]
-    fn alloc_key<K: AnyKeyAlg + Send + Sync>(key: K) -> Self {
+    fn alloc_key<K: AnyKeyAlg + Send + Sync + RefUnwindSafe + UnwindSafe>(key: K) -> Self {
         Self::from_key(key)
     }
 }

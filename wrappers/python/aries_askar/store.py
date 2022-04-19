@@ -3,12 +3,13 @@
 import json
 
 from typing import Optional, Sequence, Union
+from weakref import ref
 
 from cached_property import cached_property
 
 from . import bindings
-
 from .bindings import (
+    ByteBuffer,
     EntryListHandle,
     KeyEntryListHandle,
     ScanHandle,
@@ -101,7 +102,20 @@ class EntryList:
         return Entry(self._handle, index)
 
     def __iter__(self):
-        return self
+        return IterEntryList(self)
+
+    def __len__(self) -> int:
+        return self._len
+
+    def __repr__(self) -> str:
+        return f"<EntryList(handle={self._handle}, pos={self._pos}, len={self._len})>"
+
+
+class IterEntryList:
+    def __init__(self, list: EntryList):
+        self._handle = list._handle
+        self._len = list._len
+        self._pos = 0
 
     def __next__(self):
         if self._pos < self._len:
@@ -110,12 +124,6 @@ class EntryList:
             return entry
         else:
             raise StopIteration
-
-    def __len__(self) -> int:
-        return self._len
-
-    def __repr__(self) -> str:
-        return f"<EntryList(handle={self._handle}, pos={self._pos}, len={self._len})>"
 
 
 class KeyEntry:
@@ -184,15 +192,7 @@ class KeyEntryList:
         return KeyEntry(self._handle, index)
 
     def __iter__(self):
-        return self
-
-    def __next__(self):
-        if self._pos < self._len:
-            entry = KeyEntry(self._handle, self._pos)
-            self._pos += 1
-            return entry
-        else:
-            raise StopIteration
+        return IterKeyEntryList(self)
 
     def __len__(self) -> int:
         return self._len
@@ -201,6 +201,21 @@ class KeyEntryList:
         return (
             f"<KeyEntryList(handle={self._handle}, pos={self._pos}, len={self._len})>"
         )
+
+
+class IterKeyEntryList:
+    def __init__(self, list: KeyEntryList):
+        self._handle = list._handle
+        self._len = list._len
+        self._pos = 0
+
+    def __next__(self):
+        if self._pos < self._len:
+            entry = KeyEntry(self._handle, self._pos)
+            self._pos += 1
+            return entry
+        else:
+            raise StopIteration
 
 
 class Scan:
@@ -216,9 +231,9 @@ class Scan:
         limit: int = None,
     ):
         """Initialize the Scan instance."""
-        self.params = (store, profile, category, tag_filter, offset, limit)
+        self._params = (store, profile, category, tag_filter, offset, limit)
         self._handle: ScanHandle = None
-        self._buffer: EntryList = None
+        self._buffer: IterEntryList = None
 
     @property
     def handle(self) -> ScanHandle:
@@ -230,7 +245,8 @@ class Scan:
 
     async def __anext__(self):
         if self._handle is None:
-            (store, profile, category, tag_filter, offset, limit) = self.params
+            (store, profile, category, tag_filter, offset, limit) = self._params
+            self._params = None
             if not store.handle:
                 raise AskarError(
                     AskarErrorCode.WRAPPER, "Cannot scan from closed store"
@@ -239,7 +255,7 @@ class Scan:
                 store.handle, profile, category, tag_filter, offset, limit
             )
             list_handle = await bindings.scan_next(self._handle)
-            self._buffer = EntryList(list_handle) if list_handle else None
+            self._buffer = iter(EntryList(list_handle)) if list_handle else None
         while True:
             if not self._buffer:
                 raise StopAsyncIteration
@@ -247,7 +263,7 @@ class Scan:
             if row:
                 return row
             list_handle = await bindings.scan_next(self._handle)
-            self._buffer = EntryList(list_handle) if list_handle else None
+            self._buffer = iter(EntryList(list_handle)) if list_handle else None
 
     async def fetch_all(self) -> Sequence[Entry]:
         rows = []
@@ -317,11 +333,13 @@ class Store:
 
     async def __aenter__(self) -> "Session":
         if not self._opener:
-            self._opener = OpenSession(self, None, False)
+            self._opener = OpenSession(self._handle, None, False)
         return await self._opener.__aenter__()
 
     async def __aexit__(self, exc_type, exc, tb):
-        return await self._opener.__aexit__(exc_type, exc, tb)
+        opener = self._opener
+        self._opener = None
+        return await opener.__aexit__(exc_type, exc, tb)
 
     async def create_profile(self, name: str = None) -> str:
         return await bindings.store_create_profile(self._handle, name)
@@ -350,10 +368,10 @@ class Store:
         return Scan(self, profile, category, tag_filter, offset, limit)
 
     def session(self, profile: str = None) -> "OpenSession":
-        return OpenSession(self, profile, False)
+        return OpenSession(self._handle, profile, False)
 
     def transaction(self, profile: str = None) -> "OpenSession":
-        return OpenSession(self, profile, True)
+        return OpenSession(self._handle, profile, True)
 
     async def close(self, *, remove: bool = False) -> bool:
         """Close and free the pool instance."""
@@ -373,7 +391,7 @@ class Store:
 class Session:
     """An opened Session instance."""
 
-    def __init__(self, store: Store, handle: SessionHandle, is_txn: bool):
+    def __init__(self, store: StoreHandle, handle: SessionHandle, is_txn: bool):
         """Initialize the Session instance."""
         self._store = store
         self._handle = handle
@@ -389,11 +407,6 @@ class Session:
         """Accessor for the SessionHandle instance."""
         return self._handle
 
-    @property
-    def store(self) -> Store:
-        """Accessor for the Store instance."""
-        return self._store
-
     async def count(self, category: str, tag_filter: Union[str, dict] = None) -> int:
         if not self._handle:
             raise AskarError(AskarErrorCode.WRAPPER, "Cannot count from closed session")
@@ -407,7 +420,7 @@ class Session:
         result_handle = await bindings.session_fetch(
             self._handle, category, name, for_update
         )
-        return next(EntryList(result_handle, 1), None) if result_handle else None
+        return next(iter(EntryList(result_handle, 1)), None) if result_handle else None
 
     async def fetch_all(
         self,
@@ -508,7 +521,9 @@ class Session:
                 AskarErrorCode.WRAPPER, "Cannot fetch key from closed session"
             )
         result_handle = await bindings.session_fetch_key(self._handle, name, for_update)
-        return next(KeyEntryList(result_handle, 1)) if result_handle else None
+        return (
+            next(iter(KeyEntryList(result_handle, 1)), None) if result_handle else None
+        )
 
     async def fetch_all_keys(
         self,
@@ -577,39 +592,38 @@ class Session:
 
 
 class OpenSession:
-    def __init__(self, store: Store, profile: Optional[str], is_txn: bool):
+    def __init__(self, store: StoreHandle, profile: Optional[str], is_txn: bool):
         """Initialize the OpenSession instance."""
         self._store = store
         self._profile = profile
         self._is_txn = is_txn
-        self._session = None
+        self._session: Session = None
 
     @property
     def is_transaction(self) -> bool:
         return self._is_txn
 
     async def _open(self) -> Session:
-        if not self._store.handle:
+        if not self._store:
             raise AskarError(
                 AskarErrorCode.WRAPPER, "Cannot start session from closed store"
             )
         if self._session:
             raise AskarError(AskarErrorCode.WRAPPER, "Session already opened")
-        self._session = Session(
+        return Session(
             self._store,
-            await bindings.session_start(
-                self._store.handle, self._profile, self._is_txn
-            ),
+            await bindings.session_start(self._store, self._profile, self._is_txn),
             self._is_txn,
         )
-        return self._session
 
     def __await__(self) -> Session:
         return self._open().__await__()
 
     async def __aenter__(self) -> Session:
-        return await self._open()
+        self._session = await self._open()
+        return self._session
 
     async def __aexit__(self, exc_type, exc, tb):
-        await self._session.close()
+        session = self._session
         self._session = None
+        await session.close()

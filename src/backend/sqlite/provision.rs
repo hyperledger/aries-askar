@@ -1,10 +1,12 @@
-use std::borrow::Cow;
-use std::fs::remove_file;
-use std::io::ErrorKind as IoErrorKind;
-use std::str::FromStr;
+use std::{
+    borrow::Cow, fs::remove_file, io::ErrorKind as IoErrorKind, str::FromStr, time::Duration,
+};
 
 use sqlx::{
-    sqlite::{SqliteConnectOptions, SqlitePool, SqlitePoolOptions},
+    sqlite::{
+        SqliteAutoVacuum, SqliteConnectOptions, SqliteJournalMode, SqliteLockingMode, SqlitePool,
+        SqlitePoolOptions, SqliteSynchronous,
+    },
     ConnectOptions, Error as SqlxError, Row,
 };
 
@@ -20,18 +22,46 @@ use crate::{
     storage::{IntoOptions, Options, Store},
 };
 
+const DEFAULT_MIN_CONNECTIONS: u32 = 1;
+const DEFAULT_BUSY_TIMEOUT: Duration = Duration::from_secs(5);
+const DEFAULT_JOURNAL_MODE: SqliteJournalMode = SqliteJournalMode::Wal;
+const DEFAULT_LOCKING_MODE: SqliteLockingMode = SqliteLockingMode::Normal;
+const DEFAULT_SHARED_CACHE: bool = true;
+const DEFAULT_SYNCHRONOUS: SqliteSynchronous = SqliteSynchronous::Full;
+
 /// Configuration options for Sqlite stores
 #[derive(Debug)]
 pub struct SqliteStoreOptions {
     pub(crate) in_memory: bool,
     pub(crate) path: String,
+    pub(crate) busy_timeout: Duration,
     pub(crate) max_connections: u32,
+    pub(crate) min_connections: u32,
+    pub(crate) journal_mode: SqliteJournalMode,
+    pub(crate) locking_mode: SqliteLockingMode,
+    pub(crate) shared_cache: bool,
+    pub(crate) synchronous: SqliteSynchronous,
+}
+
+impl Default for SqliteStoreOptions {
+    fn default() -> Self {
+        Self::new(":memory:").expect("Error initializing with default options")
+    }
 }
 
 impl SqliteStoreOptions {
     /// Initialize `SqliteStoreOptions` from a generic set of options
     pub fn new<'a>(options: impl IntoOptions<'a>) -> Result<Self, Error> {
         let mut opts = options.into_options()?;
+        let busy_timeout = if let Some(timeout) = opts.query.remove("busy_timeout") {
+            Duration::from_millis(
+                timeout
+                    .parse()
+                    .map_err(err_map!(Input, "Error parsing 'busy_timeout' parameter"))?,
+            )
+        } else {
+            DEFAULT_BUSY_TIMEOUT
+        };
         let max_connections = if let Some(max_conn) = opts.query.remove("max_connections") {
             max_conn
                 .parse()
@@ -39,19 +69,62 @@ impl SqliteStoreOptions {
         } else {
             num_cpus::get() as u32
         };
+        let min_connections = if let Some(min_conn) = opts.query.remove("min_connections") {
+            min_conn
+                .parse()
+                .map_err(err_map!(Input, "Error parsing 'min_connections' parameter"))?
+        } else {
+            DEFAULT_MIN_CONNECTIONS
+        };
+        let journal_mode = if let Some(mode) = opts.query.remove("journal_mode") {
+            SqliteJournalMode::from_str(&mode)
+                .map_err(err_map!(Input, "Error parsing 'journal_mode' parameter"))?
+        } else {
+            DEFAULT_JOURNAL_MODE
+        };
+        let locking_mode = if let Some(mode) = opts.query.remove("locking_mode") {
+            SqliteLockingMode::from_str(&mode)
+                .map_err(err_map!(Input, "Error parsing 'locking_mode' parameter"))?
+        } else {
+            DEFAULT_LOCKING_MODE
+        };
+        let shared_cache = if let Some(cache) = opts.query.remove("cache") {
+            cache.eq_ignore_ascii_case("shared")
+        } else {
+            DEFAULT_SHARED_CACHE
+        };
+        let synchronous = if let Some(sync) = opts.query.remove("synchronous") {
+            SqliteSynchronous::from_str(&sync)
+                .map_err(err_map!(Input, "Error parsing 'synchronous' parameter"))?
+        } else {
+            DEFAULT_SYNCHRONOUS
+        };
+
         let mut path = opts.host.to_string();
         path.push_str(&*opts.path);
         Ok(Self {
             in_memory: path == ":memory:",
             path,
+            busy_timeout,
             max_connections,
+            min_connections,
+            journal_mode,
+            locking_mode,
+            shared_cache,
+            synchronous,
         })
     }
 
     async fn pool(&self, auto_create: bool) -> std::result::Result<SqlitePool, SqlxError> {
         #[allow(unused_mut)]
-        let mut conn_opts =
-            SqliteConnectOptions::from_str(self.path.as_ref())?.create_if_missing(auto_create);
+        let mut conn_opts = SqliteConnectOptions::from_str(self.path.as_ref())?
+            .create_if_missing(auto_create)
+            .auto_vacuum(SqliteAutoVacuum::Incremental)
+            .busy_timeout(self.busy_timeout)
+            .journal_mode(self.journal_mode)
+            .locking_mode(self.locking_mode)
+            .shared_cache(self.shared_cache)
+            .synchronous(self.synchronous);
         #[cfg(feature = "log")]
         {
             conn_opts.log_statements(log::LevelFilter::Debug);
@@ -61,7 +134,7 @@ impl SqliteStoreOptions {
             // maintains at least 1 connection.
             // for an in-memory database this is required to avoid dropping the database,
             // for a file database this signals other instances that the database is in use
-            .min_connections(1)
+            .min_connections(self.min_connections)
             .max_connections(self.max_connections)
             .test_before_acquire(false)
             .connect_with(conn_opts)

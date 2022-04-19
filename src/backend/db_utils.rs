@@ -551,32 +551,24 @@ pub fn encode_tag_filter<Q: QueryPrepare>(
     }
 }
 
-// convert a slice of tags into a Vec, when ensuring there is
+// allocate a String while ensuring there is sufficient capacity to reuse during encryption
+fn _prepare_string(value: &str) -> String {
+    let buf = ProfileKey::prepare_input(value.as_bytes()).into_vec();
+    unsafe { String::from_utf8_unchecked(buf) }
+}
+
+// convert a slice of tags into a Vec, while ensuring there is
 // adequate space in the allocations to reuse them during encryption
 pub fn prepare_tags(tags: &[EntryTag]) -> Result<Vec<EntryTag>, Error> {
     let mut result = Vec::with_capacity(tags.len());
     for tag in tags {
         result.push(match tag {
-            EntryTag::Plaintext(name, value) => EntryTag::Plaintext(
-                unsafe {
-                    String::from_utf8_unchecked(
-                        ProfileKey::prepare_input(name.as_bytes()).into_vec(),
-                    )
-                },
-                value.clone(),
-            ),
-            EntryTag::Encrypted(name, value) => EntryTag::Encrypted(
-                unsafe {
-                    String::from_utf8_unchecked(
-                        ProfileKey::prepare_input(name.as_bytes()).into_vec(),
-                    )
-                },
-                unsafe {
-                    String::from_utf8_unchecked(
-                        ProfileKey::prepare_input(value.as_bytes()).into_vec(),
-                    )
-                },
-            ),
+            EntryTag::Plaintext(name, value) => {
+                EntryTag::Plaintext(_prepare_string(name), value.clone())
+            }
+            EntryTag::Encrypted(name, value) => {
+                EntryTag::Encrypted(_prepare_string(name), _prepare_string(value))
+            }
         });
     }
     Ok(result)

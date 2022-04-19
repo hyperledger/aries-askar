@@ -365,7 +365,7 @@ pub extern "C" fn askar_key_verify_signature(
         trace!("Verify signature: {}", handle);
         check_useful_c_ptr!(out);
         let key = handle.load()?;
-        let verify = key.verify_signature(message.as_slice(),signature.as_slice(), sig_type.as_opt_str())?;
+        let verify = key.verify_signature(message.as_slice(), signature.as_slice(), sig_type.as_opt_str())?;
         unsafe { *out = verify as i8 };
         Ok(ErrorCode::Success)
     }

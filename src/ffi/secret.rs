@@ -30,10 +30,12 @@ impl Default for SecretBuffer {
 
 impl SecretBuffer {
     pub fn from_secret(buffer: impl Into<SecretBytes>) -> Self {
-        let mut buf = buffer.into().into_boxed_slice();
+        let mut buf = buffer.into();
+        buf.shrink_to_fit();
+        debug_assert_eq!(buf.len(), buf.capacity());
+        let mut buf = mem::ManuallyDrop::new(buf.into_vec());
         let len = i64::try_from(buf.len()).expect("secret length exceeds i64::MAX");
         let data = buf.as_mut_ptr();
-        mem::forget(buf);
         Self { len, data }
     }
 

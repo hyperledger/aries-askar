@@ -270,7 +270,11 @@ impl<'a> ManageBackend<'a> for &'a str {
                     Ok(Store::new(AnyBackend::Sqlite(mgr.into_inner())))
                 }
 
-                _ => Err(err_msg!(Unsupported, "Invalid backend: {}", &opts.schema)),
+                _ => Err(err_msg!(
+                    Unsupported,
+                    "Unsupported backend: {}",
+                    &opts.schema
+                )),
             }
         })
     }
@@ -301,7 +305,11 @@ impl<'a> ManageBackend<'a> for &'a str {
                     Ok(Store::new(AnyBackend::Sqlite(mgr.into_inner())))
                 }
 
-                _ => Err(err_msg!(Unsupported, "Invalid backend: {}", &opts.schema)),
+                _ => Err(err_msg!(
+                    Unsupported,
+                    "Unsupported backend: {}",
+                    &opts.schema
+                )),
             }
         })
     }
@@ -324,7 +332,11 @@ impl<'a> ManageBackend<'a> for &'a str {
                     Ok(opts.remove().await?)
                 }
 
-                _ => Err(err_msg!(Unsupported, "Invalid backend: {}", &opts.schema)),
+                _ => Err(err_msg!(
+                    Unsupported,
+                    "Unsupported backend: {}",
+                    &opts.schema
+                )),
             }
         })
     }

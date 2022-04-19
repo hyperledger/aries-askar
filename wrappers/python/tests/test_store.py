@@ -1,3 +1,4 @@
+import asyncio
 import os
 
 from pytest import mark, raises
@@ -25,6 +26,7 @@ def raw_key() -> str:
 
 
 @pytest_asyncio.fixture
+@mark.asyncio
 async def store() -> Store:
     key = raw_key()
     store = await Store.provision(TEST_STORE_URI, "raw", key, recreate=True)
@@ -110,7 +112,7 @@ async def test_scan(store: Store):
 
 
 @mark.asyncio
-async def test_transaction(store: Store):
+async def test_txn_basic(store: Store):
     async with store.transaction() as txn:
 
         # Insert a new entry
@@ -142,6 +144,43 @@ async def test_transaction(store: Store):
     async with store.session() as session:
         found = await session.fetch(TEST_ENTRY["category"], TEST_ENTRY["name"])
         assert dict(found) == TEST_ENTRY
+
+
+@mark.asyncio
+async def test_txn_contention(store: Store):
+    async with store.transaction() as txn:
+        await txn.insert(
+            TEST_ENTRY["category"],
+            TEST_ENTRY["name"],
+            "0",
+        )
+        await txn.commit()
+
+    INC_COUNT = 1000
+    TASKS = 10
+
+    async def inc():
+        for _ in range(INC_COUNT):
+            async with store.transaction() as txn:
+                row = await txn.fetch(
+                    TEST_ENTRY["category"], TEST_ENTRY["name"], for_update=True
+                )
+                if not row:
+                    raise Exception("Row not found")
+                new_value = str(int(row.value) + 1)
+                await txn.replace(TEST_ENTRY["category"], TEST_ENTRY["name"], new_value)
+                await txn.commit()
+
+    tasks = [asyncio.create_task(inc()) for _ in range(TASKS)]
+    await asyncio.gather(*tasks)
+
+    # Check all the updates completed
+    async with store.session() as session:
+        result = await session.fetch(
+            TEST_ENTRY["category"],
+            TEST_ENTRY["name"],
+        )
+        assert int(result.value) == INC_COUNT * TASKS
 
 
 @mark.asyncio
