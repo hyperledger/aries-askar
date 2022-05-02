@@ -13,6 +13,7 @@ on:
 
 env:
   LIB_NAME: aries_askar
+  CC: arm-linux-androideabi-clang
 
 jobs:
   build_android:
