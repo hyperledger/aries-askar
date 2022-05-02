@@ -28,7 +28,7 @@ jobs:
         with:
           use-cross: true
           command: build
-          args: --target ${{matrix.architecture}} --release --all-features
+          args: --target ${{matrix.architecture}} --release
       - name: Save library
         uses: actions/upload-artifact@v2
         with:
