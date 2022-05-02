@@ -12,7 +12,7 @@ on:
 
 env:
   LIB_NAME: aries_askar 
-  HEADER_FILE: include/libindy_vdr.h
+  HEADER_FILE: include/libaries_askar.h
 
 jobs:
   build_ios:
