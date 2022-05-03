@@ -261,6 +261,20 @@ impl<'q, DB: ExtDatabase> DbSessionActive<'q, DB> {
             info!("Commit transaction");
             DB::TransactionManager::commit(conn).await?;
             self.txn_depth = 0;
+        } else {
+            warn!("Not in a transaction");
+        }
+        Ok(())
+    }
+
+    pub async fn rollback(mut self) -> Result<(), Error> {
+        if self.txn_depth > 0 && !self.false_txn {
+            let conn = self.connection_mut();
+            info!("Rollback transaction");
+            DB::TransactionManager::rollback(conn).await?;
+            self.txn_depth = 0;
+        } else {
+            warn!("Not in a transaction");
         }
         Ok(())
     }

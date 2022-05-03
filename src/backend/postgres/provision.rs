@@ -299,76 +299,92 @@ pub(crate) async fn init_db<'t>(
     store_key_ref: String,
     enc_profile_key: Vec<u8>,
 ) -> Result<ProfileId, Error> {
-    txn.execute(
-        "
-        CREATE TABLE config (
-            name TEXT NOT NULL,
-            value TEXT,
-            PRIMARY KEY(name)
-        );
+    info!("init db");
 
-        CREATE TABLE profiles (
-            id BIGSERIAL,
-            name TEXT NOT NULL,
-            reference TEXT NULL,
-            profile_key BYTEA NULL,
-            PRIMARY KEY(id)
-        );
-        CREATE UNIQUE INDEX ix_profile_name ON profiles(name);
+    let handle_init_db = || async {
 
-        CREATE TABLE items (
-            id BIGSERIAL,
-            profile_id BIGINT NOT NULL,
-            kind SMALLINT NOT NULL,
-            category BYTEA NOT NULL,
-            name BYTEA NOT NULL,
-            value BYTEA NOT NULL,
-            expiry TIMESTAMP NULL,
-            PRIMARY KEY(id),
-            FOREIGN KEY(profile_id) REFERENCES profiles(id)
-                ON DELETE CASCADE ON UPDATE CASCADE
-        );
-        CREATE UNIQUE INDEX ix_items_uniq ON items(profile_id, kind, category, name);
+        txn.execute(
+            "
+            CREATE TABLE config (
+                name TEXT NOT NULL,
+                value TEXT,
+                PRIMARY KEY(name)
+            );
 
-        CREATE TABLE items_tags (
-            id BIGSERIAL,
-            item_id BIGINT NOT NULL,
-            name BYTEA NOT NULL,
-            value BYTEA NOT NULL,
-            plaintext SMALLINT NOT NULL,
-            PRIMARY KEY(id),
-            FOREIGN KEY(item_id) REFERENCES items(id)
-                ON DELETE CASCADE ON UPDATE CASCADE
-        );
-        CREATE INDEX ix_items_tags_item_id ON items_tags(item_id);
-        CREATE INDEX ix_items_tags_name_enc ON items_tags(name, SUBSTR(value, 1, 12)) WHERE plaintext=0;
-        CREATE INDEX ix_items_tags_name_plain ON items_tags(name, value) WHERE plaintext=1;
-    ",
-    )
-    .await?;
+            CREATE TABLE profiles (
+                id BIGSERIAL,
+                name TEXT NOT NULL,
+                reference TEXT NULL,
+                profile_key BYTEA NULL,
+                PRIMARY KEY(id)
+            );
+            CREATE UNIQUE INDEX ix_profile_name ON profiles(name);
 
-    sqlx::query(
-        "INSERT INTO config (name, value) VALUES
-            ('default_profile', $1),
-            ('key', $2),
-            ('version', '1')",
-    )
-    .persistent(false)
-    .bind(profile_name)
-    .bind(store_key_ref)
-    .execute(&mut txn)
-    .await?;
+            CREATE TABLE items (
+                id BIGSERIAL,
+                profile_id BIGINT NOT NULL,
+                kind SMALLINT NOT NULL,
+                category BYTEA NOT NULL,
+                name BYTEA NOT NULL,
+                value BYTEA NOT NULL,
+                expiry TIMESTAMP NULL,
+                PRIMARY KEY(id),
+                FOREIGN KEY(profile_id) REFERENCES profiles(id)
+                    ON DELETE CASCADE ON UPDATE CASCADE
+            );
+            CREATE UNIQUE INDEX ix_items_uniq ON items(profile_id, kind, category, name);
 
-    let profile_id =
-        sqlx::query_scalar("INSERT INTO profiles (name, profile_key) VALUES ($1, $2) RETURNING id")
-            .bind(profile_name)
-            .bind(enc_profile_key)
-            .fetch_one(&mut txn)
-            .await?;
+            CREATE TABLE items_tags (
+                id BIGSERIAL,
+                item_id BIGINT NOT NULL,
+                name BYTEA NOT NULL,
+                value BYTEA NOT NULL,
+                plaintext SMALLINT NOT NULL,
+                PRIMARY KEY(id),
+                FOREIGN KEY(item_id) REFERENCES items(id)
+                    ON DELETE CASCADE ON UPDATE CASCADE
+            );
+            CREATE INDEX ix_items_tags_item_id ON items_tags(item_id);
+            CREATE INDEX ix_items_tags_name_enc ON items_tags(name, SUBSTR(value, 1, 12)) WHERE plaintext=0;
+            CREATE INDEX ix_items_tags_name_plain ON items_tags(name, value) WHERE plaintext=1;
+        ",
+        )
+        .await?;
 
-    txn.commit().await?;
+        sqlx::query(
+            "INSERT INTO config (name, value) VALUES
+                ('default_profile', $1),
+                ('key', $2),
+                ('version', '1')",
+        )
+        .persistent(false)
+        .bind(profile_name)
+        .bind(store_key_ref)
+        .execute(&mut txn)
+        .await?;
 
-    Ok(profile_id)
+        let profile_id =
+            sqlx::query_scalar("INSERT INTO profiles (name, profile_key) VALUES ($1, $2) RETURNING id")
+                .bind(profile_name)
+                .bind(enc_profile_key)
+                .fetch_one(&mut txn)
+                .await?;
+
+        Ok(profile_id)
+    };
+
+    let init = handle_init_db().await;
+
+    match init {
+        Ok(profile_id) => {
+            txn.commit().await?;
+            return Ok(profile_id)
+        },
+        Err(e) => {
+            txn.rollback().await?;
+            return Err(e)
+        },
+    } 
 }
 
 pub(crate) async fn reset_db(conn: &mut PgConnection) -> Result<(), Error> {

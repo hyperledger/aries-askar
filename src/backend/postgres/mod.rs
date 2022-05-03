@@ -152,52 +152,71 @@ impl Backend for PostgresStore {
         })
     }
 
+    
+
     fn rekey_backend(
         &mut self,
         method: StoreKeyMethod,
         pass_key: PassKey<'_>,
     ) -> BoxFuture<'_, Result<(), Error>> {
+        info!("rekey");
+
         let pass_key = pass_key.into_owned();
         Box::pin(async move {
             let (store_key, store_key_ref) = unblock(move || method.resolve(pass_key)).await?;
             let store_key = Arc::new(store_key);
             let mut txn = self.conn_pool.begin().await?;
-            let mut rows = sqlx::query("SELECT id, profile_key FROM profiles").fetch(&mut txn);
-            let mut upd_keys = BTreeMap::<ProfileId, Vec<u8>>::new();
-            while let Some(row) = rows.next().await {
-                let row = row?;
-                let pid = row.try_get(0)?;
-                let enc_key = row.try_get(1)?;
-                let profile_key = self.key_cache.load_key(enc_key).await?;
-                let upd_key = unblock({
-                    let store_key = store_key.clone();
-                    move || encode_profile_key(&profile_key, &store_key)
-                })
-                .await?;
-                upd_keys.insert(pid, upd_key);
-            }
-            drop(rows);
-            for (pid, key) in upd_keys {
-                if sqlx::query("UPDATE profiles SET profile_key=$1 WHERE id=$2")
-                    .bind(key)
-                    .bind(pid)
+
+            let handle_rekey_backend = || async {
+                let mut rows = sqlx::query("SELECT id, profile_key FROM profiles").fetch(&mut txn);
+                let mut upd_keys = BTreeMap::<ProfileId, Vec<u8>>::new();
+                while let Some(row) = rows.next().await {
+                    let row = row?;
+                    let pid = row.try_get(0)?;
+                    let enc_key = row.try_get(1)?;
+                    let profile_key = self.key_cache.load_key(enc_key).await?;
+                    let upd_key = unblock({
+                        let store_key = store_key.clone();
+                        move || encode_profile_key(&profile_key, &store_key)
+                    })
+                    .await?;
+                    upd_keys.insert(pid, upd_key);
+                }
+                drop(rows);
+                for (pid, key) in upd_keys {
+                    if sqlx::query("UPDATE profiles SET profile_key=$1 WHERE id=$2")
+                        .bind(key)
+                        .bind(pid)
+                        .execute(&mut txn)
+                        .await?
+                        .rows_affected()
+                        != 1
+                    {
+                        return Err(err_msg!(Backend, "Error updating profile key"));
+                    }
+                }
+                if sqlx::query("UPDATE config SET value=$1 WHERE name='key'")
+                    .bind(store_key_ref.into_uri())
                     .execute(&mut txn)
                     .await?
                     .rows_affected()
                     != 1
                 {
-                    return Err(err_msg!(Backend, "Error updating profile key"));
+                    return Err(err_msg!(Backend, "Error updating store key"));
                 }
-            }
-            if sqlx::query("UPDATE config SET value=$1 WHERE name='key'")
-                .bind(store_key_ref.into_uri())
-                .execute(&mut txn)
-                .await?
-                .rows_affected()
-                != 1
-            {
-                return Err(err_msg!(Backend, "Error updating store key"));
-            }
+                Ok(())
+            };
+
+            let rekey = handle_rekey_backend().await;
+
+            match rekey {
+                Ok(())  => (),
+                Err(e) => {
+                    txn.rollback().await?;
+                    return Err(e)
+                },
+            } 
+
             txn.commit().await?;
             self.key_cache = Arc::new(KeyCache::new(store_key));
             Ok(())
@@ -446,6 +465,8 @@ impl QueryBackend for DbSession<Postgres> {
         tags: Option<&'q [EntryTag]>,
         expiry_ms: Option<i64>,
     ) -> BoxFuture<'q, Result<(), Error>> {
+        info!("update");
+
         let category = ProfileKey::prepare_input(category.as_bytes());
         let name = ProfileKey::prepare_input(name.as_bytes());
 
@@ -470,7 +491,7 @@ impl QueryBackend for DbSession<Postgres> {
                     .await?;
                     let mut active = acquire_session(&mut *self).await?;
                     let mut txn = active.as_transaction().await?;
-                    perform_insert(
+                    let insert = perform_insert(
                         &mut txn,
                         kind,
                         &enc_category,
@@ -480,7 +501,15 @@ impl QueryBackend for DbSession<Postgres> {
                         expiry_ms,
                         op == EntryOperation::Insert,
                     )
-                    .await?;
+                    .await;
+
+                    match insert {
+                        Ok(())  => (),
+                        Err(e) => {
+                            txn.rollback().await?;
+                            return Err(e)
+                        },
+                    } 
                     txn.commit().await?;
                     Ok(())
                 })
