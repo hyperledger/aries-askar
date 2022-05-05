@@ -76,9 +76,15 @@ def _struct_dtor(ctype: type, address: int, dtor: Callable):
 
 
 def finalize_struct(instance, ctype):
+    """Attach a struct destructor."""
     finalize(
         instance, _struct_dtor, ctype, addressof(instance), instance.__class__._cleanup
     )
+
+
+def keepalive(instance, *depend):
+    """Ensure that dependencies are kept alive as long as the instance."""
+    finalize(instance, lambda *_args: None, *depend)
 
 
 class LibLoad:
@@ -454,7 +460,6 @@ class ByteBuffer(Structure):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self._a = addressof(self)
         finalize_struct(self, RawBuffer)
 
     @property
@@ -468,8 +473,7 @@ class ByteBuffer(Structure):
     @property
     def view(self) -> memoryview:
         m = memoryview(self.array)
-        # ensure self stays alive until the view is dropped
-        finalize(m, lambda _: (), self)
+        keepalive(m, self)
         return m
 
     def __bytes__(self) -> bytes:
