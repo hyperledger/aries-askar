@@ -368,7 +368,7 @@ class Lib:
     def version(self) -> str:
         """Get the version of the installed library."""
         return str(
-            self.loaded._method(
+            self.loaded.method(
                 "askar_version",
                 None,
                 restype=StrBuffer,
