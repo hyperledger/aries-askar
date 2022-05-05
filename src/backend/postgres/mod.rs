@@ -20,8 +20,8 @@ use crate::{
         db_utils::{
             decode_tags, decrypt_scan_batch, encode_profile_key, encode_tag_filter,
             expiry_timestamp, extend_query, prepare_tags, random_profile_name,
-            replace_arg_placeholders, DbSession, DbSessionActive, DbSessionRef, EncScanEntry,
-            ExtDatabase, QueryParams, QueryPrepare, PAGE_SIZE,
+            replace_arg_placeholders, DbSession, DbSessionActive, DbSessionRef, DbSessionTxn,
+            EncScanEntry, ExtDatabase, QueryParams, QueryPrepare, PAGE_SIZE,
         },
         types::{Backend, QueryBackend},
     },
@@ -324,7 +324,7 @@ impl QueryBackend for DbSession<Postgres> {
             })
             .await?;
             let mut active = acquire_session(&mut *self).await?;
-            if let Some(row) = sqlx::query(if for_update && active.is_transaction() {
+            if let Some(row) = sqlx::query(if for_update && active.in_transaction() {
                 FETCH_QUERY_UPDATE
             } else {
                 FETCH_QUERY
@@ -368,7 +368,7 @@ impl QueryBackend for DbSession<Postgres> {
     ) -> BoxFuture<'q, Result<Vec<Entry>, Error>> {
         let category = category.to_string();
         Box::pin(async move {
-            let for_update = for_update && self.is_transaction();
+            let for_update = for_update && self.in_transaction();
             let mut active = self.borrow_mut();
             let (profile_id, key) = acquire_key(&mut *active).await?;
             let scan = perform_scan(
@@ -576,7 +576,7 @@ async fn resolve_profile_key(
 }
 
 async fn perform_insert<'q>(
-    active: &mut DbSessionActive<'q, Postgres>,
+    active: &mut DbSessionTxn<'q, Postgres>,
     kind: EntryKind,
     enc_category: &[u8],
     enc_name: &[u8],

@@ -19,8 +19,8 @@ use crate::{
         db_utils::{
             decode_tags, decrypt_scan_batch, encode_profile_key, encode_tag_filter,
             expiry_timestamp, extend_query, prepare_tags, random_profile_name, DbSession,
-            DbSessionActive, DbSessionRef, EncScanEntry, ExtDatabase, QueryParams, QueryPrepare,
-            PAGE_SIZE,
+            DbSessionActive, DbSessionRef, DbSessionTxn, EncScanEntry, ExtDatabase, QueryParams,
+            QueryPrepare, PAGE_SIZE,
         },
         types::{Backend, QueryBackend},
     },
@@ -538,7 +538,7 @@ async fn resolve_profile_key(
 }
 
 async fn perform_insert<'q>(
-    active: &mut DbSessionActive<'q, Sqlite>,
+    active: &mut DbSessionTxn<'q, Sqlite>,
     kind: EntryKind,
     enc_category: &[u8],
     enc_name: &[u8],
