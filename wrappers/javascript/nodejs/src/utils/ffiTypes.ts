@@ -2,6 +2,8 @@ import { default as array } from 'ref-array-di'
 import * as ref from 'ref-napi'
 import { default as struct } from 'ref-struct-di'
 
+import { Ed25519KeyPair } from '../structures/Ed25519'
+
 const CStruct = struct(ref)
 const CArray = array(ref)
 
@@ -62,24 +64,6 @@ export const ArcHandleFfiEntryList = CStruct({
   FfiEntryList: ref.refType(ref.types.void),
 })
 export const EntryListHandle = ArcHandleFfiEntryList
-
-const EdwardsPoint = CStruct({
-  X: CArray(ref.types.uint64, 5),
-  Y: CArray(ref.types.uint64, 5),
-  Z: CArray(ref.types.uint64, 5),
-  T: CArray(ref.types.uint64, 5),
-})
-
-const PublicKey = CStruct({
-  EdwardsPoint,
-  CompressedEdwardsY: CArray(ref.types.uint8, 32),
-})
-
-const Ed25519KeyPair = CStruct({
-  optional: ref.types.uint8,
-  secret: CArray(ref.types.uint8, 32),
-  public: PublicKey,
-})
 
 const Root = CStruct({
   inner: ref.refType(Ed25519KeyPair),
