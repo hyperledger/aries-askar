@@ -1,0 +1,4 @@
+example/metro.config.js
+example/babel.config.js
+**/build/**
+build/**

@@ -1,0 +1,251 @@
+/* eslint-disable @typescript-eslint/no-unsafe-call */
+import { refType } from 'ref-napi'
+
+import {
+  FFI_STRING,
+  FFI_ERROR_CODE,
+  FFI_STRING_PTR,
+  SecretBufferStruct,
+  FFI_INT32,
+  FFI_CALLBACK_PTR,
+  EntryListHandle,
+  FFI_INT32_PTR,
+  LocalKeyHandleStruct,
+  ByteBufferStruct,
+  EncryptedBufferStruct,
+  FFI_INT64,
+  AeadParamsStruct,
+  FFI_INT8,
+  KeyEntryListHandle,
+  FFI_INT8_PTR,
+  ScanHandle,
+  FFI_CALLBACK_ID,
+  StoreHandle,
+  SessionHandle,
+} from './utils'
+
+export const nativeBindings = {
+  // first element is method return type, second element is list of method argument types
+  askar_version: [FFI_STRING, []],
+  askar_get_current_error: [FFI_ERROR_CODE, [FFI_STRING_PTR]],
+  askar_buffer_free: [FFI_ERROR_CODE, [SecretBufferStruct]],
+  askar_clear_custom_logger: [FFI_ERROR_CODE, []],
+  askar_set_custom_logger: [FFI_ERROR_CODE, [FFI_INT32, FFI_CALLBACK_PTR, FFI_INT32, FFI_INT32, FFI_INT32]],
+  askar_set_default_logger: [FFI_ERROR_CODE, []],
+  askar_set_max_log_level: [FFI_ERROR_CODE, [FFI_INT32]],
+
+  askar_entry_list_count: [FFI_ERROR_CODE, [EntryListHandle, FFI_INT32_PTR]],
+  askar_entry_list_free: [FFI_ERROR_CODE, [EntryListHandle]],
+  askar_entry_list_get_category: [FFI_ERROR_CODE, [EntryListHandle, FFI_INT32, FFI_STRING_PTR]],
+  askar_entry_list_get_name: [FFI_ERROR_CODE, [EntryListHandle, FFI_INT32, FFI_STRING_PTR]],
+  askar_entry_list_get_tags: [FFI_ERROR_CODE, [EntryListHandle, FFI_INT32, FFI_STRING_PTR]],
+  askar_entry_list_get_value: [FFI_ERROR_CODE, [EntryListHandle, FFI_INT32, refType(SecretBufferStruct)]],
+
+  askar_key_aead_decrypt: [
+    FFI_ERROR_CODE,
+    [LocalKeyHandleStruct, ByteBufferStruct, ByteBufferStruct, ByteBufferStruct, ByteBufferStruct, SecretBufferStruct],
+  ],
+  askar_key_aead_encrypt: [
+    FFI_ERROR_CODE,
+    [LocalKeyHandleStruct, ByteBufferStruct, ByteBufferStruct, ByteBufferStruct, EncryptedBufferStruct],
+  ],
+  askar_key_aead_get_padding: [FFI_ERROR_CODE, [LocalKeyHandleStruct, FFI_INT64, FFI_INT32_PTR]],
+  askar_key_aead_get_params: [FFI_ERROR_CODE, [LocalKeyHandleStruct, refType(AeadParamsStruct)]],
+  askar_key_aead_random_nonce: [FFI_ERROR_CODE, [LocalKeyHandleStruct, refType(SecretBufferStruct)]],
+  askar_key_convert: [FFI_ERROR_CODE, [LocalKeyHandleStruct, FFI_STRING, refType(LocalKeyHandleStruct)]],
+  askar_key_crypto_box: [
+    FFI_ERROR_CODE,
+    [LocalKeyHandleStruct, LocalKeyHandleStruct, ByteBufferStruct, ByteBufferStruct, refType(SecretBufferStruct)],
+  ],
+  askar_key_crypto_box_open: [
+    FFI_ERROR_CODE,
+    [LocalKeyHandleStruct, LocalKeyHandleStruct, ByteBufferStruct, ByteBufferStruct, refType(SecretBufferStruct)],
+  ],
+  askar_key_crypto_box_random_nonce: [FFI_ERROR_CODE, [refType(SecretBufferStruct)]],
+  askar_key_crypto_box_seal: [FFI_ERROR_CODE, [LocalKeyHandleStruct, ByteBufferStruct, refType(SecretBufferStruct)]],
+  askar_key_crypto_box_seal_open: [
+    FFI_ERROR_CODE,
+    [LocalKeyHandleStruct, ByteBufferStruct, refType(SecretBufferStruct)],
+  ],
+  askar_key_derive_ecdh_1pu: [
+    FFI_ERROR_CODE,
+    [
+      FFI_STRING,
+      LocalKeyHandleStruct,
+      LocalKeyHandleStruct,
+      LocalKeyHandleStruct,
+      ByteBufferStruct,
+      ByteBufferStruct,
+      ByteBufferStruct,
+      ByteBufferStruct,
+      FFI_INT8,
+      refType(LocalKeyHandleStruct),
+    ],
+  ],
+  askar_key_derive_ecdh_es: [
+    FFI_ERROR_CODE,
+    [
+      FFI_STRING,
+      LocalKeyHandleStruct,
+      LocalKeyHandleStruct,
+      ByteBufferStruct,
+      ByteBufferStruct,
+      ByteBufferStruct,
+      FFI_INT8,
+      refType(LocalKeyHandleStruct),
+    ],
+  ],
+  askar_key_entry_list_count: [FFI_ERROR_CODE, [KeyEntryListHandle, FFI_INT32_PTR]],
+  askar_key_entry_list_free: [FFI_ERROR_CODE, [KeyEntryListHandle]],
+  askar_key_entry_list_get_algorithm: [FFI_ERROR_CODE, [KeyEntryListHandle, FFI_INT32, FFI_STRING_PTR]],
+  askar_key_entry_list_get_metadata: [FFI_ERROR_CODE, [KeyEntryListHandle, FFI_INT32, FFI_STRING_PTR]],
+  askar_key_entry_list_get_name: [FFI_ERROR_CODE, [KeyEntryListHandle, FFI_INT32, FFI_STRING_PTR]],
+  askar_key_entry_list_get_tags: [FFI_ERROR_CODE, [KeyEntryListHandle, FFI_INT32, FFI_STRING_PTR]],
+  askar_key_entry_list_load_local: [FFI_ERROR_CODE, [KeyEntryListHandle, FFI_INT32, refType(LocalKeyHandleStruct)]],
+  askar_key_free: [FFI_ERROR_CODE, [LocalKeyHandleStruct]],
+  askar_key_from_jwk: [FFI_ERROR_CODE, [ByteBufferStruct, refType(LocalKeyHandleStruct)]],
+  askar_key_from_key_exchange: [
+    FFI_ERROR_CODE,
+    [FFI_STRING, LocalKeyHandleStruct, LocalKeyHandleStruct, refType(LocalKeyHandleStruct)],
+  ],
+  askar_key_from_public_bytes: [FFI_ERROR_CODE, [FFI_STRING, ByteBufferStruct, refType(LocalKeyHandleStruct)]],
+  askar_key_from_secret_bytes: [FFI_ERROR_CODE, [FFI_STRING, ByteBufferStruct, refType(LocalKeyHandleStruct)]],
+  askar_key_from_seed: [FFI_ERROR_CODE, [FFI_STRING, ByteBufferStruct, FFI_STRING, refType(LocalKeyHandleStruct)]],
+  askar_key_generate: [FFI_ERROR_CODE, [FFI_STRING, FFI_INT8, refType(LocalKeyHandleStruct)]],
+  askar_key_get_algorithm: [FFI_ERROR_CODE, [LocalKeyHandleStruct, FFI_STRING_PTR]],
+  askar_key_get_ephemeral: [FFI_ERROR_CODE, [LocalKeyHandleStruct, FFI_INT8_PTR]],
+  askar_key_get_jwk_public: [FFI_ERROR_CODE, [LocalKeyHandleStruct, FFI_STRING, FFI_STRING_PTR]],
+  askar_key_get_jwk_secret: [FFI_ERROR_CODE, [LocalKeyHandleStruct, refType(SecretBufferStruct)]],
+  askar_key_get_jwk_thumbprint: [FFI_ERROR_CODE, [LocalKeyHandleStruct, FFI_STRING, FFI_STRING_PTR]],
+  askar_key_get_public_bytes: [FFI_ERROR_CODE, [LocalKeyHandleStruct, refType(SecretBufferStruct)]],
+  askar_key_get_secret_bytes: [FFI_ERROR_CODE, [LocalKeyHandleStruct, refType(SecretBufferStruct)]],
+  askar_key_sign_message: [
+    FFI_ERROR_CODE,
+    [LocalKeyHandleStruct, ByteBufferStruct, FFI_STRING, refType(SecretBufferStruct)],
+  ],
+  askar_key_unwrap_key: [
+    FFI_ERROR_CODE,
+    [
+      LocalKeyHandleStruct,
+      FFI_STRING,
+      ByteBufferStruct,
+      ByteBufferStruct,
+      ByteBufferStruct,
+      refType(LocalKeyHandleStruct),
+    ],
+  ],
+  askar_key_verify_signature: [
+    FFI_ERROR_CODE,
+    [LocalKeyHandleStruct, ByteBufferStruct, ByteBufferStruct, FFI_STRING, FFI_INT8_PTR],
+  ],
+  askar_key_wrap_key: [
+    FFI_ERROR_CODE,
+    [LocalKeyHandleStruct, LocalKeyHandleStruct, ByteBufferStruct, refType(EncryptedBufferStruct)],
+  ],
+
+  askar_scan_free: [FFI_ERROR_CODE, [ScanHandle]],
+  askar_scan_next: [FFI_ERROR_CODE, [ScanHandle, FFI_CALLBACK_PTR, FFI_CALLBACK_ID]],
+  askar_scan_start: [
+    FFI_ERROR_CODE,
+    [StoreHandle, FFI_STRING, FFI_STRING, FFI_STRING, FFI_INT64, FFI_INT64, FFI_CALLBACK_PTR, FFI_CALLBACK_ID],
+  ],
+
+  askar_session_close: [FFI_ERROR_CODE, [SessionHandle, FFI_INT8, FFI_CALLBACK_PTR, FFI_CALLBACK_ID]],
+  askar_session_count: [FFI_ERROR_CODE, [SessionHandle, FFI_STRING, FFI_STRING, FFI_CALLBACK_PTR, FFI_CALLBACK_ID]],
+  askar_session_fetch: [
+    FFI_ERROR_CODE,
+    [SessionHandle, FFI_STRING, FFI_STRING, FFI_INT8, FFI_CALLBACK_PTR, FFI_CALLBACK_ID],
+  ],
+  askar_session_fetch_all: [
+    FFI_ERROR_CODE,
+    [SessionHandle, FFI_STRING, FFI_STRING, FFI_INT64, FFI_INT8, FFI_CALLBACK_PTR, FFI_CALLBACK_ID],
+  ],
+  askar_session_fetch_all_keys: [
+    FFI_ERROR_CODE,
+    [SessionHandle, FFI_STRING, FFI_STRING, FFI_STRING, FFI_INT64, FFI_INT8, FFI_CALLBACK_PTR, FFI_CALLBACK_ID],
+  ],
+  askar_session_fetch_key: [FFI_ERROR_CODE, [SessionHandle, FFI_STRING, FFI_INT8, FFI_CALLBACK_PTR, FFI_CALLBACK_ID]],
+  askar_session_insert_key: [
+    FFI_ERROR_CODE,
+    [
+      SessionHandle,
+      LocalKeyHandleStruct,
+      FFI_STRING,
+      FFI_STRING,
+      FFI_STRING,
+      FFI_INT64,
+      FFI_CALLBACK_PTR,
+      FFI_CALLBACK_ID,
+    ],
+  ],
+  askar_session_remove_all: [
+    FFI_ERROR_CODE,
+    [SessionHandle, FFI_STRING, FFI_STRING, FFI_CALLBACK_PTR, FFI_CALLBACK_ID],
+  ],
+  askar_session_remove_key: [FFI_ERROR_CODE, [SessionHandle, FFI_STRING, FFI_CALLBACK_PTR, FFI_CALLBACK_ID]],
+  askar_session_start: [FFI_ERROR_CODE, [StoreHandle, FFI_STRING, FFI_INT8, FFI_CALLBACK_PTR, FFI_CALLBACK_ID]],
+  askar_session_update: [
+    FFI_ERROR_CODE,
+    [
+      SessionHandle,
+      FFI_INT8,
+      FFI_STRING,
+      FFI_STRING,
+      ByteBufferStruct,
+      FFI_STRING,
+      FFI_INT64,
+      FFI_CALLBACK_PTR,
+      FFI_CALLBACK_ID,
+    ],
+  ],
+  askar_session_update_key: [
+    FFI_ERROR_CODE,
+    [SessionHandle, FFI_STRING, FFI_STRING, FFI_STRING, FFI_INT64, FFI_CALLBACK_PTR, FFI_CALLBACK_ID],
+  ],
+
+  askar_store_close: [FFI_ERROR_CODE, [StoreHandle, FFI_CALLBACK_PTR, FFI_CALLBACK_ID]],
+  askar_store_create_profile: [FFI_ERROR_CODE, [StoreHandle, FFI_STRING, FFI_CALLBACK_PTR, FFI_CALLBACK_ID]],
+  askar_store_generate_raw_key: [FFI_ERROR_CODE, [ByteBufferStruct, FFI_STRING_PTR]],
+  askar_store_get_profile_name: [FFI_ERROR_CODE, [StoreHandle, FFI_CALLBACK_PTR, FFI_CALLBACK_ID]],
+  askar_store_open: [
+    FFI_ERROR_CODE,
+    [FFI_STRING, FFI_STRING, FFI_STRING, FFI_STRING, FFI_CALLBACK_PTR, FFI_CALLBACK_ID],
+  ],
+  askar_store_provision: [
+    FFI_ERROR_CODE,
+    [FFI_STRING, FFI_STRING, FFI_STRING, FFI_STRING, FFI_INT8, FFI_CALLBACK_PTR, FFI_CALLBACK_ID],
+  ],
+  askar_store_rekey: [FFI_ERROR_CODE, [StoreHandle, FFI_STRING, FFI_STRING, FFI_CALLBACK_PTR, FFI_CALLBACK_ID]],
+  askar_store_remove: [FFI_ERROR_CODE, [FFI_STRING, FFI_CALLBACK_PTR, FFI_CALLBACK_ID]],
+  askar_store_remove_profile: [FFI_ERROR_CODE, [StoreHandle, FFI_STRING, FFI_CALLBACK_PTR, FFI_CALLBACK_ID]],
+} as const
+
+// We need a mapping from string type value => type (property 'string' maps to type string)
+interface StringTypeMapping {
+  pointer: Buffer
+  'char*': Buffer
+  string: string
+  int64: number
+  int32: number
+  int8: number
+  int: number
+}
+
+// Needed so TS stops complaining about index signatures
+type ShapeOf<T> = {
+  [Property in keyof T]: T[Property]
+}
+type StringTypeArrayToTypes<List extends Array<keyof StringTypeMapping>> = {
+  [Item in keyof List]: List[Item] extends keyof StringTypeMapping ? StringTypeMapping[List[Item]] : List[Item]
+}
+
+type TypedMethods<Base extends { [method: string | number | symbol]: [any, any[]] }> = {
+  [Property in keyof Base]: (
+    ...args: StringTypeArrayToTypes<Base[Property][1]> extends any[] ? StringTypeArrayToTypes<Base[Property][1]> : []
+  ) => StringTypeMapping[Base[Property][0]]
+}
+type Mutable<T> = {
+  -readonly [K in keyof T]: Mutable<T[K]>
+}
+
+export type NativeMethods = TypedMethods<ShapeOf<Mutable<typeof nativeBindings>>>
