@@ -1,5 +1,7 @@
+import type { KeyAlgs } from './KeyAlgs'
 import type { AeadParams, EncryptedBuffer, SecretBuffer } from './types'
 import type { LocalKeyHandle as LocalKeyHandleClass } from 'aries-askar-shared'
+
 
 export type ErrorCode = number
 export type EntryListHandle = number
@@ -88,8 +90,8 @@ export type KeyFromKeyExchangeOptions = {
 }
 export type KeyFromPublicBytesOptions = { alg: string; publicKey: Uint8Array }
 export type KeyFromSecretBytesOptions = { alg: string; secretKey: Uint8Array }
-export type KeyFromSeedOptions = { alg: string; seed: Uint8Array; method: string }
-export type KeyGenerateOptions = { alg: string; ephemeral: number }
+export type KeyFromSeedOptions = { alg: KeyAlgs; seed: Uint8Array; method: string }
+export type KeyGenerateOptions = { alg: KeyAlgs; ephemeral: number }
 export type KeyGetAlgorithmOptions = { localkeyHandle: LocalKeyHandlePLACEHOLDER }
 export type KeyGetEphemeralOptions = { localkeyHandle: LocalKeyHandlePLACEHOLDER }
 export type KeyGetJwkPublicOptions = { localkeyHandle: LocalKeyHandlePLACEHOLDER }

@@ -1,10 +1,13 @@
 import type { SecretBufferType, ByteBufferType } from './ffiTypes'
 import type array from 'ref-array-di'
-import type { Pointer, Type } from 'ref-napi'
+import type { NamedTypeLike, Pointer, Type } from 'ref-napi'
 
-import { ByteBuffer } from 'aries-askar-shared'
+import { AriesAskarError, ByteBuffer, KeyAlgs } from 'aries-askar-shared'
 import { Callback } from 'ffi-napi'
 import { refType, alloc } from 'ref-napi'
+
+import { Bls12381g1, Chacha20Key, Ed25519KeyPair } from '../structures'
+import { LocalKeyHandleStruct } from '../structures/localKey'
 
 import {
   ByteBufferStruct,
@@ -16,7 +19,6 @@ import {
   SecretBufferStruct,
   EncryptedBufferStruct,
   AeadParamsStruct,
-  LocalKeyHandleStruct,
 } from './ffiTypes'
 
 export const allocateStringBuffer = (): Buffer => alloc(FFI_STRING)
@@ -29,7 +31,7 @@ export const allocateEncryptedBuffer = (): Buffer => alloc(EncryptedBufferStruct
 
 export const allocateAeadParams = (): Buffer => alloc(AeadParamsStruct)
 
-export const allocateLocalKeyHandle = (): Buffer => alloc(LocalKeyHandleStruct)
+export const allocateLocalKeyHandle = (keyType: NamedTypeLike): Buffer => alloc(LocalKeyHandleStruct(keyType))
 
 export const allocateCallbackBuffer = (callback: Buffer) => setTimeout(() => callback, 1000000)
 
@@ -52,6 +54,20 @@ export const secretBufferToReference = (secretBuffer: SecretBufferType) =>
 export const uint8arrayToByteBufferStruct = (buf: Uint8Array) => {
   const byteBuffer = ByteBuffer.fromUint8Array(buf)
   return byteBufferClassToStruct(byteBuffer)
+}
+
+export const getStructForKeyAlg = (alg: KeyAlgs): NamedTypeLike => {
+  // Object map
+  switch (alg) {
+    case KeyAlgs.Ed25519:
+      return Ed25519KeyPair
+    case KeyAlgs.Chacha20C20P:
+      return Chacha20Key
+    case KeyAlgs.Bls12381G1:
+      return Bls12381g1
+    default:
+      throw new AriesAskarError({ code: 100, message: `Unsupported algorithm: ${alg}` })
+  }
 }
 
 export type NativeCallback = (id: number, errorCode: number) => void

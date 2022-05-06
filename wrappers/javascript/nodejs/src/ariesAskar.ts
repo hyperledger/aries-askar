@@ -93,7 +93,9 @@ import { EncryptedBuffer, SecretBuffer, AeadParams, LocalKeyHandle } from 'aries
 
 import { handleError } from './error'
 import { nativeAriesAskar } from './lib'
+import { Ed25519KeyPair } from './structures'
 import {
+  getStructForKeyAlg,
   serializeArguments,
   allocateAeadParams,
   allocateLocalKeyHandle,
@@ -105,7 +107,6 @@ import {
   deallocateCallbackBuffer,
   toNativeCallback,
   toNativeCallbackWithResponse,
-  ByteBufferStruct,
 } from './utils'
 
 export class NodeJSAriesAskar implements AriesAskar {
@@ -336,7 +337,7 @@ export class NodeJSAriesAskar implements AriesAskar {
 
   public keyConvert(options: KeyConvertOptions): LocalKeyHandle {
     const { localKeyHandle, alg } = serializeArguments(options)
-    const ret = allocateLocalKeyHandle()
+    const ret = allocateLocalKeyHandle(Ed25519KeyPair)
 
     // @ts-ignore
     nativeAriesAskar.askar_key_convert(localKeyHandle, alg, ret)
@@ -406,7 +407,7 @@ export class NodeJSAriesAskar implements AriesAskar {
 
   public keyDeriveEcdh1pu(options: KeyDeriveEcdh1puOptions): LocalKeyHandle {
     const { senderKey, recipKey, alg, algId, apu, apv, ccTag, ephemKey, receive } = serializeArguments(options)
-    const ret = allocateLocalKeyHandle()
+    const ret = allocateLocalKeyHandle(Ed25519KeyPair)
 
     // @ts-ignore
     nativeAriesAskar.askar_key_derive_ecdh_1pu(alg, ephemKey, senderKey, recipKey, algId, apu, apv, ccTag, receive, ret)
@@ -418,7 +419,7 @@ export class NodeJSAriesAskar implements AriesAskar {
 
   public keyDeriveEcdhEs(options: KeyDeriveEcdhEsOptions): LocalKeyHandle {
     const { receive, apv, apu, algId, recipKey, ephemKey, alg } = serializeArguments(options)
-    const ret = allocateLocalKeyHandle()
+    const ret = allocateLocalKeyHandle(Ed25519KeyPair)
 
     // @ts-ignore
     nativeAriesAskar.askar_key_derive_ecdh_es(alg, ephemKey, recipKey, algId, apu, apv, receive, ret)
@@ -500,7 +501,7 @@ export class NodeJSAriesAskar implements AriesAskar {
 
   public keyFromJwk(options: KeyFromJwkOptions): LocalKeyHandle {
     const { jwk } = serializeArguments(options)
-    const ret = allocateLocalKeyHandle()
+    const ret = allocateLocalKeyHandle(Ed25519KeyPair)
 
     // @ts-ignore
     nativeAriesAskar.askar_key_from_jwk(jwk, ret)
@@ -512,7 +513,7 @@ export class NodeJSAriesAskar implements AriesAskar {
 
   public keyFromKeyExchange(options: KeyFromKeyExchangeOptions): LocalKeyHandle {
     const { alg, pkHandle, skHandle } = serializeArguments(options)
-    const ret = allocateLocalKeyHandle()
+    const ret = allocateLocalKeyHandle(Ed25519KeyPair)
 
     // @ts-ignore
     nativeAriesAskar.askar_key_from_key_exchange(alg, skHandle, pkHandle, ret)
@@ -524,7 +525,7 @@ export class NodeJSAriesAskar implements AriesAskar {
 
   public keyFromPublicBytes(options: KeyFromPublicBytesOptions): LocalKeyHandle {
     const { publicKey, alg } = serializeArguments(options)
-    const ret = allocateLocalKeyHandle()
+    const ret = allocateLocalKeyHandle(Ed25519KeyPair)
 
     // @ts-ignore
     nativeAriesAskar.askar_key_from_public_bytes(alg, publicKey, ret)
@@ -536,7 +537,7 @@ export class NodeJSAriesAskar implements AriesAskar {
 
   public keyFromSecretBytes(options: KeyFromSecretBytesOptions): LocalKeyHandle {
     const { secretKey, alg } = serializeArguments(options)
-    const ret = allocateLocalKeyHandle()
+    const ret = allocateLocalKeyHandle(Ed25519KeyPair)
 
     // @ts-ignore
     nativeAriesAskar.askar_key_from_secret_bytes(alg, secretKey, ret)
@@ -548,19 +549,25 @@ export class NodeJSAriesAskar implements AriesAskar {
 
   public keyFromSeed(options: KeyFromSeedOptions): LocalKeyHandle {
     const { alg, method, seed } = serializeArguments(options)
+
+    const algStructure = getStructForKeyAlg(options.alg)
+
     // @ts-ignore
-    const ret = allocateLocalKeyHandle()
+    const ret = allocateLocalKeyHandle(algStructure)
 
     // @ts-ignore
     nativeAriesAskar.askar_key_from_seed(alg, seed, method, ret)
-    const base = ret.deref().deref().inner.deref()
-    console.log('SEC: ', base.secret.toJSON())
-    console.log('CMP: ', base.public.CompressedEdwardsY.toJSON())
-    console.log('E X: ', base.public.EdwardsPoint.X.toJSON())
-    console.log('E Y: ', base.public.EdwardsPoint.Y.toJSON())
-    console.log('E Z: ', base.public.EdwardsPoint.Z.toJSON())
-    console.log('E T: ', base.public.EdwardsPoint.T.toJSON())
-
+    const inner = ret.deref().deref().inner.deref()
+    console.log('secret: ', inner.secret.toJSON())
+    console.log('x: ', inner.public.x.toJSON())
+    console.log('y: ', inner.public.y.toJSON())
+    //    console.log('SEC: ', inner.secret.toJSON())
+    //    console.log('CMP: ', inner.public.CompressedEdwardsY.toJSON())
+    //    console.log('E X: ', inner.public.EdwardsPoint.X.toJSON())
+    //    console.log('E Y: ', inner.public.EdwardsPoint.Y.toJSON())
+    //    console.log('E Z: ', inner.public.EdwardsPoint.Z.toJSON())
+    //    console.log('E T: ', inner.public.EdwardsPoint.T.toJSON())
+    //
     // TODO: use
     // const localKeyHandle = ret.deref() as LocalKeyHandleType
     return new LocalKeyHandle({ ephemeral: true, inner: 'foo' })
@@ -568,7 +575,7 @@ export class NodeJSAriesAskar implements AriesAskar {
 
   public keyGenerate(options: KeyGenerateOptions): LocalKeyHandle {
     const { alg, ephemeral } = serializeArguments(options)
-    const ret = allocateLocalKeyHandle()
+    const ret = allocateLocalKeyHandle(Ed25519KeyPair)
 
     // @ts-ignore
     nativeAriesAskar.askar_key_generate(alg, ephemeral, ret)
@@ -659,7 +666,7 @@ export class NodeJSAriesAskar implements AriesAskar {
 
   public keyUnwrapKey(options: KeyUnwrapKeyOptions): LocalKeyHandle {
     const { localkeyHandle, alg, ciphertext, nonce, tag } = serializeArguments(options)
-    const ret = allocateLocalKeyHandle()
+    const ret = allocateLocalKeyHandle(Ed25519KeyPair)
 
     // @ts-ignore
     nativeAriesAskar.askar_key_unwrap_key(localkeyHandle, alg, ciphertext, nonce, tag, ret)

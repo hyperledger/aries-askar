@@ -1,8 +1,8 @@
+import type { Ed25519KeyPair } from '../structures'
+
 import { default as array } from 'ref-array-di'
 import * as ref from 'ref-napi'
 import { default as struct } from 'ref-struct-di'
-
-import { Ed25519KeyPair } from '../structures/Ed25519'
 
 const CStruct = struct(ref)
 const CArray = array(ref)
@@ -65,16 +65,9 @@ export const ArcHandleFfiEntryList = CStruct({
 })
 export const EntryListHandle = ArcHandleFfiEntryList
 
-const Root = CStruct({
-  inner: ref.refType(Ed25519KeyPair),
-  ephemeral: ref.types.bool,
-})
-
-export const ArcHandleLocalKey = CStruct({
-  _0: ref.refType(Root),
-})
-
-export const LocalKeyHandleStruct = ref.refType(Root)
+// export const ArcHandleLocalKey = CStruct({
+//   _0: ref.refType(Root),
+// })
 
 export type LocalKeyHandleType = struct.StructObject<{
   LocalKey: typeof Ed25519KeyPair
