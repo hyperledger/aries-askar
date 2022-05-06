@@ -322,6 +322,7 @@ impl<'a, DB: ExtDatabase> DbSessionTxn<'a, DB> {
 impl<'a, DB: ExtDatabase> Drop for DbSessionTxn<'a, DB> {
     fn drop(&mut self) {
         if self.rollback {
+            self.inner.txn_depth -= 1;
             info!("Roll-back dropped nested transaction");
             DB::TransactionManager::start_rollback(self.connection_mut());
         }
