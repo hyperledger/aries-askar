@@ -27,7 +27,7 @@ pub type Expiry = chrono::DateTime<chrono::Utc>;
 #[derive(Debug)]
 pub(crate) enum DbSessionState<DB: ExtDatabase> {
     Active { conn: PoolConnection<DB> },
-    Pending { pool: Pool<DB> },
+    Pending { pool: Pool<DB>, transaction: bool },
 }
 
 unsafe impl<DB: ExtDatabase> Sync for DbSessionState<DB> where DB::Connection: Send {}
@@ -37,7 +37,6 @@ pub struct DbSession<DB: ExtDatabase> {
     profile_key: DbSessionKey,
     state: DbSessionState<DB>,
     txn_depth: usize,
-    txn_pending: bool,
 }
 
 impl<DB: ExtDatabase> DbSession<DB> {
@@ -52,9 +51,8 @@ impl<DB: ExtDatabase> DbSession<DB> {
     {
         Self {
             profile_key: DbSessionKey::Pending { cache, profile },
-            state: DbSessionState::Pending { pool },
+            state: DbSessionState::Pending { pool, transaction },
             txn_depth: 0,
-            txn_pending: transaction,
         }
     }
 
@@ -69,16 +67,16 @@ impl<DB: ExtDatabase> DbSession<DB> {
 
     #[inline]
     pub fn in_transaction(&self) -> bool {
-        self.txn_depth > 0 || self.txn_pending
-    }
-
-    #[inline]
-    fn pool(&self) -> Option<&Pool<DB>> {
-        if let DbSessionState::Pending { pool, .. } = &self.state {
-            Some(pool)
-        } else {
-            None
+        if self.txn_depth > 0 {
+            return true;
         }
+        if let DbSessionState::Pending {
+            transaction: true, ..
+        } = &self.state
+        {
+            return true;
+        }
+        false
     }
 
     pub(crate) fn profile_and_key(&mut self) -> Option<(ProfileId, Arc<ProfileKey>)> {
@@ -100,11 +98,10 @@ impl<DB: ExtDatabase> DbSession<DB> {
     where
         I: for<'a> GetProfileKey<'a, DB>,
     {
-        if matches!(self.state, DbSessionState::Pending { .. }) {
+        if let DbSessionState::Pending { pool, transaction } = &self.state {
             info!("Acquire pool connection");
-            let mut conn = self.pool().unwrap().acquire().await?;
-            if self.txn_pending {
-                self.txn_pending = false;
+            let mut conn = pool.acquire().await?;
+            if *transaction {
                 info!("Start transaction");
                 DB::start_transaction(&mut conn, false).await?;
                 self.txn_depth += 1;
@@ -311,6 +308,7 @@ impl<'a, DB: ExtDatabase> DbSessionTxn<'a, DB> {
     pub async fn commit(mut self) -> Result<(), Error> {
         if self.rollback {
             self.rollback = false;
+            self.inner.txn_depth -= 1;
             let conn = self.connection_mut();
             info!("Commit transaction");
             DB::TransactionManager::commit(conn).await?;
