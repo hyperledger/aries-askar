@@ -27,7 +27,7 @@ pub type Expiry = chrono::DateTime<chrono::Utc>;
 #[derive(Debug)]
 pub(crate) enum DbSessionState<DB: ExtDatabase> {
     Active { conn: PoolConnection<DB> },
-    Pending { pool: Pool<DB> },
+    Pending { pool: Pool<DB>, transaction: bool },
 }
 
 unsafe impl<DB: ExtDatabase> Sync for DbSessionState<DB> where DB::Connection: Send {}
@@ -36,7 +36,7 @@ unsafe impl<DB: ExtDatabase> Sync for DbSessionState<DB> where DB::Connection: S
 pub struct DbSession<DB: ExtDatabase> {
     profile_key: DbSessionKey,
     state: DbSessionState<DB>,
-    transaction: bool,
+    txn_depth: usize,
 }
 
 impl<DB: ExtDatabase> DbSession<DB> {
@@ -51,8 +51,8 @@ impl<DB: ExtDatabase> DbSession<DB> {
     {
         Self {
             profile_key: DbSessionKey::Pending { cache, profile },
-            state: DbSessionState::Pending { pool },
-            transaction,
+            state: DbSessionState::Pending { pool, transaction },
+            txn_depth: 0,
         }
     }
 
@@ -66,17 +66,17 @@ impl<DB: ExtDatabase> DbSession<DB> {
     }
 
     #[inline]
-    pub fn is_transaction(&self) -> bool {
-        self.transaction
-    }
-
-    #[inline]
-    fn pool(&self) -> Option<&Pool<DB>> {
-        if let DbSessionState::Pending { pool, .. } = &self.state {
-            Some(pool)
-        } else {
-            None
+    pub fn in_transaction(&self) -> bool {
+        if self.txn_depth > 0 {
+            return true;
         }
+        if let DbSessionState::Pending {
+            transaction: true, ..
+        } = &self.state
+        {
+            return true;
+        }
+        false
     }
 
     pub(crate) fn profile_and_key(&mut self) -> Option<(ProfileId, Arc<ProfileKey>)> {
@@ -98,12 +98,13 @@ impl<DB: ExtDatabase> DbSession<DB> {
     where
         I: for<'a> GetProfileKey<'a, DB>,
     {
-        if matches!(self.state, DbSessionState::Pending { .. }) {
+        if let DbSessionState::Pending { pool, transaction } = &self.state {
             info!("Acquire pool connection");
-            let mut conn = self.pool().unwrap().acquire().await?;
-            if self.transaction {
+            let mut conn = pool.acquire().await?;
+            if *transaction {
                 info!("Start transaction");
                 DB::start_transaction(&mut conn, false).await?;
+                self.txn_depth += 1;
             }
             self.state = DbSessionState::Active { conn };
         }
@@ -120,12 +121,9 @@ impl<DB: ExtDatabase> DbSession<DB> {
             }
             DbSessionKey::Active { profile_id, .. } => *profile_id,
         };
-        let txn_depth = if self.transaction { 1 } else { 0 };
         Ok(DbSessionActive {
             inner: self,
             profile_id,
-            txn_depth,
-            false_txn: false,
         })
     }
 
@@ -140,7 +138,8 @@ impl<DB: ExtDatabase> DbSession<DB> {
     }
 
     pub(crate) async fn close(mut self, commit: bool) -> Result<(), Error> {
-        if self.transaction {
+        if self.txn_depth > 0 {
+            self.txn_depth = 0;
             if let Some(conn) = self.connection_mut() {
                 if commit {
                     info!("Commit transaction on close");
@@ -151,7 +150,6 @@ impl<DB: ExtDatabase> DbSession<DB> {
                 }
                 .map_err(err_map!(Backend, "Error closing transaction"))?;
             }
-            self.transaction = false;
         }
         Ok(())
     }
@@ -159,7 +157,8 @@ impl<DB: ExtDatabase> DbSession<DB> {
 
 impl<'q, DB: ExtDatabase> Drop for DbSession<DB> {
     fn drop(&mut self) {
-        if self.transaction {
+        if self.txn_depth > 0 {
+            self.txn_depth = 0;
             if let Some(conn) = self.connection_mut() {
                 info!("Dropped transaction: roll-back");
                 DB::TransactionManager::start_rollback(conn);
@@ -245,8 +244,6 @@ impl<'q, DB: ExtDatabase> DerefMut for DbSessionRef<'q, DB> {
 pub(crate) struct DbSessionActive<'a, DB: ExtDatabase> {
     inner: &'a mut DbSession<DB>,
     pub(crate) profile_id: ProfileId,
-    txn_depth: usize,
-    false_txn: bool,
 }
 
 impl<'q, DB: ExtDatabase> DbSessionActive<'q, DB> {
@@ -255,64 +252,75 @@ impl<'q, DB: ExtDatabase> DbSessionActive<'q, DB> {
         self.inner.connection_mut().unwrap()
     }
 
-    pub async fn commit(mut self) -> Result<(), Error> {
-        if self.txn_depth > 0 && !self.false_txn {
-            let conn = self.connection_mut();
-            info!("Commit transaction");
-            DB::TransactionManager::commit(conn).await?;
-            self.txn_depth = 0;
-        }
-        Ok(())
+    pub fn in_transaction(&self) -> bool {
+        self.inner.in_transaction()
     }
 
     #[allow(unused)]
-    #[inline]
-    pub fn is_transaction(&self) -> bool {
-        self.txn_depth > 0
-    }
-
-    #[allow(unused)]
-    pub async fn transaction<'t>(&'t mut self) -> Result<DbSessionActive<'t, DB>, Error>
+    pub async fn begin<'t>(&'t mut self) -> Result<DbSessionTxn<'t, DB>, Error>
     where
         'q: 't,
     {
         info!("Start nested transaction");
         DB::start_transaction(self.connection_mut(), true).await?;
-        Ok(DbSessionActive {
+        self.inner.txn_depth += 1;
+        Ok(DbSessionTxn {
             inner: &mut *self.inner,
             profile_id: self.profile_id,
-            txn_depth: self.txn_depth + 1,
-            false_txn: false,
+            rollback: true,
         })
     }
 
-    pub async fn as_transaction<'t>(&'t mut self) -> Result<DbSessionActive<'t, DB>, Error>
+    pub async fn as_transaction<'t>(&'t mut self) -> Result<DbSessionTxn<'t, DB>, Error>
     where
         'q: 't,
     {
-        if self.txn_depth == 0 {
+        if self.inner.txn_depth == 0 {
             info!("Start transaction");
             DB::start_transaction(self.connection_mut(), false).await?;
-            Ok(DbSessionActive {
+            self.inner.txn_depth += 1;
+            Ok(DbSessionTxn {
                 inner: &mut *self.inner,
                 profile_id: self.profile_id,
-                txn_depth: self.txn_depth + 1,
-                false_txn: false,
+                rollback: true,
             })
         } else {
-            Ok(DbSessionActive {
+            Ok(DbSessionTxn {
                 inner: &mut *self.inner,
                 profile_id: self.profile_id,
-                txn_depth: self.txn_depth + 1,
-                false_txn: true,
+                rollback: false,
             })
         }
     }
 }
 
-impl<'a, DB: ExtDatabase> Drop for DbSessionActive<'a, DB> {
+pub(crate) struct DbSessionTxn<'a, DB: ExtDatabase> {
+    inner: &'a mut DbSession<DB>,
+    pub(crate) profile_id: ProfileId,
+    rollback: bool,
+}
+
+impl<'a, DB: ExtDatabase> DbSessionTxn<'a, DB> {
+    pub fn connection_mut(&mut self) -> &mut PoolConnection<DB> {
+        self.inner.connection_mut().unwrap()
+    }
+
+    pub async fn commit(mut self) -> Result<(), Error> {
+        if self.rollback {
+            self.rollback = false;
+            self.inner.txn_depth -= 1;
+            let conn = self.connection_mut();
+            info!("Commit transaction");
+            DB::TransactionManager::commit(conn).await?;
+        }
+        Ok(())
+    }
+}
+
+impl<'a, DB: ExtDatabase> Drop for DbSessionTxn<'a, DB> {
     fn drop(&mut self) {
-        if self.txn_depth > 1 && !self.false_txn {
+        if self.rollback {
+            self.inner.txn_depth -= 1;
             info!("Roll-back dropped nested transaction");
             DB::TransactionManager::start_rollback(self.connection_mut());
         }

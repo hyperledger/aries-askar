@@ -3,7 +3,7 @@ members = ["askar-bbs", "askar-crypto"]
 
 [package]
 name = "aries-askar"
-version = "0.2.5"
+version = "0.2.6"
 authors = ["Hyperledger Aries Contributors <aries@lists.hyperledger.org>"]
 edition = "2018"
 description = "Hyperledger Aries Askar secure storage"
@@ -71,7 +71,7 @@ path = "./askar-crypto"
 features = ["all_keys", "any_key", "argon2", "crypto_box", "std"]
 
 [dependencies.sqlx]
-version = "0.5.12"
+version = "0.5.13"
 default-features = false
 features = ["chrono", "runtime-tokio-rustls"]
 optional = true
