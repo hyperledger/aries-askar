@@ -14,4 +14,3 @@ export enum KeyAlgs {
   EcSecp256k1 = 'k256',
   ExSecp256r1 = 'p256',
 }
-

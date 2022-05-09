@@ -1,8 +1,7 @@
-/* eslint-disable @typescript-eslint/no-unsafe-call */
-/* eslint-disable @typescript-eslint/no-unsafe-member-access */
-/* eslint-disable @typescript-eslint/no-unsafe-assignment */
-/* eslint-disable @typescript-eslint/ban-ts-comment */
-/* eslint-disable no-console */
+/* eslint-disable @typescript-eslint/no-use-before-define */
+/* eslint-disable @typescript-eslint/no-unsafe-argument */
+/* eslint-disable @typescript-eslint/no-explicit-any */
+/* eslint-disable @typescript-eslint/no-unused-vars */
 import type {
   AeadParamsType,
   EncryptedBufferType,
@@ -89,25 +88,51 @@ import type {
   StoreRemoveProfileOptions,
 } from 'aries-askar-shared'
 
-import { EncryptedBuffer, SecretBuffer, AeadParams, LocalKeyHandle } from 'aries-askar-shared'
+import { AeadParams, EncryptedBuffer, LocalKeyHandle, SecretBuffer } from 'aries-askar-shared'
+import os from 'os'
 
 import { handleError } from './error'
 import { nativeAriesAskar } from './lib'
 import { Ed25519KeyPair } from './structures'
+/* eslint-disable @typescript-eslint/no-unsafe-call */
+/* eslint-disable @typescript-eslint/no-unsafe-member-access */
+/* eslint-disable @typescript-eslint/no-unsafe-assignment */
+/* eslint-disable @typescript-eslint/ban-ts-comment */
+/* eslint-disable no-console */
 import {
-  getStructForKeyAlg,
-  serializeArguments,
   allocateAeadParams,
-  allocateLocalKeyHandle,
   allocateEncryptedBuffer,
-  allocateSecretBuffer,
   allocateIntBuffer,
-  toNativeLogCallback,
+  allocateLocalKeyHandle,
+  allocateSecretBuffer,
   allocateStringBuffer,
   deallocateCallbackBuffer,
+  getStructForKeyAlg,
+  serializeArguments,
   toNativeCallback,
   toNativeCallbackWithResponse,
+  toNativeLogCallback,
 } from './utils'
+
+const bnToBuf = (bn: any) => {
+  let hex = BigInt(bn).toString(16)
+  if (hex.length % 2) {
+    hex = '0' + hex
+  }
+
+  const len = hex.length / 2
+  const u8 = new Uint8Array(len)
+
+  let i = 0
+  let j = 0
+  while (i < len) {
+    u8[i] = parseInt(hex.slice(j, j + 2), 16)
+    i += 1
+    j += 2
+  }
+
+  return u8
+}
 
 export class NodeJSAriesAskar implements AriesAskar {
   private promisify = async (method: (nativeCallbackPtr: Buffer, id: number) => void): Promise<void> => {
@@ -558,16 +583,9 @@ export class NodeJSAriesAskar implements AriesAskar {
     // @ts-ignore
     nativeAriesAskar.askar_key_from_seed(alg, seed, method, ret)
     const inner = ret.deref().deref().inner.deref()
-    console.log('secret: ', inner.secret.toJSON())
-    console.log('x: ', inner.public.x.toJSON())
-    console.log('y: ', inner.public.y.toJSON())
-    //    console.log('SEC: ', inner.secret.toJSON())
-    //    console.log('CMP: ', inner.public.CompressedEdwardsY.toJSON())
-    //    console.log('E X: ', inner.public.EdwardsPoint.X.toJSON())
-    //    console.log('E Y: ', inner.public.EdwardsPoint.Y.toJSON())
-    //    console.log('E Z: ', inner.public.EdwardsPoint.Z.toJSON())
-    //    console.log('E T: ', inner.public.EdwardsPoint.T.toJSON())
-    //
+    console.log(inner.secret.toJSON())
+    console.log(inner.public.MontgomeryPoint.toJSON())
+
     // TODO: use
     // const localKeyHandle = ret.deref() as LocalKeyHandleType
     return new LocalKeyHandle({ ephemeral: true, inner: 'foo' })

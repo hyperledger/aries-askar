@@ -6,7 +6,7 @@ import { AriesAskarError, ByteBuffer, KeyAlgs } from 'aries-askar-shared'
 import { Callback } from 'ffi-napi'
 import { refType, alloc } from 'ref-napi'
 
-import { Bls12381g1, Chacha20Key, Ed25519KeyPair } from '../structures'
+import { Bls12381g1, Bls12381g2, Chacha20Key, Ed25519KeyPair, X25519KeyPair } from '../structures'
 import { LocalKeyHandleStruct } from '../structures/localKey'
 
 import {
@@ -65,6 +65,10 @@ export const getStructForKeyAlg = (alg: KeyAlgs): NamedTypeLike => {
       return Chacha20Key
     case KeyAlgs.Bls12381G1:
       return Bls12381g1
+    case KeyAlgs.Bls12381G2:
+      return Bls12381g2
+    case KeyAlgs.X25519:
+      return X25519KeyPair
     default:
       throw new AriesAskarError({ code: 100, message: `Unsupported algorithm: ${alg}` })
   }
