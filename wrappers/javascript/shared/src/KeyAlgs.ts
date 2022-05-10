@@ -12,5 +12,5 @@ export enum KeyAlgs {
   Ed25519 = 'ed25519',
   X25519 = 'x25519',
   EcSecp256k1 = 'k256',
-  ExSecp256r1 = 'p256',
+  EcSecp256r1 = 'p256',
 }

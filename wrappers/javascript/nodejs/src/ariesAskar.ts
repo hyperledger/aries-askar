@@ -583,8 +583,7 @@ export class NodeJSAriesAskar implements AriesAskar {
     // @ts-ignore
     nativeAriesAskar.askar_key_from_seed(alg, seed, method, ret)
     const inner = ret.deref().deref().inner.deref()
-    console.log(inner.secret.toJSON())
-    console.log(inner.public.MontgomeryPoint.toJSON())
+    console.log(inner.key.toJSON())
 
     // TODO: use
     // const localKeyHandle = ret.deref() as LocalKeyHandleType

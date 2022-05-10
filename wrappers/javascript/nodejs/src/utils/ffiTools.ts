@@ -7,6 +7,11 @@ import { Callback } from 'ffi-napi'
 import { refType, alloc } from 'ref-napi'
 
 import { Bls12381g1, Bls12381g2, Chacha20Key, Ed25519KeyPair, X25519KeyPair } from '../structures'
+import { AesA128CbcHs256 } from '../structures/AesA128CbcHs256'
+import { AesA128Gcm } from '../structures/AesA128Gcm'
+import { AesA256Gcm } from '../structures/AesA256Gcm'
+import { EcSecp256k1 } from '../structures/EcSecp256k1'
+import { EcSecp256r1 } from '../structures/EcSecp256r1'
 import { LocalKeyHandleStruct } from '../structures/localKey'
 
 import {
@@ -20,6 +25,9 @@ import {
   EncryptedBufferStruct,
   AeadParamsStruct,
 } from './ffiTypes'
+import { AesA256CbcHs512 } from '../structures/AesA256CbcHs512'
+import { AesA128Kw } from '../structures/AesA128Kw'
+import { AesA256Kw } from '../structures/AesA256Kw'
 
 export const allocateStringBuffer = (): Buffer => alloc(FFI_STRING)
 
@@ -69,6 +77,22 @@ export const getStructForKeyAlg = (alg: KeyAlgs): NamedTypeLike => {
       return Bls12381g2
     case KeyAlgs.X25519:
       return X25519KeyPair
+    case KeyAlgs.EcSecp256k1:
+      return EcSecp256k1
+    case KeyAlgs.EcSecp256r1:
+      return EcSecp256r1
+    case KeyAlgs.AesA128Gcm:
+      return AesA128Gcm
+    case KeyAlgs.AesA256Gcm:
+      return AesA256Gcm
+    case KeyAlgs.AesA128CbcHs256:
+      return AesA128CbcHs256
+    case KeyAlgs.AesA256CbcHs512:
+      return AesA256CbcHs512
+    case KeyAlgs.AesA128Kw:
+      return AesA128Kw
+    case KeyAlgs.AesA256Kw:
+      return AesA256Kw
     default:
       throw new AriesAskarError({ code: 100, message: `Unsupported algorithm: ${alg}` })
   }
