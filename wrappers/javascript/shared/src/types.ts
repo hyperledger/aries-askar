@@ -1,6 +1,4 @@
-/* eslint-disable @typescript-eslint/ban-ts-comment */
-/* eslint-disable @typescript-eslint/no-explicit-any */
-/* eslint-disable @typescript-eslint/no-unsafe-assignment */
+import type { KeyAlgs } from './KeyAlgs'
 
 type ByteBufferOptions = {
   len: number
@@ -20,8 +18,8 @@ type AeadParamsOptions = {
   tag_length: number
 }
 
-type LocalKeyHandleOptions = {
-  inner: any
+type LocalKeyHandleOptions<K = Record<string, unknown>> = {
+  inner: K
   ephemeral: boolean
 }
 
@@ -75,16 +73,8 @@ export class AeadParams {
   }
 }
 
-// TODO: what is in here?
-export class LocalKeyHandle {
-  // TODO: remove any
-  public inner: any
-  public ephemeral: boolean
-  // eslint-disable-next-line @typescript-eslint/no-empty-function
-  public constructor(options?: LocalKeyHandleOptions) {
-    // @ts-ignore
-    this.inner = options.inner
-    // @ts-ignore
-    this.ephemeral = options.ephemeral
-  }
+export interface ILocalKeyHandle<K = Record<string, unknown>> {
+  alg: KeyAlgs
+  inner: K
+  ephemeral: boolean
 }

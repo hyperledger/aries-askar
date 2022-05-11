@@ -1,7 +1,10 @@
 import type { SecretBufferStruct, ByteBufferStruct } from './ffiTypes'
+import type { ILocalKeyHandle } from 'aries-askar-shared'
 
 import { SecretBuffer, ByteBuffer } from 'aries-askar-shared'
 import { NULL } from 'ref-napi'
+
+import { LocalKeyHandle } from '../structures'
 
 import { byteBufferClassToStruct, secretBufferClassToStruct, uint8arrayToByteBufferStruct } from './ffiTools'
 
@@ -10,6 +13,7 @@ export type CallbackWithResponse = (err: number, response: string) => void
 
 type Argument =
   | Record<string, unknown>
+  | ILocalKeyHandle
   | Array<unknown>
   | Date
   | Uint8Array
@@ -25,6 +29,7 @@ type SerializedArgument =
   | ArrayBuffer
   | typeof ByteBufferStruct
   | typeof SecretBufferStruct
+  | Buffer
 
 type SerializedArguments = Record<string, SerializedArgument>
 
@@ -59,6 +64,8 @@ export type SerializedOptions<Type> = Required<{
     ? typeof ByteBufferStruct
     : Type[Property] extends SecretBuffer
     ? typeof SecretBufferStruct
+    : Type[Property] extends ILocalKeyHandle
+    ? Buffer
     : unknown
 }>
 
@@ -81,6 +88,8 @@ const serialize = (arg: Argument): SerializedArgument => {
         return byteBufferClassToStruct(arg) as unknown as typeof ByteBufferStruct
       } else if (arg instanceof SecretBuffer) {
         return secretBufferClassToStruct(arg) as unknown as typeof SecretBufferStruct
+      } else if (arg instanceof LocalKeyHandle) {
+        return arg.bufRep
       } else {
         return JSON.stringify(arg)
       }

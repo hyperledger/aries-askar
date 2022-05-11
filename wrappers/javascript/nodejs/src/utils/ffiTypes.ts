@@ -69,9 +69,9 @@ export const EntryListHandle = ArcHandleFfiEntryList
 //   _0: ref.refType(Root),
 // })
 
-export type LocalKeyHandleType = struct.StructObject<{
-  LocalKey: typeof Ed25519KeyPair
-}>
+// export type LocalKeyHandleType = struct.StructObject<{
+//   LocalKey: typeof Ed25519KeyPair
+// }>
 
 export const ArcHandleFfiKeyEntryList = CStruct({
   FfiKeyEntryList: ref.refType(ref.types.void),
@@ -95,6 +95,7 @@ export const FFI_INT32 = 'int32'
 export const FFI_UINT64 = 'uint64'
 
 export const FFI_VOID = 'void'
+export const FFI_VOID_PTR = ref.refType(FFI_VOID)
 
 export const FFI_INT32_PTR = ref.refType(FFI_INT32)
 export const FFI_INT8_PTR = ref.refType(FFI_INT8)

@@ -1,7 +1,5 @@
 import type { KeyAlgs } from './KeyAlgs'
-import type { AeadParams, EncryptedBuffer, SecretBuffer } from './types'
-import type { LocalKeyHandle as LocalKeyHandleClass } from 'aries-askar-shared'
-
+import type { AeadParams, EncryptedBuffer, SecretBuffer, ILocalKeyHandle } from './types'
 
 export type ErrorCode = number
 export type EntryListHandle = number
@@ -39,7 +37,7 @@ export type KeyAeadEncryptOptions = {
 export type KeyAeadGetPaddingOptions = { localKeyHandle: LocalKeyHandlePLACEHOLDER; msgLen: number }
 export type KeyAeadGetParamsOptions = { localKeyHandle: LocalKeyHandlePLACEHOLDER }
 export type KeyAeadRandomNonceOptions = { localKeyHandle: LocalKeyHandlePLACEHOLDER }
-export type KeyConvertOptions = { localKeyHandle: LocalKeyHandlePLACEHOLDER; alg: string }
+export type KeyConvertOptions = { localKeyHandle: LocalKeyHandlePLACEHOLDER; alg: KeyAlgs }
 export type KeyCryptoBoxOptions = {
   recipKey: LocalKeyHandlePLACEHOLDER
   senderKey: LocalKeyHandlePLACEHOLDER
@@ -55,7 +53,7 @@ export type KeyCryptoBoxOpenOptions = {
 export type KeyCryptoBoxSealOptions = { localKeyHandle: LocalKeyHandlePLACEHOLDER; message: Uint8Array }
 export type KeyCryptoBoxSealOpenOptions = { localKeyHandle: LocalKeyHandlePLACEHOLDER; ciphertext: Uint8Array }
 export type KeyDeriveEcdh1puOptions = {
-  alg: string
+  alg: KeyAlgs
   ephemKey: LocalKeyHandlePLACEHOLDER
   senderKey: LocalKeyHandlePLACEHOLDER
   recipKey: LocalKeyHandlePLACEHOLDER
@@ -66,7 +64,7 @@ export type KeyDeriveEcdh1puOptions = {
   receive: number
 }
 export type KeyDeriveEcdhEsOptions = {
-  alg: string
+  alg: KeyAlgs
   ephemKey: LocalKeyHandlePLACEHOLDER
   recipKey: LocalKeyHandlePLACEHOLDER
   algId: Uint8Array
@@ -84,15 +82,15 @@ export type KeyEntryListLoadLocalOptions = { keyEntryListHandle: KeyEntryListHan
 export type KeyFreeOptions = { keyEntryListHandle: KeyEntryListHandle }
 export type KeyFromJwkOptions = { jwk: Uint8Array }
 export type KeyFromKeyExchangeOptions = {
-  alg: string
+  alg: KeyAlgs
   skHandle: LocalKeyHandlePLACEHOLDER
   pkHandle: LocalKeyHandlePLACEHOLDER
 }
-export type KeyFromPublicBytesOptions = { alg: string; publicKey: Uint8Array }
-export type KeyFromSecretBytesOptions = { alg: string; secretKey: Uint8Array }
+export type KeyFromPublicBytesOptions = { alg: KeyAlgs; publicKey: Uint8Array }
+export type KeyFromSecretBytesOptions = { alg: KeyAlgs; secretKey: Uint8Array }
 export type KeyFromSeedOptions = { alg: KeyAlgs; seed: Uint8Array; method: string }
 export type KeyGenerateOptions = { alg: KeyAlgs; ephemeral: number }
-export type KeyGetAlgorithmOptions = { localkeyHandle: LocalKeyHandlePLACEHOLDER }
+export type KeyGetAlgorithmOptions = { localkeyHandle: ILocalKeyHandle }
 export type KeyGetEphemeralOptions = { localkeyHandle: LocalKeyHandlePLACEHOLDER }
 export type KeyGetJwkPublicOptions = { localkeyHandle: LocalKeyHandlePLACEHOLDER }
 export type KeyGetJwkSecretOptions = { localkeyHandle: LocalKeyHandlePLACEHOLDER }
@@ -102,7 +100,7 @@ export type KeyGetSecretBytesOptions = { localkeyHandle: LocalKeyHandlePLACEHOLD
 export type KeySignMessageOptions = { localkeyHandle: LocalKeyHandlePLACEHOLDER; message: Uint8Array; sigType: string }
 export type KeyUnwrapKeyOptions = {
   localkeyHandle: LocalKeyHandlePLACEHOLDER
-  alg: string
+  alg: KeyAlgs
   ciphertext: Uint8Array
   nonce: Uint8Array
   tag: Uint8Array
@@ -220,14 +218,14 @@ export interface AriesAskar {
   keyAeadGetPadding(options: KeyAeadGetPaddingOptions): number
   keyAeadGetParams(options: KeyAeadGetParamsOptions): AeadParams
   keyAeadRandomNonce(options: KeyAeadRandomNonceOptions): SecretBuffer
-  keyConvert(options: KeyConvertOptions): LocalKeyHandleClass
+  keyConvert(options: KeyConvertOptions): ILocalKeyHandle
   keyCryptoBox(options: KeyCryptoBoxOptions): SecretBuffer
   keyCryptoBoxOpen(options: KeyCryptoBoxOpenOptions): SecretBuffer
   keyCryptoBoxRandomNonce(): SecretBuffer
   keyCryptoBoxSeal(options: KeyCryptoBoxSealOptions): SecretBuffer
   keyCryptoBoxSealOpen(options: KeyCryptoBoxSealOpenOptions): SecretBuffer
-  keyDeriveEcdh1pu(options: KeyDeriveEcdh1puOptions): LocalKeyHandleClass
-  keyDeriveEcdhEs(options: KeyDeriveEcdhEsOptions): LocalKeyHandleClass
+  keyDeriveEcdh1pu(options: KeyDeriveEcdh1puOptions): ILocalKeyHandle
+  keyDeriveEcdhEs(options: KeyDeriveEcdhEsOptions): ILocalKeyHandle
   keyEntryListCount(options: KeyEntryListCountOptions): number
   keyEntryListFree(options: KeyEntryListFreeOptions): void
   keyEntryListGetAlgorithm(options: KeyEntryListGetAlgorithmOptions): string
@@ -236,12 +234,12 @@ export interface AriesAskar {
   keyEntryListGetTags(options: KeyEntryListGetTagsOptions): string
   keyEntryListLoadLocal(options: KeyEntryListLoadLocalOptions): string
   keyFree(options: KeyFreeOptions): void
-  keyFromJwk(options: KeyFromJwkOptions): LocalKeyHandleClass
-  keyFromKeyExchange(options: KeyFromKeyExchangeOptions): LocalKeyHandleClass
-  keyFromPublicBytes(options: KeyFromPublicBytesOptions): LocalKeyHandleClass
-  keyFromSecretBytes(options: KeyFromSecretBytesOptions): LocalKeyHandleClass
-  keyFromSeed(options: KeyFromSeedOptions): LocalKeyHandleClass
-  keyGenerate(options: KeyGenerateOptions): LocalKeyHandleClass
+  keyFromJwk(options: KeyFromJwkOptions): ILocalKeyHandle
+  keyFromKeyExchange(options: KeyFromKeyExchangeOptions): ILocalKeyHandle
+  keyFromPublicBytes(options: KeyFromPublicBytesOptions): ILocalKeyHandle
+  keyFromSecretBytes(options: KeyFromSecretBytesOptions): ILocalKeyHandle
+  keyFromSeed(options: KeyFromSeedOptions): ILocalKeyHandle
+  keyGenerate(options: KeyGenerateOptions): ILocalKeyHandle
   keyGetAlgorithm(options: KeyGetAlgorithmOptions): string
   keyGetEphemeral(options: KeyGetEphemeralOptions): number
   keyGetJwkPublic(options: KeyGetJwkPublicOptions): string
@@ -250,7 +248,7 @@ export interface AriesAskar {
   keyGetPublicBytes(options: KeyGetPublicBytesOptions): SecretBuffer
   keyGetSecretBytes(options: KeyGetSecretBytesOptions): SecretBuffer
   keySignMessage(options: KeySignMessageOptions): SecretBuffer
-  keyUnwrapKey(options: KeyUnwrapKeyOptions): LocalKeyHandleClass
+  keyUnwrapKey(options: KeyUnwrapKeyOptions): ILocalKeyHandle
   keyVerifySignature(options: KeyVerifySignatureOptions): number
   keyWrapKey(options: KeyWrapKeyOptions): EncryptedBuffer
 

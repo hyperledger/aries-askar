@@ -5,12 +5,6 @@ import { default as struct } from 'ref-struct-di'
 const CStruct = struct(ref)
 const CArray = array(ref)
 
-const ArrayKey = (len = 32) =>
-  CStruct({
-    GenericArray: CArray(ref.types.uint8, len),
-  })
-
-export const Chacha20Key = CStruct({
-  alg: ref.types.CString,
-  key: ArrayKey(),
+export const Chacha20C20P = CStruct({
+  key: CArray(ref.types.uint8, 32),
 })

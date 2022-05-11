@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unsafe-call */
 import { refType } from 'ref-napi'
 
+import { AesA128Kw, LocalKeyHandle, LocalKeyHandleStruct } from './structures'
 import {
   FFI_STRING,
   FFI_ERROR_CODE,
@@ -22,6 +23,8 @@ import {
   FFI_CALLBACK_ID,
   StoreHandle,
   SessionHandle,
+  FFI_VOID_PTR,
+  FFI_VOID,
 } from './utils'
 
 export const nativeBindings = {

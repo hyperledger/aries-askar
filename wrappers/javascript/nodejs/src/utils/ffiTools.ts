@@ -1,3 +1,6 @@
+/* eslint-disable @typescript-eslint/no-unsafe-call */
+/* eslint-disable @typescript-eslint/no-unsafe-member-access */
+/* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import type { SecretBufferType, ByteBufferType } from './ffiTypes'
 import type array from 'ref-array-di'
 import type { NamedTypeLike, Pointer, Type } from 'ref-napi'
@@ -6,12 +9,20 @@ import { AriesAskarError, ByteBuffer, KeyAlgs } from 'aries-askar-shared'
 import { Callback } from 'ffi-napi'
 import { refType, alloc } from 'ref-napi'
 
-import { Bls12381g1, Bls12381g2, Chacha20Key, Ed25519KeyPair, X25519KeyPair } from '../structures'
 import { AesA128CbcHs256 } from '../structures/AesA128CbcHs256'
 import { AesA128Gcm } from '../structures/AesA128Gcm'
+import { AesA128Kw } from '../structures/AesA128Kw'
+import { AesA256CbcHs512 } from '../structures/AesA256CbcHs512'
 import { AesA256Gcm } from '../structures/AesA256Gcm'
+import { AesA256Kw } from '../structures/AesA256Kw'
+import { Bls12381g1 } from '../structures/Bls12381G1'
+import { Bls12381g2 } from '../structures/Bls12381G2'
+import { Chacha20C20P } from '../structures/Chacha20C20P'
+import { Chacha20XC20P } from '../structures/Chacha20XC20P'
 import { EcSecp256k1 } from '../structures/EcSecp256k1'
 import { EcSecp256r1 } from '../structures/EcSecp256r1'
+import { Ed25519KeyPair } from '../structures/Ed25519KeyPair'
+import { X25519KeyPair } from '../structures/X25519KeyPair'
 import { LocalKeyHandleStruct } from '../structures/localKey'
 
 import {
@@ -25,9 +36,6 @@ import {
   EncryptedBufferStruct,
   AeadParamsStruct,
 } from './ffiTypes'
-import { AesA256CbcHs512 } from '../structures/AesA256CbcHs512'
-import { AesA128Kw } from '../structures/AesA128Kw'
-import { AesA256Kw } from '../structures/AesA256Kw'
 
 export const allocateStringBuffer = (): Buffer => alloc(FFI_STRING)
 
@@ -64,13 +72,15 @@ export const uint8arrayToByteBufferStruct = (buf: Uint8Array) => {
   return byteBufferClassToStruct(byteBuffer)
 }
 
-export const getStructForKeyAlg = (alg: KeyAlgs): NamedTypeLike => {
+export const getStructForKeyAlg = (alg: KeyAlgs) => {
   // Object map
   switch (alg) {
     case KeyAlgs.Ed25519:
       return Ed25519KeyPair
     case KeyAlgs.Chacha20C20P:
-      return Chacha20Key
+      return Chacha20C20P
+    case KeyAlgs.Chacha20XC20P:
+      return Chacha20XC20P
     case KeyAlgs.Bls12381G1:
       return Bls12381g1
     case KeyAlgs.Bls12381G2:
@@ -93,8 +103,17 @@ export const getStructForKeyAlg = (alg: KeyAlgs): NamedTypeLike => {
       return AesA128Kw
     case KeyAlgs.AesA256Kw:
       return AesA256Kw
-    default:
-      throw new AriesAskarError({ code: 100, message: `Unsupported algorithm: ${alg}` })
+  }
+}
+
+export const getInnerAndEphemeral = <K extends Record<string, unknown>>(buf: Buffer, alg: KeyAlgs) => {
+  const base = buf.deref().deref()
+  return {
+    bufRep: buf.deref(),
+    // TODO: not static
+    alg,
+    inner: base.inner.deref() as K,
+    ephemeral: base.ephemeral as boolean,
   }
 }
 
