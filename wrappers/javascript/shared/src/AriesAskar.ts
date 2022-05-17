@@ -1,5 +1,6 @@
 import type { KeyAlgs } from './KeyAlgs'
-import type { AeadParams, EncryptedBuffer, SecretBuffer, ILocalKeyHandle } from './types'
+import type { LocalKeyHandle } from './classes'
+import type { AeadParams, EncryptedBuffer, SecretBuffer } from './types'
 
 export type ErrorCode = number
 export type EntryListHandle = number
@@ -90,7 +91,7 @@ export type KeyFromPublicBytesOptions = { alg: KeyAlgs; publicKey: Uint8Array }
 export type KeyFromSecretBytesOptions = { alg: KeyAlgs; secretKey: Uint8Array }
 export type KeyFromSeedOptions = { alg: KeyAlgs; seed: Uint8Array; method: string }
 export type KeyGenerateOptions = { alg: KeyAlgs; ephemeral: number }
-export type KeyGetAlgorithmOptions = { localkeyHandle: ILocalKeyHandle }
+export type KeyGetAlgorithmOptions = { localkeyHandle: Buffer }
 export type KeyGetEphemeralOptions = { localkeyHandle: LocalKeyHandlePLACEHOLDER }
 export type KeyGetJwkPublicOptions = { localkeyHandle: LocalKeyHandlePLACEHOLDER }
 export type KeyGetJwkSecretOptions = { localkeyHandle: LocalKeyHandlePLACEHOLDER }
@@ -218,14 +219,14 @@ export interface AriesAskar {
   keyAeadGetPadding(options: KeyAeadGetPaddingOptions): number
   keyAeadGetParams(options: KeyAeadGetParamsOptions): AeadParams
   keyAeadRandomNonce(options: KeyAeadRandomNonceOptions): SecretBuffer
-  keyConvert(options: KeyConvertOptions): ILocalKeyHandle
+  keyConvert(options: KeyConvertOptions): LocalKeyHandle
   keyCryptoBox(options: KeyCryptoBoxOptions): SecretBuffer
   keyCryptoBoxOpen(options: KeyCryptoBoxOpenOptions): SecretBuffer
   keyCryptoBoxRandomNonce(): SecretBuffer
   keyCryptoBoxSeal(options: KeyCryptoBoxSealOptions): SecretBuffer
   keyCryptoBoxSealOpen(options: KeyCryptoBoxSealOpenOptions): SecretBuffer
-  keyDeriveEcdh1pu(options: KeyDeriveEcdh1puOptions): ILocalKeyHandle
-  keyDeriveEcdhEs(options: KeyDeriveEcdhEsOptions): ILocalKeyHandle
+  keyDeriveEcdh1pu(options: KeyDeriveEcdh1puOptions): LocalKeyHandle
+  keyDeriveEcdhEs(options: KeyDeriveEcdhEsOptions): LocalKeyHandle
   keyEntryListCount(options: KeyEntryListCountOptions): number
   keyEntryListFree(options: KeyEntryListFreeOptions): void
   keyEntryListGetAlgorithm(options: KeyEntryListGetAlgorithmOptions): string
@@ -234,12 +235,12 @@ export interface AriesAskar {
   keyEntryListGetTags(options: KeyEntryListGetTagsOptions): string
   keyEntryListLoadLocal(options: KeyEntryListLoadLocalOptions): string
   keyFree(options: KeyFreeOptions): void
-  keyFromJwk(options: KeyFromJwkOptions): ILocalKeyHandle
-  keyFromKeyExchange(options: KeyFromKeyExchangeOptions): ILocalKeyHandle
-  keyFromPublicBytes(options: KeyFromPublicBytesOptions): ILocalKeyHandle
-  keyFromSecretBytes(options: KeyFromSecretBytesOptions): ILocalKeyHandle
-  keyFromSeed(options: KeyFromSeedOptions): ILocalKeyHandle
-  keyGenerate(options: KeyGenerateOptions): ILocalKeyHandle
+  keyFromJwk(options: KeyFromJwkOptions): LocalKeyHandle
+  keyFromKeyExchange(options: KeyFromKeyExchangeOptions): LocalKeyHandle
+  keyFromPublicBytes(options: KeyFromPublicBytesOptions): LocalKeyHandle
+  keyFromSecretBytes(options: KeyFromSecretBytesOptions): LocalKeyHandle
+  keyFromSeed(options: KeyFromSeedOptions): LocalKeyHandle
+  keyGenerate(options: KeyGenerateOptions): LocalKeyHandle
   keyGetAlgorithm(options: KeyGetAlgorithmOptions): string
   keyGetEphemeral(options: KeyGetEphemeralOptions): number
   keyGetJwkPublic(options: KeyGetJwkPublicOptions): string
@@ -248,7 +249,7 @@ export interface AriesAskar {
   keyGetPublicBytes(options: KeyGetPublicBytesOptions): SecretBuffer
   keyGetSecretBytes(options: KeyGetSecretBytesOptions): SecretBuffer
   keySignMessage(options: KeySignMessageOptions): SecretBuffer
-  keyUnwrapKey(options: KeyUnwrapKeyOptions): ILocalKeyHandle
+  keyUnwrapKey(options: KeyUnwrapKeyOptions): LocalKeyHandle
   keyVerifySignature(options: KeyVerifySignatureOptions): number
   keyWrapKey(options: KeyWrapKeyOptions): EncryptedBuffer
 

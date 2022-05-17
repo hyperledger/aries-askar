@@ -9,6 +9,7 @@ import { AriesAskarError, ByteBuffer, KeyAlgs } from 'aries-askar-shared'
 import { Callback } from 'ffi-napi'
 import { refType, alloc } from 'ref-napi'
 
+import { LocalKeyHandleStruct } from '../structures'
 import { AesA128CbcHs256 } from '../structures/AesA128CbcHs256'
 import { AesA128Gcm } from '../structures/AesA128Gcm'
 import { AesA128Kw } from '../structures/AesA128Kw'
@@ -23,7 +24,6 @@ import { EcSecp256k1 } from '../structures/EcSecp256k1'
 import { EcSecp256r1 } from '../structures/EcSecp256r1'
 import { Ed25519KeyPair } from '../structures/Ed25519KeyPair'
 import { X25519KeyPair } from '../structures/X25519KeyPair'
-import { LocalKeyHandleStruct } from '../structures/localKey'
 
 import {
   ByteBufferStruct,
