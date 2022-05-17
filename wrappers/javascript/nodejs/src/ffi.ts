@@ -8,7 +8,7 @@ import {
   SecretBufferStruct,
   FFI_INT32,
   FFI_CALLBACK_PTR,
-  EntryListHandle,
+  FFI_ENTRY_LIST_HANDLE,
   FFI_INT32_PTR,
   FFI_POINTER,
   ByteBufferStruct,
@@ -16,12 +16,13 @@ import {
   FFI_INT64,
   AeadParamsStruct,
   FFI_INT8,
-  KeyEntryListHandle,
+  FFI_KEY_ENTRY_LIST_HANDLE,
   FFI_INT8_PTR,
-  ScanHandle,
+  FFI_SCAN_HANDLE,
   FFI_CALLBACK_ID,
-  StoreHandle,
-  SessionHandle,
+  FFI_STORE_HANDLE,
+  FFI_SESSION_HANDLE,
+  FFI_LOCAL_KEY_HANDLE,
 } from './utils'
 
 export const nativeBindings = {
@@ -34,12 +35,12 @@ export const nativeBindings = {
   askar_set_default_logger: [FFI_ERROR_CODE, []],
   askar_set_max_log_level: [FFI_ERROR_CODE, [FFI_INT32]],
 
-  askar_entry_list_count: [FFI_ERROR_CODE, [EntryListHandle, FFI_INT32_PTR]],
-  askar_entry_list_free: [FFI_ERROR_CODE, [EntryListHandle]],
-  askar_entry_list_get_category: [FFI_ERROR_CODE, [EntryListHandle, FFI_INT32, FFI_STRING_PTR]],
-  askar_entry_list_get_name: [FFI_ERROR_CODE, [EntryListHandle, FFI_INT32, FFI_STRING_PTR]],
-  askar_entry_list_get_tags: [FFI_ERROR_CODE, [EntryListHandle, FFI_INT32, FFI_STRING_PTR]],
-  askar_entry_list_get_value: [FFI_ERROR_CODE, [EntryListHandle, FFI_INT32, refType(SecretBufferStruct)]],
+  askar_entry_list_count: [FFI_ERROR_CODE, [FFI_ENTRY_LIST_HANDLE, FFI_INT32_PTR]],
+  askar_entry_list_free: [FFI_ERROR_CODE, [FFI_ENTRY_LIST_HANDLE]],
+  askar_entry_list_get_category: [FFI_ERROR_CODE, [FFI_ENTRY_LIST_HANDLE, FFI_INT32, FFI_STRING_PTR]],
+  askar_entry_list_get_name: [FFI_ERROR_CODE, [FFI_ENTRY_LIST_HANDLE, FFI_INT32, FFI_STRING_PTR]],
+  askar_entry_list_get_tags: [FFI_ERROR_CODE, [FFI_ENTRY_LIST_HANDLE, FFI_INT32, FFI_STRING_PTR]],
+  askar_entry_list_get_value: [FFI_ERROR_CODE, [FFI_ENTRY_LIST_HANDLE, FFI_INT32, refType(SecretBufferStruct)]],
 
   askar_key_aead_decrypt: [
     FFI_ERROR_CODE,
@@ -92,20 +93,20 @@ export const nativeBindings = {
       refType(FFI_POINTER),
     ],
   ],
-  askar_key_entry_list_count: [FFI_ERROR_CODE, [KeyEntryListHandle, FFI_INT32_PTR]],
-  askar_key_entry_list_free: [FFI_ERROR_CODE, [KeyEntryListHandle]],
-  askar_key_entry_list_get_algorithm: [FFI_ERROR_CODE, [KeyEntryListHandle, FFI_INT32, FFI_STRING_PTR]],
-  askar_key_entry_list_get_metadata: [FFI_ERROR_CODE, [KeyEntryListHandle, FFI_INT32, FFI_STRING_PTR]],
-  askar_key_entry_list_get_name: [FFI_ERROR_CODE, [KeyEntryListHandle, FFI_INT32, FFI_STRING_PTR]],
-  askar_key_entry_list_get_tags: [FFI_ERROR_CODE, [KeyEntryListHandle, FFI_INT32, FFI_STRING_PTR]],
-  askar_key_entry_list_load_local: [FFI_ERROR_CODE, [KeyEntryListHandle, FFI_INT32, refType(FFI_POINTER)]],
+  askar_key_entry_list_count: [FFI_ERROR_CODE, [FFI_KEY_ENTRY_LIST_HANDLE, FFI_INT32_PTR]],
+  askar_key_entry_list_free: [FFI_ERROR_CODE, [FFI_KEY_ENTRY_LIST_HANDLE]],
+  askar_key_entry_list_get_algorithm: [FFI_ERROR_CODE, [FFI_KEY_ENTRY_LIST_HANDLE, FFI_INT32, FFI_STRING_PTR]],
+  askar_key_entry_list_get_metadata: [FFI_ERROR_CODE, [FFI_KEY_ENTRY_LIST_HANDLE, FFI_INT32, FFI_STRING_PTR]],
+  askar_key_entry_list_get_name: [FFI_ERROR_CODE, [FFI_KEY_ENTRY_LIST_HANDLE, FFI_INT32, FFI_STRING_PTR]],
+  askar_key_entry_list_get_tags: [FFI_ERROR_CODE, [FFI_KEY_ENTRY_LIST_HANDLE, FFI_INT32, FFI_STRING_PTR]],
+  askar_key_entry_list_load_local: [FFI_ERROR_CODE, [FFI_KEY_ENTRY_LIST_HANDLE, FFI_INT32, refType(FFI_POINTER)]],
   askar_key_free: [FFI_ERROR_CODE, [FFI_POINTER]],
   askar_key_from_jwk: [FFI_ERROR_CODE, [ByteBufferStruct, refType(FFI_POINTER)]],
-  askar_key_from_key_exchange: [FFI_ERROR_CODE, [FFI_STRING, FFI_POINTER, FFI_POINTER, refType(FFI_POINTER)]],
-  askar_key_from_public_bytes: [FFI_ERROR_CODE, [FFI_STRING, ByteBufferStruct, refType(FFI_POINTER)]],
+  askar_key_from_key_exchange: [FFI_ERROR_CODE, [FFI_STRING, FFI_POINTER, FFI_POINTER, FFI_LOCAL_KEY_HANDLE]],
+  askar_key_from_public_bytes: [FFI_ERROR_CODE, [FFI_STRING, ByteBufferStruct, FFI_LOCAL_KEY_HANDLE]],
   askar_key_from_secret_bytes: [FFI_ERROR_CODE, [FFI_STRING, ByteBufferStruct, refType(FFI_POINTER)]],
-  askar_key_from_seed: [FFI_ERROR_CODE, [FFI_STRING, ByteBufferStruct, FFI_STRING, refType(FFI_POINTER)]],
-  askar_key_generate: [FFI_ERROR_CODE, [FFI_STRING, FFI_INT8, refType(FFI_POINTER)]],
+  askar_key_from_seed: [FFI_ERROR_CODE, [FFI_STRING, ByteBufferStruct, FFI_STRING, FFI_LOCAL_KEY_HANDLE]],
+  askar_key_generate: [FFI_ERROR_CODE, [FFI_STRING, FFI_INT8, FFI_LOCAL_KEY_HANDLE]],
   askar_key_get_algorithm: [FFI_ERROR_CODE, [FFI_POINTER, FFI_STRING_PTR]],
   askar_key_get_ephemeral: [FFI_ERROR_CODE, [FFI_POINTER, FFI_INT8_PTR]],
   askar_key_get_jwk_public: [FFI_ERROR_CODE, [FFI_POINTER, FFI_STRING, FFI_STRING_PTR]],
@@ -124,42 +125,48 @@ export const nativeBindings = {
   ],
   askar_key_wrap_key: [FFI_ERROR_CODE, [FFI_POINTER, FFI_POINTER, ByteBufferStruct, refType(EncryptedBufferStruct)]],
 
-  askar_scan_free: [FFI_ERROR_CODE, [ScanHandle]],
-  askar_scan_next: [FFI_ERROR_CODE, [ScanHandle, FFI_CALLBACK_PTR, FFI_CALLBACK_ID]],
+  askar_scan_free: [FFI_ERROR_CODE, [FFI_SCAN_HANDLE]],
+  askar_scan_next: [FFI_ERROR_CODE, [FFI_SCAN_HANDLE, FFI_CALLBACK_PTR, FFI_CALLBACK_ID]],
   askar_scan_start: [
     FFI_ERROR_CODE,
-    [StoreHandle, FFI_STRING, FFI_STRING, FFI_STRING, FFI_INT64, FFI_INT64, FFI_CALLBACK_PTR, FFI_CALLBACK_ID],
+    [FFI_STORE_HANDLE, FFI_STRING, FFI_STRING, FFI_STRING, FFI_INT64, FFI_INT64, FFI_CALLBACK_PTR, FFI_CALLBACK_ID],
   ],
 
-  askar_session_close: [FFI_ERROR_CODE, [SessionHandle, FFI_INT8, FFI_CALLBACK_PTR, FFI_CALLBACK_ID]],
-  askar_session_count: [FFI_ERROR_CODE, [SessionHandle, FFI_STRING, FFI_STRING, FFI_CALLBACK_PTR, FFI_CALLBACK_ID]],
+  askar_session_close: [FFI_ERROR_CODE, [FFI_SESSION_HANDLE, FFI_INT8, FFI_CALLBACK_PTR, FFI_CALLBACK_ID]],
+  askar_session_count: [
+    FFI_ERROR_CODE,
+    [FFI_SESSION_HANDLE, FFI_STRING, FFI_STRING, FFI_CALLBACK_PTR, FFI_CALLBACK_ID],
+  ],
   askar_session_fetch: [
     FFI_ERROR_CODE,
-    [SessionHandle, FFI_STRING, FFI_STRING, FFI_INT8, FFI_CALLBACK_PTR, FFI_CALLBACK_ID],
+    [FFI_SESSION_HANDLE, FFI_STRING, FFI_STRING, FFI_INT8, FFI_CALLBACK_PTR, FFI_CALLBACK_ID],
   ],
   askar_session_fetch_all: [
     FFI_ERROR_CODE,
-    [SessionHandle, FFI_STRING, FFI_STRING, FFI_INT64, FFI_INT8, FFI_CALLBACK_PTR, FFI_CALLBACK_ID],
+    [FFI_SESSION_HANDLE, FFI_STRING, FFI_STRING, FFI_INT64, FFI_INT8, FFI_CALLBACK_PTR, FFI_CALLBACK_ID],
   ],
   askar_session_fetch_all_keys: [
     FFI_ERROR_CODE,
-    [SessionHandle, FFI_STRING, FFI_STRING, FFI_STRING, FFI_INT64, FFI_INT8, FFI_CALLBACK_PTR, FFI_CALLBACK_ID],
+    [FFI_SESSION_HANDLE, FFI_STRING, FFI_STRING, FFI_STRING, FFI_INT64, FFI_INT8, FFI_CALLBACK_PTR, FFI_CALLBACK_ID],
   ],
-  askar_session_fetch_key: [FFI_ERROR_CODE, [SessionHandle, FFI_STRING, FFI_INT8, FFI_CALLBACK_PTR, FFI_CALLBACK_ID]],
+  askar_session_fetch_key: [
+    FFI_ERROR_CODE,
+    [FFI_SESSION_HANDLE, FFI_STRING, FFI_INT8, FFI_CALLBACK_PTR, FFI_CALLBACK_ID],
+  ],
   askar_session_insert_key: [
     FFI_ERROR_CODE,
-    [SessionHandle, FFI_POINTER, FFI_STRING, FFI_STRING, FFI_STRING, FFI_INT64, FFI_CALLBACK_PTR, FFI_CALLBACK_ID],
+    [FFI_SESSION_HANDLE, FFI_POINTER, FFI_STRING, FFI_STRING, FFI_STRING, FFI_INT64, FFI_CALLBACK_PTR, FFI_CALLBACK_ID],
   ],
   askar_session_remove_all: [
     FFI_ERROR_CODE,
-    [SessionHandle, FFI_STRING, FFI_STRING, FFI_CALLBACK_PTR, FFI_CALLBACK_ID],
+    [FFI_SESSION_HANDLE, FFI_STRING, FFI_STRING, FFI_CALLBACK_PTR, FFI_CALLBACK_ID],
   ],
-  askar_session_remove_key: [FFI_ERROR_CODE, [SessionHandle, FFI_STRING, FFI_CALLBACK_PTR, FFI_CALLBACK_ID]],
-  askar_session_start: [FFI_ERROR_CODE, [StoreHandle, FFI_STRING, FFI_INT8, FFI_CALLBACK_PTR, FFI_CALLBACK_ID]],
+  askar_session_remove_key: [FFI_ERROR_CODE, [FFI_SESSION_HANDLE, FFI_STRING, FFI_CALLBACK_PTR, FFI_CALLBACK_ID]],
+  askar_session_start: [FFI_ERROR_CODE, [FFI_STORE_HANDLE, FFI_STRING, FFI_INT8, FFI_CALLBACK_PTR, FFI_CALLBACK_ID]],
   askar_session_update: [
     FFI_ERROR_CODE,
     [
-      SessionHandle,
+      FFI_SESSION_HANDLE,
       FFI_INT8,
       FFI_STRING,
       FFI_STRING,
@@ -172,13 +179,13 @@ export const nativeBindings = {
   ],
   askar_session_update_key: [
     FFI_ERROR_CODE,
-    [SessionHandle, FFI_STRING, FFI_STRING, FFI_STRING, FFI_INT64, FFI_CALLBACK_PTR, FFI_CALLBACK_ID],
+    [FFI_SESSION_HANDLE, FFI_STRING, FFI_STRING, FFI_STRING, FFI_INT64, FFI_CALLBACK_PTR, FFI_CALLBACK_ID],
   ],
 
-  askar_store_close: [FFI_ERROR_CODE, [StoreHandle, FFI_CALLBACK_PTR, FFI_CALLBACK_ID]],
-  askar_store_create_profile: [FFI_ERROR_CODE, [StoreHandle, FFI_STRING, FFI_CALLBACK_PTR, FFI_CALLBACK_ID]],
+  askar_store_close: [FFI_ERROR_CODE, [FFI_STORE_HANDLE, FFI_CALLBACK_PTR, FFI_CALLBACK_ID]],
+  askar_store_create_profile: [FFI_ERROR_CODE, [FFI_STORE_HANDLE, FFI_STRING, FFI_CALLBACK_PTR, FFI_CALLBACK_ID]],
   askar_store_generate_raw_key: [FFI_ERROR_CODE, [ByteBufferStruct, FFI_STRING_PTR]],
-  askar_store_get_profile_name: [FFI_ERROR_CODE, [StoreHandle, FFI_CALLBACK_PTR, FFI_CALLBACK_ID]],
+  askar_store_get_profile_name: [FFI_ERROR_CODE, [FFI_STORE_HANDLE, FFI_CALLBACK_PTR, FFI_CALLBACK_ID]],
   askar_store_open: [
     FFI_ERROR_CODE,
     [FFI_STRING, FFI_STRING, FFI_STRING, FFI_STRING, FFI_CALLBACK_PTR, FFI_CALLBACK_ID],
@@ -187,9 +194,9 @@ export const nativeBindings = {
     FFI_ERROR_CODE,
     [FFI_STRING, FFI_STRING, FFI_STRING, FFI_STRING, FFI_INT8, FFI_CALLBACK_PTR, FFI_CALLBACK_ID],
   ],
-  askar_store_rekey: [FFI_ERROR_CODE, [StoreHandle, FFI_STRING, FFI_STRING, FFI_CALLBACK_PTR, FFI_CALLBACK_ID]],
+  askar_store_rekey: [FFI_ERROR_CODE, [FFI_STORE_HANDLE, FFI_STRING, FFI_STRING, FFI_CALLBACK_PTR, FFI_CALLBACK_ID]],
   askar_store_remove: [FFI_ERROR_CODE, [FFI_STRING, FFI_CALLBACK_PTR, FFI_CALLBACK_ID]],
-  askar_store_remove_profile: [FFI_ERROR_CODE, [StoreHandle, FFI_STRING, FFI_CALLBACK_PTR, FFI_CALLBACK_ID]],
+  askar_store_remove_profile: [FFI_ERROR_CODE, [FFI_STORE_HANDLE, FFI_STRING, FFI_CALLBACK_PTR, FFI_CALLBACK_ID]],
 } as const
 
 // We need a mapping from string type value => type (property 'string' maps to type string)
@@ -208,7 +215,7 @@ type ShapeOf<T> = {
   [Property in keyof T]: T[Property]
 }
 type StringTypeArrayToTypes<List extends Array<keyof StringTypeMapping>> = {
-  [Item in keyof List]: List[Item] extends keyof StringTypeMapping ? StringTypeMapping[List[Item]] : List[Item]
+  [Item in keyof List]: List[Item] extends keyof StringTypeMapping ? StringTypeMapping[List[Item]] : Buffer
 }
 
 type TypedMethods<Base extends { [method: string | number | symbol]: [any, any[]] }> = {

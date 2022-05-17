@@ -1,14 +1,16 @@
-import type { KeyAlgs } from './KeyAlgs'
-import type { LocalKeyHandle } from './classes'
-import type { AeadParams, EncryptedBuffer, SecretBuffer } from './types'
+import type { KeyAlgs } from '../KeyAlgs'
+import type {
+  EntryListHandle,
+  KeyEntryListHandle,
+  LocalKeyHandle,
+  ScanHandle,
+  SessionHandle,
+  StoreHandle,
+} from '../classes'
+import type { AeadParams, EncryptedBuffer, SecretBuffer } from '../types'
 
 export type ErrorCode = number
-export type EntryListHandle = number
 export type LocalKeyHandlePLACEHOLDER = number
-export type KeyEntryListHandle = number
-export type ScanHandle = number
-export type SessionHandle = number
-export type StoreHandle = number
 
 export type BufferFreeOptions = { secretBuffer: SecretBuffer }
 
@@ -90,7 +92,7 @@ export type KeyFromKeyExchangeOptions = {
 export type KeyFromPublicBytesOptions = { alg: KeyAlgs; publicKey: Uint8Array }
 export type KeyFromSecretBytesOptions = { alg: KeyAlgs; secretKey: Uint8Array }
 export type KeyFromSeedOptions = { alg: KeyAlgs; seed: Uint8Array; method: string }
-export type KeyGenerateOptions = { alg: KeyAlgs; ephemeral: number }
+export type KeyGenerateOptions = { alg: KeyAlgs; ephemeral: boolean }
 export type KeyGetAlgorithmOptions = { localkeyHandle: Buffer }
 export type KeyGetEphemeralOptions = { localkeyHandle: LocalKeyHandlePLACEHOLDER }
 export type KeyGetJwkPublicOptions = { localkeyHandle: LocalKeyHandlePLACEHOLDER }

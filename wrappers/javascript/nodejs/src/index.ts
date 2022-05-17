@@ -1,11 +1,12 @@
 /* eslint-disable @typescript-eslint/ban-ts-comment */
 /* eslint-disable no-console */
 
-import { KeyAlgs } from 'aries-askar-shared'
+import { KeyAlgs, registerAriesAskar } from 'aries-askar-shared'
 
 import { NodeJSAriesAskar } from './ariesAskar'
 
 const ariesAskarNodeJS = new NodeJSAriesAskar()
+registerAriesAskar({ askar: ariesAskarNodeJS })
 
 const run = () => {
   const seed = new Uint8Array(32).fill(20)

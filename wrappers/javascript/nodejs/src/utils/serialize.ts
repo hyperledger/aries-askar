@@ -1,7 +1,6 @@
 import type { SecretBufferStruct, ByteBufferStruct } from './ffiTypes'
-import type { ILocalKeyHandle } from 'aries-askar-shared'
 
-import { LocalKeyHandle, SecretBuffer, ByteBuffer } from 'aries-askar-shared'
+import { ArcHandle, SecretBuffer, ByteBuffer } from 'aries-askar-shared'
 import { NULL } from 'ref-napi'
 
 import { byteBufferClassToStruct, secretBufferClassToStruct, uint8arrayToByteBufferStruct } from './ffiTools'
@@ -11,13 +10,14 @@ export type CallbackWithResponse = (err: number, response: string) => void
 
 type Argument =
   | Record<string, unknown>
-  | ILocalKeyHandle
+  | ArcHandle
   | Array<unknown>
   | Date
   | Uint8Array
   | SerializedArgument
   | ByteBuffer
   | SecretBuffer
+  | boolean
 
 type SerializedArgument =
   | string
@@ -35,6 +35,8 @@ export type SerializedOptions<Type> = Required<{
   [Property in keyof Type]: Type[Property] extends string
     ? string
     : Type[Property] extends number
+    ? number
+    : Type[Property] extends boolean
     ? number
     : Type[Property] extends Record<string, unknown>
     ? string
@@ -64,7 +66,7 @@ export type SerializedOptions<Type> = Required<{
     ? typeof ByteBufferStruct
     : Type[Property] extends SecretBuffer
     ? typeof SecretBufferStruct
-    : Type[Property] extends LocalKeyHandle
+    : Type[Property] extends ArcHandle
     ? Buffer
     : unknown
 }>
@@ -73,6 +75,8 @@ const serialize = (arg: Argument): SerializedArgument => {
   switch (typeof arg) {
     case 'undefined':
       return NULL
+    case 'boolean':
+      return +arg
     case 'string':
       return arg
     case 'number':
@@ -90,7 +94,7 @@ const serialize = (arg: Argument): SerializedArgument => {
         return byteBufferClassToStruct(arg) as unknown as typeof ByteBufferStruct
       } else if (arg instanceof SecretBuffer) {
         return secretBufferClassToStruct(arg) as unknown as typeof SecretBufferStruct
-      } else if (arg instanceof LocalKeyHandle) {
+      } else if (arg instanceof ArcHandle) {
         return arg.handle
       } else {
         return JSON.stringify(arg)

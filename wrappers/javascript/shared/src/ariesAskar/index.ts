@@ -1,5 +1,3 @@
-import type { AriesAskar } from '../AriesAskar'
-
-export let ariesAskar: AriesAskar
-
-export const registerIndyVdr = ({ askar }: { askar: AriesAskar }) => (ariesAskar = askar)
+export * from './register'
+export * from './AriesAskar'
+export * from './AriesAskarNativeBindings'

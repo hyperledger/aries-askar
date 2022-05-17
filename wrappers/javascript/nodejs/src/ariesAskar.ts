@@ -179,6 +179,7 @@ export class NodeJSAriesAskar implements AriesAskar {
 
   public bufferFree(options: BufferFreeOptions): void {
     const { secretBuffer } = serializeArguments(options)
+    // @ts-ignore
     nativeAriesAskar.askar_buffer_free(secretBuffer)
     handleError()
   }
@@ -833,6 +834,7 @@ export class NodeJSAriesAskar implements AriesAskar {
     const { name, sessionHandle, category, expiryMs, tags, operation, value } = serializeArguments(options)
 
     return this.promisify((cb, cbId) =>
+      // @ts-ignore
       nativeAriesAskar.askar_session_update(sessionHandle, operation, category, name, value, tags, expiryMs, cb, cbId)
     )
   }
@@ -863,6 +865,7 @@ export class NodeJSAriesAskar implements AriesAskar {
     const { seed } = serializeArguments(options)
     const out = allocateStringBuffer()
 
+    // @ts-ignore
     nativeAriesAskar.askar_store_generate_raw_key(seed, out)
     handleError()
 

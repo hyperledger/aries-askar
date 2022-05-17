@@ -99,3 +99,11 @@ export const FFI_VOID_PTR = ref.refType(FFI_VOID)
 
 export const FFI_INT32_PTR = ref.refType(FFI_INT32)
 export const FFI_INT8_PTR = ref.refType(FFI_INT8)
+
+export const ARC_HANDLE = ref.refType(FFI_POINTER)
+export const FFI_LOCAL_KEY_HANDLE = ARC_HANDLE
+export const FFI_KEY_ENTRY_LIST_HANDLE = ARC_HANDLE
+export const FFI_SCAN_HANDLE = ARC_HANDLE
+export const FFI_SESSION_HANDLE = ARC_HANDLE
+export const FFI_ENTRY_LIST_HANDLE = ARC_HANDLE
+export const FFI_STORE_HANDLE = ARC_HANDLE
