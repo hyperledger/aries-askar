@@ -24,20 +24,3 @@ import { ariesAskarNodeJS } from 'aries-askar-nodejs'
 
 registerAriesAskar({ askar: ariesAskarNodeJS })
 ```
-
-After this setup classes can be built that are imported from `aries-askar-shared`
-and afterwards be submitted as a ledger request, like so:
-
-```typescript
-const pool = new PoolCreate({
-  parameters: {
-    transactions: <TRANSACTION_OBJECT>
-  }
-})
-
-const getSchemaRequest = new GetSchemaRequest({
-  schemaId: 'J6nTnUo3YLayzc2GUUctb1:2:MyName:1.0',
-})
-
-await pool.submitRequest({ requestHandle: getSchemaRequest.handle })
-```
