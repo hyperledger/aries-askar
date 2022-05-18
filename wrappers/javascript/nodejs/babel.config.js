@@ -1,6 +1,6 @@
 const path = require('path')
 
-const indyVdrShared = require('../shared/package.json')
+const ariesAskarShared = require('../shared/package.json')
 
 module.exports = {
   presets: ['module:metro-react-native-babel-preset'],
@@ -10,7 +10,7 @@ module.exports = {
       {
         extensions: ['.tsx', '.ts', '.js', '.json'],
         alias: {
-          [indyVdrShared.name]: path.join(__dirname, '../shared', indyVdrShared.source),
+          [ariesAskarShared.name]: path.join(__dirname, '../shared', ariesAskarShared.source),
         },
       },
     ],
