@@ -63,6 +63,19 @@ async def test_insert_update(store: Store):
         )
         assert len(found) == 1 and dict(found[0]) == TEST_ENTRY
 
+        # Update an entry (outside of a transaction)
+        upd_entry = TEST_ENTRY.copy()
+        upd_entry["value"] = b"new_value"
+        upd_entry["tags"] = {"upd": "tagval"}
+        await session.replace(
+            TEST_ENTRY["category"],
+            TEST_ENTRY["name"],
+            upd_entry["value"],
+            upd_entry["tags"],
+        )
+        found = await session.fetch(TEST_ENTRY["category"], TEST_ENTRY["name"])
+        assert dict(found) == upd_entry
+
         # Remove entry
         await session.remove(TEST_ENTRY["category"], TEST_ENTRY["name"])
         found = await session.fetch(TEST_ENTRY["category"], TEST_ENTRY["name"])
