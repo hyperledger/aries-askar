@@ -99,9 +99,10 @@ import { LocalKeyHandle, KeyAlgs, AeadParams, EncryptedBuffer, SecretBuffer } fr
 import { handleError } from './error'
 import { nativeAriesAskar } from './lib'
 import {
+  allocateInt8Buffer,
   allocateAeadParams,
   allocateEncryptedBuffer,
-  allocateIntBuffer,
+  allocateInt32Buffer,
   allocateLocalKeyHandle,
   allocateSecretBuffer,
   allocateStringBuffer,
@@ -220,7 +221,7 @@ export class NodeJSAriesAskar implements AriesAskar {
 
   public entryListCount(options: EntryListCountOptions): number {
     const { entryListHandle } = serializeArguments(options)
-    const ret = allocateIntBuffer()
+    const ret = allocateInt32Buffer()
 
     // @ts-ignore
     nativeAriesAskar.askar_entry_list_count(entryListHandle, ret)
@@ -307,7 +308,7 @@ export class NodeJSAriesAskar implements AriesAskar {
 
   public keyAeadGetPadding(options: KeyAeadGetPaddingOptions): number {
     const { localKeyHandle, msgLen } = serializeArguments(options)
-    const ret = allocateIntBuffer()
+    const ret = allocateInt32Buffer()
 
     // @ts-ignore
     nativeAriesAskar.askar_key_aead_get_padding(localKeyHandle, msgLen, ret)
@@ -440,7 +441,7 @@ export class NodeJSAriesAskar implements AriesAskar {
 
   public keyEntryListCount(options: KeyEntryListCountOptions): number {
     const { keyEntryListHandle } = serializeArguments(options)
-    const ret = allocateIntBuffer()
+    const ret = allocateInt32Buffer()
 
     // @ts-ignore
     nativeAriesAskar.askar_key_entry_list_count(keyEntryListHandle, ret)
@@ -597,44 +598,44 @@ export class NodeJSAriesAskar implements AriesAskar {
 
   public keyGetAlgorithm(options: KeyGetAlgorithmOptions): string {
     // @ts-ignore
-    const { localkeyHandle } = serializeArguments(options)
+    const { localKeyHandle } = serializeArguments(options)
     const ret = allocateStringBuffer()
 
     // @ts-ignore
-    nativeAriesAskar.askar_key_get_algorithm(localkeyHandle, ret)
+    nativeAriesAskar.askar_key_get_algorithm(localKeyHandle, ret)
     handleError()
 
     return ret.deref() as string
   }
 
   public keyGetEphemeral(options: KeyGetEphemeralOptions): number {
-    const { localkeyHandle } = serializeArguments(options)
-    const ret = allocateIntBuffer()
+    const { localKeyHandle } = serializeArguments(options)
+    const ret = allocateInt32Buffer()
 
     // @ts-ignore
-    nativeAriesAskar.askar_key_get_ephemeral(localkeyHandle, ret)
+    nativeAriesAskar.askar_key_get_ephemeral(localKeyHandle, ret)
     handleError()
 
     return ret.deref() as number
   }
 
   public keyGetJwkPublic(options: KeyGetJwkPublicOptions): string {
-    const { localkeyHandle } = serializeArguments(options)
+    const { localKeyHandle } = serializeArguments(options)
     const ret = allocateStringBuffer()
 
     // @ts-ignore
-    nativeAriesAskar.askar_key_get_jwk_public(localkeyHandle, ret)
+    nativeAriesAskar.askar_key_get_jwk_public(localKeyHandle, ret)
     handleError()
 
     return ret.deref() as string
   }
 
   public keyGetJwkSecret(options: KeyGetJwkSecretOptions): SecretBuffer {
-    const { localkeyHandle } = serializeArguments(options)
+    const { localKeyHandle } = serializeArguments(options)
     const ret = allocateSecretBuffer()
 
     // @ts-ignore
-    nativeAriesAskar.askar_key_get_jwk_secret(localkeyHandle, ret)
+    nativeAriesAskar.askar_key_get_jwk_secret(localKeyHandle, ret)
     handleError()
 
     const secretBuffer = ret.deref() as SecretBufferType
@@ -642,82 +643,82 @@ export class NodeJSAriesAskar implements AriesAskar {
   }
 
   public keyGetJwkThumbprint(options: KeyGetJwkThumbprintOptions): string {
-    const { localkeyHandle } = serializeArguments(options)
+    const { localKeyHandle } = serializeArguments(options)
     const ret = allocateStringBuffer()
 
     // @ts-ignore
-    nativeAriesAskar.askar_key_get_jwk_thumbprint(localkeyHandle, ret)
+    nativeAriesAskar.askar_key_get_jwk_thumbprint(localKeyHandle, ret)
     handleError()
 
     return ret.deref() as string
   }
 
-  public keyGetPublicBytes(options: KeyGetPublicBytesOptions): SecretBuffer {
-    const { localkeyHandle } = serializeArguments(options)
+  public keyGetPublicBytes(options: KeyGetPublicBytesOptions): Uint8Array {
+    const { localKeyHandle } = serializeArguments(options)
     const ret = allocateSecretBuffer()
 
     // @ts-ignore
-    nativeAriesAskar.askar_key_get_public_bytes(localkeyHandle, ret)
+    nativeAriesAskar.askar_key_get_public_bytes(localKeyHandle, ret)
     handleError()
 
-    const secretBuffer = ret.deref() as SecretBufferType
-    return new SecretBuffer(secretBuffer)
+    // TODO: cleanup (secretBuffer to uint8array)
+    return new Uint8Array(ret.deref().data)
   }
 
-  public keyGetSecretBytes(options: KeyGetSecretBytesOptions): SecretBuffer {
-    const { localkeyHandle } = serializeArguments(options)
+  public keyGetSecretBytes(options: KeyGetSecretBytesOptions): Uint8Array {
+    const { localKeyHandle } = serializeArguments(options)
     const ret = allocateSecretBuffer()
 
     // @ts-ignore
-    nativeAriesAskar.askar_key_get_secret_bytes(localkeyHandle, ret)
+    nativeAriesAskar.askar_key_get_secret_bytes(localKeyHandle, ret)
     handleError()
 
-    const secretBuffer = ret.deref() as SecretBufferType
-    return new SecretBuffer(secretBuffer)
+    // TODO: cleanup (secretBuffer to uint8array)
+    return new Uint8Array(ret.deref().data)
   }
 
-  public keySignMessage(options: KeySignMessageOptions): SecretBuffer {
-    const { localkeyHandle, message, sigType } = serializeArguments(options)
-    const ret = allocateSecretBuffer()
+  public keySignMessage(options: KeySignMessageOptions): Uint8Array {
+    const { localKeyHandle, message, sigType } = serializeArguments(options)
+    const ret = allocateSecretBuffer(64)
 
     // @ts-ignore
-    nativeAriesAskar.askar_key_sign_message(localkeyHandle, message, sigType, ret)
+    nativeAriesAskar.askar_key_sign_message(localKeyHandle, message, sigType, ret)
     handleError()
 
-    const secretBuffer = ret.deref() as SecretBufferType
-    return new SecretBuffer(secretBuffer)
+    // TODO: cleanup (secretBuffer to uint8array)
+    return new Uint8Array(ret.deref().data)
   }
 
   public keyUnwrapKey(options: KeyUnwrapKeyOptions): LocalKeyHandle {
-    const { localkeyHandle, alg, ciphertext, nonce, tag } = serializeArguments(options)
+    const { localKeyHandle, alg, ciphertext, nonce, tag } = serializeArguments(options)
 
     const algStructure = getStructForKeyAlg(options.alg)
     const ret = allocateLocalKeyHandle(algStructure)
 
     // @ts-ignore
-    nativeAriesAskar.askar_key_unwrap_key(localkeyHandle, alg, ciphertext, nonce, tag, ret)
+    nativeAriesAskar.askar_key_unwrap_key(localKeyHandle, alg, ciphertext, nonce, tag, ret)
     handleError()
 
     return new LocalKeyHandle(ret.deref())
   }
 
   public keyVerifySignature(options: KeyVerifySignatureOptions): number {
-    const { localkeyHandle, sigType, message, signature } = serializeArguments(options)
-    const ret = allocateIntBuffer()
+    const { localKeyHandle, sigType, message, signature } = serializeArguments(options)
+    const ret = allocateInt8Buffer()
 
     // @ts-ignore
-    nativeAriesAskar.askar_key_verify_signature(localkeyHandle, message, signature, sigType, ret)
+    nativeAriesAskar.askar_key_verify_signature(localKeyHandle, message, signature, sigType, ret)
     handleError()
 
     return ret.deref() as number
   }
 
   public keyWrapKey(options: KeyWrapKeyOptions): EncryptedBuffer {
-    const { localkeyHandle, nonce, other } = serializeArguments(options)
+    const { localKeyHandle, nonce, other } = serializeArguments(options)
     const ret = allocateEncryptedBuffer()
 
     // @ts-ignore
-    nativeAriesAskar.askar_key_wrap_key(localkeyHandle, other, nonce, ret)
+    nativeAriesAskar.askar_key_wrap_key(localKeyHandle, other, nonce, ret)
     handleError()
 
     const encryptedBuffer = ret.deref() as EncryptedBufferType

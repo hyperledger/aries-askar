@@ -1,5 +1,3 @@
-import type { Ed25519KeyPair } from '../structures'
-
 import { default as array } from 'ref-array-di'
 import * as ref from 'ref-napi'
 import { default as struct } from 'ref-struct-di'
@@ -7,30 +5,34 @@ import { default as struct } from 'ref-struct-di'
 const CStruct = struct(ref)
 const CArray = array(ref)
 
-export const ByteBufferArray = CArray(ref.types.uint8, 32)
-export const ByteBufferArrayPtr = ref.refType(ByteBufferArray)
+export const ByteBufferArray = (len: number) => CArray(ref.types.uint8, len)
+export const ByteBufferArrayPtr = (len: number) => ref.refType(ByteBufferArray(len))
+export const SercetBufferArray = ByteBufferArray
+export const SercetBufferArrayPtr = ByteBufferArrayPtr
 
 export const ByteBufferStruct = CStruct({
   len: ref.types.uint64,
   data: ref.refType(CArray(ref.types.uint8)),
 })
-export type ByteBufferType = struct.StructObject<{
+export type ByteBufferType<T extends number = 32> = struct.StructObject<{
   len: number
-  data: ref.Pointer<array.TypedArray<number, 32>>
+  data: ref.Pointer<array.TypedArray<number, T>>
 }>
 
-export const SecretBufferStruct = CStruct({
-  len: ref.types.int64,
-  data: ByteBufferArrayPtr,
-})
+export const SecretBufferStruct = (len = 32) =>
+  CStruct({
+    len: ref.types.int64,
+    data: ByteBufferArrayPtr(len),
+  })
 
 export type SecretBufferType = ByteBufferType
 
-export const EncryptedBufferStruct = CStruct({
-  buffer: SecretBufferStruct,
-  tag_pos: ref.types.int64,
-  nonce_pos: ref.types.int64,
-})
+export const EncryptedBufferStruct = (len = 32) =>
+  CStruct({
+    buffer: SecretBufferStruct(len),
+    tag_pos: ref.types.int64,
+    nonce_pos: ref.types.int64,
+  })
 
 export type EncryptedBufferType = struct.StructObject<{
   buffer: SecretBufferType

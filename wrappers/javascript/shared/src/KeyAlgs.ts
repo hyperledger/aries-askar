@@ -1,3 +1,5 @@
+import { AriesAskarError } from './error'
+
 export enum KeyAlgs {
   AesA128Gcm = 'a128gcm',
   AesA256Gcm = 'a256gcm',
@@ -13,6 +15,15 @@ export enum KeyAlgs {
   X25519 = 'x25519',
   EcSecp256k1 = 'k256',
   EcSecp256r1 = 'p256',
+}
+
+export const getKeyAlgs = (alg: string): KeyAlgs => {
+  const keyAlg = Object.entries(KeyAlgs).find(([, value]) => value === alg)
+  if (!keyAlg) {
+    throw new AriesAskarError({ code: 100, message: `Algorithm: ${alg} is not supported!` })
+  }
+
+  return keyAlg[1]
 }
 
 export type AesA128CbcHs256Inner = {
