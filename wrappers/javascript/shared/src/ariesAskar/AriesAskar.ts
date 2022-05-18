@@ -6,14 +6,14 @@ import type {
   SessionHandle,
   StoreHandle,
 } from '../classes'
-import type { KeyAlgs, SigAlgs } from '../enums'
+import type { KeyAlgs, LogLevel, SigAlgs } from '../enums'
 import type { AeadParams, EncryptedBuffer, SecretBuffer } from '../types'
 
 export type ErrorCode = number
 
 export type BufferFreeOptions = { secretBuffer: SecretBuffer }
 
-export type SetCustomLoggerOptions = { logLevel: number; flush?: boolean; enabled?: boolean }
+export type SetCustomLoggerOptions = { logLevel: LogLevel; flush?: boolean; enabled?: boolean }
 export type SetMaxLogLevelOptions = { logLevel: number }
 
 export type EntryListCountOptions = { entryListHandle: EntryListHandle }
