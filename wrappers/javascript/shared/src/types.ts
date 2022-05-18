@@ -1,4 +1,4 @@
-import type { KeyAlgs } from './KeyAlgs'
+import type { KeyAlgs } from './enums'
 
 type ByteBufferOptions = {
   len: number

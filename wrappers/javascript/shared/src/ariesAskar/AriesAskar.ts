@@ -1,5 +1,3 @@
-import type { KeyAlgs } from '../KeyAlgs'
-import type { SigAlgs } from '../SigAlgs'
 import type {
   EntryListHandle,
   KeyEntryListHandle,
@@ -8,6 +6,7 @@ import type {
   SessionHandle,
   StoreHandle,
 } from '../classes'
+import type { KeyAlgs, SigAlgs } from '../enums'
 import type { AeadParams, EncryptedBuffer, SecretBuffer } from '../types'
 
 export type ErrorCode = number
@@ -26,16 +25,16 @@ export type EntryListGetValueOptions = { entryListHandle: EntryListHandle; index
 
 export type KeyAeadDecryptOptions = {
   localKeyHandle: Buffer
-  cipherText: Uint8Array
+  ciphertext: Uint8Array
   nonce: Uint8Array
   tag: Uint8Array
-  aad: Uint8Array
+  aad?: Uint8Array
 }
 export type KeyAeadEncryptOptions = {
   localKeyHandle: Buffer
   message: Uint8Array
-  nonce: Uint8Array
-  aad: Uint8Array
+  nonce?: Uint8Array
+  aad?: Uint8Array
 }
 export type KeyAeadGetPaddingOptions = { localKeyHandle: Buffer; msgLen: number }
 export type KeyAeadGetParamsOptions = { localKeyHandle: Buffer }
@@ -63,8 +62,8 @@ export type KeyDeriveEcdh1puOptions = {
   algId: Uint8Array
   apu: Uint8Array
   apv: Uint8Array
-  ccTag: Uint8Array
-  receive: number
+  ccTag?: Uint8Array
+  receive: boolean
 }
 export type KeyDeriveEcdhEsOptions = {
   alg: KeyAlgs
@@ -73,7 +72,7 @@ export type KeyDeriveEcdhEsOptions = {
   algId: Uint8Array
   apu: Uint8Array
   apv: Uint8Array
-  receive: number
+  receive: boolean
 }
 export type KeyEntryListCountOptions = { keyEntryListHandle: KeyEntryListHandle }
 export type KeyEntryListFreeOptions = { keyEntryListHandle: KeyEntryListHandle }
@@ -105,8 +104,8 @@ export type KeyUnwrapKeyOptions = {
   localKeyHandle: Buffer
   alg: KeyAlgs
   ciphertext: Uint8Array
-  nonce: Uint8Array
-  tag: Uint8Array
+  nonce?: Uint8Array
+  tag?: Uint8Array
 }
 export type KeyVerifySignatureOptions = {
   localKeyHandle: Buffer
@@ -117,7 +116,7 @@ export type KeyVerifySignatureOptions = {
 export type KeyWrapKeyOptions = {
   localKeyHandle: Buffer
   other: Buffer
-  nonce: Uint8Array
+  nonce?: Uint8Array
 }
 
 export type ScanFreeOptions = { scanHandle: ScanHandle }
@@ -222,11 +221,11 @@ export interface AriesAskar {
   keyAeadGetParams(options: KeyAeadGetParamsOptions): AeadParams
   keyAeadRandomNonce(options: KeyAeadRandomNonceOptions): SecretBuffer
   keyConvert(options: KeyConvertOptions): LocalKeyHandle
-  keyCryptoBox(options: KeyCryptoBoxOptions): SecretBuffer
+  keyCryptoBox(options: KeyCryptoBoxOptions): Uint8Array
   keyCryptoBoxOpen(options: KeyCryptoBoxOpenOptions): SecretBuffer
-  keyCryptoBoxRandomNonce(): SecretBuffer
-  keyCryptoBoxSeal(options: KeyCryptoBoxSealOptions): SecretBuffer
-  keyCryptoBoxSealOpen(options: KeyCryptoBoxSealOpenOptions): SecretBuffer
+  keyCryptoBoxRandomNonce(): Uint8Array
+  keyCryptoBoxSeal(options: KeyCryptoBoxSealOptions): Uint8Array
+  keyCryptoBoxSealOpen(options: KeyCryptoBoxSealOpenOptions): Uint8Array
   keyDeriveEcdh1pu(options: KeyDeriveEcdh1puOptions): LocalKeyHandle
   keyDeriveEcdhEs(options: KeyDeriveEcdhEsOptions): LocalKeyHandle
   keyEntryListCount(options: KeyEntryListCountOptions): number

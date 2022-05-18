@@ -5,6 +5,7 @@ import type { SecretBufferType, ByteBufferType } from './ffiTypes'
 import type array from 'ref-array-di'
 import type { NamedTypeLike, Pointer, Type } from 'ref-napi'
 
+import type { SecretBuffer } from 'aries-askar-shared';
 import { ByteBuffer, KeyAlgs } from 'aries-askar-shared'
 import { Callback } from 'ffi-napi'
 import { refType, alloc } from 'ref-napi'
@@ -61,6 +62,10 @@ export const byteBufferClassToStruct = ({ len, data }: ByteBuffer) =>
     len,
     data: Buffer.from(data) as Pointer<array.TypedArray<number, 32>>,
   })
+
+export const secretBufferToUint8Array = (buffer: SecretBuffer) => {
+  return new Uint8Array(buffer.data)
+}
 
 export const byteBufferToReference = (byteBuffer: ByteBufferType) =>
   byteBuffer.ref() as unknown as Type<typeof ByteBufferStruct>
