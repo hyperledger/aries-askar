@@ -702,7 +702,7 @@ export class NodeJSAriesAskar implements AriesAskar {
     return new LocalKeyHandle(ret.deref())
   }
 
-  public keyVerifySignature(options: KeyVerifySignatureOptions): number {
+  public keyVerifySignature(options: KeyVerifySignatureOptions): boolean {
     const { localKeyHandle, sigType, message, signature } = serializeArguments(options)
     const ret = allocateInt8Buffer()
 
@@ -710,7 +710,7 @@ export class NodeJSAriesAskar implements AriesAskar {
     nativeAriesAskar.askar_key_verify_signature(localKeyHandle, message, signature, sigType, ret)
     handleError()
 
-    return ret.deref() as number
+    return Boolean(ret.deref())
   }
 
   public keyWrapKey(options: KeyWrapKeyOptions): EncryptedBuffer {

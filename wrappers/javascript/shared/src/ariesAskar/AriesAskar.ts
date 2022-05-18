@@ -14,7 +14,7 @@ export type ErrorCode = number
 
 export type BufferFreeOptions = { secretBuffer: SecretBuffer }
 
-export type SetCustomLoggerOptions = { logLevel: number; flush: boolean; enabled: boolean }
+export type SetCustomLoggerOptions = { logLevel: number; flush?: boolean; enabled?: boolean }
 export type SetMaxLogLevelOptions = { logLevel: number }
 
 export type EntryListCountOptions = { entryListHandle: EntryListHandle }
@@ -252,7 +252,7 @@ export interface AriesAskar {
   keyGetSecretBytes(options: KeyGetSecretBytesOptions): Uint8Array
   keySignMessage(options: KeySignMessageOptions): Uint8Array
   keyUnwrapKey(options: KeyUnwrapKeyOptions): LocalKeyHandle
-  keyVerifySignature(options: KeyVerifySignatureOptions): number
+  keyVerifySignature(options: KeyVerifySignatureOptions): boolean
   keyWrapKey(options: KeyWrapKeyOptions): EncryptedBuffer
 
   scanFree(options: ScanFreeOptions): void

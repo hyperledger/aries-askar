@@ -1,8 +1,9 @@
 import type { KeyAlgs } from '../KeyAlgs'
+import type { SigAlgs } from '../SigAlgs'
 import type { LocalKeyHandle } from './handles'
 
 import { getKeyAlgs } from '../KeyAlgs'
-import type { SigAlgs } from '../SigAlgs'
+import { KeyMethod } from '../KeyMethod'
 import { ariesAskar } from '../ariesAskar'
 
 export class Key {
@@ -17,7 +18,7 @@ export class Key {
   }
 
   // TODO: enum the method
-  public static fromSeed(alg: KeyAlgs, seed: Uint8Array, method = '') {
+  public static fromSeed(alg: KeyAlgs, seed: Uint8Array, method = KeyMethod.None) {
     return new Key(ariesAskar.keyFromSeed({ alg, seed, method }))
   }
 
