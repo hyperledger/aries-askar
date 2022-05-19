@@ -123,76 +123,84 @@ export type ScanFreeOptions = { scanHandle: ScanHandle }
 export type ScanNextOptions = { scanHandle: ScanHandle }
 export type ScanStartOptions = {
   storeHandle: StoreHandle
-  profile: string
+  profile?: string
   category: string
-  tagFilter: string
-  offset: number
-  limit: number
+  tagFilter?: Record<string, unknown>
+  offset?: number
+  limit?: number
 }
 
 export type SessionCloseOptions = { sessionHandle: SessionHandle; commit: number }
-export type SessionCountOptions = { sessionHandle: SessionHandle; category: string; tagFilter: string }
+export type SessionCountOptions = {
+  sessionHandle: SessionHandle
+  category: string
+  tagFilter?: Record<string, unknown>
+}
 export type SessionFetchOptions = {
   sessionHandle: SessionHandle
   category: string
   name: string
-  forUpdate: number
+  forUpdate: boolean
 }
 export type SessionFetchAllOptions = {
   sessionHandle: SessionHandle
-  catgory: string
-  tagFilter: string
-  limit: number
-  forUpdate: number
+  category: string
+  tagFilter?: Record<string, unknown>
+  limit?: number
+  forUpdate: boolean
 }
 export type SessionFetchAllKeysOptions = {
   sessionHandle: SessionHandle
-  alg: string
-  thumbprint: string
-  tagFilter: string
-  limit: number
-  forUpdate: number
+  alg?: string
+  thumbprint?: string
+  tagFilter?: Record<string, unknown>
+  limit?: number
+  forUpdate?: boolean
 }
-export type SessionFetchKeyOptions = { sessionHandle: SessionHandle; name: string; forUpdate: number }
+export type SessionFetchKeyOptions = { sessionHandle: SessionHandle; name: string; forUpdate: boolean }
 export type SessionInsertKeyOptions = {
   sessionHandle: SessionHandle
   localKeyHandle: Buffer
   name: string
-  metadata: string
-  tags: string
-  expiryMs: number
+  metadata?: string
+  tags?: string
+  expiryMs?: number
 }
-export type SessionRemoveAllOptions = { sessionHandle: SessionHandle; category: string; tagFilter: string }
+export type SessionRemoveAllOptions = {
+  sessionHandle: SessionHandle
+  category: string
+  tagFilter: Record<string, unknown>
+}
 export type SessionRemoveKeyOptions = { sessionHandle: SessionHandle; name: string }
-export type SessionStartOptions = { storeHandle: StoreHandle; profile: string; asTransaction: number }
+export type SessionStartOptions = { storeHandle: StoreHandle; profile?: string; asTransaction: boolean }
 export type SessionUpdateOptions = {
   sessionHandle: SessionHandle
   operation: number
   category: string
   name: string
-  value: Uint8Array
-  tags: string
-  expiryMs: number
+  value?: string
+  tags?: Record<string, unknown>
+  expiryMs?: number
 }
 export type SessionUpdateKeyOptions = {
   sessionHandle: SessionHandle
   name: string
-  metadata: string
-  tags: string
-  expiryMs: number
+  metadata?: string
+  tags?: Record<string, unknown>
+  expiryMs?: number
 }
 
 export type StoreCloseOptions = { storeHandle: StoreHandle }
 export type StoreCreateProfileOptions = { storeHandle: StoreHandle; profile: string }
-export type StoreGenerateRawKeyOptions = { seed: Uint8Array }
+export type StoreGenerateRawKeyOptions = { seed?: Uint8Array }
 export type StoreGetProfileNameOptions = { storeHandle: StoreHandle }
-export type StoreOpenOptions = { specUri: string; keyMethod: string; passKey: string; profile: string }
+export type StoreOpenOptions = { specUri: string; keyMethod?: string; passKey?: string; profile?: string }
 export type StoreProvisionOptions = {
   specUri: string
-  keyMethod: string
-  passKey: string
-  profile: string
-  recreate: number
+  keyMethod?: string
+  passKey?: string
+  profile?: string
+  recreate: boolean
 }
 export type StoreRekeyOptions = { storeHandle: StoreHandle; keyMethod: string; passKey: string }
 export type StoreRemoveOptions = { specUri: string }
@@ -256,7 +264,7 @@ export interface AriesAskar {
 
   scanFree(options: ScanFreeOptions): void
   scanNext(options: ScanNextOptions): Promise<EntryListHandle>
-  scanStart(options: ScanStartOptions): Promise<void>
+  scanStart(options: ScanStartOptions): Promise<ScanHandle>
 
   sessionClose(options: SessionCloseOptions): Promise<void>
   sessionCount(options: SessionCountOptions): Promise<number>

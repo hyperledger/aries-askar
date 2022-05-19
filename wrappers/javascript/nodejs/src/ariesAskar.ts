@@ -65,6 +65,7 @@ import type {
   KeyVerifySignatureOptions,
   KeyWrapKeyOptions,
   ScanFreeOptions,
+  ScanHandle,
   ScanNextOptions,
   ScanStartOptions,
   SessionCloseOptions,
@@ -734,9 +735,10 @@ export class NodeJSAriesAskar implements AriesAskar {
     )
   }
 
-  public async scanStart(options: ScanStartOptions): Promise<void> {
+  public async scanStart(options: ScanStartOptions): Promise<ScanHandle> {
     const { category, limit, offset, profile, storeHandle, tagFilter } = serializeArguments(options)
-    await this.promisifyWithResponse((cb, cbId) =>
+    return await this.promisifyWithResponse((cb, cbId) =>
+      // @ts-ignore
       nativeAriesAskar.askar_scan_start(storeHandle, profile, category, tagFilter, offset, limit, cb, cbId)
     )
   }

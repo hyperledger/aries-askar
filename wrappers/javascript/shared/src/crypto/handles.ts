@@ -15,7 +15,7 @@ export class StoreHandle extends ArcHandle {
 }
 
 export class SessionHandle extends ArcHandle {
-  public close() {
+  public close(commit: boolean) {
     throw new Error('Method `close` not implemented!')
   }
 }
@@ -49,6 +49,10 @@ export class KeyEntryListHandle extends ArcHandle {
 
   public getTags(index: number) {
     throw new Error('Method `getTags` not implemented!')
+  }
+
+  public getMetadata(index: number) {
+    throw new Error('Method `getMetadata` not implemented!')
   }
 
   public loadKey(index: number) {
