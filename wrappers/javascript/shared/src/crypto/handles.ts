@@ -15,7 +15,7 @@ export class StoreHandle extends ArcHandle {
 }
 
 export class SessionHandle extends ArcHandle {
-  public close(commit: boolean) {
+  public async close(commit: boolean) {
     throw new Error('Method `close` not implemented!')
   }
 }
