@@ -69,8 +69,8 @@ class Key:
     def get_jwk_public(self, alg: Union[str, KeyAlg] = None) -> str:
         return bindings.key_get_jwk_public(self._handle, alg)
 
-    def get_jwk_secret(self) -> str:
-        return str(bindings.key_get_jwk_secret(self._handle))
+    def get_jwk_secret(self) -> bytes:
+        return bytes(bindings.key_get_jwk_secret(self._handle))
 
     def get_jwk_thumbprint(self, alg: Union[str, KeyAlg] = None) -> str:
         return bindings.key_get_jwk_thumbprint(self._handle, alg)
