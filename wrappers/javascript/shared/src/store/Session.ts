@@ -5,9 +5,9 @@ import { ariesAskar } from '../ariesAskar'
 import { EntryOperation } from '../enums/EntryOperation'
 import { AriesAskarError } from '../error'
 
+import { Entry } from './Entry'
 import { EntryList } from './EntryList'
 import { KeyEntryList } from './KeyEntryList'
-import {Entry} from './Entry'
 
 export class Session {
   // TODO: where is the store used?
@@ -38,7 +38,7 @@ export class Session {
     if (!this.handle) throw new AriesAskarError({ code: 100, message: 'Cannot fetch from a closed session' })
     const handle = await ariesAskar.sessionFetch({ forUpdate, name, category, sessionHandle: this.handle })
     // TODO: probably wrong, check tests
-    return new Entry({ list: handle, pos: 1 })
+    return handle ? new Entry({ list: handle, pos: 0 }) : undefined
   }
 
   public async fetchAll({
@@ -76,15 +76,15 @@ export class Session {
     value?: string
     tags?: Record<string, unknown>
     expiryMs?: number
-    valueJson?: unknown
+    valueJson?: Record<string, unknown>
   }) {
     if (!this.handle) throw new AriesAskarError({ code: 100, message: 'Cannot insert with a closed session' })
-    if (!value && !valueJson)
+    const serializedValue = !value && valueJson ? JSON.stringify(valueJson) : value
+    if (!serializedValue)
       throw new AriesAskarError({ code: 100, message: 'Either `value` or `valueJson` must be defined' })
-    const serializedValue = !value && valueJson ? JSON.stringify(value) : value
 
     await ariesAskar.sessionUpdate({
-      value: serializedValue,
+      value: Buffer.from(serializedValue, 'utf-8'),
       expiryMs,
       tags,
       name,
@@ -110,12 +110,12 @@ export class Session {
     valueJson?: unknown
   }) {
     if (!this.handle) throw new AriesAskarError({ code: 100, message: 'Cannot replace with a closed session' })
-    if (!value && !valueJson)
+    const serializedValue = !value && valueJson ? JSON.stringify(valueJson) : value
+    if (!serializedValue)
       throw new AriesAskarError({ code: 100, message: 'Either `value` or `valueJson` must be defined' })
-    const serializedValue = !value && valueJson ? JSON.stringify(value) : value
 
     await ariesAskar.sessionUpdate({
-      value: serializedValue,
+      value: Buffer.from(serializedValue, 'utf-8'),
       expiryMs,
       tags,
       name,

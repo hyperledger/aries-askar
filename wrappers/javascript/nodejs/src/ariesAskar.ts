@@ -26,7 +26,6 @@ import type {
   EntryListGetNameOptions,
   EntryListGetTagsOptions,
   EntryListGetValueOptions,
-  EntryListHandle,
   KeyAeadDecryptOptions,
   KeyAeadEncryptOptions,
   KeyAeadGetPaddingOptions,
@@ -95,19 +94,20 @@ import type {
 } from 'aries-askar-shared'
 
 import {
+  EntryListHandle,
   StoreHandle,
   LocalKeyHandle,
   KeyAlgs,
   AeadParams,
   EncryptedBuffer,
   SecretBuffer,
-  Store,
   SessionHandle,
 } from 'aries-askar-shared'
 
 import { handleError } from './error'
 import { nativeAriesAskar } from './lib'
 import {
+  FFI_ENTRY_LIST_HANDLE,
   FFI_SESSION_HANDLE,
   FFI_STORE_HANDLE,
   FFI_STRING,
@@ -148,8 +148,7 @@ export class NodeJSAriesAskar implements AriesAskar {
 
   private promisifyWithResponse = async <Return, Response = string>(
     method: (nativeCallbackWithResponsePtr: Buffer, id: number) => void,
-    responseFfiType = FFI_STRING,
-    isStream = false
+    responseFfiType: any = FFI_STRING
   ): Promise<Return> => {
     return new Promise((resolve, reject) => {
       const cb: NativeCallbackWithResponse<Response> = (id, errorCode, response) => {
@@ -163,18 +162,18 @@ export class NodeJSAriesAskar implements AriesAskar {
         }
 
         if (typeof response === 'string') {
-          console.log('resolved with string')
           try {
-            //this is required to add array brackets, and commas, to an invalid json object that
-            // should be a list
-            const mappedResponse = isStream ? '[' + response.replace(/\n/g, ',') + ']' : response
-            resolve(JSON.parse(mappedResponse) as Return)
+            resolve(JSON.parse(response) as Return)
           } catch (error) {
             reject(error)
           }
         } else if (typeof response === 'number') {
           resolve(response as unknown as Return)
+        } else if (response instanceof Buffer) {
+          resolve(response as unknown as Return)
         }
+
+        reject('could not infer return type properly')
       }
       const { nativeCallback, id } = toNativeCallbackWithResponse(cb, responseFfiType)
       method(nativeCallback, +id)
@@ -254,6 +253,7 @@ export class NodeJSAriesAskar implements AriesAskar {
 
   public entryListGetCategory(options: EntryListGetCategoryOptions): string {
     const { entryListHandle, index } = serializeArguments(options)
+    console.log(entryListHandle)
     const ret = allocateStringBuffer()
 
     // @ts-ignore
@@ -768,11 +768,14 @@ export class NodeJSAriesAskar implements AriesAskar {
     )
   }
 
-  public sessionFetch(options: SessionFetchOptions): Promise<EntryListHandle> {
+  public async sessionFetch(options: SessionFetchOptions): Promise<EntryListHandle> {
     const { name, category, sessionHandle, forUpdate } = serializeArguments(options)
-    return this.promisifyWithResponse((cb, cbId) =>
-      nativeAriesAskar.askar_session_fetch(sessionHandle, category, name, forUpdate, cb, cbId)
+    const handle = await this.promisifyWithResponse<Buffer, Buffer>(
+      (cb, cbId) => nativeAriesAskar.askar_session_fetch(sessionHandle, category, name, forUpdate, cb, cbId),
+      FFI_ENTRY_LIST_HANDLE
     )
+
+    return new EntryListHandle(handle)
   }
 
   public sessionFetchAll(options: SessionFetchAllOptions): Promise<EntryListHandle> {
@@ -845,8 +848,18 @@ export class NodeJSAriesAskar implements AriesAskar {
     const { name, sessionHandle, category, expiryMs, tags, operation, value } = serializeArguments(options)
 
     return this.promisify((cb, cbId) =>
-      // @ts-ignore
-      nativeAriesAskar.askar_session_update(sessionHandle, operation, category, name, value, tags, expiryMs, cb, cbId)
+      nativeAriesAskar.askar_session_update(
+        sessionHandle,
+        operation,
+        category,
+        name,
+        // @ts-ignore
+        value,
+        tags,
+        +expiryMs ?? -1,
+        cb,
+        cbId
+      )
     )
   }
 

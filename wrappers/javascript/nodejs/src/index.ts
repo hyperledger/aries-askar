@@ -19,8 +19,10 @@ const testStore = async () => {
   })
 
   const session = await store.openSession()
-  await session.insert({ category: 'foo', name: 'bar', valueJson: { fobo: 'barra' } })
-
+  await session.insert({ category: 'foo', name: 'bar', valueJson: { a: 'b' } })
+  const entry = await session.fetch({ name: 'bar', category: 'foo', forUpdate: false })
+  console.log(entry?.category)
+  // await session.close()
   process.exit()
 }
 
@@ -28,4 +30,5 @@ try {
   void testStore()
 } catch (e) {
   console.error('ERROR: ', e)
+  process.exit()
 }

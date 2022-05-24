@@ -1,5 +1,7 @@
 // TODO: move this to nodejs?
 
+import { ariesAskar } from '../ariesAskar'
+
 export class ArcHandle {
   public handle: Buffer
 
@@ -35,7 +37,7 @@ export class SessionHandle {
 
 export class EntryListHandle extends ArcHandle {
   public getCategory(index: number) {
-    throw new Error('Method `getCategory` not implemented!')
+    return ariesAskar.entryListGetCategory({ index, entryListHandle: this })
   }
 
   public getName(index: number) {

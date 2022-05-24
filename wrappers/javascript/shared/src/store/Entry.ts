@@ -5,13 +5,13 @@ export class Entry {
   private _pos: number
   private _keys = ['name', 'category', 'value', 'tags'] as const
 
-  // TODO: what is pos
   public constructor({ list, pos }: { list: EntryListHandle; pos: number }) {
     this._list = list
     this._pos = pos
   }
 
   public get category() {
+    console.log(this._list)
     return this._list.getCategory(this._pos)
   }
 

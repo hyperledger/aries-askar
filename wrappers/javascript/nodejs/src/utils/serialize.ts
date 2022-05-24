@@ -66,6 +66,8 @@ export type SerializedOptions<Type> = Required<{
     ? Buffer
     : Type[Property] extends Uint8Array
     ? typeof ByteBufferStruct
+    : Type[Property] extends Uint8Array | undefined
+    ? typeof ByteBufferStruct
     : Type[Property] extends ByteBuffer
     ? typeof ByteBufferStruct
     : Type[Property] extends SecretBuffer
