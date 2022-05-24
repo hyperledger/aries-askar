@@ -15,7 +15,7 @@ export class Session {
   private _handle?: SessionHandle
   private isTxn: boolean
 
-  public constructor({ store, handle, isTxn }: { store: StoreHandle; handle: SessionHandle; isTxn: boolean }) {
+  public constructor({ store, handle, isTxn }: { store: StoreHandle; handle?: SessionHandle; isTxn: boolean }) {
     this.store = store
     this._handle = handle
     this.isTxn = isTxn

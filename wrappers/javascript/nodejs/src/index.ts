@@ -1,21 +1,31 @@
 /* eslint-disable @typescript-eslint/ban-ts-comment */
 /* eslint-disable no-console */
 
-import { KeyAlgs, registerAriesAskar, Key, KeyMethod, ariesAskar, LogLevel } from 'aries-askar-shared'
+import { registerAriesAskar, ariesAskar, LogLevel, Store, StoreKeyMethod } from 'aries-askar-shared'
 
 import { NodeJSAriesAskar } from './ariesAskar'
 
 registerAriesAskar({ askar: new NodeJSAriesAskar() })
+ariesAskar.setCustomLogger({ logLevel: LogLevel.Trace })
 
-const run = () => {
-  // const message = new Uint8Array(32).fill(10)
-  const seed = new Uint8Array(32).fill(20)
-  ariesAskar.setCustomLogger({ logLevel: LogLevel.Trace })
-  const edKey = Key.fromSeed({ alg: KeyAlgs.Ed25519, seed, method: KeyMethod.BlsKeygen })
-  // const signature = edKey.signMessage(message, SigAlgs.EdDSA)
-  // console.log(edKey.verifyMessage(message, signature, SigAlgs.EdDSA))
-  console.log(edKey.convertkey({ alg: KeyAlgs.X25519 }))
-  // console.log(ariesAskarNodeJS.keyGetAlgorithm({ localKeyHandle: a128kw.handle }))
+const testStore = async () => {
+  const testStoreUri = 'sqlite://:memory:'
+  const key = Store.generateRawKey(new Uint8Array(32).fill(1))
+  const store = await Store.provision({
+    recreate: true,
+    uri: testStoreUri,
+    keyMethod: StoreKeyMethod.Raw,
+    passKey: key,
+  })
+
+  const session = await store.openSession()
+  await session.insert({ category: 'foo', name: 'bar', valueJson: { fobo: 'barra' } })
+
+  process.exit()
 }
 
-void run()
+try {
+  void testStore()
+} catch (e) {
+  console.error('ERROR: ', e)
+}

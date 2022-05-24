@@ -18,6 +18,7 @@ import type {
 } from './utils'
 import type {
   AriesAskar,
+  AriesAskarErrorObject,
   BufferFreeOptions,
   EntryListCountOptions,
   EntryListFreeOptions,
@@ -74,7 +75,6 @@ import type {
   SessionFetchAllOptions,
   SessionFetchKeyOptions,
   SessionFetchOptions,
-  SessionHandle,
   SessionInsertKeyOptions,
   SessionRemoveAllOptions,
   SessionRemoveKeyOptions,
@@ -87,7 +87,6 @@ import type {
   StoreCreateProfileOptions,
   StoreGenerateRawKeyOptions,
   StoreGetProfileNameOptions,
-  StoreHandle,
   StoreOpenOptions,
   StoreProvisionOptions,
   StoreRekeyOptions,
@@ -95,11 +94,23 @@ import type {
   StoreRemoveProfileOptions,
 } from 'aries-askar-shared'
 
-import { LocalKeyHandle, KeyAlgs, AeadParams, EncryptedBuffer, SecretBuffer } from 'aries-askar-shared'
+import {
+  StoreHandle,
+  LocalKeyHandle,
+  KeyAlgs,
+  AeadParams,
+  EncryptedBuffer,
+  SecretBuffer,
+  Store,
+  SessionHandle,
+} from 'aries-askar-shared'
 
 import { handleError } from './error'
 import { nativeAriesAskar } from './lib'
 import {
+  FFI_SESSION_HANDLE,
+  FFI_STORE_HANDLE,
+  FFI_STRING,
   secretBufferToUint8Array,
   allocateInt8Buffer,
   allocateAeadParams,
@@ -135,18 +146,20 @@ export class NodeJSAriesAskar implements AriesAskar {
     })
   }
 
-  private promisifyWithResponse = async <T, R = string>(
+  private promisifyWithResponse = async <Return, Response = string>(
     method: (nativeCallbackWithResponsePtr: Buffer, id: number) => void,
+    responseFfiType = FFI_STRING,
     isStream = false
-  ): Promise<T> => {
+  ): Promise<Return> => {
     return new Promise((resolve, reject) => {
-      const cb: NativeCallbackWithResponse<R> = (id, _, response) => {
+      const cb: NativeCallbackWithResponse<Response> = (id, errorCode, response) => {
         deallocateCallbackBuffer(id)
 
-        try {
-          handleError()
-        } catch (e) {
-          reject(e)
+        if (errorCode) {
+          const nativeError = allocateStringBuffer()
+          nativeAriesAskar.askar_get_current_error(nativeError)
+          const ariesAskarErrorObject: AriesAskarErrorObject = JSON.parse(nativeError.deref())
+          return reject(ariesAskarErrorObject)
         }
 
         if (typeof response === 'string') {
@@ -155,16 +168,15 @@ export class NodeJSAriesAskar implements AriesAskar {
             //this is required to add array brackets, and commas, to an invalid json object that
             // should be a list
             const mappedResponse = isStream ? '[' + response.replace(/\n/g, ',') + ']' : response
-            resolve(JSON.parse(mappedResponse) as T)
+            resolve(JSON.parse(mappedResponse) as Return)
           } catch (error) {
             reject(error)
           }
         } else if (typeof response === 'number') {
-          console.log('resolved with int')
-          resolve('TODO' as unknown as T)
+          resolve(response as unknown as Return)
         }
       }
-      const { nativeCallback, id } = toNativeCallbackWithResponse(cb)
+      const { nativeCallback, id } = toNativeCallbackWithResponse(cb, responseFfiType)
       method(nativeCallback, +id)
     })
   }
@@ -206,7 +218,7 @@ export class NodeJSAriesAskar implements AriesAskar {
     // TODO: flush and enabled are just guessed
     nativeAriesAskar.askar_set_custom_logger(0, nativeCallback, +enabled, +flush, logLevel)
     handleError()
-    deallocateCallbackBuffer(+id)
+    // deallocateCallbackBuffer(+id)
   }
 
   public setDefaultLogger(): void {
@@ -764,10 +776,10 @@ export class NodeJSAriesAskar implements AriesAskar {
   }
 
   public sessionFetchAll(options: SessionFetchAllOptions): Promise<EntryListHandle> {
-    const { forUpdate, sessionHandle, tagFilter, limit, catgory } = serializeArguments(options)
+    const { forUpdate, sessionHandle, tagFilter, limit, category } = serializeArguments(options)
 
     return this.promisifyWithResponse((cb, cbId) =>
-      nativeAriesAskar.askar_session_fetch_all(sessionHandle, catgory, tagFilter, limit, forUpdate, cb, cbId)
+      nativeAriesAskar.askar_session_fetch_all(sessionHandle, category, tagFilter, limit, forUpdate, cb, cbId)
     )
   }
 
@@ -819,12 +831,14 @@ export class NodeJSAriesAskar implements AriesAskar {
     return this.promisify((cb, cbId) => nativeAriesAskar.askar_session_remove_key(sessionHandle, name, cb, cbId))
   }
 
-  public sessionStart(options: SessionStartOptions): Promise<SessionHandle> {
+  public async sessionStart(options: SessionStartOptions): Promise<SessionHandle> {
     const { storeHandle, profile, asTransaction } = serializeArguments(options)
 
-    return this.promisifyWithResponse((cb, cbId) =>
+    const handle = await this.promisifyWithResponse<number, number>((cb, cbId) => {
       nativeAriesAskar.askar_session_start(storeHandle, profile, asTransaction, cb, cbId)
-    )
+    }, FFI_SESSION_HANDLE)
+
+    return new SessionHandle(handle)
   }
 
   public sessionUpdate(options: SessionUpdateOptions): Promise<void> {
@@ -888,9 +902,12 @@ export class NodeJSAriesAskar implements AriesAskar {
   public async storeProvision(options: StoreProvisionOptions): Promise<StoreHandle> {
     const { profile, passKey, keyMethod, specUri, recreate } = serializeArguments(options)
 
-    return this.promisifyWithResponse((cb, cbId) =>
-      nativeAriesAskar.askar_store_provision(specUri, keyMethod, passKey, profile, recreate, cb, cbId)
+    const handle = await this.promisifyWithResponse<number, number>(
+      (cb, cbId) => nativeAriesAskar.askar_store_provision(specUri, keyMethod, passKey, profile, recreate, cb, cbId),
+      FFI_STORE_HANDLE
     )
+
+    return new StoreHandle(handle)
   }
 
   public storeRekey(options: StoreRekeyOptions): Promise<void> {

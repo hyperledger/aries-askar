@@ -8,14 +8,27 @@ export class ArcHandle {
   }
 }
 
-export class StoreHandle extends ArcHandle {
-  public close() {
+// TOOD: this is a number
+export class StoreHandle {
+  public handle: number
+
+  public constructor(handle: number) {
+    this.handle = handle
+  }
+
+  public async close() {
     throw new Error('Method `close` not implemented!')
   }
 }
 
-export class SessionHandle extends ArcHandle {
-  public async close(commit: boolean) {
+export class SessionHandle {
+  public handle: number
+
+  public constructor(handle: number) {
+    this.handle = handle
+  }
+
+  public close(commit: boolean) {
     throw new Error('Method `close` not implemented!')
   }
 }

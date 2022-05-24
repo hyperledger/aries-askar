@@ -1,11 +1,11 @@
 /* eslint-disable @typescript-eslint/no-unsafe-call */
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
-import type { SecretBufferType, ByteBufferType } from './ffiTypes'
+import { SecretBufferType, ByteBufferType, FFI_INT64 } from './ffiTypes'
+import type { SecretBuffer } from 'aries-askar-shared'
 import type array from 'ref-array-di'
 import type { NamedTypeLike, Pointer, Type } from 'ref-napi'
 
-import type { SecretBuffer } from 'aries-askar-shared';
 import { ByteBuffer, KeyAlgs } from 'aries-askar-shared'
 import { Callback } from 'ffi-napi'
 import { refType, alloc } from 'ref-napi'
@@ -27,6 +27,7 @@ import { Ed25519KeyPair } from '../structures/Ed25519KeyPair'
 import { X25519KeyPair } from '../structures/X25519KeyPair'
 
 import {
+  FFI_UINT64,
   FFI_INT8,
   ByteBufferStruct,
   FFI_CALLBACK_ID,
@@ -38,6 +39,7 @@ import {
   EncryptedBufferStruct,
   AeadParamsStruct,
 } from './ffiTypes'
+import { resolve } from 'path'
 
 export const allocateStringBuffer = (): Buffer => alloc(FFI_STRING)
 
@@ -133,27 +135,27 @@ export const toNativeCallback = (cb: NativeCallback) => {
 }
 
 export type NativeCallbackWithResponse<R> = (id: number, errorCode: number, response: R) => void
-export const toNativeCallbackWithResponse = <R>(cb: NativeCallbackWithResponse<R>) => {
-  const nativeCallback = Callback(FFI_VOID, [FFI_CALLBACK_ID, FFI_ERROR_CODE, FFI_STRING], cb)
+export const toNativeCallbackWithResponse = <R>(cb: NativeCallbackWithResponse<R>, responseFfiType = FFI_STRING) => {
+  const nativeCallback = Callback(FFI_VOID, [FFI_CALLBACK_ID, FFI_ERROR_CODE, responseFfiType], cb)
   const id = allocateCallbackBuffer(nativeCallback)
   return { nativeCallback, id }
 }
 
-export type NativeCallbackWithHandle = (id: number, errorCode: number, handle: number) => void
-export const toNativeCallbackWithHandle = (cb: NativeCallbackWithHandle) => {
-  // TODO: is this int32
-  const nativeCallback = Callback(FFI_VOID, [FFI_CALLBACK_ID, FFI_ERROR_CODE, FFI_INT32], cb)
-  const id = allocateCallbackBuffer(nativeCallback)
-  return { nativeCallback, id }
-}
-
-export type NativeCallbackWithIndex = (id: number, errorCode: number, index: number) => void
-export const toNativeCallbackWithIndex = (cb: NativeCallbackWithIndex) => {
-  // TODO: is this int32
-  const nativeCallback = Callback(FFI_VOID, [FFI_CALLBACK_ID, FFI_ERROR_CODE, FFI_INT32], cb)
-  const id = allocateCallbackBuffer(nativeCallback)
-  return { nativeCallback, id }
-}
+// export type NativeCallbackWithHandle = (id: number, errorCode: number, handle: number) => void
+// export const toNativeCallbackWithHandle = (cb: NativeCallbackWithHandle) => {
+//   // TODO: is this int32
+//   const nativeCallback = Callback(FFI_VOID, [FFI_CALLBACK_ID, FFI_ERROR_CODE, FFI_INT32], cb)
+//   const id = allocateCallbackBuffer(nativeCallback)
+//   return { nativeCallback, id }
+// }
+//
+// export type NativeCallbackWithIndex = (id: number, errorCode: number, index: number) => void
+// export const toNativeCallbackWithIndex = (cb: NativeCallbackWithIndex) => {
+//   // TODO: is this int32
+//   const nativeCallback = Callback(FFI_VOID, [FFI_CALLBACK_ID, FFI_ERROR_CODE, FFI_INT32], cb)
+//   const id = allocateCallbackBuffer(nativeCallback)
+//   return { nativeCallback, id }
+// }
 
 export type NativeLogCallback = (
   context: unknown,

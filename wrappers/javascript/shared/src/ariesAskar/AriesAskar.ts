@@ -5,7 +5,7 @@ import type {
   ScanHandle,
   SessionHandle,
   StoreHandle,
-} from '../classes'
+} from '../crypto'
 import type { KeyAlgs, LogLevel, SigAlgs } from '../enums'
 import type { AeadParams, EncryptedBuffer, SecretBuffer } from '../types'
 

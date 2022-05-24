@@ -81,7 +81,7 @@ export const ArcHandleFfiKeyEntryList = CStruct({
 export const KeyEntryListHandle = ArcHandleFfiKeyEntryList
 
 // FFI Type Strings
-export const FFI_ERROR_CODE = 'int'
+export const FFI_ERROR_CODE = 'int64'
 
 export const FFI_POINTER = 'pointer'
 
@@ -106,6 +106,6 @@ export const ARC_HANDLE = ref.refType(FFI_POINTER)
 export const FFI_LOCAL_KEY_HANDLE = ARC_HANDLE
 export const FFI_KEY_ENTRY_LIST_HANDLE = ARC_HANDLE
 export const FFI_SCAN_HANDLE = ARC_HANDLE
-export const FFI_SESSION_HANDLE = ARC_HANDLE
+export const FFI_SESSION_HANDLE = 'int64'
 export const FFI_ENTRY_LIST_HANDLE = ARC_HANDLE
-export const FFI_STORE_HANDLE = ARC_HANDLE
+export const FFI_STORE_HANDLE = 'int64'

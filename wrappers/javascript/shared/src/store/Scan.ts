@@ -55,7 +55,7 @@ export class Scan {
       })
 
       // eslint-disable-next-line @typescript-eslint/no-non-null-assertion, @typescript-eslint/no-unsafe-assignment
-      this._listHandle = await ariesAskar.scanNext({ scanHandle: this._handle! })
+      this._listHandle = await ariesAskar.scanNext({ scanHandle: this._handle })
     }
     // eslint-disable-next-line no-constant-condition
     while (true) {
@@ -66,8 +66,8 @@ export class Scan {
         cb(entry)
         break
       }
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-      this._listHandle = await ariesAskar.scanNext({ scanHandle: this._handle })
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+      this._listHandle = await ariesAskar.scanNext({ scanHandle: this._handle! })
     }
   }
 

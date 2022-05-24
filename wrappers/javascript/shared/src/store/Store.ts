@@ -1,12 +1,14 @@
 import type { StoreHandle } from '../crypto'
 import type { KeyMethod } from '../enums'
+import type { StoreKeyMethod } from '../enums/StoreKeyMethod'
 
 import { ariesAskar } from '../ariesAskar'
 
+import { OpenSession } from './OpenSession'
+
 export class Store {
   private _handle: StoreHandle
-  // TODO: implement OpenSession
-  private _opener?: string
+  private _opener?: OpenSession
   private _uri: string
 
   public constructor({ handle, uri }: { handle: StoreHandle; uri: string }) {
@@ -18,11 +20,11 @@ export class Store {
     return this._handle
   }
 
-  public generateRawKey(seed?: Uint8Array) {
+  public static generateRawKey(seed?: Uint8Array) {
     return ariesAskar.storeGenerateRawKey({ seed })
   }
 
-  public uri() {
+  public get uri() {
     return this._uri
   }
 
@@ -34,15 +36,12 @@ export class Store {
     profile,
   }: {
     uri: string
-    keyMethod?: KeyMethod
+    keyMethod?: StoreKeyMethod
     passKey?: string
     profile?: string
     recreate: boolean
   }) {
-    // TODO: why is this unsafe?
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const handle = await ariesAskar.storeProvision({ specUri: uri, keyMethod, profile, passKey, recreate })
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     return new Store({ handle, uri })
   }
 
@@ -57,14 +56,33 @@ export class Store {
     passKey?: string
     profile?: string
   }) {
-    // TODO: why is this unsafe?
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const handle = await ariesAskar.storeOpen({ profile, passKey, keyMethod, specUri: uri })
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     return new Store({ uri, handle })
   }
 
-  public async remove({ uri }: { uri: string }) {
+  public async close(remove: boolean) {
+    this._opener = undefined
+    if (this.handle) await this.handle.close()
+
+    return remove ? await this.remove(this.uri) : false
+  }
+
+  public async remove(uri: string) {
     return await ariesAskar.storeRemove({ specUri: uri })
+  }
+
+  public session(profile?: string) {
+    return new OpenSession({ store: this.handle, profile, isTxn: false })
+  }
+
+  public transaction(profile?: string) {
+    return new OpenSession({ store: this.handle, profile, isTxn: true })
+  }
+
+  public async openSession() {
+    if (!this._opener) {
+      this._opener = new OpenSession({ store: this.handle, isTxn: false })
+    }
+    return await this._opener.open()
   }
 }
