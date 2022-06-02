@@ -92,14 +92,15 @@ where
     }
 
     pub async fn borrow(&self, handle: K) -> Result<TryMutexGuard<V>, Error> {
-        self.map
+        Ok(self
+            .map
             .read()
             .await
             .get(&handle)
             .ok_or_else(|| err_msg!("Invalid resource handle"))?
             .1
-            .try_lock_arc()
-            .ok_or_else(|| err_msg!(Busy, "Resource handle in use"))
+            .lock_arc()
+            .await)
     }
 
     pub async fn remove_all(&self, store: StoreHandle) -> Result<(), Error> {
