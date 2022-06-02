@@ -31,7 +31,7 @@ jobs:
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: 1.56
+          toolchain: 1.57
           override: true
           components: clippy, rustfmt
 
@@ -112,7 +112,7 @@ jobs:
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: 1.56
+          toolchain: 1.57
           override: true
 
       - name: Cache cargo resources
@@ -146,7 +146,7 @@ jobs:
             toolchain: nightly-2021-10-21 #  beta required for aarch64-apple-darwin target
           - os: windows-latest
             lib: aries_askar.dll
-            toolchain: 1.56
+            toolchain: 1.57
 
     runs-on: ${{ matrix.os }}
 
