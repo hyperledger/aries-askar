@@ -1,5 +1,5 @@
 [workspace]
-members = ["askar-bbs", "askar-crypto"]
+members = ["askar-crypto"]
 
 [package]
 name = "aries-askar"
@@ -63,7 +63,7 @@ sha2 = "0.10"
 tokio = { version = "1.5", features = ["time"] }
 url = { version = "2.1", default-features = false }
 uuid = { version = "0.8", features = ["v4"] }
-zeroize = "1.4"
+zeroize = "1"
 
 [dependencies.askar-crypto]
 version = "0.2.5"

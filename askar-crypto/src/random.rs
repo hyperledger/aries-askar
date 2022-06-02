@@ -4,7 +4,7 @@ use core::fmt::{self, Debug, Formatter};
 
 use aead::generic_array::{typenum::Unsigned, GenericArray};
 use chacha20::{
-    cipher::{NewCipher, StreamCipher},
+    cipher::{KeyIvInit, KeySizeUser, StreamCipher},
     ChaCha20,
 };
 use rand::{CryptoRng, RngCore, SeedableRng};
@@ -14,7 +14,7 @@ use crate::buffer::SecretBytes;
 use crate::error::Error;
 
 /// The expected length of a seed for `fill_random_deterministic`
-pub const DETERMINISTIC_SEED_LENGTH: usize = <ChaCha20 as NewCipher>::KeySize::USIZE;
+pub const DETERMINISTIC_SEED_LENGTH: usize = <ChaCha20 as KeySizeUser>::KeySize::USIZE;
 
 /// Combined trait for CryptoRng and RngCore
 pub trait Rng: CryptoRng + RngCore + Debug {}

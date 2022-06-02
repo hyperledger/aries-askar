@@ -3,12 +3,15 @@
 use core::marker::PhantomData;
 
 use aead::generic_array::ArrayLength;
-use aes_core::{Aes128, Aes256};
-use block_modes::{
-    block_padding::Pkcs7,
-    cipher::{BlockCipher, BlockDecrypt, BlockEncrypt, NewBlockCipher},
-    BlockMode, Cbc,
+use aes_core::{
+    cipher::{
+        block_padding::Pkcs7, BlockCipher, BlockDecryptMut, BlockEncryptMut, KeyInit, KeyIvInit,
+    },
+    Aes128, Aes256,
 };
+
+// use block_modes::{block_padding::Pkcs7, BlockMode, Cbc};
+
 use digest::{crypto_common::BlockSizeUser, Digest};
 use hmac::{Mac, SimpleHmac};
 use subtle::ConstantTimeEq;
@@ -60,7 +63,7 @@ where
 impl<C, D> KeyAeadMeta for AesKey<AesCbcHmac<C, D>>
 where
     AesCbcHmac<C, D>: AesType,
-    C: BlockCipher + NewBlockCipher,
+    C: BlockCipher + KeyInit,
 {
     type NonceSize = C::BlockSize;
     type TagSize = C::KeySize;
@@ -69,7 +72,7 @@ where
 impl<C, D> KeyAeadInPlace for AesKey<AesCbcHmac<C, D>>
 where
     AesCbcHmac<C, D>: AesType,
-    C: BlockCipher + NewBlockCipher + BlockEncrypt + BlockDecrypt,
+    C: BlockCipher + KeyInit + BlockEncryptMut + BlockDecryptMut,
     D: Digest + BlockSizeUser,
     C::KeySize: core::ops::Shl<consts::B1>,
     <C::KeySize as core::ops::Shl<consts::B1>>::Output: ArrayLength<u8>,
@@ -101,12 +104,12 @@ where
         let pad_len = AesCbcHmac::<C, D>::padding_length(msg_len);
         buffer.buffer_extend(pad_len + TagSize::<Self>::USIZE)?;
         let enc_key = GenericArray::from_slice(&self.0[C::KeySize::USIZE..]);
-        Cbc::<C, Pkcs7>::new_fix(enc_key, GenericArray::from_slice(nonce))
-            .encrypt(buffer.as_mut(), msg_len)
+        cbc::Encryptor::<C>::new(enc_key, GenericArray::from_slice(nonce))
+            .encrypt_padded_mut::<Pkcs7>(buffer.as_mut(), msg_len)
             .map_err(|_| err_msg!(Encryption, "AES-CBC encryption error"))?;
         let ctext_end = msg_len + pad_len;
 
-        let mut hmac = SimpleHmac::<D>::new_from_slice(&self.0[..C::KeySize::USIZE])
+        let mut hmac = <SimpleHmac<D> as Mac>::new_from_slice(&self.0[..C::KeySize::USIZE])
             .expect("Incompatible HMAC key length");
         hmac.update(aad);
         hmac.update(nonce.as_ref());
@@ -141,7 +144,7 @@ where
         let ctext_end = buf_len - TagSize::<Self>::USIZE;
         let tag = GenericArray::<u8, TagSize<Self>>::from_slice(&buffer.as_ref()[ctext_end..]);
 
-        let mut hmac = SimpleHmac::<D>::new_from_slice(&self.0[..C::KeySize::USIZE])
+        let mut hmac = <SimpleHmac<D> as Mac>::new_from_slice(&self.0[..C::KeySize::USIZE])
             .expect("Incompatible HMAC key length");
         hmac.update(aad);
         hmac.update(nonce.as_ref());
@@ -151,8 +154,8 @@ where
         let tag_match = tag.as_ref().ct_eq(&mac[..TagSize::<Self>::USIZE]);
 
         let enc_key = GenericArray::from_slice(&self.0[C::KeySize::USIZE..]);
-        let dec_len = Cbc::<C, Pkcs7>::new_fix(enc_key, GenericArray::from_slice(nonce))
-            .decrypt(&mut buffer.as_mut()[..ctext_end])
+        let dec_len = cbc::Decryptor::<C>::new(enc_key, GenericArray::from_slice(nonce))
+            .decrypt_padded_mut::<Pkcs7>(&mut buffer.as_mut()[..ctext_end])
             .map_err(|_| err_msg!(Encryption, "AES-CBC decryption error"))?
             .len();
         buffer.buffer_resize(dec_len)?;
