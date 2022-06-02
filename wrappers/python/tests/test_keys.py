@@ -73,3 +73,7 @@ def test_ed25519():
     jwk = json.loads(key.get_jwk_public())
     assert jwk["kty"] == "OKP"
     assert jwk["crv"] == "Ed25519"
+
+    jwk = json.loads(key.get_jwk_secret())
+    assert jwk["kty"] == "OKP"
+    assert jwk["crv"] == "Ed25519"
