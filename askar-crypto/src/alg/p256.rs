@@ -310,7 +310,7 @@ impl KeyExchange for P256KeyPair {
         match self.secret.as_ref() {
             Some(sk) => {
                 let xk = diffie_hellman(sk.to_nonzero_scalar(), other.public.as_affine());
-                out.buffer_write(xk.as_bytes())?;
+                out.buffer_write(&xk.raw_secret_bytes()[..])?;
                 Ok(())
             }
             None => Err(err_msg!(MissingSecretKey)),

@@ -3,13 +3,13 @@
 use core::convert::{TryFrom, TryInto};
 
 use k256::{
+    ecdh::diffie_hellman,
     ecdsa::{
         signature::{Signer, Verifier},
         Signature, SigningKey, VerifyingKey,
     },
     elliptic_curve::{
         self,
-        ecdh::diffie_hellman,
         sec1::{Coordinates, FromEncodedPoint, ToEncodedPoint},
     },
     EncodedPoint, PublicKey, SecretKey,
@@ -97,7 +97,7 @@ impl K256KeyPair {
     /// Verify a signature with the public key
     pub fn verify_signature(&self, message: &[u8], signature: &[u8]) -> bool {
         if let Ok(sig) = Signature::try_from(signature) {
-            let vk = VerifyingKey::from(self.public.as_affine());
+            let vk = VerifyingKey::from(self.public);
             vk.verify(message, &sig).is_ok()
         } else {
             false
@@ -310,7 +310,7 @@ impl KeyExchange for K256KeyPair {
         match self.secret.as_ref() {
             Some(sk) => {
                 let xk = diffie_hellman(sk.to_nonzero_scalar(), other.public.as_affine());
-                out.buffer_write(xk.as_bytes())?;
+                out.buffer_write(&xk.raw_secret_bytes()[..])?;
                 Ok(())
             }
             None => Err(err_msg!(MissingSecretKey)),
