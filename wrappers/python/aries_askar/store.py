@@ -626,4 +626,11 @@ class OpenSession:
     async def __aexit__(self, exc_type, exc, tb):
         session = self._session
         self._session = None
+
+        if session.is_transaction and session.handle:
+            if exc:
+                await session.rollback()
+            else:
+                await session.commit()
+
         await session.close()
