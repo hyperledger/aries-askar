@@ -36,6 +36,9 @@ use super::k256::{self, K256KeyPair};
 #[cfg(feature = "p256")]
 use super::p256::{self, P256KeyPair};
 
+#[cfg(feature = "p384")]
+use super::p384::{self, P384KeyPair};
+
 use super::{HasKeyAlg, KeyAlg};
 use crate::{
     buffer::{ResizeBuffer, WriteBuffer},
@@ -229,6 +232,8 @@ fn generate_any<R: AllocKey>(alg: KeyAlg, rng: impl KeyMaterial) -> Result<R, Er
         KeyAlg::EcCurve(EcCurves::Secp256k1) => K256KeyPair::generate(rng).map(R::alloc_key),
         #[cfg(feature = "p256")]
         KeyAlg::EcCurve(EcCurves::Secp256r1) => P256KeyPair::generate(rng).map(R::alloc_key),
+        #[cfg(feature = "p384")]
+        KeyAlg::EcCurve(EcCurves::Secp384r1) => P384KeyPair::generate(rng).map(R::alloc_key),
         #[allow(unreachable_patterns)]
         _ => {
             return Err(err_msg!(
@@ -265,6 +270,10 @@ fn from_public_bytes_any<R: AllocKey>(alg: KeyAlg, public: &[u8]) -> Result<R, E
         #[cfg(feature = "p256")]
         KeyAlg::EcCurve(EcCurves::Secp256r1) => {
             P256KeyPair::from_public_bytes(public).map(R::alloc_key)
+        }
+        #[cfg(feature = "p384")]
+        KeyAlg::EcCurve(EcCurves::Secp384r1) => {
+            P384KeyPair::from_public_bytes(public).map(R::alloc_key)
         }
         #[allow(unreachable_patterns)]
         _ => {
@@ -334,6 +343,10 @@ fn from_secret_bytes_any<R: AllocKey>(alg: KeyAlg, secret: &[u8]) -> Result<R, E
         #[cfg(feature = "p256")]
         KeyAlg::EcCurve(EcCurves::Secp256r1) => {
             P256KeyPair::from_secret_bytes(secret).map(R::alloc_key)
+        }
+        #[cfg(feature = "p384")]
+        KeyAlg::EcCurve(EcCurves::Secp384r1) => {
+            P384KeyPair::from_secret_bytes(secret).map(R::alloc_key)
         }
         #[allow(unreachable_patterns)]
         _ => {
@@ -534,6 +547,8 @@ fn from_jwk_any<R: AllocKey>(jwk: JwkParts<'_>) -> Result<R, Error> {
         ("EC", c) if c == k256::JWK_CURVE => K256KeyPair::from_jwk_parts(jwk).map(R::alloc_key),
         #[cfg(feature = "p256")]
         ("EC", c) if c == p256::JWK_CURVE => P256KeyPair::from_jwk_parts(jwk).map(R::alloc_key),
+        #[cfg(feature = "p384")]
+        ("EC", c) if c == p384::JWK_CURVE => P384KeyPair::from_jwk_parts(jwk).map(R::alloc_key),
         // FIXME implement symmetric keys?
         _ => Err(err_msg!(Unsupported, "Unsupported JWK for key import")),
     }
@@ -631,6 +646,13 @@ macro_rules! match_key_alg {
         }
         match_key_alg!(@ $($rest)*; $key, $alg)
     }};
+    (@ P384 $($rest:ident)*; $key:ident, $alg:ident) => {{
+        #[cfg(feature = "p384")]
+        if $alg == KeyAlg::EcCurve(EcCurves::Secp384r1) {
+            return Ok($key.assume::<P384KeyPair>())
+        }
+        match_key_alg!(@ $($rest)*; $key, $alg)
+    }};
 }
 
 impl AnyKey {
@@ -654,6 +676,7 @@ impl AnyKey {
             Ed25519,
             K256,
             P256,
+            P384,
             X25519,
             "Secret key export is not supported for this key type"
         }
@@ -667,6 +690,7 @@ impl AnyKey {
             Ed25519,
             K256,
             P256,
+            P384,
             X25519,
             "Public key export is not supported for this key type"
         }
@@ -711,6 +735,10 @@ impl KeyExchange for AnyKey {
             KeyAlg::EcCurve(EcCurves::Secp256r1) => Ok(self
                 .assume::<P256KeyPair>()
                 .write_key_exchange(other.assume::<P256KeyPair>(), out)?),
+            #[cfg(feature = "p384")]
+            KeyAlg::EcCurve(EcCurves::Secp384r1) => Ok(self
+                .assume::<P384KeyPair>()
+                .write_key_exchange(other.assume::<P384KeyPair>(), out)?),
             #[allow(unreachable_patterns)]
             _ => {
                 let _ = out;
@@ -767,6 +795,7 @@ impl ToJwk for AnyKey {
             Ed25519,
             K256,
             P256,
+            P384,
             X25519,
             "JWK export is not supported for this key type"
         }?;
@@ -787,6 +816,7 @@ impl KeySign for AnyKey {
             Ed25519,
             K256,
             P256,
+            P384,
             "Signing is not supported for this key type"
         }?;
         key.write_signature(message, sig_type, out)
@@ -806,6 +836,7 @@ impl KeySigVerify for AnyKey {
             Ed25519,
             K256,
             P256,
+            P384,
             "Signature verification is not supported for this key type"
         }?;
         key.verify_signature(message, signature, sig_type)
