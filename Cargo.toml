@@ -66,7 +66,7 @@ uuid = { version = "0.8", features = ["v4"] }
 zeroize = "1"
 
 [dependencies.askar-crypto]
-version = "0.2.5"
+version = "0.3.0"
 path = "./askar-crypto"
 features = ["all_keys", "any_key", "argon2", "crypto_box", "std"]
 
