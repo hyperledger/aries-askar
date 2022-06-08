@@ -1,6 +1,6 @@
 [package]
 name = "askar-crypto"
-version = "0.2.5"
+version = "0.3.0"
 authors = ["Hyperledger Aries Contributors <aries@lists.hyperledger.org>"]
 edition = "2018"
 description = "Hyperledger Aries Askar cryptography"
@@ -28,21 +28,6 @@ ec_curves = ["ecdsa", "elliptic-curve", "k256", "p256", "p384"]
 ed25519 = ["curve25519-dalek", "ed25519-dalek", "x25519-dalek"]
 getrandom = ["rand/getrandom"]
 std_rng = ["getrandom", "rand/std", "rand/std_rng"]
-
-[dev-dependencies]
-base64 = { version = "0.13", default-features = false, features = ["alloc"] }
-criterion = "0.3"
-hex-literal = "0.3"
-serde_cbor = "0.11"
-serde-json-core = { version = "0.4", default-features = false, features = ["std"] }
-
-[[bench]]
-name = "enc"
-harness = false
-
-[[bench]]
-name = "kdf"
-harness = false
 
 [dependencies]
 aead = "0.4"
@@ -77,3 +62,18 @@ subtle = "2.4"
 sha2 = { version = "0.10", default-features = false }
 x25519-dalek = { version = "=1.1", default-features = false, features = ["u64_backend"], optional = true }
 zeroize = { version = "1", features = ["derive"] }
+
+[dev-dependencies]
+base64 = { version = "0.13", default-features = false, features = ["alloc"] }
+criterion = "0.3"
+hex-literal = "0.3"
+serde_cbor = "0.11"
+serde-json-core = { version = "0.4", default-features = false, features = ["std"] }
+
+[[bench]]
+name = "enc"
+harness = false
+
+[[bench]]
+name = "kdf"
+harness = false
