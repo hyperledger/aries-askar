@@ -28,11 +28,14 @@ pub type P384KeyPair = EcKeyPair<NistP384>;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::repr::KeySecretBytes;
+    #[cfg(feature = "alloc")]
     use crate::{
         jwk::{FromJwk, JwkParts, ToJwk},
-        repr::{KeySecretBytes, KeypairBytes, ToPublicBytes},
+        repr::{KeypairBytes, ToPublicBytes},
     };
 
+    #[cfg(feature = "alloc")]
     #[test]
     fn jwk_expected() {
         // from: https://connect2id.com/products/server/docs/config/jwk-set
@@ -74,6 +77,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "alloc")]
     #[test]
     fn jwk_thumbprint() {
         let pk = P384KeyPair::from_jwk(

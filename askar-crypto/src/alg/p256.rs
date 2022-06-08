@@ -28,11 +28,14 @@ pub type P256KeyPair = EcKeyPair<NistP256>;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::repr::KeySecretBytes;
+    #[cfg(feature = "alloc")]
     use crate::{
         jwk::{FromJwk, JwkParts, ToJwk},
-        repr::{KeySecretBytes, KeypairBytes, ToPublicBytes},
+        repr::{KeypairBytes, ToPublicBytes},
     };
 
+    #[cfg(feature = "alloc")]
     #[test]
     fn jwk_expected() {
         // from JWS RFC https://tools.ietf.org/html/rfc7515
@@ -74,6 +77,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "alloc")]
     #[test]
     fn jwk_thumbprint() {
         let pk = P256KeyPair::from_jwk(

@@ -404,19 +404,23 @@ macro_rules! impl_ec_key_type {
         }
 
         #[cfg(test)]
+        #[cfg(any(feature = "alloc", feature = "std_rng"))]
         mod _tests {
             use super::$curve;
 
+            #[cfg(feature = "alloc")]
             #[test]
             fn key_exchange_random() {
                 $crate::alg::ec_common::tests::key_exchange_random::<$curve>();
             }
 
+            #[cfg(feature = "alloc")]
             #[test]
             fn round_trip_bytes() {
                 $crate::alg::ec_common::tests::round_trip_bytes::<$curve>();
             }
 
+            #[cfg(feature = "std_rng")]
             #[test]
             fn sign_verify_random() {
                 $crate::alg::ec_common::tests::sign_verify_random::<$curve>();
@@ -427,8 +431,10 @@ macro_rules! impl_ec_key_type {
 
 #[cfg(test)]
 pub(super) mod tests {
+    #[cfg(any(feature = "alloc", feature = "std_rng"))]
     use super::*;
 
+    #[cfg(feature = "alloc")]
     pub fn key_exchange_random<C: EcKeyType>() {
         let kp1 = EcKeyPair::<C>::random().unwrap();
         let kp2 = EcKeyPair::<C>::random().unwrap();
@@ -443,6 +449,7 @@ pub(super) mod tests {
         assert_eq!(xch1, xch2);
     }
 
+    #[cfg(feature = "alloc")]
     pub fn round_trip_bytes<C: EcKeyType>() {
         let kp = EcKeyPair::<C>::random().unwrap();
         let cmp = EcKeyPair::<C>::from_keypair_bytes(&kp.to_keypair_bytes().unwrap()).unwrap();
@@ -452,6 +459,7 @@ pub(super) mod tests {
         );
     }
 
+    #[cfg(feature = "std_rng")]
     pub fn sign_verify_random<C: EcKeyType>() {
         let test_msg = b"This is a dummy message for use with tests";
         let kp = EcKeyPair::<C>::random().unwrap();

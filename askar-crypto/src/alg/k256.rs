@@ -28,11 +28,14 @@ pub type K256KeyPair = EcKeyPair<Secp256k1>;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::repr::KeySecretBytes;
+    #[cfg(feature = "alloc")]
     use crate::{
         jwk::{FromJwk, JwkParts, ToJwk},
-        repr::{KeySecretBytes, KeypairBytes, ToPublicBytes},
+        repr::{KeypairBytes, ToPublicBytes},
     };
 
+    #[cfg(feature = "alloc")]
     #[test]
     fn jwk_expected() {
         // from https://identity.foundation/EcdsaSecp256k1RecoverySignature2020/
