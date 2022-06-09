@@ -5,25 +5,23 @@ import { default as struct } from 'ref-struct-di'
 const CStruct = struct(ref)
 const CArray = array(ref)
 
-export const ByteBufferArray = (len: number) => CArray(ref.types.uint8, len)
-export const ByteBufferArrayPtr = (len: number) => ref.refType(ByteBufferArray(len))
+export const ByteBufferArray = (len?: number) => CArray(ref.types.uint8, len)
+export const ByteBufferArrayPtr = (len?: number) => ref.refType(ByteBufferArray(len))
 export const SercetBufferArray = ByteBufferArray
 export const SercetBufferArrayPtr = ByteBufferArrayPtr
 
-export const ByteBufferStruct = CStruct({
-  len: ref.types.uint64,
-  data: ref.refType(CArray(ref.types.uint8)),
-})
+export const ByteBufferStruct = (len?: number) =>
+  CStruct({
+    len: ref.types.uint64,
+    data: ref.refType(CArray(ref.types.uint8, len)),
+  })
+
 export type ByteBufferType<T extends number = 32> = struct.StructObject<{
   len: number
   data: ref.Pointer<array.TypedArray<number, T>>
 }>
 
-export const SecretBufferStruct = (len = 32) =>
-  CStruct({
-    len: ref.types.int64,
-    data: ByteBufferArrayPtr(len),
-  })
+export const SecretBufferStruct = ByteBufferStruct
 
 export type SecretBufferType = ByteBufferType
 

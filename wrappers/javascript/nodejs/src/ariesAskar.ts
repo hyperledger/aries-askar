@@ -103,10 +103,13 @@ import {
   SecretBuffer,
   SessionHandle,
 } from 'aries-askar-shared'
+import array from 'ref-array-di'
+import * as ref from 'ref-napi'
 
 import { handleError } from './error'
 import { nativeAriesAskar } from './lib'
 import {
+  FFI_INT64,
   FFI_ENTRY_LIST_HANDLE,
   FFI_SESSION_HANDLE,
   FFI_STORE_HANDLE,
@@ -170,6 +173,8 @@ export class NodeJSAriesAskar implements AriesAskar {
         } else if (typeof response === 'number') {
           resolve(response as unknown as Return)
         } else if (response instanceof Buffer) {
+          if (response.address() === 0) reject('Not found')
+
           resolve(response as unknown as Return)
         }
 
@@ -253,7 +258,6 @@ export class NodeJSAriesAskar implements AriesAskar {
 
   public entryListGetCategory(options: EntryListGetCategoryOptions): string {
     const { entryListHandle, index } = serializeArguments(options)
-    console.log(entryListHandle)
     const ret = allocateStringBuffer()
 
     // @ts-ignore
@@ -287,13 +291,19 @@ export class NodeJSAriesAskar implements AriesAskar {
 
   public entryListGetValue(options: EntryListGetValueOptions): string {
     const { entryListHandle, index } = serializeArguments(options)
-    const ret = allocateStringBuffer()
+
+    const CArray = array(ref)
+
+    const ret = ref.alloc(ref.refType(CArray(ref.types.uint8)))
 
     // @ts-ignore
     nativeAriesAskar.askar_entry_list_get_value(entryListHandle, index, ret)
     handleError()
 
-    return ret.deref() as string
+    // @ts-ignore
+    console.log(ret.deref().deref())
+    // return new SecretBuffer(secretBuffer).data.toString()
+    return ''
   }
 
   public keyAeadDecrypt(options: KeyAeadDecryptOptions): SecretBuffer {
@@ -763,8 +773,9 @@ export class NodeJSAriesAskar implements AriesAskar {
 
   public sessionCount(options: SessionCountOptions): Promise<number> {
     const { sessionHandle, tagFilter, category } = serializeArguments(options)
-    return this.promisifyWithResponse((cb, cbId) =>
-      nativeAriesAskar.askar_session_count(sessionHandle, category, tagFilter, cb, cbId)
+    return this.promisifyWithResponse<number, number>(
+      (cb, cbId) => nativeAriesAskar.askar_session_count(sessionHandle, category, tagFilter, cb, cbId),
+      FFI_INT64
     )
   }
 

@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unsafe-call */
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
-import { SecretBufferType, ByteBufferType, FFI_INT64 } from './ffiTypes'
+import type { SecretBufferType, ByteBufferType } from './ffiTypes'
 import type { SecretBuffer } from 'aries-askar-shared'
 import type array from 'ref-array-di'
 import type { NamedTypeLike, Pointer, Type } from 'ref-napi'
@@ -27,7 +27,6 @@ import { Ed25519KeyPair } from '../structures/Ed25519KeyPair'
 import { X25519KeyPair } from '../structures/X25519KeyPair'
 
 import {
-  FFI_UINT64,
   FFI_INT8,
   ByteBufferStruct,
   FFI_CALLBACK_ID,
@@ -39,7 +38,6 @@ import {
   EncryptedBufferStruct,
   AeadParamsStruct,
 } from './ffiTypes'
-import { resolve } from 'path'
 
 export const allocateStringBuffer = (): Buffer => alloc(FFI_STRING)
 
@@ -47,7 +45,7 @@ export const allocateInt32Buffer = (): Buffer => alloc(FFI_INT32)
 
 export const allocateInt8Buffer = (): Buffer => alloc(FFI_INT8)
 
-export const allocateSecretBuffer = (len = 32): Buffer => alloc(SecretBufferStruct(len))
+export const allocateSecretBuffer = (len?: number): Buffer => alloc(SecretBufferStruct(len))
 
 export const allocateEncryptedBuffer = (len = 32): Buffer => alloc(EncryptedBufferStruct(len))
 
@@ -60,7 +58,7 @@ export const allocateCallbackBuffer = (callback: Buffer) => setTimeout(() => cal
 export const deallocateCallbackBuffer = (id: number) => clearTimeout(id as unknown as NodeJS.Timeout)
 
 export const byteBufferClassToStruct = ({ len, data }: ByteBuffer) =>
-  ByteBufferStruct({
+  ByteBufferStruct(len)({
     len,
     data: Buffer.from(data) as Pointer<array.TypedArray<number, 32>>,
   })

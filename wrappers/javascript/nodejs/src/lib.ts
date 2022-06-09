@@ -47,17 +47,17 @@ const getLibrary = () => {
   if (pathFromEnvironment) platformPaths.unshift(pathFromEnvironment)
 
   // Create the path + file
-  const libraries = platformPaths.map((p) =>
+  const libaries = platformPaths.map((p) =>
     path.join(p, `${extensions[platform].prefix ?? ''}${LIBNAME}${extensions[platform].extension}`)
   )
 
   // Gaurd so we quit if there is no valid path for the library
-  if (!libraries.some(doesPathExist))
-    throw new Error(`Could not find ${LIBNAME} with these paths: ${libraries.join(' ')}`)
+  if (!libaries.some(doesPathExist))
+    throw new Error(`Could not find ${LIBNAME} with these paths: ${libaries.join(' ')}`)
 
   // Get the first valid library
   // Casting here as a string because there is a guard of none of the paths
-  const validLibraryPath = libraries.find((l) => doesPathExist(l)) as string
+  const validLibraryPath = libaries.find((l) => doesPathExist(l)) as string
 
   // TODO
   // eslint-disable-next-line @typescript-eslint/ban-ts-comment
