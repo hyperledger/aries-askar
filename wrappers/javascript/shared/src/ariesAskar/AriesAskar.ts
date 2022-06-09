@@ -24,41 +24,41 @@ export type EntryListGetTagsOptions = { entryListHandle: EntryListHandle; index:
 export type EntryListGetValueOptions = { entryListHandle: EntryListHandle; index: number }
 
 export type KeyAeadDecryptOptions = {
-  localKeyHandle: Buffer
+  localKeyHandle: Uint8Array
   ciphertext: Uint8Array
   nonce: Uint8Array
   tag: Uint8Array
   aad?: Uint8Array
 }
 export type KeyAeadEncryptOptions = {
-  localKeyHandle: Buffer
+  localKeyHandle: Uint8Array
   message: Uint8Array
   nonce?: Uint8Array
   aad?: Uint8Array
 }
-export type KeyAeadGetPaddingOptions = { localKeyHandle: Buffer; msgLen: number }
-export type KeyAeadGetParamsOptions = { localKeyHandle: Buffer }
-export type KeyAeadRandomNonceOptions = { localKeyHandle: Buffer }
-export type KeyConvertOptions = { localKeyHandle: Buffer; alg: KeyAlgs }
+export type KeyAeadGetPaddingOptions = { localKeyHandle: Uint8Array; msgLen: number }
+export type KeyAeadGetParamsOptions = { localKeyHandle: Uint8Array }
+export type KeyAeadRandomNonceOptions = { localKeyHandle: Uint8Array }
+export type KeyConvertOptions = { localKeyHandle: Uint8Array; alg: KeyAlgs }
 export type KeyCryptoBoxOptions = {
-  recipKey: Buffer
-  senderKey: Buffer
+  recipKey: Uint8Array
+  senderKey: Uint8Array
   message: Uint8Array
   nonce: Uint8Array
 }
 export type KeyCryptoBoxOpenOptions = {
-  recipKey: Buffer
-  senderKey: Buffer
+  recipKey: Uint8Array
+  senderKey: Uint8Array
   message: Uint8Array
   nonce: Uint8Array
 }
-export type KeyCryptoBoxSealOptions = { localKeyHandle: Buffer; message: Uint8Array }
-export type KeyCryptoBoxSealOpenOptions = { localKeyHandle: Buffer; ciphertext: Uint8Array }
+export type KeyCryptoBoxSealOptions = { localKeyHandle: Uint8Array; message: Uint8Array }
+export type KeyCryptoBoxSealOpenOptions = { localKeyHandle: Uint8Array; ciphertext: Uint8Array }
 export type KeyDeriveEcdh1puOptions = {
   alg: KeyAlgs
-  ephemKey: Buffer
-  senderKey: Buffer
-  recipKey: Buffer
+  ephemKey: Uint8Array
+  senderKey: Uint8Array
+  recipKey: Uint8Array
   algId: Uint8Array
   apu: Uint8Array
   apv: Uint8Array
@@ -67,8 +67,8 @@ export type KeyDeriveEcdh1puOptions = {
 }
 export type KeyDeriveEcdhEsOptions = {
   alg: KeyAlgs
-  ephemKey: Buffer
-  recipKey: Buffer
+  ephemKey: Uint8Array
+  recipKey: Uint8Array
   algId: Uint8Array
   apu: Uint8Array
   apv: Uint8Array
@@ -85,37 +85,37 @@ export type KeyFreeOptions = { keyEntryListHandle: KeyEntryListHandle }
 export type KeyFromJwkOptions = { jwk: Uint8Array }
 export type KeyFromKeyExchangeOptions = {
   alg: KeyAlgs
-  skHandle: Buffer
-  pkHandle: Buffer
+  skHandle: Uint8Array
+  pkHandle: Uint8Array
 }
 export type KeyFromPublicBytesOptions = { alg: KeyAlgs; publicKey: Uint8Array }
 export type KeyFromSecretBytesOptions = { alg: KeyAlgs; secretKey: Uint8Array }
 export type KeyFromSeedOptions = { alg: KeyAlgs; seed: Uint8Array; method: string }
 export type KeyGenerateOptions = { alg: KeyAlgs; ephemeral: boolean }
-export type KeyGetAlgorithmOptions = { localKeyHandle: Buffer }
-export type KeyGetEphemeralOptions = { localKeyHandle: Buffer }
-export type KeyGetJwkPublicOptions = { localKeyHandle: Buffer }
-export type KeyGetJwkSecretOptions = { localKeyHandle: Buffer }
-export type KeyGetJwkThumbprintOptions = { localKeyHandle: Buffer }
-export type KeyGetPublicBytesOptions = { localKeyHandle: Buffer }
-export type KeyGetSecretBytesOptions = { localKeyHandle: Buffer }
-export type KeySignMessageOptions = { localKeyHandle: Buffer; message: Uint8Array; sigType?: SigAlgs }
+export type KeyGetAlgorithmOptions = { localKeyHandle: Uint8Array }
+export type KeyGetEphemeralOptions = { localKeyHandle: Uint8Array }
+export type KeyGetJwkPublicOptions = { localKeyHandle: Uint8Array }
+export type KeyGetJwkSecretOptions = { localKeyHandle: Uint8Array }
+export type KeyGetJwkThumbprintOptions = { localKeyHandle: Uint8Array }
+export type KeyGetPublicBytesOptions = { localKeyHandle: Uint8Array }
+export type KeyGetSecretBytesOptions = { localKeyHandle: Uint8Array }
+export type KeySignMessageOptions = { localKeyHandle: Uint8Array; message: Uint8Array; sigType?: SigAlgs }
 export type KeyUnwrapKeyOptions = {
-  localKeyHandle: Buffer
+  localKeyHandle: Uint8Array
   alg: KeyAlgs
   ciphertext: Uint8Array
   nonce?: Uint8Array
   tag?: Uint8Array
 }
 export type KeyVerifySignatureOptions = {
-  localKeyHandle: Buffer
+  localKeyHandle: Uint8Array
   message: Uint8Array
   signature: Uint8Array
   sigType?: SigAlgs
 }
 export type KeyWrapKeyOptions = {
-  localKeyHandle: Buffer
-  other: Buffer
+  localKeyHandle: Uint8Array
+  other: Uint8Array
   nonce?: Uint8Array
 }
 
@@ -160,7 +160,7 @@ export type SessionFetchAllKeysOptions = {
 export type SessionFetchKeyOptions = { sessionHandle: SessionHandle; name: string; forUpdate: boolean }
 export type SessionInsertKeyOptions = {
   sessionHandle: SessionHandle
-  localKeyHandle: Buffer
+  localKeyHandle: Uint8Array
   name: string
   metadata?: string
   tags?: string
@@ -178,7 +178,7 @@ export type SessionUpdateOptions = {
   operation: number
   category: string
   name: string
-  value?: Uint8Array
+  value?: string
   tags?: Record<string, unknown>
   expiryMs?: number
 }

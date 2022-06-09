@@ -88,10 +88,8 @@ export class Session {
     if (!serializedValue)
       throw new AriesAskarError({ code: 100, message: 'Either `value` or `valueJson` must be defined' })
 
-    console.log(Buffer.from(serializedValue).toString())
-
     await ariesAskar.sessionUpdate({
-      value: Buffer.from(serializedValue),
+      value: serializedValue,
       expiryMs,
       tags,
       name,
@@ -122,7 +120,7 @@ export class Session {
       throw new AriesAskarError({ code: 100, message: 'Either `value` or `valueJson` must be defined' })
 
     await ariesAskar.sessionUpdate({
-      value: Buffer.from(serializedValue, 'utf-8'),
+      value: serializedValue,
       expiryMs,
       tags,
       name,

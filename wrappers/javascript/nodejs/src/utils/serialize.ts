@@ -1,6 +1,6 @@
 import type { SecretBufferStruct, ByteBufferStruct } from './ffiTypes'
 
-import { StoreHandle, ArcHandle, SecretBuffer, ByteBuffer, SessionHandle } from 'aries-askar-shared'
+import { ScanHandle, StoreHandle, ArcHandle, SecretBuffer, ByteBuffer, SessionHandle } from 'aries-askar-shared'
 import { NULL } from 'ref-napi'
 
 import { byteBufferClassToStruct, secretBufferClassToStruct, uint8arrayToByteBufferStruct } from './ffiTools'
@@ -13,6 +13,7 @@ type Argument =
   | ArcHandle
   | StoreHandle
   | SessionHandle
+  | ScanHandle
   | Array<unknown>
   | Date
   | Uint8Array
@@ -72,12 +73,14 @@ export type SerializedOptions<Type> = Required<{
     ? typeof ByteBufferStruct
     : Type[Property] extends SecretBuffer
     ? typeof SecretBufferStruct
-    : Type[Property] extends ArcHandle
-    ? Buffer
     : Type[Property] extends StoreHandle
     ? number
     : Type[Property] extends SessionHandle
     ? number
+    : Type[Property] extends ScanHandle
+    ? number
+    : Type[Property] extends ArcHandle
+    ? Buffer
     : unknown
 }>
 
@@ -104,7 +107,12 @@ const serialize = (arg: Argument): SerializedArgument => {
         return byteBufferClassToStruct(arg) as unknown as typeof ByteBufferStruct
       } else if (arg instanceof SecretBuffer) {
         return secretBufferClassToStruct(arg) as unknown as typeof SecretBufferStruct
-      } else if (arg instanceof ArcHandle || arg instanceof StoreHandle || arg instanceof SessionHandle) {
+      } else if (
+        arg instanceof ArcHandle ||
+        arg instanceof StoreHandle ||
+        arg instanceof SessionHandle ||
+        arg instanceof ScanHandle
+      ) {
         return arg.handle
       } else {
         return JSON.stringify(arg)

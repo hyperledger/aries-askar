@@ -82,9 +82,7 @@ export class Store {
   }
 
   public async openSession() {
-    if (!this._opener) {
-      this._opener = new OpenSession({ store: this.handle, isTxn: false })
-    }
+    this._opener ??= new OpenSession({ store: this.handle, isTxn: false })
     return await this._opener.open()
   }
 }

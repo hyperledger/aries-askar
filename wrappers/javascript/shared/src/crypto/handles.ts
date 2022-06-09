@@ -3,9 +3,9 @@
 import { ariesAskar } from '../ariesAskar'
 
 export class ArcHandle {
-  public handle: Buffer
+  public handle: Uint8Array
 
-  public constructor(handle: Buffer) {
+  public constructor(handle: Uint8Array) {
     this.handle = handle
   }
 }

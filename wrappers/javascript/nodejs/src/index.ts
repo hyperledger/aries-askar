@@ -26,15 +26,15 @@ const testStore = async () => {
     })
 
     const session = await store.openSession()
-    const result = await session.fetch({ ...testEntry, forUpdate: false })
-    console.log(result)
+    // const result = await session.fetch({ ...testEntry, forUpdate: false })
+    // console.log(result)
 
-    await session.insert(testEntry)
+    // await session.insert(testEntry)
 
-    // console.error(await session.count({ category: testEntry.category, tagFilter: testEntry.tags }))
+    // // console.error(await session.count({ category: testEntry.category, tagFilter: testEntry.tags }))
 
-    await session.close()
-    await store.close()
+    // await session.close()
+    // await store.close()
 
     process.exit()
   } catch (e) {
