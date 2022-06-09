@@ -19,7 +19,7 @@ export class StoreHandle {
   }
 
   public async close() {
-    throw new Error('Method `close` not implemented!')
+    await ariesAskar.storeClose({ storeHandle: this })
   }
 }
 
@@ -30,8 +30,8 @@ export class SessionHandle {
     this.handle = handle
   }
 
-  public close(commit: boolean) {
-    throw new Error('Method `close` not implemented!')
+  public async close(commit: boolean) {
+    await ariesAskar.sessionClose({ commit, sessionHandle: this })
   }
 }
 
@@ -41,15 +41,15 @@ export class EntryListHandle extends ArcHandle {
   }
 
   public getName(index: number) {
-    throw new Error('Method `getName` not implemented!')
+    return ariesAskar.entryListGetName({ index, entryListHandle: this })
   }
 
   public getValue(index: number) {
-    throw new Error('Method `getValue` not implemented!')
+    return ariesAskar.entryListGetValue({ index, entryListHandle: this })
   }
 
   public getTags(index: number) {
-    throw new Error('Method `getTags` not implemented!')
+    return ariesAskar.entryListGetTags({ index, entryListHandle: this })
   }
 }
 

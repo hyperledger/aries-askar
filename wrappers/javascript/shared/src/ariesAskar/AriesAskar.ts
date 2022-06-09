@@ -130,7 +130,7 @@ export type ScanStartOptions = {
   limit?: number
 }
 
-export type SessionCloseOptions = { sessionHandle: SessionHandle; commit: number }
+export type SessionCloseOptions = { sessionHandle: SessionHandle; commit: boolean }
 export type SessionCountOptions = {
   sessionHandle: SessionHandle
   category: string

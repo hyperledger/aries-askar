@@ -60,14 +60,16 @@ export class Store {
     return new Store({ uri, handle })
   }
 
-  public async close(remove: boolean) {
+  public async close(remove = false) {
     this._opener = undefined
+
     if (this.handle) await this.handle.close()
 
-    return remove ? await this.remove(this.uri) : false
+    // TODO: when true, this segfaults...
+    return remove ? await Store.remove(this.uri) : false
   }
 
-  public async remove(uri: string) {
+  public static async remove(uri: string) {
     return await ariesAskar.storeRemove({ specUri: uri })
   }
 

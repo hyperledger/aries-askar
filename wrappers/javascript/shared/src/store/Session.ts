@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unsafe-return */
 import type { Key, SessionHandle, StoreHandle } from '../crypto'
 import type { KeyAlgs } from '../enums'
 
@@ -36,9 +37,13 @@ export class Session {
 
   public async fetch({ category, name, forUpdate }: { category: string; name: string; forUpdate: boolean }) {
     if (!this.handle) throw new AriesAskarError({ code: 100, message: 'Cannot fetch from a closed session' })
+
     const handle = await ariesAskar.sessionFetch({ forUpdate, name, category, sessionHandle: this.handle })
-    // TODO: probably wrong, check tests
-    return handle ? new Entry({ list: handle, pos: 0 }) : undefined
+    if (!handle) return undefined
+
+    const entry = new Entry({ list: handle, pos: 0 })
+
+    return entry.toJson()
   }
 
   public async fetchAll({
@@ -83,8 +88,10 @@ export class Session {
     if (!serializedValue)
       throw new AriesAskarError({ code: 100, message: 'Either `value` or `valueJson` must be defined' })
 
+    console.log(Buffer.from(serializedValue).toString())
+
     await ariesAskar.sessionUpdate({
-      value: Buffer.from(serializedValue, 'utf-8'),
+      value: Buffer.from(serializedValue),
       expiryMs,
       tags,
       name,
@@ -161,8 +168,7 @@ export class Session {
   }) {
     if (!this.handle) throw new AriesAskarError({ code: 100, message: 'Cannot insert a key with a closed session' })
 
-    // TODO: does this return anything?
-    return await ariesAskar.sessionInsertKey({
+    await ariesAskar.sessionInsertKey({
       expiryMs,
       tags,
       metadata,

@@ -11,7 +11,6 @@ export class Entry {
   }
 
   public get category() {
-    console.log(this._list)
     return this._list.getCategory(this._pos)
   }
 
@@ -20,10 +19,7 @@ export class Entry {
   }
 
   public get value() {
-    // TODO: fix return type for list.getValue
-    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-    // @ts-ignore
-    return new Uint8Array(this.rawValue)
+    return this.rawValue
   }
 
   public get rawValue() {
@@ -31,17 +27,27 @@ export class Entry {
   }
 
   public get jsonValue() {
-    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-    // @ts-ignore
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-return
-    return JSON.parse(this.rawValue)
+    // return JSON.parse(this.rawValue) as Record<string, unknown>
+    return {}
   }
 
   public get tags() {
-    return this._list.getTags(this._pos)
+    return JSON.parse(this._list.getTags(this._pos)) as Record<string, unknown>
   }
 
   public get keys() {
     return this._keys
+  }
+
+  public toJson() {
+    const json = {
+      name: this.name,
+      value: this.value,
+      keys: this.keys,
+      tags: this.tags,
+      jsonValue: this.jsonValue,
+      category: this.category,
+    }
+    return json
   }
 }
