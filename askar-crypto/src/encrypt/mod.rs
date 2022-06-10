@@ -15,21 +15,27 @@ pub trait KeyAeadInPlace {
     /// returning the length of the ciphertext
     fn encrypt_in_place(
         &self,
-        buffer: &mut dyn ResizeBuffer,
-        nonce: &[u8],
-        aad: &[u8],
-    ) -> Result<usize, Error>;
+        _buffer: &mut dyn ResizeBuffer,
+        _nonce: &[u8],
+        _aad: &[u8],
+    ) -> Result<usize, Error> {
+        Err(err_msg!(Unsupported))
+    }
 
     /// Decrypt an encrypted (verification tag appended) value in place
     fn decrypt_in_place(
         &self,
-        buffer: &mut dyn ResizeBuffer,
-        nonce: &[u8],
-        aad: &[u8],
-    ) -> Result<(), Error>;
+        _buffer: &mut dyn ResizeBuffer,
+        _nonce: &[u8],
+        _aad: &[u8],
+    ) -> Result<(), Error> {
+        Err(err_msg!(Unsupported))
+    }
 
     /// Get the nonce and tag length for encryption
-    fn aead_params(&self) -> KeyAeadParams;
+    fn aead_params(&self) -> KeyAeadParams {
+        KeyAeadParams::default()
+    }
 
     /// Get the ciphertext padding required
     fn aead_padding(&self, _msg_len: usize) -> usize {

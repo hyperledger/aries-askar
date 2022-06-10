@@ -7,16 +7,17 @@ use chacha20poly1305::{ChaCha20Poly1305, XChaCha20Poly1305};
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
-use super::{Chacha20Types, HasKeyAlg, KeyAlg};
+use super::{AnyKey, Chacha20Types, KeyAlg};
 use crate::{
-    buffer::{ArrayKey, ResizeBuffer, Writer},
+    buffer::{ArrayKey, Fill, ResizeBuffer},
     encrypt::{KeyAeadInPlace, KeyAeadMeta, KeyAeadParams},
     error::Error,
     generic_array::{typenum::Unsigned, GenericArray},
     jwk::{JwkEncoder, ToJwk},
-    kdf::{FromKeyDerivation, FromKeyExchange, KeyDerivation, KeyExchange},
+    kdf::{DynKeyExchange, FromKeyDerivation, FromKeyExchange, KeyDerivation},
     random::KeyMaterial,
-    repr::{KeyGen, KeyMeta, KeySecretBytes},
+    repr::{DynPublicBytes, KeyGen, KeyMeta, KeySecretBytes},
+    sign::{KeySigVerify, KeySign},
 };
 
 /// The 'kty' value of a symmetric key JWK
@@ -105,11 +106,15 @@ impl<T: Chacha20Type> PartialEq for Chacha20Key<T> {
 
 impl<T: Chacha20Type> Eq for Chacha20Key<T> {}
 
-impl<T: Chacha20Type> HasKeyAlg for Chacha20Key<T> {
+impl<T: Chacha20Type> AnyKey for Chacha20Key<T> {
     fn algorithm(&self) -> KeyAlg {
         KeyAlg::Chacha20(T::ALG_TYPE)
     }
 }
+
+impl<T: Chacha20Type> DynPublicBytes for Chacha20Key<T> {}
+
+impl<T: Chacha20Type> DynKeyExchange for Chacha20Key<T> {}
 
 impl<T: Chacha20Type> KeyMeta for Chacha20Key<T> {
     type KeySize = <T::Aead as NewAead>::KeySize;
@@ -205,6 +210,10 @@ impl<T: Chacha20Type> KeyAeadInPlace for Chacha20Key<T> {
     }
 }
 
+impl<T: Chacha20Type> KeySign for Chacha20Key<T> {}
+
+impl<T: Chacha20Type> KeySigVerify for Chacha20Key<T> {}
+
 impl<T: Chacha20Type> ToJwk for Chacha20Key<T> {
     fn encode_jwk(&self, enc: &mut dyn JwkEncoder) -> Result<(), Error> {
         if enc.is_public() {
@@ -219,19 +228,13 @@ impl<T: Chacha20Type> ToJwk for Chacha20Key<T> {
     }
 }
 
-// for direct key agreement (not used currently)
-impl<Lhs, Rhs, T> FromKeyExchange<Lhs, Rhs> for Chacha20Key<T>
-where
-    Lhs: KeyExchange<Rhs> + ?Sized,
-    Rhs: ?Sized,
-    T: Chacha20Type,
-{
-    fn from_key_exchange(lhs: &Lhs, rhs: &Rhs) -> Result<Self, Error> {
+impl<T: Chacha20Type> FromKeyExchange for Chacha20Key<T> {
+    fn from_key_exchange(lhs: &dyn AnyKey, rhs: &dyn AnyKey) -> Result<Self, Error> {
         Ok(Self(KeyType::<T>::try_new_with(|arr| {
-            let mut buf = Writer::from_slice(arr);
-            lhs.write_key_exchange(rhs, &mut buf)?;
-            if buf.position() != Self::KEY_LENGTH {
-                return Err(err_msg!(Usage, "Invalid length for key exchange output"));
+            let mut w = Fill(arr);
+            lhs.write_key_exchange(rhs, &mut w)?;
+            if !w.is_filled() {
+                return Err(err_msg!(Unsupported, "Insufficient key exchange output"));
             }
             Ok(())
         })?))
@@ -242,7 +245,7 @@ where
 mod tests {
     use super::*;
     use crate::buffer::SecretBytes;
-    use crate::repr::ToSecretBytes;
+    use crate::repr::DynSecretBytes;
 
     #[test]
     fn encrypt_round_trip() {

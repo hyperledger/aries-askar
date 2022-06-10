@@ -7,10 +7,11 @@ use elliptic_curve::{
     Curve, FieldSize, ProjectiveArithmetic, PublicKey, SecretKey,
 };
 
-use super::{EcCurves, HasKeyAlg};
+use super::{AnyKey, EcCurves};
 use crate::{
     alg::KeyAlg,
     buffer::{ArrayKey, WriteBuffer},
+    encrypt::KeyAeadInPlace,
     error::Error,
     jwk::{FromJwk, JwkEncoder, JwkParts, ToJwk},
     kdf::KeyExchange,
@@ -70,7 +71,7 @@ impl<C: EcKeyType> EcKeyPair<C> {
     }
 }
 
-impl<C: EcKeyType> HasKeyAlg for EcKeyPair<C> {
+impl<C: EcKeyType> AnyKey for EcKeyPair<C> {
     fn algorithm(&self) -> KeyAlg {
         KeyAlg::EcCurve(C::EC_CURVE)
     }
@@ -159,7 +160,19 @@ impl<C: EcKeyType> KeyPublicBytes for EcKeyPair<C> {
     }
 }
 
+impl<C: EcKeyType> KeyAeadInPlace for EcKeyPair<C> {
+    // null impl
+}
+
 impl<C: EcKeyType> KeySign for EcKeyPair<C> {
+    fn signature_length(&self, sig_type: Option<SignatureType>) -> Option<usize> {
+        if sig_type.map(|s| s == C::SIGNATURE_TYPE).unwrap_or(true) {
+            Some(C::SIGNATURE_TYPE.signature_length())
+        } else {
+            None
+        }
+    }
+
     fn write_signature(
         &self,
         message: &[u8],
@@ -260,12 +273,13 @@ impl<C: EcKeyType> FromJwk for EcKeyPair<C> {
 }
 
 impl<C: EcKeyType> KeyExchange for EcKeyPair<C> {
-    fn write_key_exchange(&self, other: &Self, out: &mut dyn WriteBuffer) -> Result<(), Error> {
+    const EXCHANGE_KEY_LENGTH: usize = C::FieldSize::USIZE;
+
+    fn with_key_exchange<O>(&self, other: &Self, f: impl FnOnce(&[u8]) -> O) -> Result<O, Error> {
         match self.secret.as_ref() {
             Some(sk) => {
                 let xk = diffie_hellman(sk.to_nonzero_scalar(), other.public.as_affine());
-                out.buffer_write(&xk.raw_secret_bytes()[..])?;
-                Ok(())
+                Ok(f(xk.raw_secret_bytes()))
             }
             None => Err(err_msg!(MissingSecretKey)),
         }
@@ -404,7 +418,7 @@ macro_rules! impl_ec_key_type {
         }
 
         #[cfg(test)]
-        #[cfg(any(feature = "alloc", feature = "std_rng"))]
+        #[cfg(any(feature = "alloc", feature = "getrandom"))]
         mod _tests {
             use super::$curve;
 
@@ -420,7 +434,7 @@ macro_rules! impl_ec_key_type {
                 $crate::alg::ec_common::tests::round_trip_bytes::<$curve>();
             }
 
-            #[cfg(feature = "std_rng")]
+            #[cfg(feature = "getrandom")]
             #[test]
             fn sign_verify_random() {
                 $crate::alg::ec_common::tests::sign_verify_random::<$curve>();
@@ -431,8 +445,10 @@ macro_rules! impl_ec_key_type {
 
 #[cfg(test)]
 pub(super) mod tests {
-    #[cfg(any(feature = "alloc", feature = "std_rng"))]
+    #[cfg(any(feature = "alloc", feature = "getrandom"))]
     use super::*;
+    #[cfg(feature = "alloc")]
+    use crate::kdf::DynKeyExchange;
 
     #[cfg(feature = "alloc")]
     pub fn key_exchange_random<C: EcKeyType>() {
@@ -445,7 +461,7 @@ pub(super) mod tests {
 
         let xch1 = kp1.key_exchange_bytes(&kp2).unwrap();
         let xch2 = kp2.key_exchange_bytes(&kp1).unwrap();
-        assert_eq!(xch1.len(), C::FieldSize::USIZE);
+        assert_eq!(xch1.len(), EcKeyPair::<C>::EXCHANGE_KEY_LENGTH);
         assert_eq!(xch1, xch2);
     }
 
@@ -459,7 +475,7 @@ pub(super) mod tests {
         );
     }
 
-    #[cfg(feature = "std_rng")]
+    #[cfg(feature = "getrandom")]
     pub fn sign_verify_random<C: EcKeyType>() {
         let test_msg = b"This is a dummy message for use with tests";
         let kp = EcKeyPair::<C>::random().unwrap();

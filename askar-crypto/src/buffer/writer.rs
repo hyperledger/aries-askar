@@ -179,6 +179,41 @@ where
     }
 }
 
+/// A simple WriteBuffer implementation which fills a slice to capacity
+#[derive(Debug)]
+pub struct Fill<'w>(pub &'w mut [u8]);
+
+impl Fill<'_> {
+    /// Accessor for the filled state
+    pub fn is_filled(&self) -> bool {
+        self.0.is_empty()
+    }
+}
+
+impl AsRef<[u8]> for Fill<'_> {
+    fn as_ref(&self) -> &[u8] {
+        &self.0
+    }
+}
+
+impl AsMut<[u8]> for Fill<'_> {
+    fn as_mut(&mut self) -> &mut [u8] {
+        &mut self.0
+    }
+}
+
+impl WriteBuffer for Fill<'_> {
+    #[inline]
+    fn buffer_write(&mut self, data: &[u8]) -> Result<(), Error> {
+        let len = data.len().min(self.0.len());
+        let buf = core::mem::take(&mut self.0);
+        let (write, remain) = buf.split_at_mut(len);
+        write.copy_from_slice(&data[..len]);
+        self.0 = remain;
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

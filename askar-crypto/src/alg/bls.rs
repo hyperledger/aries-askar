@@ -3,7 +3,6 @@
 use core::{
     convert::TryInto,
     fmt::{self, Debug, Formatter},
-    ops::Add,
 };
 
 use aead::generic_array::GenericArray;
@@ -14,12 +13,17 @@ use sha2::Sha256;
 use subtle::ConstantTimeEq;
 use zeroize::{Zeroize, Zeroizing};
 
-use crate::generic_array::{
-    typenum::{self, Unsigned, U144, U32, U48, U96},
-    ArrayLength,
+use crate::{
+    encrypt::KeyAeadInPlace,
+    generic_array::{
+        typenum::{Unsigned, U128, U144, U176, U32, U48, U80, U96},
+        ArrayLength,
+    },
+    kdf::DynKeyExchange,
+    sign::{KeySigVerify, KeySign},
 };
 
-use super::{BlsCurves, HasKeyAlg, KeyAlg};
+use super::{AnyKey, BlsCurves, KeyAlg};
 use crate::{
     buffer::ArrayKey,
     error::Error,
@@ -92,24 +96,23 @@ impl<Pk: BlsPublicKeyType> PartialEq for BlsKeyPair<Pk> {
 
 impl<Pk: BlsPublicKeyType> Eq for BlsKeyPair<Pk> {}
 
-impl<Pk: BlsPublicKeyType> HasKeyAlg for BlsKeyPair<Pk> {
+impl<Pk: BlsPublicKeyType> AnyKey for BlsKeyPair<Pk> {
     fn algorithm(&self) -> KeyAlg {
         KeyAlg::Bls12_381(Pk::ALG_TYPE)
     }
+}
+
+impl<Pk: BlsPublicKeyType> DynKeyExchange for BlsKeyPair<Pk> {
+    // default implementation
 }
 
 impl<Pk: BlsPublicKeyType> KeyMeta for BlsKeyPair<Pk> {
     type KeySize = U32;
 }
 
-impl<Pk> KeypairMeta for BlsKeyPair<Pk>
-where
-    Pk: BlsPublicKeyType,
-    U32: Add<Pk::BufferSize>,
-    <U32 as Add<Pk::BufferSize>>::Output: ArrayLength<u8>,
-{
+impl<Pk: BlsPublicKeyType> KeypairMeta for BlsKeyPair<Pk> {
     type PublicKeySize = Pk::BufferSize;
-    type KeypairSize = typenum::Sum<Self::KeySize, Pk::BufferSize>;
+    type KeypairSize = Pk::KeypairSize;
 }
 
 impl<Pk: BlsPublicKeyType> KeyGen for BlsKeyPair<Pk> {
@@ -154,6 +157,14 @@ where
         Pk::with_bytes(&self.public, None, f)
     }
 }
+
+impl<Pk: BlsPublicKeyType> KeyAeadInPlace for BlsKeyPair<Pk> {
+    // null impl
+}
+
+impl<Pk: BlsPublicKeyType> KeySign for BlsKeyPair<Pk> {}
+
+impl<Pk: BlsPublicKeyType> KeySigVerify for BlsKeyPair<Pk> {}
 
 impl<Pk: BlsPublicKeyType> ToJwk for BlsKeyPair<Pk> {
     fn encode_jwk(&self, enc: &mut dyn JwkEncoder) -> Result<(), Error> {
@@ -278,10 +289,12 @@ impl KeyMaterial for BlsKeyGen<'_> {
 /// Trait implemented by supported BLS public key types
 pub trait BlsPublicKeyType: 'static {
     /// The concrete key representation
-    type Buffer: Clone + Debug + PartialEq + Sized + Zeroize;
+    type Buffer: Clone + Debug + PartialEq + Send + Sync + Sized + Zeroize;
 
-    /// The size of the serialized public key
+    /// The size of a serialized public key
     type BufferSize: ArrayLength<u8>;
+    /// The size of a serialized keypair
+    type KeypairSize: ArrayLength<u8>;
 
     /// The associated algorithm type
     const ALG_TYPE: BlsCurves;
@@ -310,6 +323,7 @@ pub struct G1;
 impl BlsPublicKeyType for G1 {
     type Buffer = G1Affine;
     type BufferSize = U48;
+    type KeypairSize = U80;
 
     const ALG_TYPE: BlsCurves = BlsCurves::G1;
     const JWK_CURVE: &'static str = "BLS12381_G1";
@@ -339,6 +353,7 @@ pub struct G2;
 impl BlsPublicKeyType for G2 {
     type Buffer = G2Affine;
     type BufferSize = U96;
+    type KeypairSize = U128;
 
     const ALG_TYPE: BlsCurves = BlsCurves::G2;
     const JWK_CURVE: &'static str = "BLS12381_G2";
@@ -368,6 +383,7 @@ pub struct G1G2;
 impl BlsPublicKeyType for G1G2 {
     type Buffer = G1G2Pair;
     type BufferSize = U144;
+    type KeypairSize = U176;
 
     const ALG_TYPE: BlsCurves = BlsCurves::G1G2;
     const JWK_CURVE: &'static str = "BLS12381_G1G2";
@@ -451,7 +467,7 @@ pub struct G1G2Pair(G1Affine, G2Affine);
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::repr::{ToPublicBytes, ToSecretBytes};
+    use crate::repr::{DynPublicBytes, DynSecretBytes};
     use std::string::ToString;
 
     // test against EIP-2333 (as updated for signatures draft 4)
@@ -561,11 +577,10 @@ mod tests {
         // );
     }
 
-    #[cfg(feature = "any_key")]
     #[test]
     // test loading of a key with the EC key type
     fn g1_jwk_any_compat() {
-        use crate::alg::{any::AnyKey, BlsCurves, KeyAlg};
+        use crate::alg::{AnyKey, BlsCurves, KeyAlg};
         use alloc::boxed::Box;
 
         let test_jwk_compat = r#"
@@ -574,7 +589,7 @@ mod tests {
                 "kty": "EC",
                 "x": "osl1NIZnkmrPEvPuywBQROCKept9lfML0oG1VEUQc2ei5dBVi-eUPIvRP5oacDb7"
             }"#;
-        let key = Box::<AnyKey>::from_jwk(test_jwk_compat).expect("Error decoding BLS key JWK");
+        let key = Box::<dyn AnyKey>::from_jwk(test_jwk_compat).expect("Error decoding BLS key JWK");
         assert_eq!(key.algorithm(), KeyAlg::Bls12_381(BlsCurves::G1));
         let as_bls = key
             .downcast_ref::<BlsKeyPair<G1>>()

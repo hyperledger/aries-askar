@@ -1,6 +1,6 @@
 use core::fmt::Debug;
 
-use digest::Digest;
+use digest::{Digest, Update};
 
 use crate::generic_array::GenericArray;
 
@@ -25,6 +25,50 @@ impl<D: Digest> HashBuffer<D> {
 impl<D: Debug + Digest> WriteBuffer for HashBuffer<D> {
     fn buffer_write(&mut self, data: &[u8]) -> Result<(), Error> {
         self.0.update(data);
+        Ok(())
+    }
+}
+
+impl<D: Debug + Digest> Update for HashBuffer<D> {
+    fn update(&mut self, data: &[u8]) {
+        self.0.update(data);
+    }
+}
+
+pub trait Hashable {
+    fn hash_into(&self, hasher: &mut impl Update) -> Result<(), Error>;
+}
+
+impl Hashable for &[u8] {
+    fn hash_into(&self, hasher: &mut impl Update) -> Result<(), Error> {
+        hasher.update(self);
+        Ok(())
+    }
+}
+
+impl<T: Hashable> Hashable for &[T] {
+    fn hash_into(&self, hasher: &mut impl Update) -> Result<(), Error> {
+        for item in self.into_iter() {
+            item.hash_into(hasher)?;
+        }
+        Ok(())
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl Hashable for alloc::vec::Vec<u8> {
+    fn hash_into(&self, hasher: &mut impl Update) -> Result<(), Error> {
+        hasher.update(&*self);
+        Ok(())
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl<T: Hashable> Hashable for alloc::vec::Vec<T> {
+    fn hash_into(&self, hasher: &mut impl Update) -> Result<(), Error> {
+        for item in self {
+            item.hash_into(hasher)?;
+        }
         Ok(())
     }
 }

@@ -6,21 +6,19 @@ use aead::generic_array::ArrayLength;
 use aes_core::{
     cipher::{
         block_padding::Pkcs7, BlockCipher, BlockDecryptMut, BlockEncryptMut, KeyInit, KeyIvInit,
+        KeySizeUser,
     },
     Aes128, Aes256,
 };
-
-// use block_modes::{block_padding::Pkcs7, BlockMode, Cbc};
 
 use digest::{crypto_common::BlockSizeUser, Digest};
 use hmac::{Mac, SimpleHmac};
 use subtle::ConstantTimeEq;
 
-use super::{AesKey, AesType, NonceSize, TagSize};
+use super::{AesKey, AesType};
 use crate::{
     alg::AesTypes,
     buffer::ResizeBuffer,
-    encrypt::{KeyAeadInPlace, KeyAeadMeta, KeyAeadParams},
     error::Error,
     generic_array::{
         typenum::{consts, Unsigned},
@@ -28,48 +26,90 @@ use crate::{
     },
 };
 
+/// AES-CBC-HMAC implementation
+#[derive(Debug)]
+pub struct AesCbcHmac<C, D>(PhantomData<(C, D)>);
+
 /// 128 bit AES-CBC with SHA-256 HMAC
 pub type A128CbcHs256 = AesCbcHmac<Aes128, sha2::Sha256>;
 
 impl AesType for A128CbcHs256 {
-    type KeySize = consts::U32;
     const ALG_TYPE: AesTypes = AesTypes::A128CbcHs256;
     const JWK_ALG: &'static str = "A128CBC-HS256";
+
+    type KeySize = consts::U32;
+    type NonceSize = <Aes128 as BlockSizeUser>::BlockSize;
+    type TagSize = <Aes128 as KeySizeUser>::KeySize;
+
+    #[inline]
+    fn encrypt_in_place(
+        key: &AesKey<Self>,
+        buffer: &mut dyn ResizeBuffer,
+        nonce: &[u8],
+        aad: &[u8],
+    ) -> Result<usize, Error> {
+        cbc_hmac_encrypt_in_place(key, buffer, nonce, aad)
+    }
+
+    #[inline]
+    fn decrypt_in_place(
+        key: &AesKey<Self>,
+        buffer: &mut dyn ResizeBuffer,
+        nonce: &[u8],
+        aad: &[u8],
+    ) -> Result<(), Error> {
+        cbc_hmac_decrypt_in_place(key, buffer, nonce, aad)
+    }
+
+    #[inline]
+    fn padding_length(msg_len: usize) -> usize {
+        Self::NonceSize::USIZE - (msg_len % Self::NonceSize::USIZE)
+    }
 }
 
 /// 256 bit AES-CBC with SHA-512 HMAC
 pub type A256CbcHs512 = AesCbcHmac<Aes256, sha2::Sha512>;
 
 impl AesType for A256CbcHs512 {
-    type KeySize = consts::U64;
     const ALG_TYPE: AesTypes = AesTypes::A256CbcHs512;
     const JWK_ALG: &'static str = "A256CBC-HS512";
-}
 
-/// AES-CBC-HMAC implementation
-#[derive(Debug)]
-pub struct AesCbcHmac<C, D>(PhantomData<(C, D)>);
+    type KeySize = consts::U64;
+    type NonceSize = <Aes256 as BlockSizeUser>::BlockSize;
+    type TagSize = <Aes256 as KeySizeUser>::KeySize;
 
-impl<C, D> AesCbcHmac<C, D>
-where
-    C: BlockCipher,
-{
+    #[inline]
+    fn encrypt_in_place(
+        key: &AesKey<Self>,
+        buffer: &mut dyn ResizeBuffer,
+        nonce: &[u8],
+        aad: &[u8],
+    ) -> Result<usize, Error> {
+        cbc_hmac_encrypt_in_place(key, buffer, nonce, aad)
+    }
+
+    #[inline]
+    fn decrypt_in_place(
+        key: &AesKey<Self>,
+        buffer: &mut dyn ResizeBuffer,
+        nonce: &[u8],
+        aad: &[u8],
+    ) -> Result<(), Error> {
+        cbc_hmac_decrypt_in_place(key, buffer, nonce, aad)
+    }
+
     #[inline]
     fn padding_length(len: usize) -> usize {
-        C::BlockSize::USIZE - (len % C::BlockSize::USIZE)
+        Self::NonceSize::USIZE - (len % Self::NonceSize::USIZE)
     }
 }
 
-impl<C, D> KeyAeadMeta for AesKey<AesCbcHmac<C, D>>
-where
-    AesCbcHmac<C, D>: AesType,
-    C: BlockCipher + KeyInit,
-{
-    type NonceSize = C::BlockSize;
-    type TagSize = C::KeySize;
-}
-
-impl<C, D> KeyAeadInPlace for AesKey<AesCbcHmac<C, D>>
+fn cbc_hmac_encrypt_in_place<C, D>(
+    key: &AesKey<AesCbcHmac<C, D>>,
+    buffer: &mut dyn ResizeBuffer,
+    nonce: &[u8],
+    aad: &[u8],
+) -> Result<usize, Error>
 where
     AesCbcHmac<C, D>: AesType,
     C: BlockCipher + KeyInit + BlockEncryptMut + BlockDecryptMut,
@@ -77,115 +117,107 @@ where
     C::KeySize: core::ops::Shl<consts::B1>,
     <C::KeySize as core::ops::Shl<consts::B1>>::Output: ArrayLength<u8>,
 {
-    fn encrypt_in_place(
-        &self,
-        buffer: &mut dyn ResizeBuffer,
-        nonce: &[u8],
-        aad: &[u8],
-    ) -> Result<usize, Error> {
-        if nonce.len() != NonceSize::<Self>::USIZE {
-            return Err(err_msg!(InvalidNonce));
-        }
-        // this should be optimized away except when the error is thrown
-        if TagSize::<Self>::USIZE > D::OutputSize::USIZE {
-            return Err(err_msg!(
-                Encryption,
-                "AES-CBC-HMAC tag size exceeds maximum supported"
-            ));
-        }
-        if aad.len() as u64 > u64::MAX / 8 {
-            return Err(err_msg!(
-                Encryption,
-                "AES-CBC-HMAC AAD size exceeds maximum supported"
-            ));
-        }
-
-        let msg_len = buffer.as_ref().len();
-        let pad_len = AesCbcHmac::<C, D>::padding_length(msg_len);
-        buffer.buffer_extend(pad_len + TagSize::<Self>::USIZE)?;
-        let enc_key = GenericArray::from_slice(&self.0[C::KeySize::USIZE..]);
-        cbc::Encryptor::<C>::new(enc_key, GenericArray::from_slice(nonce))
-            .encrypt_padded_mut::<Pkcs7>(buffer.as_mut(), msg_len)
-            .map_err(|_| err_msg!(Encryption, "AES-CBC encryption error"))?;
-        let ctext_end = msg_len + pad_len;
-
-        let mut hmac = <SimpleHmac<D> as Mac>::new_from_slice(&self.0[..C::KeySize::USIZE])
-            .expect("Incompatible HMAC key length");
-        hmac.update(aad);
-        hmac.update(nonce.as_ref());
-        hmac.update(&buffer.as_ref()[..ctext_end]);
-        hmac.update(&((aad.len() as u64) * 8).to_be_bytes());
-        let mac = hmac.finalize().into_bytes();
-        buffer.as_mut()[ctext_end..(ctext_end + TagSize::<Self>::USIZE)]
-            .copy_from_slice(&mac[..TagSize::<Self>::USIZE]);
-
-        Ok(ctext_end)
+    if nonce.len() != C::BlockSize::USIZE {
+        return Err(err_msg!(InvalidNonce));
+    }
+    // this should be optimized away except when the error is thrown
+    if C::KeySize::USIZE > D::OutputSize::USIZE {
+        return Err(err_msg!(
+            Encryption,
+            "AES-CBC-HMAC tag size exceeds maximum supported"
+        ));
+    }
+    if aad.len() as u64 > u64::MAX / 8 {
+        return Err(err_msg!(
+            Encryption,
+            "AES-CBC-HMAC AAD size exceeds maximum supported"
+        ));
     }
 
-    fn decrypt_in_place(
-        &self,
-        buffer: &mut dyn ResizeBuffer,
-        nonce: &[u8],
-        aad: &[u8],
-    ) -> Result<(), Error> {
-        if nonce.len() != NonceSize::<Self>::USIZE {
-            return Err(err_msg!(InvalidNonce));
-        }
-        if aad.len() as u64 > u64::MAX / 8 {
-            return Err(err_msg!(
-                Encryption,
-                "AES-CBC-HMAC AAD size exceeds maximum supported"
-            ));
-        }
-        let buf_len = buffer.as_ref().len();
-        if buf_len < TagSize::<Self>::USIZE {
-            return Err(err_msg!(Encryption, "Invalid size for encrypted data"));
-        }
-        let ctext_end = buf_len - TagSize::<Self>::USIZE;
-        let tag = GenericArray::<u8, TagSize<Self>>::from_slice(&buffer.as_ref()[ctext_end..]);
+    let msg_len = buffer.as_ref().len();
+    let pad_len = AesCbcHmac::<C, D>::padding_length(msg_len);
+    buffer.buffer_extend(pad_len + C::KeySize::USIZE)?;
+    let enc_key = GenericArray::from_slice(&key.0[C::KeySize::USIZE..]);
+    cbc::Encryptor::<C>::new(enc_key, GenericArray::from_slice(nonce))
+        .encrypt_padded_mut::<Pkcs7>(buffer.as_mut(), msg_len)
+        .map_err(|_| err_msg!(Encryption, "AES-CBC encryption error"))?;
+    let ctext_end = msg_len + pad_len;
 
-        let mut hmac = <SimpleHmac<D> as Mac>::new_from_slice(&self.0[..C::KeySize::USIZE])
-            .expect("Incompatible HMAC key length");
-        hmac.update(aad);
-        hmac.update(nonce.as_ref());
-        hmac.update(&buffer.as_ref()[..ctext_end]);
-        hmac.update(&((aad.len() as u64) * 8).to_be_bytes());
-        let mac = hmac.finalize().into_bytes();
-        let tag_match = tag.as_ref().ct_eq(&mac[..TagSize::<Self>::USIZE]);
+    let mut hmac = <SimpleHmac<D> as Mac>::new_from_slice(&key.0[..C::KeySize::USIZE])
+        .expect("Incompatible HMAC key length");
+    hmac.update(aad);
+    hmac.update(nonce.as_ref());
+    hmac.update(&buffer.as_ref()[..ctext_end]);
+    hmac.update(&((aad.len() as u64) * 8).to_be_bytes());
+    let mac = hmac.finalize().into_bytes();
+    buffer.as_mut()[ctext_end..(ctext_end + C::KeySize::USIZE)]
+        .copy_from_slice(&mac[..C::KeySize::USIZE]);
 
-        let enc_key = GenericArray::from_slice(&self.0[C::KeySize::USIZE..]);
-        let dec_len = cbc::Decryptor::<C>::new(enc_key, GenericArray::from_slice(nonce))
-            .decrypt_padded_mut::<Pkcs7>(&mut buffer.as_mut()[..ctext_end])
-            .map_err(|_| err_msg!(Encryption, "AES-CBC decryption error"))?
-            .len();
-        buffer.buffer_resize(dec_len)?;
+    Ok(ctext_end)
+}
 
-        if tag_match.unwrap_u8() != 1 {
-            Err(err_msg!(Encryption, "AEAD decryption error"))
-        } else {
-            Ok(())
-        }
+fn cbc_hmac_decrypt_in_place<C, D>(
+    key: &AesKey<AesCbcHmac<C, D>>,
+    buffer: &mut dyn ResizeBuffer,
+    nonce: &[u8],
+    aad: &[u8],
+) -> Result<(), Error>
+where
+    AesCbcHmac<C, D>: AesType,
+    C: BlockCipher + KeyInit + BlockEncryptMut + BlockDecryptMut,
+    D: Digest + BlockSizeUser,
+    C::KeySize: core::ops::Shl<consts::B1>,
+    <C::KeySize as core::ops::Shl<consts::B1>>::Output: ArrayLength<u8>,
+{
+    if nonce.len() != C::BlockSize::USIZE {
+        return Err(err_msg!(InvalidNonce));
     }
-
-    fn aead_params(&self) -> KeyAeadParams {
-        KeyAeadParams {
-            nonce_length: NonceSize::<Self>::USIZE,
-            tag_length: TagSize::<Self>::USIZE,
-        }
+    if aad.len() as u64 > u64::MAX / 8 {
+        return Err(err_msg!(
+            Encryption,
+            "AES-CBC-HMAC AAD size exceeds maximum supported"
+        ));
     }
+    let buf_len = buffer.as_ref().len();
+    if buf_len < C::KeySize::USIZE {
+        return Err(err_msg!(Encryption, "Invalid size for encrypted data"));
+    }
+    let ctext_end = buf_len - C::KeySize::USIZE;
+    let tag = GenericArray::<u8, C::KeySize>::from_slice(&buffer.as_ref()[ctext_end..]);
 
-    fn aead_padding(&self, msg_len: usize) -> usize {
-        AesCbcHmac::<C, D>::padding_length(msg_len)
+    let mut hmac = <SimpleHmac<D> as Mac>::new_from_slice(&key.0[..C::KeySize::USIZE])
+        .expect("Incompatible HMAC key length");
+    hmac.update(aad);
+    hmac.update(nonce.as_ref());
+    hmac.update(&buffer.as_ref()[..ctext_end]);
+    hmac.update(&((aad.len() as u64) * 8).to_be_bytes());
+    let mac = hmac.finalize().into_bytes();
+    let tag_match = tag.as_ref().ct_eq(&mac[..C::KeySize::USIZE]);
+
+    let enc_key = GenericArray::from_slice(&key.0[C::KeySize::USIZE..]);
+    let dec_len = cbc::Decryptor::<C>::new(enc_key, GenericArray::from_slice(nonce))
+        .decrypt_padded_mut::<Pkcs7>(&mut buffer.as_mut()[..ctext_end])
+        .map_err(|_| err_msg!(Encryption, "AES-CBC decryption error"))?
+        .len();
+    buffer.buffer_resize(dec_len)?;
+
+    if tag_match.unwrap_u8() != 1 {
+        Err(err_msg!(Encryption, "AEAD decryption error"))
+    } else {
+        Ok(())
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(feature = "alloc")]
     use crate::buffer::SecretBytes;
+    use crate::encrypt::KeyAeadInPlace;
     use crate::repr::KeySecretBytes;
     use std::string::ToString;
 
+    #[cfg(feature = "alloc")]
     #[test]
     fn encrypt_expected_cbc_128_hmac_256() {
         let key_data = &hex!("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f");
@@ -210,6 +242,7 @@ mod tests {
         assert_eq!(buffer, &input[..]);
     }
 
+    #[cfg(feature = "alloc")]
     #[test]
     fn encrypt_expected_cbc_256_hmac_512() {
         let key_data = &hex!(
@@ -238,6 +271,7 @@ mod tests {
         assert_eq!(buffer, &input[..]);
     }
 
+    #[cfg(feature = "alloc")]
     #[test]
     fn encrypt_expected_ecdh_1pu_cbc_hmac() {
         let key_data = &hex!(

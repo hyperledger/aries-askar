@@ -8,14 +8,21 @@ use crate::{alg::normalize_alg, buffer::WriteBuffer, error::Error};
 
 /// Signature creation operations
 pub trait KeySign: KeySigVerify {
+    /// Accessor for the length of a signature.
+    fn signature_length(&self, _sig_type: Option<SignatureType>) -> Option<usize> {
+        None
+    }
+
     /// Create a signature of the requested type and write it to the
     /// provided buffer.
     fn write_signature(
         &self,
-        message: &[u8],
-        sig_type: Option<SignatureType>,
-        out: &mut dyn WriteBuffer,
-    ) -> Result<(), Error>;
+        _message: &[u8],
+        _sig_type: Option<SignatureType>,
+        _out: &mut dyn WriteBuffer,
+    ) -> Result<(), Error> {
+        Err(err_msg!(Unsupported))
+    }
 
     #[cfg(feature = "alloc")]
     #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
@@ -38,10 +45,12 @@ pub trait KeySigVerify {
     /// specified signature type.
     fn verify_signature(
         &self,
-        message: &[u8],
-        signature: &[u8],
-        sig_type: Option<SignatureType>,
-    ) -> Result<bool, Error>;
+        _message: &[u8],
+        _signature: &[u8],
+        _sig_type: Option<SignatureType>,
+    ) -> Result<bool, Error> {
+        Err(err_msg!(Unsupported))
+    }
 }
 
 /// Supported signature types

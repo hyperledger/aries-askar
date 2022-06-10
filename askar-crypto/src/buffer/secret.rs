@@ -25,6 +25,17 @@ impl SecretBytes {
         slf
     }
 
+    /// Create a new buffer using a fallible initializer for the data
+    pub fn try_new_with<E>(
+        len: usize,
+        f: impl FnOnce(&mut [u8]) -> Result<(), E>,
+    ) -> Result<Self, E> {
+        let mut slf = Self::with_capacity(len);
+        slf.0.resize(len, 0u8);
+        f(slf.0.as_mut())?;
+        Ok(slf)
+    }
+
     /// Create a new, empty buffer with an initial capacity
     #[inline]
     pub fn with_capacity(max_len: usize) -> Self {

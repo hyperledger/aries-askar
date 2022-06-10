@@ -87,14 +87,7 @@ pub fn derive_key_ecdh_1pu(
     receive: bool,
 ) -> Result<LocalKey, Error> {
     let derive = Ecdh1PU::new(
-        &*ephem_key,
-        &*sender_key,
-        &*recip_key,
-        alg_id,
-        apu,
-        apv,
-        cc_tag,
-        receive,
+        ephem_key, sender_key, recip_key, alg_id, apu, apv, cc_tag, receive,
     );
     LocalKey::from_key_derivation(key_alg, derive)
 }
@@ -109,6 +102,6 @@ pub fn derive_key_ecdh_es(
     apv: &[u8],
     receive: bool,
 ) -> Result<LocalKey, Error> {
-    let derive = EcdhEs::new(&*ephem_key, &*recip_key, alg_id, apu, apv, receive);
+    let derive = EcdhEs::new(ephem_key, recip_key, alg_id, apu, apv, receive);
     LocalKey::from_key_derivation(key_alg, derive)
 }

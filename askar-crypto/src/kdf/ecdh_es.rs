@@ -1,33 +1,30 @@
 //! ECDH-ES key derivation
 
 use sha2::Sha256;
-use zeroize::Zeroize;
+use zeroize::Zeroizing;
 
 use super::{
-    concat::{ConcatKDFHash, ConcatKDFParams},
-    KeyDerivation, KeyExchange,
+    concat::{ConcatKDF, ConcatKDFParams},
+    KeyDerivation,
 };
-use crate::error::Error;
+use crate::{alg::AnyKey, buffer::Writer, error::Error};
 
 /// An instantiation of the ECDH-ES key derivation
 #[derive(Debug)]
-pub struct EcdhEs<'d, Key>
-where
-    Key: KeyExchange + ?Sized,
-{
-    ephem_key: &'d Key,
-    recip_key: &'d Key,
+pub struct EcdhEs<'d> {
+    ephem_key: &'d dyn AnyKey,
+    recip_key: &'d dyn AnyKey,
     alg: &'d [u8],
     apu: &'d [u8],
     apv: &'d [u8],
     receive: bool,
 }
 
-impl<'d, Key: KeyExchange + ?Sized> EcdhEs<'d, Key> {
+impl<'d> EcdhEs<'d> {
     /// Create a new KDF instance
     pub fn new(
-        ephem_key: &'d Key,
-        recip_key: &'d Key,
+        ephem_key: &'d dyn AnyKey,
+        recip_key: &'d dyn AnyKey,
         alg: &'d [u8],
         apu: &'d [u8],
         apv: &'d [u8],
@@ -44,38 +41,36 @@ impl<'d, Key: KeyExchange + ?Sized> EcdhEs<'d, Key> {
     }
 }
 
-impl<Key: KeyExchange + ?Sized> KeyDerivation for EcdhEs<'_, Key> {
+impl KeyDerivation for EcdhEs<'_> {
     fn derive_key_bytes(&mut self, key_output: &mut [u8]) -> Result<(), Error> {
-        let output_len = key_output.len();
-        // one-pass KDF only produces 256 bits of output
-        if output_len > 32 {
+        let output_len = if key_output.len() < (u32::MAX as usize / 8) {
+            (key_output.len() * 8) as u32
+        } else {
             return Err(err_msg!(Unsupported, "Exceeded maximum output length"));
-        }
-        let mut kdf = ConcatKDFHash::<Sha256>::new();
-        kdf.start_pass();
+        };
 
-        // hash Z directly into the KDF
+        // hash Z
+        let mut buf = Zeroizing::new([0u8; 256]);
+        let mut buf_w = Writer::from_slice(&mut buf[..]);
         if self.receive {
             self.recip_key
-                .write_key_exchange(self.ephem_key, &mut kdf)?;
+                .write_key_exchange(self.ephem_key, &mut buf_w)?
         } else {
             self.ephem_key
-                .write_key_exchange(self.recip_key, &mut kdf)?;
+                .write_key_exchange(self.recip_key, &mut buf_w)?
         }
 
-        kdf.hash_params(ConcatKDFParams {
-            alg: self.alg,
-            apu: self.apu,
-            apv: self.apv,
-            pub_info: &((output_len as u32) * 8).to_be_bytes(), // output length in bits
-            prv_info: &[],
-        });
-
-        let mut key = kdf.finish_pass();
-        key_output.copy_from_slice(&key[..output_len]);
-        key.zeroize();
-
-        Ok(())
+        ConcatKDF::<Sha256>::derive_key(
+            buf_w.as_ref(),
+            ConcatKDFParams {
+                alg: self.alg,
+                apu: self.apu,
+                apv: self.apv,
+                pub_info: &output_len.to_be_bytes(), // output length in bits
+                prv_info: &[],
+            },
+            key_output,
+        )
     }
 }
 
@@ -91,6 +86,7 @@ mod tests {
     fn expected_es_direct_output() {
         use crate::alg::x25519::X25519KeyPair;
         use crate::jwk::FromJwk;
+        use crate::kdf::DynKeyExchange;
 
         let bob_pk = X25519KeyPair::from_jwk(
             r#"{"kty":"OKP","crv":"X25519","kid":"Bob",

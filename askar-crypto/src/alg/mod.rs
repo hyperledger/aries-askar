@@ -14,10 +14,8 @@ use crate::{
     error::Error,
 };
 
-#[cfg(feature = "any_key")]
+#[macro_use]
 mod any;
-#[cfg(feature = "any_key")]
-#[cfg_attr(docsrs, doc(cfg(feature = "any_key")))]
 pub use any::{AnyKey, AnyKeyCreate};
 
 #[cfg(feature = "aes")]
@@ -256,13 +254,6 @@ pub enum EcCurves {
     Secp384r1,
     /// Koblitz 256 curve
     Secp256k1,
-}
-
-/// A trait for accessing the algorithm of a key, used when
-/// converting to generic `AnyKey` instances.
-pub trait HasKeyAlg: Debug {
-    /// Get the corresponding key algorithm.
-    fn algorithm(&self) -> KeyAlg;
 }
 
 #[cfg(test)]

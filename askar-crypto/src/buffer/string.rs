@@ -1,8 +1,18 @@
 use core::fmt::{self, Debug, Display, Formatter, Write};
 
 /// A utility type used to print or serialize a byte string as hex
-#[derive(Debug)]
 pub struct HexRepr<B>(pub B);
+
+impl<B: AsRef<[u8]>> Debug for HexRepr<B> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.write_str("<")?;
+        for c in self.0.as_ref() {
+            f.write_fmt(format_args!("{:02x}", c))?;
+        }
+        f.write_str(">")?;
+        Ok(())
+    }
+}
 
 impl<B: AsRef<[u8]>> Display for HexRepr<B> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
@@ -47,7 +57,7 @@ impl Debug for MaybeStr<'_> {
         if let Ok(sval) = core::str::from_utf8(self.0) {
             write!(f, "{:?}", sval)
         } else {
-            write!(f, "<{}>", HexRepr(self.0))
+            write!(f, "{:?}", HexRepr(self.0))
         }
     }
 }

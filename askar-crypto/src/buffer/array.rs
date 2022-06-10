@@ -128,7 +128,7 @@ impl<L: ArrayLength<u8>> From<GenericArray<u8, L>> for ArrayKey<L> {
 impl<L: ArrayLength<u8>> Debug for ArrayKey<L> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         if cfg!(test) {
-            f.debug_tuple("ArrayKey").field(&*self).finish()
+            f.debug_tuple("ArrayKey").field(&HexRepr(&**self)).finish()
         } else {
             f.debug_tuple("ArrayKey").field(&"<secret>").finish()
         }

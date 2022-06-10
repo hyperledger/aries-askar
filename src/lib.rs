@@ -4,6 +4,9 @@
 #![deny(missing_docs, missing_debug_implementations, rust_2018_idioms)]
 
 #[macro_use]
+pub extern crate askar_crypto as crypto;
+
+#[macro_use]
 mod error;
 pub use self::error::{Error, ErrorKind};
 
@@ -32,8 +35,6 @@ pub use self::backend::postgres;
 
 #[cfg(feature = "sqlite")]
 pub use self::backend::sqlite;
-
-pub use askar_crypto as crypto;
 
 #[doc(hidden)]
 pub mod future;

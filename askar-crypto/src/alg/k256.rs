@@ -32,7 +32,7 @@ mod tests {
     #[cfg(feature = "alloc")]
     use crate::{
         jwk::{FromJwk, JwkParts, ToJwk},
-        repr::{KeypairBytes, ToPublicBytes},
+        repr::{DynPublicBytes, KeypairBytes},
     };
 
     #[cfg(feature = "alloc")]

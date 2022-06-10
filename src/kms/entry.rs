@@ -107,11 +107,8 @@ impl KeyEntry {
     /// Create a local key instance from this key storage entry
     pub fn load_local_key(&self) -> Result<LocalKey, Error> {
         if let Some(key_data) = self.params.data.as_ref() {
-            let inner = Box::<AnyKey>::from_jwk_slice(key_data.as_ref())?;
-            Ok(LocalKey {
-                inner,
-                ephemeral: false,
-            })
+            let inner = Box::<dyn AnyKey>::from_jwk_slice(key_data.as_ref())?;
+            Ok(LocalKey::new(inner, false))
         } else {
             Err(err_msg!("Missing key data"))
         }

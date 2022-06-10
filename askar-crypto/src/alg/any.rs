@@ -1,11 +1,8 @@
+#[cfg(feature = "alloc")]
 use alloc::{boxed::Box, sync::Arc};
 #[cfg(feature = "ed25519")]
 use core::convert::TryFrom;
-use core::{
-    any::{Any, TypeId},
-    fmt::Debug,
-    panic::{RefUnwindSafe, UnwindSafe},
-};
+use core::{any::TypeId, fmt::Debug};
 
 #[cfg(feature = "aes")]
 use super::{
@@ -39,16 +36,15 @@ use super::p256::{self, P256KeyPair};
 #[cfg(feature = "p384")]
 use super::p384::{self, P384KeyPair};
 
-use super::{HasKeyAlg, KeyAlg};
+use super::KeyAlg;
 use crate::{
-    buffer::{ResizeBuffer, WriteBuffer},
-    encrypt::{KeyAeadInPlace, KeyAeadParams},
+    encrypt::KeyAeadInPlace,
     error::Error,
-    jwk::{FromJwk, JwkEncoder, JwkParts, ToJwk},
-    kdf::{KeyDerivation, KeyExchange},
+    jwk::{FromJwk, JwkParts, ToJwk},
+    kdf::{DynKeyExchange, KeyDerivation},
     random::KeyMaterial,
-    repr::{KeyGen, KeyPublicBytes, KeySecretBytes, ToPublicBytes, ToSecretBytes},
-    sign::{KeySigVerify, KeySign, SignatureType},
+    repr::{DynPublicBytes, DynSecretBytes, KeyGen, KeyPublicBytes, KeySecretBytes},
+    sign::{KeySign, SignatureType},
 };
 
 #[cfg(any(feature = "k256", feature = "p256"))]
@@ -57,29 +53,60 @@ use super::EcCurves;
 #[cfg(any(feature = "aes", feature = "chacha"))]
 use crate::kdf::{FromKeyDerivation, FromKeyExchange};
 
-#[derive(Debug)]
-pub struct KeyT<T: AnyKeyAlg + Send + Sync + RefUnwindSafe + UnwindSafe + ?Sized>(T);
+/// A trait for accessing the algorithm of a key, used when
+/// converting to generic `AnyKey` instances.
+pub trait AnyKey:
+    Debug
+    + DynKeyExchange
+    + DynSecretBytes
+    + DynPublicBytes
+    + KeyAeadInPlace
+    + KeySign
+    + Send
+    + Sync
+    + ToJwk
+    + 'static
+{
+    /// Get the corresponding key algorithm.
+    fn algorithm(&self) -> KeyAlg;
 
-/// The type-erased representation for a concrete key instance
-pub type AnyKey = KeyT<dyn AnyKeyAlg + Send + Sync + RefUnwindSafe + UnwindSafe>;
-
-impl AnyKey {
-    pub fn algorithm(&self) -> KeyAlg {
-        self.0.algorithm()
+    /// Get a reference to the concrete key instance.
+    fn key_ptr(&self) -> *const () {
+        // type-erased to make AnyKey object-safe
+        self as *const Self as *const ()
     }
 
-    fn assume<K: AnyKeyAlg>(&self) -> &K {
-        self.downcast_ref().expect("Error assuming key type")
+    /// Get the TypeId of the concrete key type.
+    fn key_type_id(&self) -> TypeId {
+        TypeId::of::<Self>()
     }
+}
 
+impl dyn AnyKey {
+    /// Check the concrete key type
     #[inline]
-    pub fn downcast_ref<K: AnyKeyAlg>(&self) -> Option<&K> {
-        self.0.as_any().downcast_ref()
+    pub fn is<K: 'static>(&self) -> bool {
+        self.key_type_id() == TypeId::of::<K>()
     }
 
+    /// Convert an AnyKey reference to a concrete key type, panicing on failure
     #[inline]
-    pub fn key_type_id(&self) -> TypeId {
-        self.0.as_any().type_id()
+    pub fn assume<K: AnyKey>(&self) -> &K {
+        if let Some(key) = self.downcast_ref() {
+            key
+        } else {
+            panic!("Invalid key conversion");
+        }
+    }
+
+    /// Try to convert an AnyKey reference to a concrete key type
+    #[inline]
+    pub fn downcast_ref<K: 'static>(&self) -> Option<&K> {
+        if self.is::<K>() {
+            Some(unsafe { &*(self.key_ptr() as *const K) })
+        } else {
+            None
+        }
     }
 }
 
@@ -106,13 +133,14 @@ pub trait AnyKeyCreate: Sized {
     fn from_secret_bytes(alg: KeyAlg, secret: &[u8]) -> Result<Self, Error>;
 
     /// Convert from a concrete key instance
-    fn from_key<K: HasKeyAlg + Send + Sync + RefUnwindSafe + UnwindSafe + 'static>(key: K) -> Self;
+    fn from_key<K: AnyKey>(key: K) -> Self;
 
     /// Create a new key instance from a key exchange
-    fn from_key_exchange<Sk, Pk>(alg: KeyAlg, secret: &Sk, public: &Pk) -> Result<Self, Error>
-    where
-        Sk: KeyExchange<Pk> + ?Sized,
-        Pk: ?Sized;
+    fn from_key_exchange(
+        alg: KeyAlg,
+        secret: &dyn AnyKey,
+        public: &dyn AnyKey,
+    ) -> Result<Self, Error>;
 
     /// Create a new key instance from a key derivation
     fn from_key_derivation(alg: KeyAlg, derive: impl KeyDerivation) -> Result<Self, Error>;
@@ -121,7 +149,7 @@ pub trait AnyKeyCreate: Sized {
     fn convert_key(&self, alg: KeyAlg) -> Result<Self, Error>;
 }
 
-impl AnyKeyCreate for Box<AnyKey> {
+impl<R: AllocKey> AnyKeyCreate for R {
     fn generate(alg: KeyAlg, rng: impl KeyMaterial) -> Result<Self, Error> {
         generate_any(alg, rng)
     }
@@ -135,15 +163,15 @@ impl AnyKeyCreate for Box<AnyKey> {
     }
 
     #[inline(always)]
-    fn from_key<K: HasKeyAlg + Send + Sync + RefUnwindSafe + UnwindSafe + 'static>(key: K) -> Self {
-        Box::new(KeyT(key))
+    fn from_key<K: AnyKey>(key: K) -> Self {
+        R::alloc_key(key)
     }
 
-    fn from_key_exchange<Sk, Pk>(alg: KeyAlg, secret: &Sk, public: &Pk) -> Result<Self, Error>
-    where
-        Sk: KeyExchange<Pk> + ?Sized,
-        Pk: ?Sized,
-    {
+    fn from_key_exchange(
+        alg: KeyAlg,
+        secret: &dyn AnyKey,
+        public: &dyn AnyKey,
+    ) -> Result<Self, Error> {
         from_key_exchange_any(alg, secret, public)
     }
 
@@ -152,47 +180,15 @@ impl AnyKeyCreate for Box<AnyKey> {
     }
 
     fn convert_key(&self, alg: KeyAlg) -> Result<Self, Error> {
-        convert_key_any(self, alg)
-    }
-}
-
-impl AnyKeyCreate for Arc<AnyKey> {
-    fn generate(alg: KeyAlg, rng: impl KeyMaterial) -> Result<Self, Error> {
-        generate_any(alg, rng)
-    }
-
-    fn from_public_bytes(alg: KeyAlg, public: &[u8]) -> Result<Self, Error> {
-        from_public_bytes_any(alg, public)
-    }
-
-    fn from_secret_bytes(alg: KeyAlg, secret: &[u8]) -> Result<Self, Error> {
-        from_secret_bytes_any(alg, secret)
-    }
-
-    #[inline(always)]
-    fn from_key<K: HasKeyAlg + Send + Sync + RefUnwindSafe + UnwindSafe + 'static>(key: K) -> Self {
-        Arc::new(KeyT(key))
-    }
-
-    fn from_key_exchange<Sk, Pk>(alg: KeyAlg, secret: &Sk, public: &Pk) -> Result<Self, Error>
-    where
-        Sk: KeyExchange<Pk> + ?Sized,
-        Pk: ?Sized,
-    {
-        from_key_exchange_any(alg, secret, public)
-    }
-
-    fn from_key_derivation(alg: KeyAlg, derive: impl KeyDerivation) -> Result<Self, Error> {
-        from_key_derivation_any(alg, derive)
-    }
-
-    fn convert_key(&self, alg: KeyAlg) -> Result<Self, Error> {
-        convert_key_any(self, alg)
+        convert_key_any(self.as_ref(), alg)
     }
 }
 
 #[inline]
-fn generate_any<R: AllocKey>(alg: KeyAlg, rng: impl KeyMaterial) -> Result<R, Error> {
+fn generate_any<R: AllocKey>(
+    alg: KeyAlg,
+    #[allow(unused)] rng: impl KeyMaterial,
+) -> Result<R, Error> {
     match alg {
         #[cfg(feature = "aes")]
         KeyAlg::Aes(AesTypes::A128Gcm) => AesKey::<A128Gcm>::generate(rng).map(R::alloc_key),
@@ -245,7 +241,10 @@ fn generate_any<R: AllocKey>(alg: KeyAlg, rng: impl KeyMaterial) -> Result<R, Er
 }
 
 #[inline]
-fn from_public_bytes_any<R: AllocKey>(alg: KeyAlg, public: &[u8]) -> Result<R, Error> {
+fn from_public_bytes_any<R: AllocKey>(
+    alg: KeyAlg,
+    #[allow(unused)] public: &[u8],
+) -> Result<R, Error> {
     match alg {
         #[cfg(feature = "bls")]
         KeyAlg::Bls12_381(BlsCurves::G1) => {
@@ -286,7 +285,10 @@ fn from_public_bytes_any<R: AllocKey>(alg: KeyAlg, public: &[u8]) -> Result<R, E
 }
 
 #[inline]
-fn from_secret_bytes_any<R: AllocKey>(alg: KeyAlg, secret: &[u8]) -> Result<R, Error> {
+fn from_secret_bytes_any<R: AllocKey>(
+    alg: KeyAlg,
+    #[allow(unused)] secret: &[u8],
+) -> Result<R, Error> {
     match alg {
         #[cfg(feature = "aes")]
         KeyAlg::Aes(AesTypes::A128Gcm) => {
@@ -358,13 +360,14 @@ fn from_secret_bytes_any<R: AllocKey>(alg: KeyAlg, secret: &[u8]) -> Result<R, E
     }
 }
 
-#[cfg(any(feature = "aes", feature = "chacha"))]
 #[inline]
-fn from_key_exchange_any<R, Sk, Pk>(alg: KeyAlg, secret: &Sk, public: &Pk) -> Result<R, Error>
+fn from_key_exchange_any<R>(
+    alg: KeyAlg,
+    #[allow(unused)] secret: &dyn AnyKey,
+    #[allow(unused)] public: &dyn AnyKey,
+) -> Result<R, Error>
 where
     R: AllocKey,
-    Sk: KeyExchange<Pk> + ?Sized,
-    Pk: ?Sized,
 {
     match alg {
         #[cfg(feature = "aes")]
@@ -409,24 +412,10 @@ where
     }
 }
 
-#[cfg(not(any(feature = "aes", feature = "chacha")))]
-#[inline]
-fn from_key_exchange_any<R, Sk: ?Sized, Pk: ?Sized>(
-    _alg: KeyAlg,
-    _secret: &Sk,
-    _public: &Pk,
-) -> Result<R, Error> {
-    return Err(err_msg!(
-        Unsupported,
-        "Unsupported algorithm for key exchange"
-    ));
-}
-
-#[cfg(any(feature = "aes", feature = "chacha"))]
 #[inline]
 fn from_key_derivation_any<R: AllocKey>(
     alg: KeyAlg,
-    derive: impl KeyDerivation,
+    #[allow(unused)] derive: impl KeyDerivation,
 ) -> Result<R, Error> {
     match alg {
         #[cfg(feature = "aes")]
@@ -471,19 +460,8 @@ fn from_key_derivation_any<R: AllocKey>(
     }
 }
 
-#[cfg(not(any(feature = "aes", feature = "chacha")))]
-fn from_key_derivation_any<R: AllocKey>(
-    _alg: KeyAlg,
-    _derive: impl KeyDerivation,
-) -> Result<R, Error> {
-    return Err(err_msg!(
-        Unsupported,
-        "Unsupported algorithm for key derivation"
-    ));
-}
-
 #[inline]
-fn convert_key_any<R: AllocKey>(key: &AnyKey, alg: KeyAlg) -> Result<R, Error> {
+fn convert_key_any<R: AllocKey>(key: &dyn AnyKey, alg: KeyAlg) -> Result<R, Error> {
     match (key.algorithm(), alg) {
         #[cfg(feature = "bls")]
         (KeyAlg::Bls12_381(BlsCurves::G1G2), KeyAlg::Bls12_381(BlsCurves::G1)) => Ok(R::alloc_key(
@@ -508,13 +486,7 @@ fn convert_key_any<R: AllocKey>(key: &AnyKey, alg: KeyAlg) -> Result<R, Error> {
     }
 }
 
-impl FromJwk for Box<AnyKey> {
-    fn from_jwk_parts(jwk: JwkParts<'_>) -> Result<Self, Error> {
-        from_jwk_any(jwk)
-    }
-}
-
-impl FromJwk for Arc<AnyKey> {
+impl<R: AllocKey> FromJwk for R {
     fn from_jwk_parts(jwk: JwkParts<'_>) -> Result<Self, Error> {
         from_jwk_any(jwk)
     }
@@ -554,324 +526,171 @@ fn from_jwk_any<R: AllocKey>(jwk: JwkParts<'_>) -> Result<R, Error> {
     }
 }
 
-macro_rules! match_key_alg {
-    ($slf:expr, $ty:ty, $($kty:ident),+ $(,$errmsg:literal)?) => {{
-        fn matcher(key: &AnyKey) -> Result<$ty, Error> {
-            #[allow(unused_variables)]
-            let alg = key.algorithm();
-            match_key_alg!(@ $($kty)+ ; key, alg);
-            return Err(err_msg!(Unsupported $(,$errmsg)?))
-        }
-        matcher($slf)
-    }};
-    (@ ; $key:ident, $alg:ident) => {()};
-    (@ Aes $($rest:ident)*; $key:ident, $alg:ident) => {{
-        #[cfg(feature = "aes")]
-        if $alg == KeyAlg::Aes(AesTypes::A128Gcm) {
-            return Ok($key.assume::<AesKey<A128Gcm>>());
-        }
-        #[cfg(feature = "aes")]
-        if $alg == KeyAlg::Aes(AesTypes::A256Gcm) {
-            return Ok($key.assume::<AesKey<A256Gcm>>());
-        }
-        #[cfg(feature = "aes")]
-        if $alg == KeyAlg::Aes(AesTypes::A128CbcHs256) {
-            return Ok($key.assume::<AesKey<A128CbcHs256>>());
-        }
-        #[cfg(feature = "aes")]
-        if $alg == KeyAlg::Aes(AesTypes::A256CbcHs512) {
-            return Ok($key.assume::<AesKey<A256CbcHs512>>());
-        }
-        #[cfg(feature = "aes")]
-        if $alg == KeyAlg::Aes(AesTypes::A128Kw) {
-            return Ok($key.assume::<AesKey<A128Kw>>());
-        }
-        #[cfg(feature = "aes")]
-        if $alg == KeyAlg::Aes(AesTypes::A256Kw) {
-            return Ok($key.assume::<AesKey<A256Kw>>());
-        }
-        match_key_alg!(@ $($rest)*; $key, $alg)
-    }};
-    (@ Bls $($rest:ident)*; $key:ident, $alg:ident) => {{
-        #[cfg(feature = "bls")]
-        if $alg == KeyAlg::Bls12_381(BlsCurves::G1) {
-            return Ok($key.assume::<BlsKeyPair<G1>>());
-        }
-        #[cfg(feature = "bls")]
-        if $alg == KeyAlg::Bls12_381(BlsCurves::G2) {
-            return Ok($key.assume::<BlsKeyPair<G2>>());
-        }
-        #[cfg(feature = "bls")]
-        if $alg == KeyAlg::Bls12_381(BlsCurves::G1G2) {
-            return Ok($key.assume::<BlsKeyPair<G1G2>>());
-        }
-        match_key_alg!(@ $($rest)*; $key, $alg)
-    }};
-    (@ Chacha $($rest:ident)*; $key:ident, $alg:ident) => {{
-        #[cfg(feature = "chacha")]
-        if $alg == KeyAlg::Chacha20(Chacha20Types::C20P) {
-            return Ok($key.assume::<Chacha20Key<C20P>>());
-        }
-        #[cfg(feature = "chacha")]
-        if $alg == KeyAlg::Chacha20(Chacha20Types::XC20P) {
-            return Ok($key.assume::<Chacha20Key<XC20P>>());
-        }
-        match_key_alg!(@ $($rest)*; $key, $alg)
-    }};
-    (@ Ed25519 $($rest:ident)*; $key:ident, $alg:ident) => {{
-        #[cfg(feature = "ed25519")]
-        if $alg == KeyAlg::Ed25519 {
-            return Ok($key.assume::<Ed25519KeyPair>())
-        }
-        match_key_alg!(@ $($rest)*; $key, $alg)
-    }};
-    (@ X25519 $($rest:ident)*; $key:ident, $alg:ident) => {{
-        #[cfg(feature = "ed25519")]
-        if $alg == KeyAlg::X25519 {
-            return Ok($key.assume::<X25519KeyPair>())
-        }
-        match_key_alg!(@ $($rest)*; $key, $alg)
-    }};
-    (@ K256 $($rest:ident)*; $key:ident, $alg:ident) => {{
-        #[cfg(feature = "k256")]
-        if $alg == KeyAlg::EcCurve(EcCurves::Secp256k1) {
-            return Ok($key.assume::<K256KeyPair>())
-        }
-        match_key_alg!(@ $($rest)*; $key, $alg)
-    }};
-    (@ P256 $($rest:ident)*; $key:ident, $alg:ident) => {{
-        #[cfg(feature = "p256")]
-        if $alg == KeyAlg::EcCurve(EcCurves::Secp256r1) {
-            return Ok($key.assume::<P256KeyPair>())
-        }
-        match_key_alg!(@ $($rest)*; $key, $alg)
-    }};
-    (@ P384 $($rest:ident)*; $key:ident, $alg:ident) => {{
-        #[cfg(feature = "p384")]
-        if $alg == KeyAlg::EcCurve(EcCurves::Secp384r1) {
-            return Ok($key.assume::<P384KeyPair>())
-        }
-        match_key_alg!(@ $($rest)*; $key, $alg)
-    }};
+// may want to implement in-place initialization to avoid copies
+trait AllocKey: AsRef<dyn AnyKey> {
+    fn alloc_key<K: AnyKey>(key: K) -> Self;
 }
 
-impl AnyKey {
-    fn key_as_aead(&self) -> Result<&dyn KeyAeadInPlace, Error> {
-        match_key_alg! {
-            self,
-            &dyn KeyAeadInPlace,
-            Aes,
-            Chacha,
-            "AEAD is not supported for this key type"
-        }
-    }
-
-    fn key_to_secret(&self) -> Result<&dyn ToSecretBytes, Error> {
-        match_key_alg! {
-            self,
-            &dyn ToSecretBytes,
-            Aes,
-            Bls,
-            Chacha,
-            Ed25519,
-            K256,
-            P256,
-            P384,
-            X25519,
-            "Secret key export is not supported for this key type"
-        }
-    }
-
-    fn key_to_public(&self) -> Result<&dyn ToPublicBytes, Error> {
-        match_key_alg! {
-            self,
-            &dyn ToPublicBytes,
-            Bls,
-            Ed25519,
-            K256,
-            P256,
-            P384,
-            X25519,
-            "Public key export is not supported for this key type"
-        }
+#[cfg(feature = "alloc")]
+impl AllocKey for Box<dyn AnyKey> {
+    #[inline(always)]
+    fn alloc_key<K: AnyKey>(key: K) -> Self {
+        Box::new(key)
     }
 }
 
-impl ToPublicBytes for AnyKey {
-    fn public_bytes_length(&self) -> Result<usize, Error> {
-        self.key_to_public()?.public_bytes_length()
-    }
-
-    fn write_public_bytes(&self, out: &mut dyn WriteBuffer) -> Result<(), Error> {
-        self.key_to_public()?.write_public_bytes(out)
+#[cfg(feature = "alloc")]
+impl AllocKey for Arc<dyn AnyKey> {
+    #[inline(always)]
+    fn alloc_key<K: AnyKey>(key: K) -> Self {
+        Arc::new(key)
     }
 }
 
-impl ToSecretBytes for AnyKey {
-    fn secret_bytes_length(&self) -> Result<usize, Error> {
-        self.key_to_secret()?.secret_bytes_length()
-    }
+#[macro_export]
+/// Implement AnyKey for a key container type
+macro_rules! impl_anykey_as_ref {
+    ($name:path) => {
+        impl $crate::alg::AnyKey for $name {
+            #[inline]
+            fn algorithm(&self) -> $crate::alg::KeyAlg {
+                self.as_ref().algorithm()
+            }
 
-    fn write_secret_bytes(&self, out: &mut dyn WriteBuffer) -> Result<(), Error> {
-        self.key_to_secret()?.write_secret_bytes(out)
-    }
-}
+            #[inline]
+            fn key_ptr(&self) -> *const () {
+                self.as_ref().key_ptr()
+            }
 
-impl KeyExchange for AnyKey {
-    fn write_key_exchange(&self, other: &AnyKey, out: &mut dyn WriteBuffer) -> Result<(), Error> {
-        if self.key_type_id() != other.key_type_id() {
-            return Err(err_msg!(Unsupported, "Unsupported key exchange"));
-        }
-        match self.algorithm() {
-            #[cfg(feature = "ed25519")]
-            KeyAlg::X25519 => Ok(self
-                .assume::<X25519KeyPair>()
-                .write_key_exchange(other.assume::<X25519KeyPair>(), out)?),
-            #[cfg(feature = "k256")]
-            KeyAlg::EcCurve(EcCurves::Secp256k1) => Ok(self
-                .assume::<K256KeyPair>()
-                .write_key_exchange(other.assume::<K256KeyPair>(), out)?),
-            #[cfg(feature = "p256")]
-            KeyAlg::EcCurve(EcCurves::Secp256r1) => Ok(self
-                .assume::<P256KeyPair>()
-                .write_key_exchange(other.assume::<P256KeyPair>(), out)?),
-            #[cfg(feature = "p384")]
-            KeyAlg::EcCurve(EcCurves::Secp384r1) => Ok(self
-                .assume::<P384KeyPair>()
-                .write_key_exchange(other.assume::<P384KeyPair>(), out)?),
-            #[allow(unreachable_patterns)]
-            _ => {
-                let _ = out;
-                return Err(err_msg!(Unsupported, "Unsupported key exchange"));
+            #[inline]
+            fn key_type_id(&self) -> ::core::any::TypeId {
+                self.as_ref().key_type_id()
             }
         }
-    }
-}
 
-impl KeyAeadInPlace for AnyKey {
-    fn encrypt_in_place(
-        &self,
-        buffer: &mut dyn ResizeBuffer,
-        nonce: &[u8],
-        aad: &[u8],
-    ) -> Result<usize, Error> {
-        self.key_as_aead()?.encrypt_in_place(buffer, nonce, aad)
-    }
+        impl $crate::repr::DynPublicBytes for $name {
+            #[inline]
+            fn public_bytes_length(&self) -> Option<usize> {
+                self.as_ref().public_bytes_length()
+            }
 
-    fn decrypt_in_place(
-        &self,
-        buffer: &mut dyn ResizeBuffer,
-        nonce: &[u8],
-        aad: &[u8],
-    ) -> Result<(), Error> {
-        self.key_as_aead()?.decrypt_in_place(buffer, nonce, aad)
-    }
-
-    fn aead_params(&self) -> KeyAeadParams {
-        if let Ok(key) = self.key_as_aead() {
-            key.aead_params()
-        } else {
-            KeyAeadParams::default()
+            #[inline]
+            fn write_public_bytes(
+                &self,
+                out: &mut dyn $crate::buffer::WriteBuffer,
+            ) -> Result<(), $crate::Error> {
+                self.as_ref().write_public_bytes(out)
+            }
         }
-    }
 
-    fn aead_padding(&self, msg_len: usize) -> usize {
-        if let Ok(key) = self.key_as_aead() {
-            key.aead_padding(msg_len)
-        } else {
-            0
+        impl $crate::repr::DynSecretBytes for $name {
+            #[inline]
+            fn secret_bytes_length(&self) -> Option<usize> {
+                self.as_ref().secret_bytes_length()
+            }
+
+            #[inline]
+            fn write_secret_bytes(
+                &self,
+                out: &mut dyn $crate::buffer::WriteBuffer,
+            ) -> Result<(), $crate::Error> {
+                self.as_ref().write_secret_bytes(out)
+            }
         }
-    }
+
+        impl $crate::kdf::DynKeyExchange for $name {
+            #[inline]
+            fn exchange_key_length(&self, public: &dyn AnyKey) -> Option<usize> {
+                self.as_ref().exchange_key_length(public)
+            }
+
+            #[inline]
+            fn write_key_exchange(
+                &self,
+                public: &dyn $crate::alg::AnyKey,
+                out: &mut dyn $crate::buffer::WriteBuffer,
+            ) -> Result<(), $crate::Error> {
+                self.as_ref().write_key_exchange(public, out)
+            }
+        }
+
+        impl $crate::encrypt::KeyAeadInPlace for $name {
+            #[inline]
+            fn aead_padding(&self, msg_len: usize) -> usize {
+                self.as_ref().aead_padding(msg_len)
+            }
+
+            #[inline]
+            fn aead_params(&self) -> $crate::encrypt::KeyAeadParams {
+                self.as_ref().aead_params()
+            }
+
+            #[inline]
+            fn encrypt_in_place(
+                &self,
+                buffer: &mut dyn $crate::buffer::ResizeBuffer,
+                nonce: &[u8],
+                aad: &[u8],
+            ) -> Result<usize, $crate::Error> {
+                self.as_ref().encrypt_in_place(buffer, nonce, aad)
+            }
+
+            #[inline]
+            fn decrypt_in_place(
+                &self,
+                buffer: &mut dyn $crate::buffer::ResizeBuffer,
+                nonce: &[u8],
+                aad: &[u8],
+            ) -> Result<(), $crate::Error> {
+                self.as_ref().decrypt_in_place(buffer, nonce, aad)
+            }
+        }
+
+        impl $crate::sign::KeySign for $name {
+            #[inline]
+            fn signature_length(&self, sig_type: Option<SignatureType>) -> Option<usize> {
+                self.as_ref().signature_length(sig_type)
+            }
+
+            #[inline]
+            fn write_signature(
+                &self,
+                message: &[u8],
+                sig_type: Option<SignatureType>,
+                out: &mut dyn $crate::buffer::WriteBuffer,
+            ) -> Result<(), $crate::Error> {
+                self.as_ref().write_signature(message, sig_type, out)
+            }
+        }
+
+        impl $crate::sign::KeySigVerify for $name {
+            #[inline]
+            fn verify_signature(
+                &self,
+                message: &[u8],
+                signature: &[u8],
+                sig_type: Option<$crate::sign::SignatureType>,
+            ) -> Result<bool, $crate::Error> {
+                self.as_ref().verify_signature(message, signature, sig_type)
+            }
+        }
+
+        impl $crate::jwk::ToJwk for $name {
+            #[inline]
+            fn encode_jwk(
+                &self,
+                enc: &mut dyn $crate::jwk::JwkEncoder,
+            ) -> Result<(), $crate::Error> {
+                self.as_ref().encode_jwk(enc)
+            }
+        }
+    };
 }
 
-impl ToJwk for AnyKey {
-    fn encode_jwk(&self, enc: &mut dyn JwkEncoder) -> Result<(), Error> {
-        let key = match_key_alg! {
-            self,
-            &dyn ToJwk,
-            Aes,
-            Bls,
-            Chacha,
-            Ed25519,
-            K256,
-            P256,
-            P384,
-            X25519,
-            "JWK export is not supported for this key type"
-        }?;
-        key.encode_jwk(enc)
-    }
-}
-
-impl KeySign for AnyKey {
-    fn write_signature(
-        &self,
-        message: &[u8],
-        sig_type: Option<SignatureType>,
-        out: &mut dyn WriteBuffer,
-    ) -> Result<(), Error> {
-        let key = match_key_alg! {
-            self,
-            &dyn KeySign,
-            Ed25519,
-            K256,
-            P256,
-            P384,
-            "Signing is not supported for this key type"
-        }?;
-        key.write_signature(message, sig_type, out)
-    }
-}
-
-impl KeySigVerify for AnyKey {
-    fn verify_signature(
-        &self,
-        message: &[u8],
-        signature: &[u8],
-        sig_type: Option<SignatureType>,
-    ) -> Result<bool, Error> {
-        let key = match_key_alg! {
-            self,
-            &dyn KeySigVerify,
-            Ed25519,
-            K256,
-            P256,
-            P384,
-            "Signature verification is not supported for this key type"
-        }?;
-        key.verify_signature(message, signature, sig_type)
-    }
-}
-
-// may want to implement in-place initialization to avoid copies
-trait AllocKey {
-    fn alloc_key<K: AnyKeyAlg + Send + Sync + RefUnwindSafe + UnwindSafe>(key: K) -> Self;
-}
-
-impl AllocKey for Arc<AnyKey> {
-    #[inline(always)]
-    fn alloc_key<K: AnyKeyAlg + Send + Sync + RefUnwindSafe + UnwindSafe>(key: K) -> Self {
-        Self::from_key(key)
-    }
-}
-
-impl AllocKey for Box<AnyKey> {
-    #[inline(always)]
-    fn alloc_key<K: AnyKeyAlg + Send + Sync + RefUnwindSafe + UnwindSafe>(key: K) -> Self {
-        Self::from_key(key)
-    }
-}
-
-pub trait AnyKeyAlg: HasKeyAlg + 'static {
-    fn as_any(&self) -> &dyn Any;
-}
-
-// implement for all concrete key types
-impl<K: HasKeyAlg + Sized + 'static> AnyKeyAlg for K {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-}
+#[cfg(feature = "alloc")]
+impl_anykey_as_ref!(Box<dyn AnyKey>);
+#[cfg(feature = "alloc")]
+impl_anykey_as_ref!(Arc<dyn AnyKey>);
 
 #[cfg(test)]
 mod tests {
@@ -882,24 +701,25 @@ mod tests {
 
     #[cfg(feature = "ed25519")]
     #[test]
-    fn ed25519_as_any() {
-        let key = Box::<AnyKey>::random(KeyAlg::Ed25519).unwrap();
+    fn generate_any() {
+        let key = Box::<dyn AnyKey>::random(KeyAlg::Ed25519).unwrap();
         assert_eq!(key.algorithm(), KeyAlg::Ed25519);
         assert_eq!(key.key_type_id(), TypeId::of::<Ed25519KeyPair>());
+        assert!(key.is::<Ed25519KeyPair>());
         let _ = key.to_jwk_public(None).unwrap();
     }
 
-    #[cfg(feature = "aes")]
+    #[cfg(all(feature = "aes", feature = "ed25519"))]
     #[test]
     fn key_exchange_any() {
-        let alice = Box::<AnyKey>::random(KeyAlg::X25519).unwrap();
-        let bob = Box::<AnyKey>::random(KeyAlg::X25519).unwrap();
-        let exch_a = alice.key_exchange_bytes(&bob).unwrap();
-        let exch_b = bob.key_exchange_bytes(&alice).unwrap();
+        let alice = Box::<dyn AnyKey>::random(KeyAlg::X25519).unwrap();
+        let bob = Box::<dyn AnyKey>::random(KeyAlg::X25519).unwrap();
+        let exch_a = alice.key_exchange_bytes(&*bob).unwrap();
+        let exch_b = bob.key_exchange_bytes(&*alice).unwrap();
         assert_eq!(exch_a, exch_b);
 
         let _aes_key =
-            Box::<AnyKey>::from_key_exchange(KeyAlg::Aes(AesTypes::A256Gcm), &*alice, &*bob)
+            Box::<dyn AnyKey>::from_key_exchange(KeyAlg::Aes(AesTypes::A256Gcm), &*alice, &*bob)
                 .unwrap();
     }
 
@@ -910,11 +730,26 @@ mod tests {
         let message = b"test message";
         let mut data = SecretBytes::from(&message[..]);
 
-        let key = Box::<AnyKey>::random(KeyAlg::Chacha20(Chacha20Types::XC20P)).unwrap();
+        let key = Box::<dyn AnyKey>::random(KeyAlg::Chacha20(Chacha20Types::XC20P)).unwrap();
         let nonce = [0u8; 24]; // size varies by algorithm
-        key.encrypt_in_place(&mut data, &nonce, &[]).unwrap();
+        key.encrypt_in_place(&mut data, &nonce, &[])
+            .expect("Error performing encryption");
         assert_ne!(data, &message[..]);
-        key.decrypt_in_place(&mut data, &nonce, &[]).unwrap();
+        key.decrypt_in_place(&mut data, &nonce, &[])
+            .expect("Error performing decrypytion");
         assert_eq!(data, &message[..]);
+    }
+
+    #[cfg(all(feature = "ed25519"))]
+    #[test]
+    fn key_sign_any() {
+        let key = Box::<dyn AnyKey>::random(KeyAlg::Ed25519).unwrap();
+        let message = b"test message";
+        let sig = key
+            .create_signature(message, None)
+            .expect("Error performing signing");
+        assert!(key
+            .verify_signature(message, &sig, None)
+            .expect("Error performing signature verification"),);
     }
 }

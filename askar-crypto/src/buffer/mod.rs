@@ -22,7 +22,7 @@ mod string;
 pub use self::string::HexRepr;
 
 mod writer;
-pub use self::writer::Writer;
+pub use self::writer::{Fill, Writer};
 
 /// Support for writing to a byte buffer
 pub trait WriteBuffer: Debug {

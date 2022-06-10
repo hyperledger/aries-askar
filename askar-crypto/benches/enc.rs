@@ -103,7 +103,7 @@ fn criterion_benchmark(c: &mut Criterion) {
 
     // test overhead of AnyKey
     c.bench_function(&format!("chacha20-poly1305 encrypt as any"), move |b| {
-        let key = Box::<AnyKey>::random(KeyAlg::Chacha20(Chacha20Types::C20P)).unwrap();
+        let key = Box::<dyn AnyKey>::random(KeyAlg::Chacha20(Chacha20Types::C20P)).unwrap();
         let mut nonce = [0u8; 255];
         let nonce_len = key.aead_params().nonce_length;
         fill_random(&mut nonce[..nonce_len]);

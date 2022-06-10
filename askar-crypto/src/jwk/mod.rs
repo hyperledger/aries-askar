@@ -25,7 +25,9 @@ pub use self::parts::JwkParts;
 /// Support for converting a key into a JWK
 pub trait ToJwk {
     /// Write the JWK representation to an encoder
-    fn encode_jwk(&self, enc: &mut dyn JwkEncoder) -> Result<(), Error>;
+    fn encode_jwk(&self, _enc: &mut dyn JwkEncoder) -> Result<(), Error> {
+        Err(err_msg!(Unsupported))
+    }
 
     /// Create the JWK thumbprint of the key
     #[cfg(feature = "alloc")]

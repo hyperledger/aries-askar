@@ -21,10 +21,6 @@ The `askar-crypto` crate provides the basic key representations and cryptographi
 
 <small>1. Compatible with bls-signature RFC draft 4 <https://tools.ietf.org/html/draft-irtf-cfrg-bls-signature-04></small>
 
-## 'Any' Key support
-
-The `any_key` feature (which depends on `alloc`) provides a generic interface for creating and working with any supported key type.
-
 ## JSON Web Algorithms
 
 This crate provides implementations of the [ECDH-ES](https://tools.ietf.org/html/rfc7518#section-4.6) and [ECDH-1PU (draft 4)](https://tools.ietf.org/html/draft-madden-jose-ecdh-1pu-04) key agreement operations, for use in deriving a content encryption or key wrapping key. These primitives can be used when producing or consuming JWE envelopes using these algorithms.

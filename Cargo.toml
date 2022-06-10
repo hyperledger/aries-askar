@@ -68,7 +68,7 @@ zeroize = "1"
 [dependencies.askar-crypto]
 version = "0.3.0"
 path = "./askar-crypto"
-features = ["all_keys", "any_key", "argon2", "crypto_box", "std"]
+features = ["all_keys", "argon2", "crypto_box", "std"]
 
 [dependencies.sqlx]
 version = "0.5.13"

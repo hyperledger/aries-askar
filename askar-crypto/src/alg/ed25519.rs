@@ -11,12 +11,14 @@ use sha2::Digest;
 use subtle::ConstantTimeEq;
 use x25519_dalek::{PublicKey as XPublicKey, StaticSecret as XSecretKey};
 
-use super::{x25519::X25519KeyPair, HasKeyAlg, KeyAlg};
+use super::{x25519::X25519KeyPair, AnyKey, KeyAlg};
 use crate::{
     buffer::{ArrayKey, WriteBuffer},
+    encrypt::KeyAeadInPlace,
     error::Error,
     generic_array::typenum::{U32, U64},
     jwk::{FromJwk, JwkEncoder, JwkParts, ToJwk},
+    kdf::DynKeyExchange,
     random::KeyMaterial,
     repr::{KeyGen, KeyMeta, KeyPublicBytes, KeySecretBytes, KeypairBytes, KeypairMeta},
     sign::{KeySigVerify, KeySign, SignatureType},
@@ -142,10 +144,14 @@ impl KeyGen for Ed25519KeyPair {
     }
 }
 
-impl HasKeyAlg for Ed25519KeyPair {
+impl AnyKey for Ed25519KeyPair {
     fn algorithm(&self) -> KeyAlg {
         KeyAlg::Ed25519
     }
+}
+
+impl DynKeyExchange for Ed25519KeyPair {
+    // default implementation
 }
 
 impl KeyMeta for Ed25519KeyPair {
@@ -211,7 +217,19 @@ impl KeyPublicBytes for Ed25519KeyPair {
     }
 }
 
+impl KeyAeadInPlace for Ed25519KeyPair {
+    // null impl
+}
+
 impl KeySign for Ed25519KeyPair {
+    fn signature_length(&self, sig_type: Option<SignatureType>) -> Option<usize> {
+        match sig_type {
+            None | Some(SignatureType::EdDSA) => Some(EDDSA_SIGNATURE_LENGTH),
+            #[allow(unreachable_patterns)]
+            _ => None,
+        }
+    }
+
     fn write_signature(
         &self,
         message: &[u8],
@@ -320,7 +338,7 @@ impl Debug for Ed25519SigningKey<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::repr::{ToPublicBytes, ToSecretBytes};
+    use crate::repr::{DynPublicBytes, DynSecretBytes};
 
     #[test]
     fn expand_keypair() {

@@ -1,22 +1,21 @@
-use std::borrow::Cow;
 use std::str::FromStr;
+use std::{borrow::Cow, panic::AssertUnwindSafe};
 
 use super::enc::{Encrypted, ToDecrypt};
 pub use crate::crypto::{
-    alg::KeyAlg,
+    alg::{AnyKey, KeyAlg},
     buffer::{SecretBytes, WriteBuffer},
     encrypt::KeyAeadParams,
 };
 use crate::{
     crypto::{
-        alg::{bls::BlsKeyGen, AnyKey, AnyKeyCreate, BlsCurves},
+        alg::{bls::BlsKeyGen, AnyKeyCreate, BlsCurves},
         encrypt::KeyAeadInPlace,
         jwk::{FromJwk, ToJwk},
-        kdf::{KeyDerivation, KeyExchange},
+        kdf::KeyDerivation,
         random::{fill_random, RandomDet},
-        repr::{ToPublicBytes, ToSecretBytes},
+        repr::{DynPublicBytes, DynSecretBytes},
         sign::{KeySigVerify, KeySign, SignatureType},
-        Error as CryptoError,
     },
     error::Error,
 };
@@ -24,22 +23,30 @@ use crate::{
 /// A stored key entry
 #[derive(Debug)]
 pub struct LocalKey {
-    pub(crate) inner: Box<AnyKey>,
+    pub(crate) inner: AssertUnwindSafe<Box<dyn AnyKey>>,
     pub(crate) ephemeral: bool,
 }
 
 impl LocalKey {
+    #[inline]
+    pub(crate) fn new(inner: Box<dyn AnyKey>, ephemeral: bool) -> Self {
+        Self {
+            inner: AssertUnwindSafe(inner),
+            ephemeral,
+        }
+    }
+
     /// Create a new random key or keypair
     pub fn generate(alg: KeyAlg, ephemeral: bool) -> Result<Self, Error> {
-        let inner = Box::<AnyKey>::random(alg)?;
-        Ok(Self { inner, ephemeral })
+        let inner = Box::<dyn AnyKey>::random(alg)?;
+        Ok(Self::new(inner, ephemeral))
     }
 
     /// Create a new deterministic key or keypair
     pub fn from_seed(alg: KeyAlg, seed: &[u8], method: Option<&str>) -> Result<Self, Error> {
         let inner = match method {
-            Some("bls_keygen") => Box::<AnyKey>::generate(alg, BlsKeyGen::new(seed)?)?,
-            None | Some("") => Box::<AnyKey>::generate(alg, RandomDet::new(seed))?,
+            Some("bls_keygen") => Box::<dyn AnyKey>::generate(alg, BlsKeyGen::new(seed)?)?,
+            None | Some("") => Box::<dyn AnyKey>::generate(alg, RandomDet::new(seed))?,
             _ => {
                 return Err(err_msg!(
                     Unsupported,
@@ -47,37 +54,25 @@ impl LocalKey {
                 ))
             }
         };
-        Ok(Self {
-            inner,
-            ephemeral: false,
-        })
+        Ok(Self::new(inner, false))
     }
 
     /// Import a key or keypair from a JWK in binary format
     pub fn from_jwk_slice(jwk: &[u8]) -> Result<Self, Error> {
-        let inner = Box::<AnyKey>::from_jwk_slice(jwk)?;
-        Ok(Self {
-            inner,
-            ephemeral: false,
-        })
+        let inner = Box::<dyn AnyKey>::from_jwk_slice(jwk)?;
+        Ok(Self::new(inner, false))
     }
 
     /// Import a key or keypair from a JWK
     pub fn from_jwk(jwk: &str) -> Result<Self, Error> {
-        let inner = Box::<AnyKey>::from_jwk(jwk)?;
-        Ok(Self {
-            inner,
-            ephemeral: false,
-        })
+        let inner = Box::<dyn AnyKey>::from_jwk(jwk)?;
+        Ok(Self::new(inner, false))
     }
 
     /// Import a public key from its compact representation
     pub fn from_public_bytes(alg: KeyAlg, public: &[u8]) -> Result<Self, Error> {
-        let inner = Box::<AnyKey>::from_public_bytes(alg, public)?;
-        Ok(Self {
-            inner,
-            ephemeral: false,
-        })
+        let inner = Box::<dyn AnyKey>::from_public_bytes(alg, public)?;
+        Ok(Self::new(inner, false))
     }
 
     /// Export the raw bytes of the public key
@@ -87,11 +82,8 @@ impl LocalKey {
 
     /// Import a symmetric key or public-private keypair from its compact representation
     pub fn from_secret_bytes(alg: KeyAlg, secret: &[u8]) -> Result<Self, Error> {
-        let inner = Box::<AnyKey>::from_secret_bytes(alg, secret)?;
-        Ok(Self {
-            inner,
-            ephemeral: false,
-        })
+        let inner = Box::<dyn AnyKey>::from_secret_bytes(alg, secret)?;
+        Ok(Self::new(inner, false))
     }
 
     /// Export the raw bytes of the private key
@@ -101,22 +93,16 @@ impl LocalKey {
 
     /// Derive a new key from a Diffie-Hellman exchange between this keypair and a public key
     pub fn to_key_exchange(&self, alg: KeyAlg, pk: &LocalKey) -> Result<Self, Error> {
-        let inner = Box::<AnyKey>::from_key_exchange(alg, &*self.inner, &*pk.inner)?;
-        Ok(Self {
-            inner,
-            ephemeral: self.ephemeral || pk.ephemeral,
-        })
+        let inner = Box::<dyn AnyKey>::from_key_exchange(alg, &**self.inner, &**pk.inner)?;
+        Ok(Self::new(inner, self.ephemeral || pk.ephemeral))
     }
 
     pub(crate) fn from_key_derivation(
         alg: KeyAlg,
         derive: impl KeyDerivation,
     ) -> Result<Self, Error> {
-        let inner = Box::<AnyKey>::from_key_derivation(alg, derive)?;
-        Ok(Self {
-            inner,
-            ephemeral: false,
-        })
+        let inner = Box::<dyn AnyKey>::from_key_derivation(alg, derive)?;
+        Ok(Self::new(inner, false))
     }
 
     pub(crate) fn encode(&self) -> Result<SecretBytes, Error> {
@@ -160,10 +146,7 @@ impl LocalKey {
     /// Map this key or keypair to its equivalent for another key algorithm
     pub fn convert_key(&self, alg: KeyAlg) -> Result<Self, Error> {
         let inner = self.inner.convert_key(alg)?;
-        Ok(Self {
-            inner,
-            ephemeral: self.ephemeral,
-        })
+        Ok(Self::new(inner, self.ephemeral))
     }
 
     /// Fetch the AEAD parameter lengths
@@ -259,7 +242,9 @@ impl LocalKey {
     pub fn wrap_key(&self, key: &LocalKey, nonce: &[u8]) -> Result<Encrypted, Error> {
         let params = self.inner.aead_params();
         let mut buf = SecretBytes::with_capacity(
-            key.inner.secret_bytes_length()? + params.tag_length + params.nonce_length,
+            key.inner.secret_bytes_length().unwrap_or_default()
+                + params.tag_length
+                + params.nonce_length,
         );
         key.inner.write_secret_bytes(&mut buf)?;
         let tag_pos = self.inner.encrypt_in_place(&mut buf, nonce, &[])?;
@@ -281,12 +266,10 @@ impl LocalKey {
     }
 }
 
-impl KeyExchange for LocalKey {
-    fn write_key_exchange(
-        &self,
-        other: &LocalKey,
-        out: &mut dyn WriteBuffer,
-    ) -> Result<(), CryptoError> {
-        self.inner.write_key_exchange(&other.inner, out)
+impl AsRef<dyn AnyKey> for LocalKey {
+    fn as_ref(&self) -> &dyn AnyKey {
+        &**self.inner
     }
 }
+
+impl_anykey_as_ref!(LocalKey);

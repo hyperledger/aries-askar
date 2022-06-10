@@ -8,16 +8,12 @@ use aes_core::{
 };
 use subtle::ConstantTimeEq;
 
-use super::{AesKey, AesType, NonceSize, TagSize};
+use super::{AesKey, AesType};
 use crate::{
     alg::AesTypes,
     buffer::ResizeBuffer,
-    encrypt::{KeyAeadInPlace, KeyAeadMeta, KeyAeadParams},
     error::Error,
-    generic_array::{
-        typenum::{consts, Unsigned},
-        GenericArray,
-    },
+    generic_array::{typenum::consts, GenericArray},
 };
 
 const AES_KW_DEFAULT_IV: [u8; 8] = [166, 166, 166, 166, 166, 166, 166, 166];
@@ -26,149 +22,186 @@ const AES_KW_DEFAULT_IV: [u8; 8] = [166, 166, 166, 166, 166, 166, 166, 166];
 pub type A128Kw = AesKeyWrap<Aes128>;
 
 impl AesType for A128Kw {
-    type KeySize = <Aes128 as KeySizeUser>::KeySize;
     const ALG_TYPE: AesTypes = AesTypes::A128Kw;
     const JWK_ALG: &'static str = "A128KW";
+
+    type KeySize = <Aes128 as KeySizeUser>::KeySize;
+    type NonceSize = consts::U0;
+    type TagSize = consts::U8;
+
+    #[inline]
+    fn encrypt_in_place(
+        key: &AesKey<Self>,
+        buffer: &mut dyn ResizeBuffer,
+        nonce: &[u8],
+        aad: &[u8],
+    ) -> Result<usize, Error> {
+        kw_encrypt_in_place(key, buffer, nonce, aad)
+    }
+
+    #[inline]
+    fn decrypt_in_place(
+        key: &AesKey<Self>,
+        buffer: &mut dyn ResizeBuffer,
+        nonce: &[u8],
+        aad: &[u8],
+    ) -> Result<(), Error> {
+        kw_decrypt_in_place(key, buffer, nonce, aad)
+    }
 }
 
 /// 256 bit AES Key Wrap
 pub type A256Kw = AesKeyWrap<Aes256>;
 
 impl AesType for A256Kw {
-    type KeySize = <Aes256 as KeySizeUser>::KeySize;
     const ALG_TYPE: AesTypes = AesTypes::A256Kw;
     const JWK_ALG: &'static str = "A256KW";
+
+    type KeySize = <Aes256 as KeySizeUser>::KeySize;
+    type NonceSize = consts::U0;
+    type TagSize = consts::U8;
+
+    #[inline]
+    fn encrypt_in_place(
+        key: &AesKey<Self>,
+        buffer: &mut dyn ResizeBuffer,
+        nonce: &[u8],
+        aad: &[u8],
+    ) -> Result<usize, Error> {
+        kw_encrypt_in_place(key, buffer, nonce, aad)
+    }
+
+    #[inline]
+    fn decrypt_in_place(
+        key: &AesKey<Self>,
+        buffer: &mut dyn ResizeBuffer,
+        nonce: &[u8],
+        aad: &[u8],
+    ) -> Result<(), Error> {
+        kw_decrypt_in_place(key, buffer, nonce, aad)
+    }
 }
 
 /// AES Key Wrap implementation
 #[derive(Debug)]
 pub struct AesKeyWrap<C>(PhantomData<C>);
 
-impl<C> KeyAeadMeta for AesKey<AesKeyWrap<C>>
-where
-    AesKeyWrap<C>: AesType,
-{
-    type NonceSize = consts::U0;
-    type TagSize = consts::U8;
-}
-
-impl<C> KeyAeadInPlace for AesKey<AesKeyWrap<C>>
+fn kw_encrypt_in_place<C>(
+    key: &AesKey<AesKeyWrap<C>>,
+    buffer: &mut dyn ResizeBuffer,
+    nonce: &[u8],
+    aad: &[u8],
+) -> Result<usize, Error>
 where
     AesKeyWrap<C>: AesType,
     C: KeyInit<KeySize = <AesKeyWrap<C> as AesType>::KeySize>
         + BlockCipher<BlockSize = consts::U16>
-        + BlockDecrypt
         + BlockEncrypt,
 {
-    fn encrypt_in_place(
-        &self,
-        buffer: &mut dyn ResizeBuffer,
-        nonce: &[u8],
-        aad: &[u8],
-    ) -> Result<usize, Error> {
-        if nonce.len() != 0 {
-            return Err(err_msg!(Unsupported, "Custom nonce not supported"));
-        }
-        if aad.len() != 0 {
-            return Err(err_msg!(Unsupported, "AAD not supported"));
-        }
-        let mut buf_len = buffer.as_ref().len();
-        if buf_len % 8 != 0 {
-            return Err(err_msg!(
-                Unsupported,
-                "Data length must be a multiple of 8 bytes"
-            ));
-        }
-        let blocks = buf_len / 8;
-
-        buffer.buffer_insert(0, &[0u8; 8])?;
-        buf_len += 8;
-
-        let aes = C::new(self.0.as_ref());
-        let mut iv = AES_KW_DEFAULT_IV;
-        let mut block = GenericArray::default();
-        for j in 0..6 {
-            for (i, chunk) in buffer.as_mut()[8..].chunks_exact_mut(8).enumerate() {
-                block[0..8].copy_from_slice(iv.as_ref());
-                block[8..16].copy_from_slice(chunk);
-                aes.encrypt_block(&mut block);
-                let t = (((blocks * j) + i + 1) as u64).to_be_bytes();
-                iv.copy_from_slice(&block[0..8]);
-                for (a, t) in iv.as_mut().iter_mut().zip(&t[..]) {
-                    *a ^= t;
-                }
-                chunk.copy_from_slice(&block[8..16]);
-            }
-        }
-        buffer.as_mut()[0..8].copy_from_slice(&iv[..]);
-        Ok(buf_len)
+    if nonce.len() != 0 {
+        return Err(err_msg!(Unsupported, "Custom nonce not supported"));
     }
+    if aad.len() != 0 {
+        return Err(err_msg!(Unsupported, "AAD not supported"));
+    }
+    let mut buf_len = buffer.as_ref().len();
+    if buf_len % 8 != 0 {
+        return Err(err_msg!(
+            Unsupported,
+            "Data length must be a multiple of 8 bytes"
+        ));
+    }
+    let blocks = buf_len / 8;
 
-    fn decrypt_in_place(
-        &self,
-        buffer: &mut dyn ResizeBuffer,
-        nonce: &[u8],
-        aad: &[u8],
-    ) -> Result<(), Error> {
-        if nonce.len() != 0 {
-            return Err(err_msg!(Unsupported, "Custom nonce not supported"));
-        }
-        if aad.len() != 0 {
-            return Err(err_msg!(Unsupported, "AAD not supported"));
-        }
-        if buffer.as_ref().len() % 8 != 0 {
-            return Err(err_msg!(
-                Encryption,
-                "Data length must be a multiple of 8 bytes"
-            ));
-        }
-        let mut blocks = buffer.as_ref().len() / 8;
-        if blocks < 1 {
-            return Err(err_msg!(Encryption));
-        }
-        blocks -= 1;
+    buffer.buffer_insert(0, &[0u8; 8])?;
+    buf_len += 8;
 
-        let aes = C::new(self.0.as_ref());
-        let mut iv = *TryInto::<&[u8; 8]>::try_into(&buffer.as_ref()[0..8]).unwrap();
-        buffer.buffer_remove(0..8)?;
-
-        let mut block = GenericArray::default();
-        for j in (0..6).into_iter().rev() {
-            for (i, chunk) in buffer.as_mut().chunks_exact_mut(8).enumerate().rev() {
-                block[0..8].copy_from_slice(iv.as_ref());
-                let t = (((blocks * j) + i + 1) as u64).to_be_bytes();
-                for (a, t) in block[0..8].iter_mut().zip(&t[..]) {
-                    *a ^= t;
-                }
-                block[8..16].copy_from_slice(chunk);
-                aes.decrypt_block(&mut block);
-                iv.copy_from_slice(&block[0..8]);
-                chunk.copy_from_slice(&block[8..16]);
+    let aes = C::new(key.0.as_ref());
+    let mut iv = AES_KW_DEFAULT_IV;
+    let mut block = GenericArray::default();
+    for j in 0..6 {
+        for (i, chunk) in buffer.as_mut()[8..].chunks_exact_mut(8).enumerate() {
+            block[0..8].copy_from_slice(iv.as_ref());
+            block[8..16].copy_from_slice(chunk);
+            aes.encrypt_block(&mut block);
+            let t = (((blocks * j) + i + 1) as u64).to_be_bytes();
+            iv.copy_from_slice(&block[0..8]);
+            for (a, t) in iv.as_mut().iter_mut().zip(&t[..]) {
+                *a ^= t;
             }
+            chunk.copy_from_slice(&block[8..16]);
         }
+    }
+    buffer.as_mut()[0..8].copy_from_slice(&iv[..]);
+    Ok(buf_len)
+}
 
-        if iv.ct_eq(&AES_KW_DEFAULT_IV).unwrap_u8() == 1 {
-            Ok(())
-        } else {
-            Err(err_msg!(Encryption))
+fn kw_decrypt_in_place<C>(
+    key: &AesKey<AesKeyWrap<C>>,
+    buffer: &mut dyn ResizeBuffer,
+    nonce: &[u8],
+    aad: &[u8],
+) -> Result<(), Error>
+where
+    AesKeyWrap<C>: AesType,
+    C: KeyInit<KeySize = <AesKeyWrap<C> as AesType>::KeySize>
+        + BlockCipher<BlockSize = consts::U16>
+        + BlockDecrypt,
+{
+    if nonce.len() != 0 {
+        return Err(err_msg!(Unsupported, "Custom nonce not supported"));
+    }
+    if aad.len() != 0 {
+        return Err(err_msg!(Unsupported, "AAD not supported"));
+    }
+    if buffer.as_ref().len() % 8 != 0 {
+        return Err(err_msg!(
+            Encryption,
+            "Data length must be a multiple of 8 bytes"
+        ));
+    }
+    let mut blocks = buffer.as_ref().len() / 8;
+    if blocks < 1 {
+        return Err(err_msg!(Encryption));
+    }
+    blocks -= 1;
+
+    let aes = C::new(key.0.as_ref());
+    let mut iv = *TryInto::<&[u8; 8]>::try_into(&buffer.as_ref()[0..8]).unwrap();
+    buffer.buffer_remove(0..8)?;
+
+    let mut block = GenericArray::default();
+    for j in (0..6).into_iter().rev() {
+        for (i, chunk) in buffer.as_mut().chunks_exact_mut(8).enumerate().rev() {
+            block[0..8].copy_from_slice(iv.as_ref());
+            let t = (((blocks * j) + i + 1) as u64).to_be_bytes();
+            for (a, t) in block[0..8].iter_mut().zip(&t[..]) {
+                *a ^= t;
+            }
+            block[8..16].copy_from_slice(chunk);
+            aes.decrypt_block(&mut block);
+            iv.copy_from_slice(&block[0..8]);
+            chunk.copy_from_slice(&block[8..16]);
         }
     }
 
-    fn aead_params(&self) -> KeyAeadParams {
-        KeyAeadParams {
-            nonce_length: NonceSize::<Self>::USIZE,
-            tag_length: TagSize::<Self>::USIZE,
-        }
+    if iv.ct_eq(&AES_KW_DEFAULT_IV).unwrap_u8() == 1 {
+        Ok(())
+    } else {
+        Err(err_msg!(Encryption))
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(feature = "alloc")]
     use crate::buffer::SecretBytes;
+    use crate::encrypt::KeyAeadInPlace;
     use crate::repr::KeySecretBytes;
     use std::string::ToString;
 
+    #[cfg(feature = "alloc")]
     #[test]
     // from RFC 3394 test vectors
     fn key_wrap_128_expected() {
@@ -185,6 +218,7 @@ mod tests {
         assert_eq!(buffer, &input[..]);
     }
 
+    #[cfg(feature = "alloc")]
     #[test]
     // from RFC 3394 test vectors
     fn key_wrap_256_expected() {

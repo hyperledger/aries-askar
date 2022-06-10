@@ -33,12 +33,16 @@ pub trait KeySecretBytes: KeyMeta {
 }
 
 /// Object-safe trait for exporting key secret bytes
-pub trait ToSecretBytes {
+pub trait DynSecretBytes {
     /// Get the length of a secret key
-    fn secret_bytes_length(&self) -> Result<usize, Error>;
+    fn secret_bytes_length(&self) -> Option<usize> {
+        None
+    }
 
     /// Write the key secret bytes to a buffer.
-    fn write_secret_bytes(&self, out: &mut dyn WriteBuffer) -> Result<(), Error>;
+    fn write_secret_bytes(&self, _out: &mut dyn WriteBuffer) -> Result<(), Error> {
+        Err(err_msg!(Unsupported))
+    }
 
     #[cfg(feature = "alloc")]
     #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
@@ -50,12 +54,12 @@ pub trait ToSecretBytes {
     }
 }
 
-impl<K> ToSecretBytes for K
+impl<K> DynSecretBytes for K
 where
     K: KeySecretBytes,
 {
-    fn secret_bytes_length(&self) -> Result<usize, Error> {
-        Ok(<Self as KeyMeta>::KeySize::USIZE)
+    fn secret_bytes_length(&self) -> Option<usize> {
+        Some(<Self as KeyMeta>::KeySize::USIZE)
     }
 
     fn write_secret_bytes(&self, out: &mut dyn WriteBuffer) -> Result<(), Error> {
@@ -81,12 +85,16 @@ pub trait KeyPublicBytes: KeypairMeta {
 }
 
 /// Object-safe trait for exporting key public bytes
-pub trait ToPublicBytes {
+pub trait DynPublicBytes {
     /// Get the length of a public key
-    fn public_bytes_length(&self) -> Result<usize, Error>;
+    fn public_bytes_length(&self) -> Option<usize> {
+        None
+    }
 
     /// Write the key public bytes to a buffer.
-    fn write_public_bytes(&self, out: &mut dyn WriteBuffer) -> Result<(), Error>;
+    fn write_public_bytes(&self, _out: &mut dyn WriteBuffer) -> Result<(), Error> {
+        Err(err_msg!(Unsupported))
+    }
 
     #[cfg(feature = "alloc")]
     #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
@@ -98,12 +106,12 @@ pub trait ToPublicBytes {
     }
 }
 
-impl<K> ToPublicBytes for K
+impl<K> DynPublicBytes for K
 where
     K: KeyPublicBytes,
 {
-    fn public_bytes_length(&self) -> Result<usize, Error> {
-        Ok(<Self as KeypairMeta>::PublicKeySize::USIZE)
+    fn public_bytes_length(&self) -> Option<usize> {
+        Some(<Self as KeypairMeta>::PublicKeySize::USIZE)
     }
 
     fn write_public_bytes(&self, out: &mut dyn WriteBuffer) -> Result<(), Error> {

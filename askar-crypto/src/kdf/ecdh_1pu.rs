@@ -1,23 +1,24 @@
 //! ECDH-1PU key derivation
 
 use sha2::Sha256;
-use zeroize::Zeroize;
+use zeroize::Zeroizing;
 
 use super::{
-    concat::{ConcatKDFHash, ConcatKDFParams},
-    KeyDerivation, KeyExchange,
+    concat::{ConcatKDF, ConcatKDFParams},
+    KeyDerivation,
 };
 use crate::{
+    alg::AnyKey,
     buffer::{WriteBuffer, Writer},
     error::Error,
 };
 
 /// An instantiation of the ECDH-1PU key derivation
 #[derive(Debug)]
-pub struct Ecdh1PU<'d, Key: KeyExchange + ?Sized> {
-    ephem_key: &'d Key,
-    send_key: &'d Key,
-    recip_key: &'d Key,
+pub struct Ecdh1PU<'d> {
+    ephem_key: &'d dyn AnyKey,
+    send_key: &'d dyn AnyKey,
+    recip_key: &'d dyn AnyKey,
     alg: &'d [u8],
     apu: &'d [u8],
     apv: &'d [u8],
@@ -25,12 +26,12 @@ pub struct Ecdh1PU<'d, Key: KeyExchange + ?Sized> {
     receive: bool,
 }
 
-impl<'d, Key: KeyExchange + ?Sized> Ecdh1PU<'d, Key> {
+impl<'d> Ecdh1PU<'d> {
     /// Create a new KDF instance
     pub fn new(
-        ephem_key: &'d Key,
-        send_key: &'d Key,
-        recip_key: &'d Key,
+        ephem_key: &'d dyn AnyKey,
+        send_key: &'d dyn AnyKey,
+        recip_key: &'d dyn AnyKey,
         alg: &'d [u8],
         apu: &'d [u8],
         apv: &'d [u8],
@@ -50,52 +51,52 @@ impl<'d, Key: KeyExchange + ?Sized> Ecdh1PU<'d, Key> {
     }
 }
 
-impl<Key: KeyExchange + ?Sized> KeyDerivation for Ecdh1PU<'_, Key> {
+impl KeyDerivation for Ecdh1PU<'_> {
     fn derive_key_bytes(&mut self, key_output: &mut [u8]) -> Result<(), Error> {
-        let output_len = key_output.len();
-        // one-pass KDF only produces 256 bits of output
-        if output_len > 32 {
+        let output_len = if key_output.len() < (u32::MAX as usize / 8) {
+            (key_output.len() * 8) as u32
+        } else {
             return Err(err_msg!(Unsupported, "Exceeded maximum output length"));
-        }
+        };
         if self.cc_tag.len() > 128 {
             return Err(err_msg!(Unsupported, "Exceeded maximum length for cc_tag"));
         }
-        let mut kdf = ConcatKDFHash::<Sha256>::new();
-        kdf.start_pass();
 
-        // hash Zs and Ze directly into the KDF
+        // hash Zs and Ze
+        let mut buf = Zeroizing::new([0u8; 512]);
+        let mut buf_w = Writer::from_slice(&mut buf[..]);
         if self.receive {
             self.recip_key
-                .write_key_exchange(self.ephem_key, &mut kdf)?;
-            self.recip_key.write_key_exchange(self.send_key, &mut kdf)?;
+                .write_key_exchange(self.ephem_key, &mut buf_w)?;
+            self.recip_key
+                .write_key_exchange(self.send_key, &mut buf_w)?;
         } else {
             self.ephem_key
-                .write_key_exchange(self.recip_key, &mut kdf)?;
-            self.send_key.write_key_exchange(self.recip_key, &mut kdf)?;
-        }
+                .write_key_exchange(self.recip_key, &mut buf_w)?;
+            self.send_key
+                .write_key_exchange(self.recip_key, &mut buf_w)?;
+        };
 
         // the authentication tag is appended to pub_info, if any.
         let mut pub_info = [0u8; 132];
         let mut pub_w = Writer::from_slice(&mut pub_info[..]);
-        pub_w.buffer_write(&((output_len as u32) * 8).to_be_bytes())?; // output length in bits
+        pub_w.buffer_write(&output_len.to_be_bytes())?; // output length in bits
         if !self.cc_tag.is_empty() {
             pub_w.buffer_write(&(self.cc_tag.len() as u32).to_be_bytes())?;
             pub_w.buffer_write(&self.cc_tag)?;
         }
 
-        kdf.hash_params(ConcatKDFParams {
-            alg: self.alg,
-            apu: self.apu,
-            apv: self.apv,
-            pub_info: pub_w.as_ref(),
-            prv_info: &[],
-        });
-
-        let mut key = kdf.finish_pass();
-        key_output.copy_from_slice(&key[..output_len]);
-        key.zeroize();
-
-        Ok(())
+        ConcatKDF::<Sha256>::derive_key(
+            buf_w.as_ref(),
+            ConcatKDFParams {
+                alg: self.alg,
+                apu: self.apu,
+                apv: self.apv,
+                pub_info: pub_w.as_ref(),
+                prv_info: &[],
+            },
+            key_output,
+        )
     }
 }
 

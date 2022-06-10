@@ -9,15 +9,17 @@ use subtle::ConstantTimeEq;
 use x25519_dalek::{PublicKey, StaticSecret as SecretKey};
 use zeroize::Zeroizing;
 
-use super::{ed25519::Ed25519KeyPair, HasKeyAlg, KeyAlg};
+use super::{ed25519::Ed25519KeyPair, AnyKey, KeyAlg};
 use crate::{
-    buffer::{ArrayKey, WriteBuffer},
+    buffer::ArrayKey,
+    encrypt::KeyAeadInPlace,
     error::Error,
     generic_array::typenum::{U32, U64},
     jwk::{FromJwk, JwkEncoder, JwkParts, ToJwk},
     kdf::KeyExchange,
     random::KeyMaterial,
     repr::{KeyGen, KeyMeta, KeyPublicBytes, KeySecretBytes, KeypairBytes, KeypairMeta},
+    sign::{KeySigVerify, KeySign},
 };
 
 // FIXME: reject low-order points?
@@ -87,7 +89,7 @@ impl Debug for X25519KeyPair {
     }
 }
 
-impl HasKeyAlg for X25519KeyPair {
+impl AnyKey for X25519KeyPair {
     fn algorithm(&self) -> KeyAlg {
         KeyAlg::X25519
     }
@@ -173,6 +175,32 @@ impl KeyPublicBytes for X25519KeyPair {
     }
 }
 
+impl KeyAeadInPlace for X25519KeyPair {
+    // null impl
+}
+
+impl KeyExchange for X25519KeyPair {
+    const EXCHANGE_KEY_LENGTH: usize = SECRET_KEY_LENGTH;
+
+    fn with_key_exchange<O>(&self, other: &Self, f: impl FnOnce(&[u8]) -> O) -> Result<O, Error> {
+        match self.secret.as_ref() {
+            Some(sk) => {
+                let xk = sk.diffie_hellman(&other.public);
+                Ok(f(xk.as_bytes()))
+            }
+            None => Err(err_msg!(MissingSecretKey)),
+        }
+    }
+}
+
+impl KeySign for X25519KeyPair {
+    // null impl
+}
+
+impl KeySigVerify for X25519KeyPair {
+    // null impl
+}
+
 impl ToJwk for X25519KeyPair {
     fn encode_jwk(&self, enc: &mut dyn JwkEncoder) -> Result<(), Error> {
         enc.add_str("crv", JWK_CURVE)?;
@@ -221,19 +249,6 @@ impl FromJwk for X25519KeyPair {
     }
 }
 
-impl KeyExchange for X25519KeyPair {
-    fn write_key_exchange(&self, other: &Self, out: &mut dyn WriteBuffer) -> Result<(), Error> {
-        match self.secret.as_ref() {
-            Some(sk) => {
-                let xk = sk.diffie_hellman(&other.public);
-                out.buffer_write(xk.as_bytes())?;
-                Ok(())
-            }
-            None => Err(err_msg!(MissingSecretKey)),
-        }
-    }
-}
-
 impl TryFrom<&Ed25519KeyPair> for X25519KeyPair {
     type Error = Error;
 
@@ -245,7 +260,7 @@ impl TryFrom<&Ed25519KeyPair> for X25519KeyPair {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::repr::ToPublicBytes;
+    use crate::{kdf::DynKeyExchange, repr::DynPublicBytes};
 
     #[test]
     fn jwk_expected() {
