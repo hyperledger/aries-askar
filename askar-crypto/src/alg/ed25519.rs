@@ -1,9 +1,6 @@
 //! Ed25519 signature and verification key support
 
-use core::{
-    convert::{TryFrom, TryInto},
-    fmt::{self, Debug, Formatter},
-};
+use core::fmt::{self, Debug, Formatter};
 
 use curve25519_dalek::edwards::CompressedEdwardsY;
 use ed25519_dalek::{ExpandedSecretKey, PublicKey, SecretKey, Signature};

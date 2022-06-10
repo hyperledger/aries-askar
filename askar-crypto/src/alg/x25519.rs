@@ -1,9 +1,6 @@
 //! X25519 key exchange support on Curve25519
 
-use core::{
-    convert::{TryFrom, TryInto},
-    fmt::{self, Debug, Formatter},
-};
+use core::fmt::{self, Debug, Formatter};
 
 use subtle::ConstantTimeEq;
 use x25519_dalek::{PublicKey, StaticSecret as SecretKey};

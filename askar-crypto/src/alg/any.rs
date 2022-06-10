@@ -1,7 +1,5 @@
 #[cfg(feature = "alloc")]
 use alloc::{boxed::Box, sync::Arc};
-#[cfg(feature = "ed25519")]
-use core::convert::TryFrom;
 use core::{any::TypeId, fmt::Debug};
 
 #[cfg(feature = "aes")]

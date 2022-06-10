@@ -2,7 +2,8 @@
 name = "askar-crypto"
 version = "0.3.0"
 authors = ["Hyperledger Aries Contributors <aries@lists.hyperledger.org>"]
-edition = "2018"
+edition = "2021"
+rust-version = "1.57"
 description = "Hyperledger Aries Askar cryptography"
 license = "MIT OR Apache-2.0"
 readme = "README.md"
