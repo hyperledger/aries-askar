@@ -526,8 +526,9 @@ fn from_jwk_any<R: AllocKey>(jwk: JwkParts<'_>) -> Result<R, Error> {
     }
 }
 
-// may want to implement in-place initialization to avoid copies
-trait AllocKey: AsRef<dyn AnyKey> {
+/// Trait for allocated key containers
+pub trait AllocKey: AsRef<dyn AnyKey> {
+    /// Construct a new container from a key instance
     fn alloc_key<K: AnyKey>(key: K) -> Self;
 }
 

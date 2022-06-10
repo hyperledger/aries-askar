@@ -16,7 +16,7 @@ use crate::{
 
 #[macro_use]
 mod any;
-pub use any::{AnyKey, AnyKeyCreate};
+pub use any::{AllocKey, AnyKey, AnyKeyCreate};
 
 #[cfg(feature = "aes")]
 #[cfg_attr(docsrs, doc(cfg(feature = "aes")))]
