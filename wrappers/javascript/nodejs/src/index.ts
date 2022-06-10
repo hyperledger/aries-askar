@@ -1,11 +1,12 @@
 /* eslint-disable no-console */
 
-import { ariesAskar, LogLevel, registerAriesAskar, Store, StoreKeyMethod } from 'aries-askar-shared'
+import { ariesAskar, Key, KeyAlgs, LogLevel, registerAriesAskar, Store, StoreKeyMethod } from 'aries-askar-shared'
 
 import { NodeJSAriesAskar } from './ariesAskar'
 
 registerAriesAskar({ askar: new NodeJSAriesAskar() })
-ariesAskar.setCustomLogger({ logLevel: LogLevel.Trace })
+
+process.env.LOG && ariesAskar.setCustomLogger({ logLevel: LogLevel.Trace })
 
 const testStore = async () => {
   try {
@@ -26,15 +27,13 @@ const testStore = async () => {
     })
 
     const session = await store.openSession()
-    // const result = await session.fetch({ ...testEntry, forUpdate: false })
-    // console.log(result)
+    await session.insert(testEntry)
+    console.error(await session.count({ category: testEntry.category, tagFilter: testEntry.tags }))
+    const result = await session.fetch({ ...testEntry, forUpdate: false })
+    console.log(result)
 
-    // await session.insert(testEntry)
-
-    // // console.error(await session.count({ category: testEntry.category, tagFilter: testEntry.tags }))
-
-    // await session.close()
-    // await store.close()
+    await session.close()
+    await store.close()
 
     process.exit()
   } catch (e) {
@@ -43,4 +42,15 @@ const testStore = async () => {
   }
 }
 
-void testStore()
+// void testStore()
+
+const testKey = async () => {
+  const key = Key.fromSeed({ alg: KeyAlgs.Bls12381G2, seed: new Uint8Array(32).fill(0) })
+  console.log(key.publicBytes)
+  console.log(key.secretBytes)
+  const key1 = Key.fromSeed({ alg: KeyAlgs.Bls12381G1, seed: new Uint8Array(32).fill(0) })
+  console.log(key1.publicBytes)
+  console.log(key1.secretBytes)
+}
+
+void testKey()

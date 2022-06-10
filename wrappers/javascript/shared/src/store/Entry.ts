@@ -39,6 +39,7 @@ export class Entry {
     return this._keys
   }
 
+  // TODO: this.value is a nullptr. It has something to do with passing the secretbuffer as a ptr I assume
   public toJson() {
     const json = {
       name: this.name,
@@ -48,6 +49,7 @@ export class Entry {
       jsonValue: this.jsonValue,
       category: this.category,
     }
+
     return json
   }
 }

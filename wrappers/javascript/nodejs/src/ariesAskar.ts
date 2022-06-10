@@ -291,16 +291,14 @@ export class NodeJSAriesAskar implements AriesAskar {
   public entryListGetValue(options: EntryListGetValueOptions): string {
     const { entryListHandle, index } = serializeArguments(options)
 
-    const CArray = array(ref)
-
-    const ret = ref.alloc(ref.refType(CArray(ref.types.uint8)))
+    const ret = allocateSecretBuffer()
 
     // @ts-ignore
     nativeAriesAskar.askar_entry_list_get_value(entryListHandle, index, ret)
     handleError()
 
     // @ts-ignore
-    console.log(ret.deref().deref())
+    console.log(ret.deref().data)
     // return new SecretBuffer(secretBuffer).data.toString()
     return ''
   }
