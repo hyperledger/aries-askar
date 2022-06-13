@@ -49,7 +49,7 @@ export const byteBufferClassToStruct = ({ len, data }: ByteBuffer) =>
 export const secretBufferToBuffer = (buffer: { data: Buffer; len: number }) => reinterpret(buffer.data, buffer.len)
 
 export const byteBufferToReference = (byteBuffer: ByteBufferType) => {
-  throw new AriesAskarError({ message: 'Method byteBufferToReference not implemented', code: 100 })
+  throw AriesAskarError.customError({ message: 'Method byteBufferToReference not implemented' })
 }
 
 export const secretBufferClassToStruct = byteBufferClassToStruct

@@ -46,7 +46,7 @@ export class Scan {
 
   private async forEach(cb: (row: Entry, index?: number) => void) {
     if (!this.handle) {
-      if (!this.store?.handle) throw new AriesAskarError({ code: 100, message: 'Cannot scan from closed store' })
+      if (!this.store?.handle) throw AriesAskarError.customError({ message: 'Cannot scan from closed store' })
       this._handle = await ariesAskar.scanStart({
         storeHandle: this.store.handle,
         limit: this.limit,

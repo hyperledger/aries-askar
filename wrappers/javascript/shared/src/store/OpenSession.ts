@@ -19,8 +19,8 @@ export class OpenSession {
   }
 
   public async open() {
-    if (!this.store) throw new AriesAskarError({ code: 100, message: 'Cannot start session from closed store' })
-    if (this.session) throw new AriesAskarError({ code: 100, message: 'Session already opened' })
+    if (!this.store) throw AriesAskarError.customError({ message: 'Cannot start session from closed store' })
+    if (this.session) throw AriesAskarError.customError({ message: 'Session already opened' })
     const sessionHandle = await ariesAskar.sessionStart({
       profile: this.profile,
       asTransaction: this.isTxn,

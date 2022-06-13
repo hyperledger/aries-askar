@@ -19,7 +19,6 @@ import type {
 } from './utils'
 import type {
   AriesAskar,
-  AriesAskarErrorObject,
   BufferFreeOptions,
   EntryListCountOptions,
   EntryListFreeOptions,
@@ -93,6 +92,7 @@ import type {
 } from 'aries-askar-shared'
 
 import {
+  AriesAskarError,
   ScanHandle,
   EntryListHandle,
   StoreHandle,
@@ -107,7 +107,6 @@ import {
 import { handleError } from './error'
 import { nativeAriesAskar } from './lib'
 import {
-  allocateLocalKeyHandle,
   FFI_KEY_ENTRY_LIST_HANDLE,
   FFI_INT8,
   FFI_SCAN_HANDLE,
@@ -161,8 +160,7 @@ export class NodeJSAriesAskar implements AriesAskar {
         if (errorCode) {
           const nativeError = allocateStringBuffer()
           nativeAriesAskar.askar_get_current_error(nativeError)
-          const ariesAskarErrorObject: AriesAskarErrorObject = JSON.parse(nativeError.deref())
-          return reject(ariesAskarErrorObject)
+          return reject(new AriesAskarError(JSON.parse(nativeError.deref())))
         }
 
         if (typeof response === 'string') {
@@ -174,7 +172,12 @@ export class NodeJSAriesAskar implements AriesAskar {
         } else if (typeof response === 'number') {
           resolve(response as unknown as Return)
         } else if (response instanceof Buffer) {
-          if (response.address() === 0) reject('Received null pointer. The native library could not find the value.')
+          if (response.address() === 0)
+            return reject(
+              AriesAskarError.customError({
+                message: 'Received null pointer. The native library could not find the value.',
+              })
+            )
 
           resolve(response as unknown as Return)
         }

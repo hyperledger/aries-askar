@@ -135,5 +135,11 @@ describe('Store and Session', () => {
     })
 
     expect(found[0]).toMatchObject({ name: keyName, metadata: 'updated metadata', tags: { a: 'c' } })
+
+    await session.removeKey({ name: keyName })
+
+    await expect(session.fetchKey({ name: keyName })).rejects.toThrowError(AriesAskarError)
+
+    await session.close()
   })
 })

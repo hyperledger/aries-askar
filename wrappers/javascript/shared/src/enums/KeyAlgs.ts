@@ -21,12 +21,12 @@ export const keyAlgFromString = (alg: string): KeyAlgs => {
   const keyAlg = Object.entries(KeyAlgs).find(([, value]) => value === alg)
   if (keyAlg) return keyAlg[1]
 
-  throw new AriesAskarError({ code: 100, message: `Algorithm: ${alg} is not supported!` })
+  throw AriesAskarError.customError({ message: `Algorithm: ${alg} is not supported!` })
 }
 
 export const keyAlgToString = (alg: KeyAlgs): string => {
   const keyAlg = Object.entries(KeyAlgs).find(([key]) => key === alg)
   if (keyAlg) return keyAlg[0]
 
-  throw new AriesAskarError({ code: 100, message: `Algorithm: ${alg} is not supported!` })
+  throw AriesAskarError.customError({ message: `Algorithm: ${alg} is not supported!` })
 }

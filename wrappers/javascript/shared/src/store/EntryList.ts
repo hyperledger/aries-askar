@@ -5,7 +5,6 @@ import { ariesAskar } from '../ariesAskar'
 
 import { Entry } from './Entry'
 
-
 export class EntryList {
   private _handle: EntryListHandle
   private _length = 0
@@ -27,12 +26,13 @@ export class EntryList {
     return new Entry({ list: this.handle, position: index })
   }
 
-  public forEach(cb: (entry: Entry, index?: number) => unknown) {
+  private forEach(cb: (entry: Entry, index?: number) => unknown) {
     for (let i = 0; i < this.length; i++) {
       cb(this.getEntryByIndex(i), i)
     }
   }
 
+  // TODO: is this being used?
   public find(cb: (entry: Entry, index?: number) => boolean): Entry | undefined {
     for (let i = 0; i < this.length; i++) {
       const item = this.getEntryByIndex(i)

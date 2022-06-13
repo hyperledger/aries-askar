@@ -32,7 +32,7 @@ export class Session {
   }
 
   public async count({ category, tagFilter }: { category: string; tagFilter?: Record<string, unknown> }) {
-    if (!this.handle) throw new AriesAskarError({ code: 100, message: 'Cannot count from closed session' })
+    if (!this.handle) throw AriesAskarError.customError({ message: 'Cannot count from closed session' })
     return await ariesAskar.sessionCount({ tagFilter, category, sessionHandle: this.handle })
   }
 
@@ -47,7 +47,7 @@ export class Session {
     forUpdate?: boolean
     isJson?: boolean
   }) {
-    if (!this.handle) throw new AriesAskarError({ code: 100, message: 'Cannot fetch from a closed session' })
+    if (!this.handle) throw AriesAskarError.customError({ message: 'Cannot fetch from a closed session' })
 
     const handle = await ariesAskar.sessionFetch({ forUpdate, name, category, sessionHandle: this.handle })
     if (!handle) return undefined
@@ -68,7 +68,7 @@ export class Session {
     limit?: number
     forUpdate?: boolean
   }) {
-    if (!this.handle) throw new AriesAskarError({ code: 100, message: 'Cannot fetch all from a closed session' })
+    if (!this.handle) throw AriesAskarError.customError({ message: 'Cannot fetch all from a closed session' })
     const handle = await ariesAskar.sessionFetchAll({
       forUpdate,
       limit,
@@ -94,10 +94,10 @@ export class Session {
     tags?: Record<string, unknown>
     expiryMs?: number
   }) {
-    if (!this.handle) throw new AriesAskarError({ code: 100, message: 'Cannot insert with a closed session' })
+    if (!this.handle) throw AriesAskarError.customError({ message: 'Cannot insert with a closed session' })
     const serializedValue = JSON.stringify(value)
     if (!serializedValue)
-      throw new AriesAskarError({ code: 100, message: 'Either `value` or `valueJson` must be defined' })
+      throw AriesAskarError.customError({ message: 'Either `value` or `valueJson` must be defined' })
 
     // @ts-ignore
     const encoder = new TextEncoder()
@@ -129,10 +129,10 @@ export class Session {
     expiryMs?: number
     valueJson?: unknown
   }) {
-    if (!this.handle) throw new AriesAskarError({ code: 100, message: 'Cannot replace with a closed session' })
+    if (!this.handle) throw AriesAskarError.customError({ message: 'Cannot replace with a closed session' })
     const serializedValue = !value && valueJson ? JSON.stringify(valueJson) : value
     if (!serializedValue)
-      throw new AriesAskarError({ code: 100, message: 'Either `value` or `valueJson` must be defined' })
+      throw AriesAskarError.customError({ message: 'Either `value` or `valueJson` must be defined' })
 
     // @ts-ignore
     const encoder = new TextEncoder()
@@ -150,7 +150,7 @@ export class Session {
   }
 
   public async remove({ category, name }: { category: string; name: string }) {
-    if (!this.handle) throw new AriesAskarError({ code: 100, message: 'Cannot remove with a closed session' })
+    if (!this.handle) throw AriesAskarError.customError({ message: 'Cannot remove with a closed session' })
 
     await ariesAskar.sessionUpdate({
       name,
@@ -161,7 +161,7 @@ export class Session {
   }
 
   public async removeAll({ category, tagFilter }: { category: string; tagFilter?: Record<string, unknown> }) {
-    if (!this.handle) throw new AriesAskarError({ code: 100, message: 'Cannot remove all with a closed session' })
+    if (!this.handle) throw AriesAskarError.customError({ message: 'Cannot remove all with a closed session' })
 
     await ariesAskar.sessionRemoveAll({
       category,
@@ -183,7 +183,7 @@ export class Session {
     tags?: Record<string, unknown>
     expiryMs?: number
   }) {
-    if (!this.handle) throw new AriesAskarError({ code: 100, message: 'Cannot insert a key with a closed session' })
+    if (!this.handle) throw AriesAskarError.customError({ message: 'Cannot insert a key with a closed session' })
 
     await ariesAskar.sessionInsertKey({
       expiryMs,
@@ -196,7 +196,7 @@ export class Session {
   }
 
   public async fetchKey({ name, forUpdate = false }: { name: string; forUpdate?: boolean }) {
-    if (!this.handle) throw new AriesAskarError({ code: 100, message: 'Cannot fetch a key with a closed session' })
+    if (!this.handle) throw AriesAskarError.customError({ message: 'Cannot fetch a key with a closed session' })
     const handle = await ariesAskar.sessionFetchKey({ forUpdate, name, sessionHandle: this.handle })
     const keyEntryList = new KeyEntryList({ handle })
     return keyEntryList.getEntryByIndex(0).toJson()
@@ -215,7 +215,7 @@ export class Session {
     limit?: number
     forUpdate?: boolean
   }) {
-    if (!this.handle) throw new AriesAskarError({ code: 100, message: 'Cannot fetch all keys with a closed session' })
+    if (!this.handle) throw AriesAskarError.customError({ message: 'Cannot fetch all keys with a closed session' })
     const handle = await ariesAskar.sessionFetchAllKeys({
       forUpdate,
       limit,
@@ -240,32 +240,32 @@ export class Session {
     tags?: Record<string, unknown>
     expiryMs?: number
   }) {
-    if (!this.handle) throw new AriesAskarError({ code: 100, message: 'Cannot update a key with a closed session' })
+    if (!this.handle) throw AriesAskarError.customError({ message: 'Cannot update a key with a closed session' })
     await ariesAskar.sessionUpdateKey({ expiryMs, tags, metadata, name, sessionHandle: this.handle })
   }
 
   public async removeKey({ name }: { name: string }) {
-    if (!this.handle) throw new AriesAskarError({ code: 100, message: 'Cannot remove a key with a closed session' })
+    if (!this.handle) throw AriesAskarError.customError({ message: 'Cannot remove a key with a closed session' })
     await ariesAskar.sessionRemoveKey({ name, sessionHandle: this.handle })
   }
 
   public async commit() {
-    if (!this.isTxn) throw new AriesAskarError({ code: 100, message: 'Session is not a transaction' })
-    if (!this.handle) throw new AriesAskarError({ code: 100, message: 'Cannot commit a closed session' })
+    if (!this.isTxn) throw AriesAskarError.customError({ message: 'Session is not a transaction' })
+    if (!this.handle) throw AriesAskarError.customError({ message: 'Cannot commit a closed session' })
     await this.handle.close(true)
     this._handle = undefined
   }
 
   public async rollback() {
-    if (!this.isTxn) throw new AriesAskarError({ code: 100, message: 'Session is not a transaction' })
-    if (!this.handle) throw new AriesAskarError({ code: 100, message: 'Cannot rollback a closed session' })
+    if (!this.isTxn) throw AriesAskarError.customError({ message: 'Session is not a transaction' })
+    if (!this.handle) throw AriesAskarError.customError({ message: 'Cannot rollback a closed session' })
     await this.handle.close(false)
     this._handle = undefined
   }
 
   public async close() {
     // TODO: I do not think we should throw an error here
-    // if (!this.handle) throw new AriesAskarError({ code: 100, message: 'Cannot close a closed session' })
+    // if (!this.handle) throw AriesAskarError.customError({  message: 'Cannot close a closed session' })
     if (!this.handle) return
     await this.handle.close(false)
     this._handle = undefined

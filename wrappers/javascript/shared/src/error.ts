@@ -13,4 +13,8 @@ export class AriesAskarError extends Error {
     this.code = code
     this.extra = extra
   }
+
+  public static customError({ message }: { message: string }) {
+    return new AriesAskarError({ message, code: 100 })
+  }
 }
