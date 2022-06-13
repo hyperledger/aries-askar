@@ -111,7 +111,7 @@ describe('Store and Session', () => {
     await session.insert(firstEntry)
 
     const found = await store.scan(firstEntry).fetchAll()
-    expect(found[0]).toMatchObject({ category: 'a' })
+    expect(found[0]).toMatchObject(firstEntry)
 
     await session.close()
   })
@@ -130,7 +130,7 @@ describe('Store and Session', () => {
 
     await expect(txn.count(firstEntry)).resolves.toStrictEqual(1)
 
-    await expect(txn.fetch(firstEntry)).resolves.toMatchObject({ category: 'a' })
+    await expect(txn.fetch(firstEntry)).resolves.toMatchObject(firstEntry)
 
     const found = await txn.fetchAll(firstEntry)
 
@@ -138,21 +138,5 @@ describe('Store and Session', () => {
     expect(found[0]).toMatchObject({ category: 'a' })
 
     await txn.close()
-  })
-
-  test('Messing about', async () => {
-    const session = await store.openSession()
-
-    const firstEntry = {
-      category: 'a',
-      name: 'test name o',
-      value: 'jaja',
-      tags: { '~plaintag': 'b' },
-    }
-
-    await session.insert(firstEntry)
-    await expect(session.count(firstEntry)).resolves.toStrictEqual(1)
-
-    await session.close()
   })
 })
