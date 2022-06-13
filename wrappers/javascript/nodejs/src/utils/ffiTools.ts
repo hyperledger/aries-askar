@@ -46,10 +46,7 @@ export const byteBufferClassToStruct = ({ len, data }: ByteBuffer) =>
     data: Buffer.from(data) as Pointer<array.TypedArray<number, number>>,
   })
 
-export const secretBufferToUint8Array = (buffer: { data: Buffer; len: number }) => {
-  const bufferWithCorrectLength = reinterpret(buffer.data, buffer.len)
-  return new Uint8Array(bufferWithCorrectLength)
-}
+export const secretBufferToBuffer = (buffer: { data: Buffer; len: number }) => reinterpret(buffer.data, buffer.len)
 
 export const byteBufferToReference = (byteBuffer: ByteBufferType) => {
   throw new AriesAskarError({ message: 'Method byteBufferToReference not implemented', code: 100 })

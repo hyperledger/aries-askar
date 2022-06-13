@@ -35,15 +35,26 @@ export class Session {
     return await ariesAskar.sessionCount({ tagFilter, category, sessionHandle: this.handle })
   }
 
-  public async fetch({ category, name, forUpdate }: { category: string; name: string; forUpdate: boolean }) {
+  public async fetch({
+    category,
+    name,
+    forUpdate,
+    isJson = false,
+  }: {
+    category: string
+    name: string
+    forUpdate: boolean
+    isJson?: boolean
+  }) {
     if (!this.handle) throw new AriesAskarError({ code: 100, message: 'Cannot fetch from a closed session' })
 
     const handle = await ariesAskar.sessionFetch({ forUpdate, name, category, sessionHandle: this.handle })
     if (!handle) return undefined
 
     const entry = new Entry({ list: handle, pos: 0 })
+    // console.log(entry)
 
-    return entry.toJson()
+    return entry.toJson(isJson)
   }
 
   public async fetchAll({
@@ -74,22 +85,24 @@ export class Session {
     expiryMs,
     tags,
     value,
-    valueJson,
   }: {
     category: string
     name: string
-    value?: string
+    value: string | Record<string, unknown>
     tags?: Record<string, unknown>
     expiryMs?: number
-    valueJson?: Record<string, unknown>
   }) {
     if (!this.handle) throw new AriesAskarError({ code: 100, message: 'Cannot insert with a closed session' })
-    const serializedValue = !value && valueJson ? JSON.stringify(valueJson) : value
+    const serializedValue = JSON.stringify(value)
     if (!serializedValue)
       throw new AriesAskarError({ code: 100, message: 'Either `value` or `valueJson` must be defined' })
 
+    // @ts-ignore
+    const encoder = new TextEncoder()
+
     await ariesAskar.sessionUpdate({
-      value: serializedValue,
+      // @ts-ignore
+      value: new Uint8Array(encoder.encode(serializedValue)),
       expiryMs,
       tags,
       name,
@@ -119,8 +132,12 @@ export class Session {
     if (!serializedValue)
       throw new AriesAskarError({ code: 100, message: 'Either `value` or `valueJson` must be defined' })
 
+    // @ts-ignore
+    const encoder = new TextEncoder()
+
     await ariesAskar.sessionUpdate({
-      value: serializedValue,
+      // @ts-ignore
+      value: new Uint8Array(encoder.encode(serializedValue)),
       expiryMs,
       tags,
       name,

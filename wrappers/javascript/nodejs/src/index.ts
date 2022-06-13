@@ -14,7 +14,7 @@ const testStore = async () => {
     const testEntry = {
       category: 'test category',
       name: 'test name',
-      value: 'test_value',
+      value: { foo: 'var' },
       tags: { '~plaintag': 'a', enctag: 'a' },
     }
 
@@ -28,8 +28,8 @@ const testStore = async () => {
 
     const session = await store.openSession()
     await session.insert(testEntry)
-    console.error(await session.count({ category: testEntry.category, tagFilter: testEntry.tags }))
-    const result = await session.fetch({ ...testEntry, forUpdate: false })
+    // console.error(await session.count({ category: testEntry.category, tagFilter: testEntry.tags }))
+    const result = await session.fetch({ ...testEntry, forUpdate: false, isJson: true })
     console.log(result)
 
     await session.close()
@@ -42,15 +42,14 @@ const testStore = async () => {
   }
 }
 
-// void testStore()
+void testStore()
 
-const testKey = async () => {
-  const key = Key.fromSeed({ alg: KeyAlgs.Bls12381G2, seed: new Uint8Array(32).fill(0) })
-  console.log(key.publicBytes)
-  console.log(key.secretBytes)
-  const key1 = Key.fromSeed({ alg: KeyAlgs.Bls12381G1, seed: new Uint8Array(32).fill(0) })
-  console.log(key1.publicBytes)
-  console.log(key1.secretBytes)
-}
-
-void testKey()
+// const testKey = async () => {
+//   const key = Key.fromSeed({ alg: KeyAlgs.Bls12381G2, seed: new Uint8Array(32).fill(0) })
+//   console.log(key.publicBytes)
+//   const key1 = Key.fromSeed({ alg: KeyAlgs.Bls12381G1, seed: new Uint8Array(32).fill(0) })
+//   console.log(key1.publicBytes)
+//   process.exit()
+// }
+//
+// void testKey()

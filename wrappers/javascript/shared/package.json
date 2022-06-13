@@ -31,8 +31,12 @@
   "devDependencies": {
     "@babel/core": "^7.17.9",
     "@babel/runtime": "^7.17.9",
+    "@types/fast-text-encoding": "^1.0.1",
     "prettier": "^2.6.2",
     "rimraf": "^3.0.2",
     "typescript": "^4.5.5"
+  },
+  "dependencies": {
+    "fast-text-encoding": "^1.0.3"
   }
 }

@@ -178,7 +178,7 @@ export type SessionUpdateOptions = {
   operation: number
   category: string
   name: string
-  value?: string
+  value?: Uint8Array
   tags?: Record<string, unknown>
   expiryMs?: number
 }

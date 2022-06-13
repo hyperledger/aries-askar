@@ -1,3 +1,5 @@
+import 'fast-text-encoding'
+
 export * from './error'
 export * from './ariesAskar'
 export * from './types'

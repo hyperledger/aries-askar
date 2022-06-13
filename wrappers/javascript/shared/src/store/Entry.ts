@@ -27,8 +27,7 @@ export class Entry {
   }
 
   public get jsonValue() {
-    // return JSON.parse(this.rawValue) as Record<string, unknown>
-    return {}
+    return JSON.parse(this.rawValue) as Record<string, unknown>
   }
 
   public get tags() {
@@ -39,17 +38,15 @@ export class Entry {
     return this._keys
   }
 
-  // TODO: this.value is a nullptr. It has something to do with passing the secretbuffer as a ptr I assume
-  public toJson() {
-    const json = {
+  public toJson(shouldTryParseValueAsJson = false) {
+    const value = shouldTryParseValueAsJson ? (JSON.parse(this.value) as Record<string, unknown>) : this.value
+
+    return {
       name: this.name,
-      value: this.value,
+      value,
       keys: this.keys,
       tags: this.tags,
-      jsonValue: this.jsonValue,
       category: this.category,
     }
-
-    return json
   }
 }

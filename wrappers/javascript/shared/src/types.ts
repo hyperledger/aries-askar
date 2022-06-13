@@ -18,11 +18,6 @@ type AeadParamsOptions = {
   tag_length: number
 }
 
-type LocalKeyHandleOptions<K = Record<string, unknown>> = {
-  inner: K
-  ephemeral: boolean
-}
-
 export class ByteBuffer {
   public len: number
   public data: Uint8Array
