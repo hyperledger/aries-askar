@@ -191,7 +191,7 @@ export type SessionUpdateKeyOptions = {
 }
 
 export type StoreCloseOptions = { storeHandle: StoreHandle }
-export type StoreCreateProfileOptions = { storeHandle: StoreHandle; profile: string }
+export type StoreCreateProfileOptions = { storeHandle: StoreHandle; profile?: string }
 export type StoreGenerateRawKeyOptions = { seed?: Uint8Array }
 export type StoreGetProfileNameOptions = { storeHandle: StoreHandle }
 export type StoreOpenOptions = { specUri: string; keyMethod?: string; passKey?: string; profile?: string }

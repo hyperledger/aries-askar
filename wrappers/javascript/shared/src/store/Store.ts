@@ -29,6 +29,10 @@ export class Store {
     return this._uri
   }
 
+  public createProfile(name?: string) {
+    return ariesAskar.storeCreateProfile({ storeHandle: this.handle, profile: name })
+  }
+
   public static async provision({
     uri,
     recreate,

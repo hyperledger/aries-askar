@@ -164,6 +164,7 @@ export class NodeJSAriesAskar implements AriesAskar {
         }
 
         if (typeof response === 'string') {
+          if (responseFfiType === FFI_STRING) resolve(response as unknown as Return)
           try {
             resolve(JSON.parse(response) as Return)
           } catch (error) {
@@ -918,8 +919,9 @@ export class NodeJSAriesAskar implements AriesAskar {
   public storeCreateProfile(options: StoreCreateProfileOptions): Promise<string> {
     const { storeHandle, profile } = serializeArguments(options)
 
-    return this.promisifyWithResponse((cb, cbId) =>
-      nativeAriesAskar.askar_store_create_profile(storeHandle, profile, cb, cbId)
+    return this.promisifyWithResponse(
+      (cb, cbId) => nativeAriesAskar.askar_store_create_profile(storeHandle, profile, cb, cbId),
+      FFI_STRING
     )
   }
 

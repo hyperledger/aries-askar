@@ -142,4 +142,17 @@ describe('Store and Session', () => {
 
     await session.close()
   })
+
+  test('profile', async () => {
+    const session = await store.openSession()
+    await session.insert(firstEntry)
+    await session.close()
+
+    const profile = await store.createProfile()
+
+    const sessionWithProfile = store.session(profile)
+    const newSession = await sessionWithProfile.open()
+    //Should not find previously stored record
+    await expect(newSession.count(firstEntry)).resolves.toStrictEqual(0)
+  })
 })
