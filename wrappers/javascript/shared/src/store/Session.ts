@@ -1,8 +1,11 @@
 /* eslint-disable @typescript-eslint/no-unsafe-return */
 import type { Key, SessionHandle, StoreHandle } from '../crypto'
+
+
 import type { KeyAlgs } from '../enums'
 
 import { ariesAskar } from '../ariesAskar'
+import { EntryListHandle } from '../crypto'
 import { EntryOperation } from '../enums/EntryOperation'
 import { AriesAskarError } from '../error'
 
@@ -51,8 +54,7 @@ export class Session {
     const handle = await ariesAskar.sessionFetch({ forUpdate, name, category, sessionHandle: this.handle })
     if (!handle) return undefined
 
-    const entry = new Entry({ list: handle, pos: 0 })
-    // console.log(entry)
+    const entry = new Entry({ list: handle, position: 0 })
 
     return entry.toJson(isJson)
   }
@@ -76,7 +78,9 @@ export class Session {
       sessionHandle: this.handle,
       category,
     })
-    return new EntryList({ handle })
+    const entryList = new EntryList({ handle })
+
+    return entryList.toArray()
   }
 
   public async insert({
@@ -158,7 +162,7 @@ export class Session {
     })
   }
 
-  public async removeAll({ category, tagFilter }: { category: string; tagFilter: Record<string, unknown> }) {
+  public async removeAll({ category, tagFilter }: { category: string; tagFilter?: Record<string, unknown> }) {
     if (!this.handle) throw new AriesAskarError({ code: 100, message: 'Cannot remove all with a closed session' })
 
     await ariesAskar.sessionRemoveAll({
@@ -260,7 +264,9 @@ export class Session {
   }
 
   public async close() {
-    if (!this.handle) throw new AriesAskarError({ code: 100, message: 'Cannot close a closed session' })
+    // TODO: I do not think we should throw an error here
+    // if (!this.handle) throw new AriesAskarError({ code: 100, message: 'Cannot close a closed session' })
+    if (!this.handle) return
     await this.handle.close(false)
     this._handle = undefined
   }

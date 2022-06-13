@@ -169,7 +169,7 @@ export type SessionInsertKeyOptions = {
 export type SessionRemoveAllOptions = {
   sessionHandle: SessionHandle
   category: string
-  tagFilter: Record<string, unknown>
+  tagFilter?: Record<string, unknown>
 }
 export type SessionRemoveKeyOptions = { sessionHandle: SessionHandle; name: string }
 export type SessionStartOptions = { storeHandle: StoreHandle; profile?: string; asTransaction: boolean }

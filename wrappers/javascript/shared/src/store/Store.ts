@@ -5,6 +5,7 @@ import type { StoreKeyMethod } from '../enums/StoreKeyMethod'
 import { ariesAskar } from '../ariesAskar'
 
 import { OpenSession } from './OpenSession'
+import { Scan } from './Scan'
 
 export class Store {
   private _handle: StoreHandle
@@ -65,10 +66,10 @@ export class Store {
 
     if (this.handle) await this.handle.close()
 
-    // TODO: when true, this segfaults...
     return remove ? await Store.remove(this.uri) : false
   }
 
+  // TODO: when true, this segfaults...
   public static async remove(uri: string) {
     return await ariesAskar.storeRemove({ specUri: uri })
   }
@@ -81,8 +82,18 @@ export class Store {
     return new OpenSession({ store: this.handle, profile, isTxn: true })
   }
 
-  public async openSession() {
-    this._opener ??= new OpenSession({ store: this.handle, isTxn: false })
+  public async openSession(isTransaction = false) {
+    this._opener ??= new OpenSession({ store: this.handle, isTxn: isTransaction })
     return await this._opener.open()
+  }
+
+  public scan(options: {
+    category: string
+    tagFilter?: Record<string, unknown>
+    offset?: number
+    limit?: number
+    profile?: string
+  }) {
+    return new Scan({ ...options, store: this })
   }
 }

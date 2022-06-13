@@ -1,5 +1,4 @@
-// TODO: move this to nodejs?
-
+// TODO: do we need these classes?
 import { ariesAskar } from '../ariesAskar'
 
 export class ArcHandle {
@@ -10,7 +9,6 @@ export class ArcHandle {
   }
 }
 
-// TOOD: this is a number
 export class StoreHandle {
   public handle: number
 
@@ -20,6 +18,18 @@ export class StoreHandle {
 
   public async close() {
     await ariesAskar.storeClose({ storeHandle: this })
+  }
+}
+
+export class ScanHandle {
+  public handle: number
+
+  public constructor(handle: number) {
+    this.handle = handle
+  }
+
+  public free() {
+    ariesAskar.scanFree({ scanHandle: this })
   }
 }
 
@@ -74,7 +84,5 @@ export class KeyEntryListHandle extends ArcHandle {
     throw new Error('Method `loadKey` not implemented!')
   }
 }
-
-export class ScanHandle extends ArcHandle {}
 
 export class LocalKeyHandle extends ArcHandle {}
