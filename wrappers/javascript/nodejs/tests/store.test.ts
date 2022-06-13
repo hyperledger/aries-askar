@@ -13,7 +13,7 @@ describe('Store and Session', () => {
     await store.close(true)
   })
 
-  xtest('Insert', async () => {
+  test('Insert', async () => {
     const session = await store.openSession()
 
     const testEntry = {
@@ -30,7 +30,7 @@ describe('Store and Session', () => {
     await session.close()
   })
 
-  xtest('Replace', async () => {
+  test('Replace', async () => {
     const session = await store.openSession()
     const testEntry = {
       category: 'test category',
@@ -52,7 +52,7 @@ describe('Store and Session', () => {
     await session.close()
   })
 
-  xtest('Remove', async () => {
+  test('Remove', async () => {
     const session = await store.openSession()
     const testEntry = {
       category: 'test category',
@@ -72,7 +72,7 @@ describe('Store and Session', () => {
     await session.close()
   })
 
-  xtest('Remove all', async () => {
+  test('Remove all', async () => {
     const session = await store.openSession()
     const testEntry = {
       category: 'test category',
@@ -99,7 +99,7 @@ describe('Store and Session', () => {
   })
 
   // TODO: why is scan receiving a null ptr?
-  xtest('Scan', async () => {
+  test('Scan', async () => {
     const session = await store.openSession()
     const firstEntry = {
       category: 'a',
@@ -110,7 +110,8 @@ describe('Store and Session', () => {
 
     await session.insert(firstEntry)
 
-    await expect(store.scan(firstEntry)).resolves.toStrictEqual('TODO')
+    const found = await store.scan(firstEntry).fetchAll()
+    expect(found[0]).toMatchObject({ category: 'a' })
 
     await session.close()
   })
@@ -139,7 +140,7 @@ describe('Store and Session', () => {
     await txn.close()
   })
 
-  xtest('Messing about', async () => {
+  test('Messing about', async () => {
     const session = await store.openSession()
 
     const firstEntry = {
