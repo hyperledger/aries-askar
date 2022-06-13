@@ -1,4 +1,5 @@
 import type { SecretBufferStruct, ByteBufferStruct } from './ffiTypes'
+import type { KeyAlgs } from 'aries-askar-shared'
 
 import { ScanHandle, StoreHandle, ArcHandle, SecretBuffer, ByteBuffer, SessionHandle } from 'aries-askar-shared'
 import { NULL } from 'ref-napi'

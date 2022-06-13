@@ -107,6 +107,8 @@ import {
 import { handleError } from './error'
 import { nativeAriesAskar } from './lib'
 import {
+  allocateLocalKeyHandle,
+  FFI_KEY_ENTRY_LIST_HANDLE,
   FFI_INT8,
   FFI_SCAN_HANDLE,
   FFI_ENTRY_LIST_HANDLE,
@@ -260,7 +262,7 @@ export class NodeJSAriesAskar implements AriesAskar {
     nativeAriesAskar.askar_entry_list_get_category(entryListHandle, index, ret)
     handleError()
 
-    return ret.deref() as string
+    return ret.deref()
   }
 
   public entryListGetName(options: EntryListGetNameOptions): string {
@@ -271,7 +273,7 @@ export class NodeJSAriesAskar implements AriesAskar {
     nativeAriesAskar.askar_entry_list_get_name(entryListHandle, index, ret)
     handleError()
 
-    return ret.deref() as string
+    return ret.deref()
   }
 
   public entryListGetTags(options: EntryListGetTagsOptions): string {
@@ -282,7 +284,7 @@ export class NodeJSAriesAskar implements AriesAskar {
     nativeAriesAskar.askar_entry_list_get_tags(entryListHandle, index, ret)
     handleError()
 
-    return ret.deref() as string
+    return ret.deref()
   }
 
   public entryListGetValue(options: EntryListGetValueOptions): string {
@@ -479,7 +481,7 @@ export class NodeJSAriesAskar implements AriesAskar {
     nativeAriesAskar.askar_key_entry_list_get_algorithm(keyEntryListHandle, index, ret)
     handleError()
 
-    return ret.deref() as string
+    return ret.deref()
   }
 
   public keyEntryListGetMetadata(options: KeyEntryListGetMetadataOptions): string {
@@ -490,7 +492,7 @@ export class NodeJSAriesAskar implements AriesAskar {
     nativeAriesAskar.askar_key_entry_list_get_metadata(keyEntryListHandle, index, ret)
     handleError()
 
-    return ret.deref() as string
+    return ret.deref()
   }
 
   public keyEntryListGetName(options: KeyEntryListGetNameOptions): string {
@@ -501,7 +503,7 @@ export class NodeJSAriesAskar implements AriesAskar {
     nativeAriesAskar.askar_key_entry_list_get_name(keyEntryListHandle, index, ret)
     handleError()
 
-    return ret.deref() as string
+    return ret.deref()
   }
 
   public keyEntryListGetTags(options: KeyEntryListGetTagsOptions): string {
@@ -510,16 +512,17 @@ export class NodeJSAriesAskar implements AriesAskar {
 
     // @ts-ignore
     nativeAriesAskar.askar_key_entry_list_get_tags(keyEntryListHandle, index, ret)
-    return ret.deref() as string
+    return ret.deref()
   }
 
-  public keyEntryListLoadLocal(options: KeyEntryListLoadLocalOptions): string {
+  public keyEntryListLoadLocal(options: KeyEntryListLoadLocalOptions): LocalKeyHandle {
     const { index, keyEntryListHandle } = serializeArguments(options)
-    const ret = allocateStringBuffer()
+    const ret = allocatePointer()
 
-    // @ts-ignore
     nativeAriesAskar.askar_key_entry_list_load_local(keyEntryListHandle, index, ret)
-    return ret.deref() as string
+    handleError()
+
+    return new LocalKeyHandle(ret.deref())
   }
 
   public keyFree(options: KeyFreeOptions): void {
@@ -611,7 +614,7 @@ export class NodeJSAriesAskar implements AriesAskar {
     nativeAriesAskar.askar_key_get_algorithm(localKeyHandle, ret)
     handleError()
 
-    return ret.deref() as string
+    return ret.deref()
   }
 
   public keyGetEphemeral(options: KeyGetEphemeralOptions): number {
@@ -622,21 +625,21 @@ export class NodeJSAriesAskar implements AriesAskar {
     nativeAriesAskar.askar_key_get_ephemeral(localKeyHandle, ret)
     handleError()
 
-    return ret.deref() as number
+    return ret.deref()
   }
 
   public keyGetJwkPublic(options: KeyGetJwkPublicOptions): string {
-    const { localKeyHandle } = serializeArguments(options)
+    const { localKeyHandle, algorithm } = serializeArguments(options)
     const ret = allocateStringBuffer()
 
     // @ts-ignore
-    nativeAriesAskar.askar_key_get_jwk_public(localKeyHandle, ret)
+    nativeAriesAskar.askar_key_get_jwk_public(localKeyHandle, algorithm, ret)
     handleError()
 
-    return ret.deref() as string
+    return ret.deref()
   }
 
-  public keyGetJwkSecret(options: KeyGetJwkSecretOptions): SecretBuffer {
+  public keyGetJwkSecret(options: KeyGetJwkSecretOptions): string {
     const { localKeyHandle } = serializeArguments(options)
     const ret = allocateSecretBuffer()
 
@@ -644,20 +647,18 @@ export class NodeJSAriesAskar implements AriesAskar {
     nativeAriesAskar.askar_key_get_jwk_secret(localKeyHandle, ret)
     handleError()
 
-    const secretBuffer: SecretBufferType = ret.deref()
-    //@ts-ignore
-    return new SecretBuffer(secretBuffer)
+    return secretBufferToBuffer(ret.deref()).toString()
   }
 
   public keyGetJwkThumbprint(options: KeyGetJwkThumbprintOptions): string {
-    const { localKeyHandle } = serializeArguments(options)
+    const { localKeyHandle, algorithm } = serializeArguments(options)
     const ret = allocateStringBuffer()
 
     // @ts-ignore
-    nativeAriesAskar.askar_key_get_jwk_thumbprint(localKeyHandle, ret)
+    nativeAriesAskar.askar_key_get_jwk_thumbprint(localKeyHandle, algorithm, ret)
     handleError()
 
-    return ret.deref() as string
+    return ret.deref()
   }
 
   public keyGetPublicBytes(options: KeyGetPublicBytesOptions): Uint8Array {
@@ -668,7 +669,7 @@ export class NodeJSAriesAskar implements AriesAskar {
     nativeAriesAskar.askar_key_get_public_bytes(localKeyHandle, ret)
     handleError()
 
-    return secretBufferToBuffer(ret.deref())
+    return new Uint8Array(secretBufferToBuffer(ret.deref()))
   }
 
   public keyGetSecretBytes(options: KeyGetSecretBytesOptions): Uint8Array {
@@ -679,7 +680,7 @@ export class NodeJSAriesAskar implements AriesAskar {
     nativeAriesAskar.askar_key_get_secret_bytes(localKeyHandle, ret)
     handleError()
 
-    return secretBufferToBuffer(ret.deref())
+    return new Uint8Array(secretBufferToBuffer(ret.deref()))
   }
 
   public keySignMessage(options: KeySignMessageOptions): Uint8Array {
@@ -690,7 +691,7 @@ export class NodeJSAriesAskar implements AriesAskar {
     nativeAriesAskar.askar_key_sign_message(localKeyHandle, message, sigType, ret)
     handleError()
 
-    return secretBufferToBuffer(ret.deref())
+    return new Uint8Array(secretBufferToBuffer(ret.deref()))
   }
 
   public keyUnwrapKey(options: KeyUnwrapKeyOptions): LocalKeyHandle {
@@ -783,7 +784,7 @@ export class NodeJSAriesAskar implements AriesAskar {
 
   public async sessionFetch(options: SessionFetchOptions): Promise<EntryListHandle> {
     const { name, category, sessionHandle, forUpdate } = serializeArguments(options)
-    const handle = await this.promisifyWithResponse<Buffer, Buffer>(
+    const handle = await this.promisifyWithResponse<Uint8Array>(
       (cb, cbId) => nativeAriesAskar.askar_session_fetch(sessionHandle, category, name, forUpdate, cb, cbId),
       FFI_ENTRY_LIST_HANDLE
     )
@@ -804,19 +805,21 @@ export class NodeJSAriesAskar implements AriesAskar {
   }
 
   public async sessionFetchAllKeys(options: SessionFetchAllKeysOptions): Promise<KeyEntryListHandle> {
-    const { forUpdate, limit, tagFilter, sessionHandle, alg, thumbprint } = serializeArguments(options)
+    const { forUpdate, limit, tagFilter, sessionHandle, algorithm, thumbprint } = serializeArguments(options)
 
-    const handle = await this.promisifyWithResponse<Uint8Array>((cb, cbId) =>
-      nativeAriesAskar.askar_session_fetch_all_keys(
-        sessionHandle,
-        alg,
-        thumbprint,
-        tagFilter,
-        limit,
-        forUpdate,
-        cb,
-        cbId
-      )
+    const handle = await this.promisifyWithResponse<Uint8Array>(
+      (cb, cbId) =>
+        nativeAriesAskar.askar_session_fetch_all_keys(
+          sessionHandle,
+          algorithm,
+          thumbprint,
+          tagFilter,
+          +limit || -1,
+          forUpdate,
+          cb,
+          cbId
+        ),
+      FFI_KEY_ENTRY_LIST_HANDLE
     )
 
     return new KeyEntryListHandle(handle)
@@ -825,8 +828,9 @@ export class NodeJSAriesAskar implements AriesAskar {
   public async sessionFetchKey(options: SessionFetchKeyOptions): Promise<KeyEntryListHandle> {
     const { forUpdate, sessionHandle, name } = serializeArguments(options)
 
-    const handle = await this.promisifyWithResponse<Uint8Array>((cb, cbId) =>
-      nativeAriesAskar.askar_session_fetch_key(sessionHandle, name, forUpdate, cb, cbId)
+    const handle = await this.promisifyWithResponse<Uint8Array>(
+      (cb, cbId) => nativeAriesAskar.askar_session_fetch_key(sessionHandle, name, forUpdate, cb, cbId),
+      FFI_KEY_ENTRY_LIST_HANDLE
     )
 
     return new KeyEntryListHandle(handle)
@@ -836,8 +840,17 @@ export class NodeJSAriesAskar implements AriesAskar {
     const { name, sessionHandle, expiryMs, localKeyHandle, metadata, tags } = serializeArguments(options)
 
     return this.promisify((cb, cbId) =>
-      // @ts-ignore
-      nativeAriesAskar.askar_session_insert_key(sessionHandle, localKeyHandle, name, metadata, tags, expiryMs, cb, cbId)
+      nativeAriesAskar.askar_session_insert_key(
+        sessionHandle,
+        // @ts-ignore
+        localKeyHandle,
+        name,
+        metadata,
+        tags,
+        +expiryMs || -1,
+        cb,
+        cbId
+      )
     )
   }
 
@@ -889,7 +902,7 @@ export class NodeJSAriesAskar implements AriesAskar {
     const { expiryMs, tags, name, sessionHandle, metadata } = serializeArguments(options)
 
     return this.promisify((cb, cbId) =>
-      nativeAriesAskar.askar_session_update_key(sessionHandle, name, metadata, tags, expiryMs, cb, cbId)
+      nativeAriesAskar.askar_session_update_key(sessionHandle, name, metadata, tags, +expiryMs || -1, cb, cbId)
     )
   }
 

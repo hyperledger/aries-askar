@@ -1,6 +1,8 @@
 import type { Store } from 'aries-askar-shared'
 
-import { setupWallet } from './utils'
+import { Key, KeyAlgs, AriesAskarError } from 'aries-askar-shared'
+
+import { firstEntry, secondEntry, setupWallet } from './utils'
 
 describe('Store and Session', () => {
   let store: Store
@@ -16,34 +18,21 @@ describe('Store and Session', () => {
   test('Insert', async () => {
     const session = await store.openSession()
 
-    const testEntry = {
-      category: 'test category',
-      name: 'test name',
-      value: 'ja',
-      tags: { '~plaintag': 'a', enctag: 'a' },
-    }
+    await session.insert(firstEntry)
 
-    await session.insert(testEntry)
-
-    await expect(session.count(testEntry)).resolves.toStrictEqual(1)
+    await expect(session.count(firstEntry)).resolves.toStrictEqual(1)
 
     await session.close()
   })
 
   test('Replace', async () => {
     const session = await store.openSession()
-    const testEntry = {
-      category: 'test category',
-      name: 'test name',
-      value: 'foo',
-      tags: { '~plaintag': 'a', enctag: 'a' },
-    }
 
-    await session.insert(testEntry)
+    await session.insert(firstEntry)
 
-    await expect(session.count(testEntry)).resolves.toStrictEqual(1)
+    await expect(session.count(firstEntry)).resolves.toStrictEqual(1)
 
-    const updatedEntry = { ...testEntry, value: 'bar', tags: { update: 'baz' } }
+    const updatedEntry = { ...firstEntry, value: 'bar', tags: { update: 'baz' } }
 
     await session.replace(updatedEntry)
 
@@ -54,59 +43,35 @@ describe('Store and Session', () => {
 
   test('Remove', async () => {
     const session = await store.openSession()
-    const testEntry = {
-      category: 'test category',
-      name: 'test name',
-      value: 'ja',
-      tags: { '~plaintag': 'a', enctag: 'a' },
-    }
 
-    await session.insert(testEntry)
+    await session.insert(firstEntry)
 
-    await expect(session.count(testEntry)).resolves.toStrictEqual(1)
+    await expect(session.count(firstEntry)).resolves.toStrictEqual(1)
 
-    await session.remove(testEntry)
+    await session.remove(firstEntry)
 
-    await expect(session.count(testEntry)).resolves.toStrictEqual(0)
+    await expect(session.count(firstEntry)).resolves.toStrictEqual(0)
 
     await session.close()
   })
 
   test('Remove all', async () => {
     const session = await store.openSession()
-    const testEntry = {
-      category: 'test category',
-      name: 'test name',
-      value: 'ja',
-      tags: { '~plaintag': 'a', enctag: 'a' },
-    }
 
-    const secondEntry = {
-      ...testEntry,
-      name: 'foo',
-    }
-
-    await session.insert(testEntry)
+    await session.insert(firstEntry)
     await session.insert(secondEntry)
 
-    await expect(session.count(testEntry)).resolves.toStrictEqual(2)
+    await expect(session.count(firstEntry)).resolves.toStrictEqual(2)
 
-    await session.removeAll({ category: testEntry.category })
+    await session.removeAll({ category: firstEntry.category })
 
-    await expect(session.count(testEntry)).resolves.toStrictEqual(0)
+    await expect(session.count(firstEntry)).resolves.toStrictEqual(0)
 
     await session.close()
   })
 
-  // TODO: why is scan receiving a null ptr?
   test('Scan', async () => {
     const session = await store.openSession()
-    const firstEntry = {
-      category: 'a',
-      name: 'test name o',
-      value: 'jaja',
-      tags: { '~plaintag': 'b' },
-    }
 
     await session.insert(firstEntry)
 
@@ -116,15 +81,8 @@ describe('Store and Session', () => {
     await session.close()
   })
 
-  test('Basic transaction', async () => {
+  test('Transaction basic', async () => {
     const txn = await store.openSession(true)
-
-    const firstEntry = {
-      category: 'a',
-      name: 'test name o',
-      value: 'jaja',
-      tags: { '~plaintag': 'b' },
-    }
 
     await txn.insert(firstEntry)
 
@@ -134,9 +92,48 @@ describe('Store and Session', () => {
 
     const found = await txn.fetchAll(firstEntry)
 
-    // TODO: value seems to have double quotes.
-    expect(found[0]).toMatchObject({ category: 'a' })
+    expect(found[0]).toMatchObject(firstEntry)
+
+    await txn.commit()
 
     await txn.close()
+
+    const session = await store.openSession()
+
+    await expect(session.fetch(firstEntry)).resolves.toMatchObject(firstEntry)
+  })
+
+  test('Key store', async () => {
+    const session = await store.openSession()
+
+    const key = Key.generate(KeyAlgs.Ed25519)
+
+    const keyName = 'testKey'
+
+    await session.insertKey({ key, name: keyName, metadata: 'metadata', tags: { a: 'b' } })
+
+    await expect(session.fetchKey({ name: keyName })).resolves.toMatchObject({
+      name: keyName,
+      tags: { a: 'b' },
+      metadata: 'metadata',
+    })
+
+    await session.updateKey({ name: keyName, metadata: 'updated metadata', tags: { a: 'c' } })
+    const fetchedKey = await session.fetchKey({ name: keyName })
+    expect(fetchedKey).toMatchObject({
+      name: keyName,
+      tags: { a: 'c' },
+      metadata: 'updated metadata',
+    })
+
+    expect(key.jwkThumbprint === fetchedKey.key.jwkThumbprint).toBeTruthy()
+
+    const found = await session.fetchAllKeys({
+      alg: KeyAlgs.Ed25519,
+      thumbprint: key.jwkThumbprint,
+      tagFilter: { a: 'c' },
+    })
+
+    expect(found[0]).toMatchObject({ name: keyName, metadata: 'updated metadata', tags: { a: 'c' } })
   })
 })
