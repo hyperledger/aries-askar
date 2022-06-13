@@ -94,9 +94,9 @@ export type KeyFromSeedOptions = { alg: KeyAlgs; seed: Uint8Array; method: strin
 export type KeyGenerateOptions = { alg: KeyAlgs; ephemeral: boolean }
 export type KeyGetAlgorithmOptions = { localKeyHandle: Uint8Array }
 export type KeyGetEphemeralOptions = { localKeyHandle: Uint8Array }
-export type KeyGetJwkPublicOptions = { localKeyHandle: Uint8Array }
+export type KeyGetJwkPublicOptions = { localKeyHandle: Uint8Array; algorithm: string }
 export type KeyGetJwkSecretOptions = { localKeyHandle: Uint8Array }
-export type KeyGetJwkThumbprintOptions = { localKeyHandle: Uint8Array }
+export type KeyGetJwkThumbprintOptions = { localKeyHandle: Uint8Array; algorithm: string }
 export type KeyGetPublicBytesOptions = { localKeyHandle: Uint8Array }
 export type KeyGetSecretBytesOptions = { localKeyHandle: Uint8Array }
 export type KeySignMessageOptions = { localKeyHandle: Uint8Array; message: Uint8Array; sigType?: SigAlgs }
@@ -151,7 +151,7 @@ export type SessionFetchAllOptions = {
 }
 export type SessionFetchAllKeysOptions = {
   sessionHandle: SessionHandle
-  alg?: string
+  algorithm?: string
   thumbprint?: string
   tagFilter?: Record<string, unknown>
   limit?: number
@@ -163,7 +163,7 @@ export type SessionInsertKeyOptions = {
   localKeyHandle: Uint8Array
   name: string
   metadata?: string
-  tags?: string
+  tags?: Record<string, unknown>
   expiryMs?: number
 }
 export type SessionRemoveAllOptions = {
@@ -242,7 +242,7 @@ export interface AriesAskar {
   keyEntryListGetMetadata(options: KeyEntryListGetMetadataOptions): string
   keyEntryListGetName(options: KeyEntryListGetNameOptions): string
   keyEntryListGetTags(options: KeyEntryListGetTagsOptions): string
-  keyEntryListLoadLocal(options: KeyEntryListLoadLocalOptions): string
+  keyEntryListLoadLocal(options: KeyEntryListLoadLocalOptions): LocalKeyHandle
   keyFree(options: KeyFreeOptions): void
   keyFromJwk(options: KeyFromJwkOptions): LocalKeyHandle
   keyFromKeyExchange(options: KeyFromKeyExchangeOptions): LocalKeyHandle
@@ -253,7 +253,7 @@ export interface AriesAskar {
   keyGetAlgorithm(options: KeyGetAlgorithmOptions): string
   keyGetEphemeral(options: KeyGetEphemeralOptions): number
   keyGetJwkPublic(options: KeyGetJwkPublicOptions): string
-  keyGetJwkSecret(options: KeyGetJwkSecretOptions): SecretBuffer
+  keyGetJwkSecret(options: KeyGetJwkSecretOptions): string
   keyGetJwkThumbprint(options: KeyGetJwkThumbprintOptions): string
   keyGetPublicBytes(options: KeyGetPublicBytesOptions): Uint8Array
   keyGetSecretBytes(options: KeyGetSecretBytesOptions): Uint8Array

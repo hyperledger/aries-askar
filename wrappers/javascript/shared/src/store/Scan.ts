@@ -1,5 +1,5 @@
 import type { EntryListHandle, ScanHandle } from '../crypto'
-import type { Entry } from './Entry'
+import type { Entry, EntryObject } from './Entry'
 import type { Store } from './Store'
 
 import { ariesAskar } from '../ariesAskar'
@@ -73,8 +73,8 @@ export class Scan {
   }
 
   public async fetchAll() {
-    const rows: Array<Entry> = []
-    await this.forEach((row) => rows.push(row))
+    const rows: Array<EntryObject> = []
+    await this.forEach((row) => rows.push(row.toJson()))
     return rows
   }
 }

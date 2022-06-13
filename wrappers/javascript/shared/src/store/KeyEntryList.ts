@@ -1,3 +1,4 @@
+import type { KeyEntryObject } from '.'
 import type { KeyEntryListHandle } from '../crypto'
 
 import { ariesAskar } from '../ariesAskar'
@@ -30,5 +31,11 @@ export class KeyEntryList {
     for (let i = 0; i < this.length; i++) {
       cb(this.getEntryByIndex(i), i)
     }
+  }
+
+  public toArray(): Array<KeyEntryObject> {
+    const list: Array<KeyEntryObject> = []
+    this.forEach((key) => list.push(key.toJson()))
+    return list
   }
 }

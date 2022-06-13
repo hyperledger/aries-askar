@@ -1,7 +1,5 @@
 /* eslint-disable @typescript-eslint/no-unsafe-return */
 import type { Key, SessionHandle, StoreHandle } from '../crypto'
-
-
 import type { KeyAlgs } from '../enums'
 
 import { ariesAskar } from '../ariesAskar'
@@ -182,7 +180,7 @@ export class Session {
     name: string
     key: Key
     metadata?: string
-    tags?: string
+    tags?: Record<string, unknown>
     expiryMs?: number
   }) {
     if (!this.handle) throw new AriesAskarError({ code: 100, message: 'Cannot insert a key with a closed session' })
@@ -197,14 +195,15 @@ export class Session {
     })
   }
 
-  public async fetchKey({ name, forUpdate }: { name: string; forUpdate: boolean }) {
+  public async fetchKey({ name, forUpdate = false }: { name: string; forUpdate?: boolean }) {
     if (!this.handle) throw new AriesAskarError({ code: 100, message: 'Cannot fetch a key with a closed session' })
     const handle = await ariesAskar.sessionFetchKey({ forUpdate, name, sessionHandle: this.handle })
-    //TODO: what to return here
+    const keyEntryList = new KeyEntryList({ handle })
+    return keyEntryList.getEntryByIndex(0).toJson()
   }
 
   public async fetchAllKeys({
-    forUpdate,
+    forUpdate = false,
     alg,
     limit,
     tagFilter,
@@ -214,7 +213,7 @@ export class Session {
     thumbprint?: string
     tagFilter?: Record<string, unknown>
     limit?: number
-    forUpdate: boolean
+    forUpdate?: boolean
   }) {
     if (!this.handle) throw new AriesAskarError({ code: 100, message: 'Cannot fetch all keys with a closed session' })
     const handle = await ariesAskar.sessionFetchAllKeys({
@@ -222,11 +221,12 @@ export class Session {
       limit,
       tagFilter,
       thumbprint,
-      alg,
+      algorithm: alg,
       sessionHandle: this.handle,
     })
 
-    return new KeyEntryList({ handle })
+    const keyEntryList = new KeyEntryList({ handle })
+    return keyEntryList.toArray()
   }
 
   public async updateKey({

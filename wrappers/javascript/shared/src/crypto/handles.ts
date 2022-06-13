@@ -65,23 +65,23 @@ export class EntryListHandle extends ArcHandle {
 
 export class KeyEntryListHandle extends ArcHandle {
   public getAlgorithm(index: number) {
-    throw new Error('Method `getAlgorithm` not implemented!')
+    return ariesAskar.keyEntryListGetAlgorithm({ index, keyEntryListHandle: this })
   }
 
   public getName(index: number) {
-    throw new Error('Method `getName` not implemented!')
+    return ariesAskar.keyEntryListGetName({ index, keyEntryListHandle: this })
   }
 
   public getTags(index: number) {
-    throw new Error('Method `getTags` not implemented!')
+    return ariesAskar.keyEntryListGetTags({ index, keyEntryListHandle: this })
   }
 
   public getMetadata(index: number) {
-    throw new Error('Method `getMetadata` not implemented!')
+    return ariesAskar.keyEntryListGetMetadata({ index, keyEntryListHandle: this })
   }
 
   public loadKey(index: number) {
-    throw new Error('Method `loadKey` not implemented!')
+    return ariesAskar.keyEntryListLoadLocal({ index, keyEntryListHandle: this })
   }
 }
 

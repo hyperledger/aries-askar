@@ -2,7 +2,7 @@ import type { KeyAlgs, SigAlgs } from '../enums'
 import type { LocalKeyHandle } from './handles'
 
 import { ariesAskar } from '../ariesAskar'
-import { KeyMethod, getKeyAlgs } from '../enums'
+import { KeyMethod, keyAlgFromString } from '../enums'
 
 export class Key {
   private localKeyHandle: LocalKeyHandle
@@ -55,7 +55,7 @@ export class Key {
 
   public get algorithm() {
     const alg = ariesAskar.keyGetAlgorithm({ localKeyHandle: this.handle })
-    return getKeyAlgs(alg)
+    return keyAlgFromString(alg)
   }
 
   public get ephemeral() {
@@ -71,15 +71,18 @@ export class Key {
   }
 
   public get jwkPublic() {
-    return ariesAskar.keyGetJwkPublic({ localKeyHandle: this.handle })
+    return JSON.parse(ariesAskar.keyGetJwkPublic({ localKeyHandle: this.handle, algorithm: this.algorithm })) as Record<
+      string,
+      unknown
+    >
   }
 
   public get jwkSecret() {
-    return ariesAskar.keyGetJwkSecret({ localKeyHandle: this.handle })
+    return JSON.parse(ariesAskar.keyGetJwkSecret({ localKeyHandle: this.handle })) as Record<string, unknown>
   }
 
   public get jwkThumbprint() {
-    return ariesAskar.keyGetJwkThumbprint({ localKeyHandle: this.handle })
+    return ariesAskar.keyGetJwkThumbprint({ localKeyHandle: this.handle, algorithm: this.algorithm })
   }
 
   public get aeadParams() {

@@ -29,7 +29,8 @@ export class Entry {
   }
 
   private get rawValue() {
-    return this._list.getValue(this._position)
+    // Temporary fix because the response seems to be inside another pair of quotes
+    return this._list.getValue(this._position).replace(/^"(.*)"$/, '$1')
   }
 
   public get tags() {

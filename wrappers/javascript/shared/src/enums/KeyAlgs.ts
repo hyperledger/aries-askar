@@ -17,9 +17,16 @@ export enum KeyAlgs {
   EcSecp256r1 = 'p256',
 }
 
-export const getKeyAlgs = (alg: string): KeyAlgs => {
+export const keyAlgFromString = (alg: string): KeyAlgs => {
   const keyAlg = Object.entries(KeyAlgs).find(([, value]) => value === alg)
   if (keyAlg) return keyAlg[1]
+
+  throw new AriesAskarError({ code: 100, message: `Algorithm: ${alg} is not supported!` })
+}
+
+export const keyAlgToString = (alg: KeyAlgs): string => {
+  const keyAlg = Object.entries(KeyAlgs).find(([key]) => key === alg)
+  if (keyAlg) return keyAlg[0]
 
   throw new AriesAskarError({ code: 100, message: `Algorithm: ${alg} is not supported!` })
 }

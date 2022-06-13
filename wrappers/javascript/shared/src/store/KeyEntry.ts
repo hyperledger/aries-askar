@@ -1,5 +1,15 @@
 import type { KeyEntryListHandle } from '../crypto'
 
+import { Key } from '../crypto'
+
+export type KeyEntryObject = {
+  algorithm: string
+  name: string
+  metadata: string
+  tags: Record<string, unknown>
+  key: Key
+}
+
 export class KeyEntry {
   private _list: KeyEntryListHandle
   private _pos: number
@@ -23,10 +33,20 @@ export class KeyEntry {
   }
 
   public get tags() {
-    return this._list.getTags(this._pos)
+    return JSON.parse(this._list.getTags(this._pos)) as Record<string, unknown>
   }
 
   public get key() {
-    return this._list.loadKey(this._pos)
+    return new Key(this._list.loadKey(this._pos))
+  }
+
+  public toJson(): KeyEntryObject {
+    return {
+      algorithm: this.algorithm,
+      name: this.name,
+      metadata: this.metadata,
+      tags: this.tags,
+      key: this.key,
+    }
   }
 }
