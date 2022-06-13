@@ -1,8 +1,6 @@
-import type { Store } from 'aries-askar-shared'
+import { Store, StoreKeyMethod, Key, KeyAlgs, AriesAskarError, KeyMethod } from 'aries-askar-shared'
 
-import { Key, KeyAlgs, AriesAskarError } from 'aries-askar-shared'
-
-import { firstEntry, secondEntry, setupWallet } from './utils'
+import { firstEntry, getRawKey, secondEntry, setupWallet, testStoreUri } from './utils'
 
 describe('Store and Session', () => {
   let store: Store
@@ -150,9 +148,45 @@ describe('Store and Session', () => {
 
     const profile = await store.createProfile()
 
-    const sessionWithProfile = store.session(profile)
-    const newSession = await sessionWithProfile.open()
+    const session2 = await store.session(profile).open()
     //Should not find previously stored record
-    await expect(newSession.count(firstEntry)).resolves.toStrictEqual(0)
+    await expect(session2.count(firstEntry)).resolves.toStrictEqual(0)
+    await session2.insert(firstEntry)
+    await expect(session2.count(firstEntry)).resolves.toStrictEqual(1)
+    await session2.close()
+
+    if (!store.uri.includes(':memory:')) {
+      // Test accessing profile after re-opening
+      const key = getRawKey()
+      const store2 = await Store.open({ uri: testStoreUri, keyMethod: StoreKeyMethod.Raw, passKey: key })
+      const session3 = await store2.openSession()
+      //Should not find previously stored record
+      await expect(session3.count(firstEntry)).resolves.toStrictEqual(0)
+      await session3.close()
+      await store2.close()
+    }
+
+    await expect(store.createProfile(profile)).rejects.toThrowError(AriesAskarError)
+
+    // Check if profile is still usable
+    const session4 = await store.session(profile).open()
+    await expect(session4.count(firstEntry)).resolves.toStrictEqual(1)
+    await session4.close()
+
+    await store.removeProfile(profile)
+
+    // Profile key is cached
+    const session5 = await store.session(profile).open()
+    await expect(session5.count(firstEntry)).resolves.toStrictEqual(0)
+    await session5.close()
+
+    // Unknown profile
+    const session6 = await store.session('unknown profile').open()
+    await expect(session6.count(firstEntry)).rejects.toThrowError(AriesAskarError)
+    await session6.close()
+
+    const session7 = await store.session(profile).open()
+    await expect(session7.count(firstEntry)).resolves.toStrictEqual(0)
+    await session7.close()
   })
 })

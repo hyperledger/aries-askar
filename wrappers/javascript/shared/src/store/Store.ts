@@ -29,8 +29,12 @@ export class Store {
     return this._uri
   }
 
-  public createProfile(name?: string) {
+  public async createProfile(name?: string) {
     return ariesAskar.storeCreateProfile({ storeHandle: this.handle, profile: name })
+  }
+
+  public async removeProfile(name: string) {
+    return await ariesAskar.storeRemoveProfile({ profile: name, storeHandle: this.handle })
   }
 
   public static async provision({
@@ -57,7 +61,7 @@ export class Store {
     profile,
   }: {
     uri: string
-    keyMethod?: KeyMethod
+    keyMethod?: StoreKeyMethod
     passKey?: string
     profile?: string
   }) {
