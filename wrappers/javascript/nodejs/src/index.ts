@@ -29,8 +29,18 @@ const testStore = async () => {
     const session = await store.openSession()
     await session.insert(testEntry)
     // console.error(await session.count({ category: testEntry.category, tagFilter: testEntry.tags }))
-    const result = await session.fetch({ ...testEntry, forUpdate: false })
-    console.log(result)
+    const result = await session.count(testEntry)
+    console.log(result === 1)
+
+    const newEntry = { ...testEntry, value: 'new value', tags: { upd: 'tagval' } }
+
+    await session.replace(newEntry)
+    const resultAfterUpdate = await session.count(newEntry)
+    console.log(resultAfterUpdate === 1)
+
+    await session.remove(newEntry)
+    const resultAfterRemove = await session.count(newEntry)
+    console.log(resultAfterRemove === 0)
 
     await session.close()
     await store.close()

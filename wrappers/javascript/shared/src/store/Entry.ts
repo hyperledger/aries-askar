@@ -34,10 +34,10 @@ export class Entry {
     return this._keys
   }
 
-  public toJson() {
+  public toJson(shouldParseValueToJson = false) {
     return {
       name: this.name,
-      value: JSON.parse(this.value) as Record<string, unknown>,
+      value: shouldParseValueToJson ? (JSON.parse(this.value) as Record<string, unknown>) : this.value,
       keys: this.keys,
       tags: this.tags,
       category: this.category,
