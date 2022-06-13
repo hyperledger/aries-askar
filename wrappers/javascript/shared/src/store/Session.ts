@@ -35,17 +35,7 @@ export class Session {
     return await ariesAskar.sessionCount({ tagFilter, category, sessionHandle: this.handle })
   }
 
-  public async fetch({
-    category,
-    name,
-    forUpdate,
-    isJson = false,
-  }: {
-    category: string
-    name: string
-    forUpdate: boolean
-    isJson?: boolean
-  }) {
+  public async fetch({ category, name, forUpdate }: { category: string; name: string; forUpdate: boolean }) {
     if (!this.handle) throw new AriesAskarError({ code: 100, message: 'Cannot fetch from a closed session' })
 
     const handle = await ariesAskar.sessionFetch({ forUpdate, name, category, sessionHandle: this.handle })
@@ -54,7 +44,7 @@ export class Session {
     const entry = new Entry({ list: handle, pos: 0 })
     // console.log(entry)
 
-    return entry.toJson(isJson)
+    return entry.toJson()
   }
 
   public async fetchAll({

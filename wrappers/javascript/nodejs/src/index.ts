@@ -14,7 +14,7 @@ const testStore = async () => {
     const testEntry = {
       category: 'test category',
       name: 'test name',
-      value: { foo: 'var' },
+      value: 'ja',
       tags: { '~plaintag': 'a', enctag: 'a' },
     }
 
@@ -29,7 +29,7 @@ const testStore = async () => {
     const session = await store.openSession()
     await session.insert(testEntry)
     // console.error(await session.count({ category: testEntry.category, tagFilter: testEntry.tags }))
-    const result = await session.fetch({ ...testEntry, forUpdate: false, isJson: true })
+    const result = await session.fetch({ ...testEntry, forUpdate: false })
     console.log(result)
 
     await session.close()

@@ -22,12 +22,8 @@ export class Entry {
     return this.rawValue
   }
 
-  public get rawValue() {
+  private get rawValue() {
     return this._list.getValue(this._pos)
-  }
-
-  public get jsonValue() {
-    return JSON.parse(this.rawValue) as Record<string, unknown>
   }
 
   public get tags() {
@@ -38,12 +34,10 @@ export class Entry {
     return this._keys
   }
 
-  public toJson(shouldTryParseValueAsJson = false) {
-    const value = shouldTryParseValueAsJson ? (JSON.parse(this.value) as Record<string, unknown>) : this.value
-
+  public toJson() {
     return {
       name: this.name,
-      value,
+      value: JSON.parse(this.value) as Record<string, unknown>,
       keys: this.keys,
       tags: this.tags,
       category: this.category,
