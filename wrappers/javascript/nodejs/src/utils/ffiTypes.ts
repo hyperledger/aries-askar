@@ -64,9 +64,9 @@ export const SecretBufferStruct = ByteBufferStruct
 export const SecretBufferStructPtr = ByteBufferStructPtr
 
 export const EncryptedBufferStruct = CStruct({
+  secretBuffer: ByteBufferStruct,
   tag_pos: FFI_INT64,
   nonce_pos: FFI_INT64,
-  buffer: SecretBufferStruct,
 })
 
 export const EncryptedBufferStructPtr = ref.refType(EncryptedBufferStruct)
