@@ -324,9 +324,9 @@ export class NodeJSAriesAskar implements AriesAskar {
     nativeAriesAskar.askar_key_aead_encrypt(localKeyHandle, message, nonce, aad, ret)
     handleError()
 
-    const encryptedBuffer: EncryptedBufferType = ret.deref()
-    // @ts-ignore
-    return new EncryptedBuffer(encryptedBuffer)
+    const encryptedBuffer = ret.deref()
+    console.log(encryptedBuffer.buffer)
+    return new EncryptedBuffer({ noncePos: 0, tagPos: 0, buffer: new Uint8Array([0]) })
   }
 
   public keyAeadGetPadding(options: KeyAeadGetPaddingOptions): number {
@@ -353,7 +353,7 @@ export class NodeJSAriesAskar implements AriesAskar {
     return new AeadParams(aeadParams)
   }
 
-  public keyAeadRandomNonce(options: KeyAeadRandomNonceOptions): SecretBuffer {
+  public keyAeadRandomNonce(options: KeyAeadRandomNonceOptions): Uint8Array {
     const { localKeyHandle } = serializeArguments(options)
     const ret = allocateSecretBuffer()
 
@@ -361,9 +361,7 @@ export class NodeJSAriesAskar implements AriesAskar {
     nativeAriesAskar.askar_key_aead_random_nonce(localKeyHandle, ret)
     handleError()
 
-    const secretBuffer: SecretBufferType = ret.deref()
-    //@ts-ignore
-    return new SecretBuffer(secretBuffer)
+    return new Uint8Array(secretBufferToBuffer(ret.deref()))
   }
 
   public keyConvert(options: KeyConvertOptions): LocalKeyHandle {
@@ -386,7 +384,7 @@ export class NodeJSAriesAskar implements AriesAskar {
     nativeAriesAskar.askar_key_crypto_box(recipKey, senderKey, message, nonce, ret)
     handleError()
 
-    return secretBufferToBuffer(ret.deref())
+    return new Uint8Array(secretBufferToBuffer(ret.deref()))
   }
 
   public keyCryptoBoxOpen(options: KeyCryptoBoxOpenOptions): SecretBuffer {

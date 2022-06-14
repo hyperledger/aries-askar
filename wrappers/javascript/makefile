@@ -10,4 +10,5 @@ test:
 	yarn nodejs test
 
 test-with-log:
-	LOG=* yarn nodejs test
+	cd ../../ && cargo build --release
+	LIB_ARIES_ASKAR_PATH=~/Developer/work/essif/askar/aries-askar/target/release LOG=* yarn nodejs test keys

@@ -1,11 +1,12 @@
 import { Store, StoreKeyMethod, Key, KeyAlgs, AriesAskarError, KeyMethod } from 'aries-askar-shared'
 
-import { firstEntry, getRawKey, secondEntry, setupWallet, testStoreUri } from './utils'
+import { firstEntry, getRawKey, secondEntry, setup, setupWallet, testStoreUri } from './utils'
 
 describe('Store and Session', () => {
   let store: Store
 
   beforeEach(async () => {
+    setup()
     store = await setupWallet()
   })
 

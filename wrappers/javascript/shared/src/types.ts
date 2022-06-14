@@ -8,9 +8,9 @@ type ByteBufferOptions = {
 type SecretBufferOptions = ByteBufferOptions
 
 type EncryptedBufferOptions = {
-  buffer: SecretBuffer
-  tag_pos: number
-  nonce_pos: number
+  buffer: Uint8Array
+  tagPos: number
+  noncePos: number
 }
 
 type AeadParamsOptions = {
@@ -47,14 +47,14 @@ export class SecretBuffer {
 }
 
 export class EncryptedBuffer {
-  public buffer: SecretBuffer
+  public buffer: Uint8Array
   public tagPos: number
   public noncePos: number
 
-  public constructor({ nonce_pos, tag_pos, buffer }: EncryptedBufferOptions) {
+  public constructor({ noncePos, tagPos, buffer }: EncryptedBufferOptions) {
     this.buffer = buffer
-    this.tagPos = tag_pos
-    this.noncePos = nonce_pos
+    this.tagPos = tagPos
+    this.noncePos = noncePos
   }
 }
 

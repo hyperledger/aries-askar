@@ -7,11 +7,11 @@ import { Key } from './Key'
 // Tests
 export class EcdhEs {
   // TODO: what type
-  private algId: Uint8Array
-  private apu: Uint8Array
-  private apv: Uint8Array
+  private algId: string
+  private apu: string
+  private apv: string
 
-  public constructor({ apv, apu, algId }: { algId: Uint8Array; apu: Uint8Array; apv: Uint8Array }) {
+  public constructor({ apv, apu, algId }: { algId: string; apu: string; apv: string }) {
     this.algId = algId
     this.apu = apu
     this.apv = apv

@@ -227,7 +227,7 @@ export interface AriesAskar {
   keyAeadEncrypt(options: KeyAeadEncryptOptions): EncryptedBuffer
   keyAeadGetPadding(options: KeyAeadGetPaddingOptions): number
   keyAeadGetParams(options: KeyAeadGetParamsOptions): AeadParams
-  keyAeadRandomNonce(options: KeyAeadRandomNonceOptions): SecretBuffer
+  keyAeadRandomNonce(options: KeyAeadRandomNonceOptions): Uint8Array
   keyConvert(options: KeyConvertOptions): LocalKeyHandle
   keyCryptoBox(options: KeyCryptoBoxOptions): Uint8Array
   keyCryptoBoxOpen(options: KeyCryptoBoxOpenOptions): SecretBuffer
