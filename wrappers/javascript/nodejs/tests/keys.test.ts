@@ -21,8 +21,8 @@ describe('keys', () => {
 
   test('Key wrap Key', () => {
     const key = Key.generate(KeyAlgs.AesA128CbcHs256)
-    const nonce = key.aeadRandomNonce
     const key2 = Key.generate(KeyAlgs.AesA128CbcHs256)
+    const nonce = key.aeadRandomNonce
     const key3 = key.wrapKey({ other: key2, nonce })
     console.log(key3)
   })

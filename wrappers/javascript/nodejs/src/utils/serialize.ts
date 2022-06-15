@@ -1,9 +1,10 @@
 import type { ByteBufferStruct, SecretBufferStruct } from '../ffi'
+import type { ByteBuffer, SecretBuffer } from 'aries-askar-shared'
 
-import { ArcHandle, StoreHandle, SessionHandle, ScanHandle, ByteBuffer, SecretBuffer } from 'aries-askar-shared'
+import { ArcHandle, StoreHandle, SessionHandle, ScanHandle } from 'aries-askar-shared'
 import { NULL } from 'ref-napi'
 
-import { secretBufferClassToStruct, uint8arrayToByteBufferStruct, byteBufferClassToStruct } from '../ffi'
+import { uint8arrayToByteBufferStruct } from '../ffi'
 
 export type Callback = (err: number) => void
 export type CallbackWithResponse = (err: number, response: string) => void
@@ -18,8 +19,6 @@ type Argument =
   | Date
   | Uint8Array
   | SerializedArgument
-  | ByteBuffer
-  | SecretBuffer
   | boolean
 
 type SerializedArgument =
@@ -106,10 +105,6 @@ const serialize = (arg: Argument): SerializedArgument => {
         return arg
       } else if (arg instanceof Uint8Array) {
         return uint8arrayToByteBufferStruct(arg) as unknown as typeof ByteBufferStruct
-      } else if (arg instanceof ByteBuffer) {
-        return byteBufferClassToStruct(arg) as unknown as typeof ByteBufferStruct
-      } else if (arg instanceof SecretBuffer) {
-        return secretBufferClassToStruct(arg) as unknown as typeof SecretBufferStruct
       } else if (
         arg instanceof ArcHandle ||
         arg instanceof StoreHandle ||

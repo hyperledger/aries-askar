@@ -16,7 +16,6 @@ import type {
   SecretBufferType,
   AeadParamsType,
 } from './ffi'
-
 import type {
   AriesAskar,
   BufferFreeOptions,
@@ -89,6 +88,7 @@ import type {
   StoreRekeyOptions,
   StoreRemoveOptions,
   StoreRemoveProfileOptions,
+  EncryptedBuffer,
 } from 'aries-askar-shared'
 
 import {
@@ -98,14 +98,15 @@ import {
   StoreHandle,
   LocalKeyHandle,
   AeadParams,
-  EncryptedBuffer,
   SecretBuffer,
   SessionHandle,
   KeyEntryListHandle,
 } from 'aries-askar-shared'
+import { alloc } from 'ref-napi'
 
 import { handleError } from './error'
 import {
+  EncryptedBufferStruct,
   EncryptedBufferType,
   encryptedBufferStructToClass,
   deallocateCallbackBuffer,
@@ -320,18 +321,14 @@ export class NodeJSAriesAskar implements AriesAskar {
 
   public keyAeadEncrypt(options: KeyAeadEncryptOptions): EncryptedBuffer {
     const { localKeyHandle, aad, nonce, message } = serializeArguments(options)
-    const ret = allocateSecretBuffer()
+    const ret = allocateEncryptedBuffer()
+    console.log('Pointer @ node.js', ret.hexAddress())
 
     // @ts-ignore
     nativeAriesAskar.askar_key_aead_encrypt(localKeyHandle, message, nonce, aad, ret)
     handleError()
 
-    const buf = ret.deref()
-    console.log(buf.data)
-    const noncePos = buf.nonce_pos
-    const tagPos = buf.tag_pos
-    const buffer = secretBufferToBuffer(buf)
-    return new EncryptedBuffer({ noncePos, tagPos, buffer })
+    return encryptedBufferStructToClass(ret.deref())
   }
 
   public keyAeadGetPadding(options: KeyAeadGetPaddingOptions): number {

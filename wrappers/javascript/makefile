@@ -11,4 +11,4 @@ test:
 
 test-with-log:
 	cd ../../ && cargo build --release
-	LIB_ARIES_ASKAR_PATH=~/Developer/work/essif/askar/aries-askar/target/release LOG=* yarn nodejs test keys -t 'Key wrap Key'
+	LIB_ARIES_ASKAR_PATH=~/Developer/work/essif/askar/aries-askar/target/release LOG=* yarn nodejs test keys -t 'mac'
