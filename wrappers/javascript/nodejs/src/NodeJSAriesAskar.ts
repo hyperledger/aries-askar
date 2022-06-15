@@ -15,8 +15,8 @@ import type {
   NativeLogCallback,
   SecretBufferType,
   AeadParamsType,
-  EncryptedBufferType,
 } from './ffi'
+
 import type {
   AriesAskar,
   BufferFreeOptions,
@@ -106,6 +106,8 @@ import {
 
 import { handleError } from './error'
 import {
+  EncryptedBufferType,
+  encryptedBufferStructToClass,
   deallocateCallbackBuffer,
   toNativeCallback,
   FFI_STRING,
@@ -728,13 +730,7 @@ export class NodeJSAriesAskar implements AriesAskar {
     nativeAriesAskar.askar_key_wrap_key(localKeyHandle, other, nonce, ret)
     handleError()
 
-    const encryptedBuffer: SecretBuffer = ret.deref()
-    // @ts-ignore
-    const buffer = Uint8Array.from(secretBufferToBuffer(encryptedBuffer.secretBuffer))
-    const noncePos = encryptedBuffer.nonce_pos
-    const tagPos = encryptedBuffer.tag_pos
-    // @ts-ignore
-    return new EncryptedBuffer({ buffer, noncePos, tagPos })
+    return encryptedBufferStructToClass(ret.deref())
   }
 
   public scanFree(options: ScanFreeOptions): void {
