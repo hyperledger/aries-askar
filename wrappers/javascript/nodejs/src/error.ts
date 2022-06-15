@@ -2,8 +2,7 @@ import type { AriesAskarErrorObject } from 'aries-askar-shared'
 
 import { AriesAskarError } from 'aries-askar-shared'
 
-import { nativeAriesAskar } from './lib'
-import { allocateStringBuffer } from './utils'
+import { allocateStringBuffer, nativeAriesAskar } from './ffi'
 
 export const handleError = () => {
   const nativeError = allocateStringBuffer()

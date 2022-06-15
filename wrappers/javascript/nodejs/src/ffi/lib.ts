@@ -1,11 +1,11 @@
-import type { NativeMethods } from './ffi'
+import type { NativeMethods } from '../utils/NativeBindingInterface'
 
 import { Library } from 'ffi-napi'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
 
-import { nativeBindings } from './ffi'
+import { nativeBindings } from './bindings'
 
 const LIBNAME = 'aries_askar'
 const ENV_VAR = 'LIB_ARIES_ASKAR_PATH'
@@ -66,7 +66,4 @@ const getLibrary = () => {
   return Library(validLibraryPath, nativeBindings)
 }
 
-// eslint-disable-next-line @typescript-eslint/ban-ts-comment
-// @ts-ignore
-// eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-export const nativeAriesAskar = getLibrary() as NativeMethods
+export const nativeAriesAskar = getLibrary() as unknown as NativeMethods

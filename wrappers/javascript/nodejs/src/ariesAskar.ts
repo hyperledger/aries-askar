@@ -10,13 +10,13 @@
 /* eslint-disable no-console */
 
 import type {
-  AeadParamsType,
-  EncryptedBufferType,
   NativeCallback,
   NativeCallbackWithResponse,
   NativeLogCallback,
   SecretBufferType,
-} from './utils'
+  AeadParamsType,
+  EncryptedBufferType,
+} from './ffi'
 import type {
   AriesAskar,
   BufferFreeOptions,
@@ -103,33 +103,32 @@ import {
   SessionHandle,
   KeyEntryListHandle,
 } from 'aries-askar-shared'
-import { reinterpret } from 'ref-napi'
 
 import { handleError } from './error'
-import { nativeAriesAskar } from './lib'
 import {
-  FFI_KEY_ENTRY_LIST_HANDLE,
-  FFI_INT8,
-  FFI_SCAN_HANDLE,
-  FFI_ENTRY_LIST_HANDLE,
-  FFI_SESSION_HANDLE,
-  FFI_STORE_HANDLE,
-  FFI_INT64,
-  allocatePointer,
-  secretBufferToBuffer,
-  allocateInt8Buffer,
-  allocateAeadParams,
-  allocateEncryptedBuffer,
-  allocateInt32Buffer,
-  allocateSecretBuffer,
-  allocateStringBuffer,
   deallocateCallbackBuffer,
-  serializeArguments,
   toNativeCallback,
+  FFI_STRING,
+  allocateStringBuffer,
   toNativeCallbackWithResponse,
   toNativeLogCallback,
-  FFI_STRING,
-} from './utils'
+  allocateInt32Buffer,
+  allocateSecretBuffer,
+  secretBufferToBuffer,
+  allocateEncryptedBuffer,
+  allocateAeadParams,
+  allocatePointer,
+  allocateInt8Buffer,
+  FFI_ENTRY_LIST_HANDLE,
+  FFI_SCAN_HANDLE,
+  FFI_INT64,
+  FFI_KEY_ENTRY_LIST_HANDLE,
+  FFI_SESSION_HANDLE,
+  FFI_STORE_HANDLE,
+  FFI_INT8,
+  nativeAriesAskar,
+} from './ffi'
+import { serializeArguments } from './utils'
 
 export class NodeJSAriesAskar implements AriesAskar {
   private promisify = async (method: (nativeCallbackPtr: Buffer, id: number) => void): Promise<void> => {

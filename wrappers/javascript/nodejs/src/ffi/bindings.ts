@@ -1,12 +1,6 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-
 import { refType } from 'ref-napi'
 
 import {
-  AeadParamsStructPtr,
-  ByteBufferStruct,
-  EncryptedBufferStruct,
-  EncryptedBufferStructPtr,
   FFI_CALLBACK_ID,
   FFI_CALLBACK_PTR,
   FFI_ENTRY_LIST_HANDLE,
@@ -24,9 +18,15 @@ import {
   FFI_STORE_HANDLE,
   FFI_STRING,
   FFI_STRING_PTR,
+} from './primitives'
+import {
   SecretBufferStruct,
   SecretBufferStructPtr,
-} from './utils'
+  ByteBufferStruct,
+  EncryptedBufferStruct,
+  AeadParamsStructPtr,
+  EncryptedBufferStructPtr,
+} from './structures'
 
 export const nativeBindings = {
   // first element is method return type, second element is list of method argument types
@@ -201,34 +201,3 @@ export const nativeBindings = {
   askar_store_remove: [FFI_ERROR_CODE, [FFI_STRING, FFI_CALLBACK_PTR, FFI_CALLBACK_ID]],
   askar_store_remove_profile: [FFI_ERROR_CODE, [FFI_STORE_HANDLE, FFI_STRING, FFI_CALLBACK_PTR, FFI_CALLBACK_ID]],
 } as const
-
-// We need a mapping from string type value => type (property 'string' maps to type string)
-interface StringTypeMapping {
-  pointer: Buffer
-  'char*': Buffer
-  string: string
-  int64: number
-  int32: number
-  int8: number
-  int: number
-  size_t: number
-}
-
-// Needed so TS stops complaining about index signatures
-type ShapeOf<T> = {
-  [Property in keyof T]: T[Property]
-}
-type StringTypeArrayToTypes<List extends Array<keyof StringTypeMapping>> = {
-  [Item in keyof List]: List[Item] extends keyof StringTypeMapping ? StringTypeMapping[List[Item]] : Buffer
-}
-
-type TypedMethods<Base extends { [method: string | number | symbol]: [any, any[]] }> = {
-  [Property in keyof Base]: (
-    ...args: StringTypeArrayToTypes<Base[Property][1]> extends any[] ? StringTypeArrayToTypes<Base[Property][1]> : []
-  ) => StringTypeMapping[Base[Property][0]]
-}
-type Mutable<T> = {
-  -readonly [K in keyof T]: Mutable<T[K]>
-}
-
-export type NativeMethods = TypedMethods<ShapeOf<Mutable<typeof nativeBindings>>>

@@ -1,10 +1,9 @@
-import type { SecretBufferStruct, ByteBufferStruct } from './ffiTypes'
-import type { KeyAlgs } from 'aries-askar-shared'
+import type { ByteBufferStruct, SecretBufferStruct } from '../ffi';
+import { secretBufferClassToStruct , uint8arrayToByteBufferStruct, byteBufferClassToStruct } from '../ffi'
 
-import { ScanHandle, StoreHandle, ArcHandle, SecretBuffer, ByteBuffer, SessionHandle } from 'aries-askar-shared'
+import { ArcHandle, StoreHandle, SessionHandle, ScanHandle, ByteBuffer, SecretBuffer } from 'aries-askar-shared'
 import { NULL } from 'ref-napi'
 
-import { byteBufferClassToStruct, secretBufferClassToStruct, uint8arrayToByteBufferStruct } from './ffiTools'
 
 export type Callback = (err: number) => void
 export type CallbackWithResponse = (err: number, response: string) => void
