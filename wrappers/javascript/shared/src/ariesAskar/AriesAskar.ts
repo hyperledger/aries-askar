@@ -230,7 +230,7 @@ export interface AriesAskar {
   keyAeadRandomNonce(options: KeyAeadRandomNonceOptions): Uint8Array
   keyConvert(options: KeyConvertOptions): LocalKeyHandle
   keyCryptoBox(options: KeyCryptoBoxOptions): Uint8Array
-  keyCryptoBoxOpen(options: KeyCryptoBoxOpenOptions): SecretBuffer
+  keyCryptoBoxOpen(options: KeyCryptoBoxOpenOptions): Uint8Array
   keyCryptoBoxRandomNonce(): Uint8Array
   keyCryptoBoxSeal(options: KeyCryptoBoxSealOptions): Uint8Array
   keyCryptoBoxSealOpen(options: KeyCryptoBoxSealOpenOptions): Uint8Array

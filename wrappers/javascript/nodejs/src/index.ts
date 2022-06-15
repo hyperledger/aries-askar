@@ -1,1 +1,1 @@
-export { NodeJSAriesAskar } from './ariesAskar'
+export { NodeJSAriesAskar } from './NodeJSAriesAskar'

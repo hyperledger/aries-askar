@@ -1,9 +1,9 @@
-import type { ByteBufferStruct, SecretBufferStruct } from '../ffi';
-import { secretBufferClassToStruct , uint8arrayToByteBufferStruct, byteBufferClassToStruct } from '../ffi'
+import type { ByteBufferStruct, SecretBufferStruct } from '../ffi'
 
 import { ArcHandle, StoreHandle, SessionHandle, ScanHandle, ByteBuffer, SecretBuffer } from 'aries-askar-shared'
 import { NULL } from 'ref-napi'
 
+import { secretBufferClassToStruct, uint8arrayToByteBufferStruct, byteBufferClassToStruct } from '../ffi'
 
 export type Callback = (err: number) => void
 export type CallbackWithResponse = (err: number, response: string) => void
@@ -84,6 +84,9 @@ export type SerializedOptions<Type> = Required<{
     : unknown
 }>
 
+// TODO: this method needs to be reworked.
+// It is very messy
+// cannot handle complex data structures well
 const serialize = (arg: Argument): SerializedArgument => {
   switch (typeof arg) {
     case 'undefined':

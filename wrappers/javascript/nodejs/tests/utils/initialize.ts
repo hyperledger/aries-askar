@@ -5,9 +5,17 @@ import { NodeJSAriesAskar } from '../../src'
 export const getRawKey = () => Store.generateRawKey(Buffer.from('00000000000000000000000000000My1'))
 export const testStoreUri = process.env.URI || 'sqlite://:memory:'
 
+let fnCounter = 0
+const fnOnce = (fn: () => void) => {
+  if (!fnCounter && process.env.LOG) {
+    fn()
+    fnCounter++
+  }
+}
+
 export const setup = () => {
   registerAriesAskar({ askar: new NodeJSAriesAskar() })
-  process.env.LOG && ariesAskar.setCustomLogger({ logLevel: LogLevel.Trace })
+  fnOnce(() => process.env.LOG && ariesAskar.setCustomLogger({ logLevel: LogLevel.Trace }))
 }
 
 export const setupWallet = async () => {

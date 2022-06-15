@@ -224,7 +224,7 @@ export class NodeJSAriesAskar implements AriesAskar {
     // TODO: flush and enabled are just guessed
     nativeAriesAskar.askar_set_custom_logger(0, nativeCallback, +enabled, +flush, logLevel)
     handleError()
-    // deallocateCallbackBuffer(+id)
+    deallocateCallbackBuffer(+id)
   }
 
   public setDefaultLogger(): void {
@@ -318,14 +318,18 @@ export class NodeJSAriesAskar implements AriesAskar {
 
   public keyAeadEncrypt(options: KeyAeadEncryptOptions): EncryptedBuffer {
     const { localKeyHandle, aad, nonce, message } = serializeArguments(options)
-    const ret = allocateEncryptedBuffer()
+    const ret = allocateSecretBuffer()
 
     // @ts-ignore
     nativeAriesAskar.askar_key_aead_encrypt(localKeyHandle, message, nonce, aad, ret)
     handleError()
 
-    console.log(ret.deref().tag_pos)
-    return new EncryptedBuffer({ noncePos: 0, tagPos: 0, buffer: new Uint8Array([0]) })
+    const buf = ret.deref()
+    console.log(buf.data)
+    const noncePos = buf.nonce_pos
+    const tagPos = buf.tag_pos
+    const buffer = secretBufferToBuffer(buf)
+    return new EncryptedBuffer({ noncePos, tagPos, buffer })
   }
 
   public keyAeadGetPadding(options: KeyAeadGetPaddingOptions): number {
@@ -724,9 +728,13 @@ export class NodeJSAriesAskar implements AriesAskar {
     nativeAriesAskar.askar_key_wrap_key(localKeyHandle, other, nonce, ret)
     handleError()
 
-    const encryptedBuffer: EncryptedBufferType = ret.deref()
+    const encryptedBuffer: SecretBuffer = ret.deref()
     // @ts-ignore
-    return new EncryptedBuffer(encryptedBuffer)
+    const buffer = Uint8Array.from(secretBufferToBuffer(encryptedBuffer.secretBuffer))
+    const noncePos = encryptedBuffer.nonce_pos
+    const tagPos = encryptedBuffer.tag_pos
+    // @ts-ignore
+    return new EncryptedBuffer({ buffer, noncePos, tagPos })
   }
 
   public scanFree(options: ScanFreeOptions): void {
