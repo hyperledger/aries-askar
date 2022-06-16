@@ -4,9 +4,8 @@
 
 import { NativeModules } from 'react-native'
 
-import { ReactNativeAriesAskar } from './ReactNativeAriesAskar'
-
 const module = NativeModules.AriesAskar
 if (!module.install()) throw Error('Unable to install the turboModule: ariesAskar')
 
-export const ariesAskarReactNative = new ReactNativeAriesAskar()
+export { ReactNativeAriesAskar } from './ReactNativeAriesAskar'
+export { ariesAskarReactNative } from './library'

@@ -81,9 +81,11 @@ import type {
   StoreRemoveProfileOptions,
 } from 'aries-askar-shared'
 
+import { ariesAskar } from 'aries-askar-shared'
+
 export class ReactNativeAriesAskar implements AriesAskar {
   public version(): string {
-    throw new Error('Method not implemented.')
+    return ariesAskar.version({})
   }
   public getCurrentError(): string {
     throw new Error('Method not implemented.')
