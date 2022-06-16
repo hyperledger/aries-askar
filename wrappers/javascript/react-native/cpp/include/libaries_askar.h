@@ -1,11 +1,16 @@
+#pragma once
+
 #include <stdarg.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdlib.h>
 
-
 #define PAGE_SIZE 32
+
+typedef size_t ScanHandle;
+typedef size_t StoreHandle;
+typedef size_t SessionHandle;
 
 enum ErrorCode
 #ifdef __cplusplus

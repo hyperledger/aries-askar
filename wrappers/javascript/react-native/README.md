@@ -11,11 +11,11 @@ npm install aries-askar-react-native
 ## Usage
 
 ```js
-import { multiply } from "aries-askar-react-native";
+import { multiply } from 'aries-askar-react-native'
 
 // ...
 
-const result = await multiply(3, 7);
+const result = await multiply(3, 7)
 ```
 
 ## Contributing

@@ -8,7 +8,7 @@ TurboModuleHostObject::TurboModuleHostObject(jsi::Runtime &rt) { return; }
 FunctionMap TurboModuleHostObject::functionMapping(jsi::Runtime &rt) {
   FunctionMap fMap;
   // TODO: add functions
-  fMap.insert(std::make_tuple("getCurrentError", &ariesAskar::getCurrentError));
+  fMap.insert(std::make_tuple("version", &ariesAskar::version));
   return fMap;
 }
 
@@ -58,9 +58,8 @@ jsi::Value TurboModuleHostObject::get(jsi::Runtime &rt,
    * React that this element is not renderable.
    *
    */
-  if (propName == "$$typeof") {
-    return jsi::Value::undefined();
-  }
+  if (propName == "$$typeof") return jsi::Value::undefined();
+  
 
   throw jsi::JSError(rt, "Function: " + propName + " is not defined");
 }

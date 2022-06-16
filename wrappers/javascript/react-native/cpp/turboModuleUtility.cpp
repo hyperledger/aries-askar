@@ -19,12 +19,13 @@ void handleError(jsi::Runtime &rt, ErrorCode code) {
   if (code == ErrorCode::Success)
     return;
 
-  jsi::Value errorMessage = ariesAskar::getCurrentError(rt);
+//    jsi::Value errorMessage = ariesAskar::getCurrentError(rt);
+
 
   jsi::Object JSON = rt.global().getPropertyAsObject(rt, "JSON");
   jsi::Function JSONParse = JSON.getPropertyAsFunction(rt, "parse");
   jsi::Object parsedErrorObject =
-      JSONParse.call(rt, errorMessage).getObject(rt);
+      JSONParse.call(rt, "{TODO: 'TODO'}").getObject(rt);
   jsi::Value message = parsedErrorObject.getProperty(rt, "message");
   if (message.isString()) {
     throw jsi::JSError(rt, message.getString(rt).utf8(rt));
