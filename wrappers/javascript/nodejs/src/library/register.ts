@@ -1,4 +1,4 @@
-import type { NativeMethods } from '../utils/NativeBindingInterface'
+import type { NativeMethods } from './NativeBindingInterface'
 
 import { Library } from 'ffi-napi'
 import fs from 'fs'

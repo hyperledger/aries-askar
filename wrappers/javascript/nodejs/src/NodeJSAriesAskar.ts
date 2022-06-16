@@ -102,12 +102,10 @@ import {
   SessionHandle,
   KeyEntryListHandle,
 } from 'aries-askar-shared'
-import { alloc } from 'ref-napi'
 
 import { handleError } from './error'
 import {
-  EncryptedBufferStruct,
-  EncryptedBufferType,
+  serializeArguments,
   encryptedBufferStructToClass,
   deallocateCallbackBuffer,
   toNativeCallback,
@@ -129,9 +127,8 @@ import {
   FFI_SESSION_HANDLE,
   FFI_STORE_HANDLE,
   FFI_INT8,
-  nativeAriesAskar,
 } from './ffi'
-import { serializeArguments } from './utils'
+import { nativeAriesAskar } from './library'
 
 export class NodeJSAriesAskar implements AriesAskar {
   private promisify = async (method: (nativeCallbackPtr: Buffer, id: number) => void): Promise<void> => {

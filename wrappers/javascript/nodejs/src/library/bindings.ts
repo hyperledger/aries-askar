@@ -18,15 +18,13 @@ import {
   FFI_STORE_HANDLE,
   FFI_STRING,
   FFI_STRING_PTR,
-} from './primitives'
-import {
   SecretBufferStruct,
   SecretBufferStructPtr,
   ByteBufferStruct,
   EncryptedBufferStruct,
   AeadParamsStructPtr,
   EncryptedBufferStructPtr,
-} from './structures'
+} from '../ffi'
 
 export const nativeBindings = {
   // first element is method return type, second element is list of method argument types

@@ -1,4 +1,4 @@
-import { EcdhEs, Key, KeyAlgs, registerAriesAskar } from 'aries-askar-shared'
+import { registerAriesAskar } from 'aries-askar-shared'
 
 import { NodeJSAriesAskar } from '../src'
 
