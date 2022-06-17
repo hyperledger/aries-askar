@@ -1,4 +1,4 @@
-example/metro.config.js
-example/babel.config.js
+react-native-example/metro.config.js
+react-native-example/babel.config.js
 **/build/**
 build/**
