@@ -30,9 +30,15 @@ export class EcdhEs {
   }): Key {
     return new Key(
       ariesAskar.keyDeriveEcdhEs({
+        // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+        // @ts-ignore
         algId: this.algId,
         receive,
+        // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+        // @ts-ignore
         apv: this.apv,
+        // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+        // @ts-ignore
         apu: this.apu,
         alg: encAlg,
         ephemKey: ephemeralKey.handle,

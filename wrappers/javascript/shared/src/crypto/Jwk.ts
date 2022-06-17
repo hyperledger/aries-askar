@@ -33,7 +33,7 @@ export class Jwk {
   public toUint8Array() {
     // @ts-ignore
     const encoder = new TextEncoder()
-    const encoded = encoder.encode(JSON.stringify({ kty: this.kty, crv: this.crv, x: this.x, d: this.d })) as Buffer
-    return Uint8Array.from(encoded)
+    const encoded = encoder.encode(JSON.stringify({ kty: this.kty, crv: this.crv, x: this.x, d: this.d })) as Uint8Array
+    return encoded
   }
 }
