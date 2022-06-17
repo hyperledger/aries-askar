@@ -1,5 +1,6 @@
 import type {
   EntryListHandle,
+  Jwk,
   KeyEntryListHandle,
   LocalKeyHandle,
   ScanHandle,
@@ -82,7 +83,7 @@ export type KeyEntryListGetNameOptions = { keyEntryListHandle: KeyEntryListHandl
 export type KeyEntryListGetTagsOptions = { keyEntryListHandle: KeyEntryListHandle; index: number }
 export type KeyEntryListLoadLocalOptions = { keyEntryListHandle: KeyEntryListHandle; index: number }
 export type KeyFreeOptions = { keyEntryListHandle: KeyEntryListHandle }
-export type KeyFromJwkOptions = { jwk: Uint8Array }
+export type KeyFromJwkOptions = { jwk: Jwk }
 export type KeyFromKeyExchangeOptions = {
   alg: KeyAlgs
   skHandle: Uint8Array

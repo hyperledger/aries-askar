@@ -1,7 +1,7 @@
 import type { ByteBufferStruct, SecretBufferStruct } from '../ffi'
 import type { ByteBuffer, SecretBuffer } from 'aries-askar-shared'
 
-import { ArcHandle, StoreHandle, SessionHandle, ScanHandle } from 'aries-askar-shared'
+import { ArcHandle, StoreHandle, SessionHandle, ScanHandle, Jwk } from 'aries-askar-shared'
 import { NULL } from 'ref-napi'
 
 import { uint8arrayToByteBufferStruct } from '../ffi'
@@ -20,6 +20,7 @@ type Argument =
   | Uint8Array
   | SerializedArgument
   | boolean
+  | Jwk
 
 type SerializedArgument =
   | string
@@ -80,6 +81,8 @@ export type SerializedOptions<Type> = Required<{
     ? number
     : Type[Property] extends ArcHandle
     ? Buffer
+    : Type[Property] extends Jwk
+    ? ByteBuffer
     : unknown
 }>
 
@@ -105,6 +108,8 @@ const serialize = (arg: Argument): SerializedArgument => {
         return arg
       } else if (arg instanceof Uint8Array) {
         return uint8arrayToByteBufferStruct(arg) as unknown as typeof ByteBufferStruct
+      } else if (arg instanceof Jwk) {
+        return uint8arrayToByteBufferStruct(arg.toUint8Array())
       } else if (
         arg instanceof ArcHandle ||
         arg instanceof StoreHandle ||

@@ -1,8 +1,11 @@
 import type { KeyAlgs, SigAlgs } from '../enums'
+import type { Jwk } from './Jwk'
 import type { LocalKeyHandle } from './handles'
 
 import { ariesAskar } from '../ariesAskar'
 import { KeyMethod, keyAlgFromString } from '../enums'
+
+// TODO: is this jwk type correct?
 
 export class Key {
   private localKeyHandle: LocalKeyHandle
@@ -36,8 +39,7 @@ export class Key {
     return new Key(ariesAskar.keyFromPublicBytes(options))
   }
 
-  // TODO: type of jwk
-  public static fromJwk(options: { jwk: Uint8Array }) {
+  public static fromJwk(options: { jwk: Jwk }) {
     return new Key(ariesAskar.keyFromJwk(options))
   }
 
@@ -105,7 +107,7 @@ export class Key {
     return ariesAskar.keySignMessage({ localKeyHandle: this.handle, ...options })
   }
 
-  public verifyMessage(options: { message: Uint8Array; signature: Uint8Array; sigType?: SigAlgs }) {
+  public verifySignature(options: { message: Uint8Array; signature: Uint8Array; sigType?: SigAlgs }) {
     return ariesAskar.keyVerifySignature({ localKeyHandle: this.handle, ...options })
   }
 
