@@ -210,7 +210,7 @@ export type StoreRemoveProfileOptions = { storeHandle: StoreHandle; profile: str
 export interface AriesAskar {
   version(): string
   getCurrentError(): string
-  bufferFree(options: BufferFreeOptions): void
+  // bufferFree(options: BufferFreeOptions): void
   clearCustomLogger(): void
 
   setCustomLogger(options: SetCustomLoggerOptions): void

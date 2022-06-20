@@ -45,11 +45,11 @@ export const nativeBindings = {
 
   askar_key_aead_decrypt: [
     FFI_ERROR_CODE,
-    [FFI_POINTER, ByteBufferStruct, ByteBufferStruct, ByteBufferStruct, ByteBufferStruct, SecretBufferStruct],
+    [FFI_POINTER, ByteBufferStruct, ByteBufferStruct, ByteBufferStruct, ByteBufferStruct, SecretBufferStructPtr],
   ],
   askar_key_aead_encrypt: [
     FFI_ERROR_CODE,
-    [FFI_POINTER, ByteBufferStruct, ByteBufferStruct, ByteBufferStruct, EncryptedBufferStruct],
+    [FFI_POINTER, ByteBufferStruct, ByteBufferStruct, ByteBufferStruct, EncryptedBufferStructPtr],
   ],
   askar_key_aead_get_padding: [FFI_ERROR_CODE, [FFI_POINTER, FFI_INT64, FFI_INT32_PTR]],
   askar_key_aead_get_params: [FFI_ERROR_CODE, [FFI_POINTER, AeadParamsStructPtr]],

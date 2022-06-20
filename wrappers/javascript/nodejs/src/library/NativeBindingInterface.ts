@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-import type { nativeBindings } from '../ffi'
+import type { nativeBindings } from './bindings'
 
 // We need a mapping from string type value => type (property 'string' maps to type string)
 interface StringTypeMapping {

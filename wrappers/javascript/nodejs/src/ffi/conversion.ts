@@ -2,11 +2,11 @@
 /* eslint-disable @typescript-eslint/ban-ts-comment */
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 /* eslint-disable @typescript-eslint/no-unsafe-argument */
-import type { EncryptedBufferType } from './structures'
+import type { ByteBufferType, EncryptedBufferType } from './structures'
 import type { TypedArray } from 'ref-array-di'
 import type { Pointer } from 'ref-napi'
 
-import { ByteBuffer, EncryptedBuffer } from 'aries-askar-shared'
+import { AriesAskarError, ByteBuffer, EncryptedBuffer } from 'aries-askar-shared'
 import { reinterpret } from 'ref-napi'
 
 import { ByteBufferStruct } from './structures'

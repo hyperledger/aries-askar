@@ -1,6 +1,6 @@
+import * as aries from 'aries-askar-shared'
 import { StatusBar } from 'expo-status-bar'
 import { StyleSheet, Text, View } from 'react-native'
-import * as aries from 'aries-askar-shared'
 
 export default function App() {
   //@ts-ignore

@@ -3,10 +3,14 @@ import base64url from 'base64url'
 
 import { NodeJSAriesAskar } from '../src'
 
+import { setup } from './utils'
+
 describe('jose ecdh', () => {
   beforeAll(() => {
-    registerAriesAskar({ askar: new NodeJSAriesAskar() })
+    // registerAriesAskar({ askar: new NodeJSAriesAskar() })
+    setup()
   })
+
   xtest('ecdh es direct', () => {
     const bobKey = Key.generate(KeyAlgs.EcSecp256r1)
     const ephemeralKey = Key.generate(KeyAlgs.EcSecp256r1)

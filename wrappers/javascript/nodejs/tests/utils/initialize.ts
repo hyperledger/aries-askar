@@ -7,7 +7,7 @@ export const testStoreUri = process.env.URI || 'sqlite://:memory:'
 
 let fnCounter = 0
 const fnOnce = (fn: () => void) => {
-  if (!fnCounter && process.env.LOG) {
+  if (!fnCounter) {
     fn()
     fnCounter++
   }

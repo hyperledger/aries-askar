@@ -201,12 +201,12 @@ export class NodeJSAriesAskar implements AriesAskar {
     return error.deref() as string
   }
 
-  public bufferFree(options: BufferFreeOptions): void {
-    const { secretBuffer } = serializeArguments(options)
-    // @ts-ignore
-    nativeAriesAskar.askar_buffer_free(secretBuffer)
-    handleError()
-  }
+  // public bufferFree(options: BufferFreeOptions): void {
+  //   const { secretBuffer } = serializeArguments(options)
+  //   // @ts-ignore
+  //   nativeAriesAskar.askar_buffer_free(secretBuffer)
+  //   handleError()
+  // }
 
   public clearCustomLogger(): void {
     nativeAriesAskar.askar_clear_custom_logger()

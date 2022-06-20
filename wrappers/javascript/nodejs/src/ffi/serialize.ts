@@ -109,7 +109,7 @@ const serialize = (arg: Argument): SerializedArgument => {
       } else if (arg instanceof Uint8Array) {
         return uint8arrayToByteBufferStruct(arg) as unknown as typeof ByteBufferStruct
       } else if (arg instanceof Jwk) {
-        return uint8arrayToByteBufferStruct(arg.toUint8Array())
+        return uint8arrayToByteBufferStruct(arg.toUint8Array()) as unknown as typeof ByteBufferStruct
       } else if (
         arg instanceof ArcHandle ||
         arg instanceof StoreHandle ||
