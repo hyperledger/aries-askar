@@ -3,7 +3,6 @@ const path = require('path')
 const ariesAskarShared = require('../shared/package.json')
 
 module.exports = {
-  presets: ['module:metro-react-native-babel-preset'],
   plugins: [
     [
       'module-resolver',

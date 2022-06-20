@@ -319,7 +319,6 @@ export class NodeJSAriesAskar implements AriesAskar {
   public keyAeadEncrypt(options: KeyAeadEncryptOptions): EncryptedBuffer {
     const { localKeyHandle, aad, nonce, message } = serializeArguments(options)
     const ret = allocateEncryptedBuffer()
-    console.log('Pointer @ node.js', ret.hexAddress())
 
     // @ts-ignore
     nativeAriesAskar.askar_key_aead_encrypt(localKeyHandle, message, nonce, aad, ret)

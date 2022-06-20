@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "license": "Apache-2.0",
   "description": "Shared library for using Aries Askar with NodeJS and React Native",
-  "main": "src/index",
+  "main": "build/index",
   "source": "src/index",
   "types": "build/index",
   "homepage": "https://github.com/hyperledger/aries-askar/tree/main/wrappers/javascript/shared",

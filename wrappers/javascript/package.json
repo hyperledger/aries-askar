@@ -10,7 +10,9 @@
       "react-native-example"
     ],
     "nohoist": [
-      "**/react-native-codegen"
+      "**/react-native-codegen",
+      "**/react-native",
+      "react-native/**"
     ]
   },
   "scripts": {

@@ -1,7 +1,5 @@
-import { Ecdh1PU, EcdhEs, Jwk, Key, KeyAlgs, registerAriesAskar } from 'aries-askar-shared'
+import { Ecdh1PU, EcdhEs, Jwk, Key, KeyAlgs } from 'aries-askar-shared'
 import base64url from 'base64url'
-
-import { NodeJSAriesAskar } from '../src'
 
 import { setup } from './utils'
 
@@ -11,7 +9,7 @@ describe('jose ecdh', () => {
     setup()
   })
 
-  xtest('ecdh es direct', () => {
+  test('ecdh es direct', () => {
     const bobKey = Key.generate(KeyAlgs.EcSecp256r1)
     const ephemeralKey = Key.generate(KeyAlgs.EcSecp256r1)
     const message = Buffer.from('Hello there')
@@ -29,7 +27,7 @@ describe('jose ecdh', () => {
     console.log(encryptedMessage)
   })
 
-  test('ecdh 1pu wrapped expected', () => {
+  xtest('ecdh 1pu wrapped expected', () => {
     const ephemJwk = Jwk.fromJson({
       crv: 'X25519',
       kty: 'OKP',
