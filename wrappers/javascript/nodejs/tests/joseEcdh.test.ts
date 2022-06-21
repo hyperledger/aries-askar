@@ -4,18 +4,25 @@ import base64url from 'base64url'
 import { setup } from './utils'
 
 describe('jose ecdh', () => {
-  beforeAll(() => {
-    // registerAriesAskar({ askar: new NodeJSAriesAskar() })
-    setup()
-  })
+  beforeAll(() => setup())
 
   test('ecdh es direct', () => {
     const bobKey = Key.generate(KeyAlgs.EcSecp256r1)
     const ephemeralKey = Key.generate(KeyAlgs.EcSecp256r1)
     const message = Buffer.from('Hello there')
+    const alg = 'ECDH-ES'
     const apu = 'Alice'
     const apv = 'Bob'
     const enc = 'A256GCM'
+
+    const protectedJson = {
+      alg,
+      enc,
+      apu: base64url(apu),
+      apv: base64url(apv),
+      epk: ephemeralKey,
+    }
+    const protectedB64 = base64url(JSON.stringify(protectedJson))
 
     const encryptedMessage = new EcdhEs({ apv, apu, algId: enc }).encryptDirect({
       encAlg: KeyAlgs.AesA256Gcm,
@@ -24,7 +31,19 @@ describe('jose ecdh', () => {
       receiverKey: bobKey,
     })
 
-    console.log(encryptedMessage)
+    const [ciphertext, tag, nonce] = encryptedMessage.parts
+    console.log(encryptedMessage.parts)
+
+    // const messageReceived = new EcdhEs({ algId: enc, apu, apv }).decryptDirect({
+    //   encAlg: KeyAlgs.AesA256Gcm,
+    //   ephemeralKey: ephemeralKey,
+    //   receiverKey: bobKey,
+    //   ciphertext,
+    //   nonce,
+    //   tag,
+    //   aad: Uint8Array.from(Buffer.from(protectedB64)),
+    // })
+    // console.log(messageReceived)
   })
 
   xtest('ecdh 1pu wrapped expected', () => {

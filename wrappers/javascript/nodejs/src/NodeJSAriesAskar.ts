@@ -303,7 +303,7 @@ export class NodeJSAriesAskar implements AriesAskar {
     return secretBufferToBuffer(ret.deref()).toString()
   }
 
-  public keyAeadDecrypt(options: KeyAeadDecryptOptions): SecretBuffer {
+  public keyAeadDecrypt(options: KeyAeadDecryptOptions): Uint8Array {
     const { aad, ciphertext, localKeyHandle, nonce, tag } = serializeArguments(options)
     const ret = allocateSecretBuffer()
 
@@ -311,9 +311,7 @@ export class NodeJSAriesAskar implements AriesAskar {
     nativeAriesAskar.askar_key_aead_decrypt(localKeyHandle, ciphertext, nonce, tag, aad, ret)
     handleError()
 
-    const secretBuffer: SecretBufferType = ret.deref()
-    // @ts-ignore
-    return new SecretBuffer(secretBuffer)
+    return new Uint8Array(secretBufferToBuffer(ret.deref()))
   }
 
   public keyAeadEncrypt(options: KeyAeadEncryptOptions): EncryptedBuffer {

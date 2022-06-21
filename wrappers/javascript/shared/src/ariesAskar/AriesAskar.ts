@@ -28,7 +28,7 @@ export type KeyAeadDecryptOptions = {
   localKeyHandle: Uint8Array
   ciphertext: Uint8Array
   nonce: Uint8Array
-  tag: Uint8Array
+  tag?: Uint8Array
   aad?: Uint8Array
 }
 export type KeyAeadEncryptOptions = {
@@ -224,7 +224,7 @@ export interface AriesAskar {
   entryListGetTags(options: EntryListGetTagsOptions): string
   entryListGetValue(options: EntryListGetValueOptions): string
 
-  keyAeadDecrypt(options: KeyAeadDecryptOptions): SecretBuffer
+  keyAeadDecrypt(options: KeyAeadDecryptOptions): Uint8Array
   keyAeadEncrypt(options: KeyAeadEncryptOptions): EncryptedBuffer
   keyAeadGetPadding(options: KeyAeadGetPaddingOptions): number
   keyAeadGetParams(options: KeyAeadGetParamsOptions): AeadParams

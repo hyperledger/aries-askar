@@ -99,7 +99,7 @@ export class Key {
     return ariesAskar.keyAeadEncrypt({ localKeyHandle: this.handle, ...options })
   }
 
-  public aeadDecrypt(options: { ciphertext: Uint8Array; tag: Uint8Array; nonce: Uint8Array; aad?: Uint8Array }) {
+  public aeadDecrypt(options: { ciphertext: Uint8Array; nonce: Uint8Array; tag?: Uint8Array; aad?: Uint8Array }) {
     return ariesAskar.keyAeadDecrypt({ localKeyHandle: this.handle, ...options })
   }
 

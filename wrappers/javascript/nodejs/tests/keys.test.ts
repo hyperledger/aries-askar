@@ -4,19 +4,18 @@ import { setup } from './utils'
 
 describe('keys', () => {
   beforeAll(() => setup())
-  xtest('aes cbc hmac', () => {
+  test('aes cbc hmac', () => {
     const key = Key.generate(KeyAlgs.AesA128CbcHs256)
     expect(key.algorithm).toStrictEqual(KeyAlgs.AesA128CbcHs256)
 
     const message = new Uint8Array(32).fill(1)
-    const aad = new Uint8Array(32).fill(1)
-    const nonce = key.aeadRandomNonce
+    const aeadNonce = key.aeadRandomNonce
     const params = key.aeadParams
     expect(params.nonceLength).toStrictEqual(16)
     expect(params.tagLength).toStrictEqual(16)
-    const enc = key.aeadEncrypt({ message, nonce, aad })
-    console.log(enc)
-    // const dec = key.aeadDecrypt({ ciphertext: enc.buffer, nonce, aad })
+    const enc = key.aeadEncrypt({ message, nonce: aeadNonce })
+    const dec = key.aeadDecrypt({ ciphertext: enc.ciphertextAndTag, nonce: enc.nonce })
+    expect(dec).toStrictEqual(message)
   })
 
   test('Bls G2 Keygen', () => {

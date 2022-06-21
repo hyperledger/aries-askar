@@ -47,14 +47,39 @@ export class SecretBuffer {
 }
 
 export class EncryptedBuffer {
-  public buffer: Uint8Array
-  public tagPos: number
-  public noncePos: number
+  private buffer: Uint8Array
+  private tagPos: number
+  private noncePos: number
 
   public constructor({ noncePos, tagPos, buffer }: EncryptedBufferOptions) {
     this.buffer = buffer
     this.tagPos = tagPos
     this.noncePos = noncePos
+  }
+
+  public get ciphertextAndTag() {
+    const p = this.noncePos
+    return this.buffer.slice(0, p)
+  }
+
+  public get ciphertext() {
+    const p = this.tagPos
+    return this.buffer.slice(0, p)
+  }
+
+  public get nonce() {
+    const p = this.noncePos
+    return this.buffer.slice(p, this.buffer.length)
+  }
+
+  public get tag() {
+    const p1 = this.tagPos
+    const p2 = this.noncePos
+    return this.buffer.slice(p1, p2)
+  }
+
+  public get parts() {
+    return [this.ciphertext, this.tag, this.nonce]
   }
 }
 
