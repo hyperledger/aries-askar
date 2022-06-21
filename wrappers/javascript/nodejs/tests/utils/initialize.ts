@@ -28,3 +28,5 @@ export const setupWallet = async () => {
     passKey: key,
   })
 }
+
+export const base64url = (str: string) => Buffer.from(str).toString('base64url')

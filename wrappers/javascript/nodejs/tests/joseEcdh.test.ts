@@ -1,7 +1,6 @@
 import { Ecdh1PU, EcdhEs, Jwk, Key, KeyAlgs } from 'aries-askar-shared'
-import base64url from 'base64url'
 
-import { setup } from './utils'
+import { base64url, setup } from './utils'
 
 describe('jose ecdh', () => {
   beforeAll(() => setup())
@@ -36,7 +35,6 @@ describe('jose ecdh', () => {
     })
 
     const { nonce, tag, ciphertext } = encryptedMessage.parts
-    console.log(encryptedMessage.parts)
 
     const messageReceived = new EcdhEs({ algId: encAlg, apu, apv }).decryptDirect({
       encAlg,
@@ -50,58 +48,48 @@ describe('jose ecdh', () => {
     expect(Buffer.from(messageReceived).toString()).toStrictEqual(messageString)
   })
 
-  xtest('ecdh 1pu wrapped expected', () => {
-    const ephemJwk = Jwk.fromJson({
+  test('ecdh 1pu wrapped expected', () => {
+    const ephem = Jwk.fromJson({
       crv: 'X25519',
       kty: 'OKP',
       d: 'x8EVZH4Fwk673_mUujnliJoSrLz0zYzzCWp5GUX2fc8',
       x: 'k9of_cpAajy0poW5gaixXGs9nHkwg1AFqUAFa39dyBc',
-    })
+    }).toKey()
 
-    const ephem = Key.fromJwk({ jwk: ephemJwk })
-
-    const aliceJwk = Jwk.fromJson({
+    const alice = Jwk.fromJson({
       crv: 'X25519',
       kty: 'OKP',
       d: 'i9KuFhSzEBsiv3PKVL5115OCdsqQai5nj_Flzfkw5jU',
       x: 'Knbm_BcdQr7WIoz-uqit9M0wbcfEr6y-9UfIZ8QnBD4',
-    })
+    }).toKey()
 
-    const alice = Key.fromJwk({ jwk: aliceJwk })
-
-    const bobJwk = Jwk.fromJson({
+    const bob = Jwk.fromJson({
       crv: 'X25519',
       kty: 'OKP',
       d: '1gDirl_r_Y3-qUa3WXHgEXrrEHngWThU3c9zj9A2uBg',
       x: 'BT7aR0ItXfeDAldeeOlXL_wXqp-j5FltT0vRSG16kRw',
-    })
-
-    const bob = Key.fromJwk({ jwk: bobJwk })
+    }).toKey()
 
     const alg = 'ECDH-1PU+A128KW'
-    const enc = 'A256CBC-HS512'
+    const enc = KeyAlgs.AesA256CbcHs512
     const apu = 'Alice'
     const apv = 'Bob and Charlie'
+    const base64urlApu = base64url(apu)
+    const base64urlApv = base64url(apv)
+
+    expect(base64urlApu).toStrictEqual('QWxpY2U')
+    expect(base64urlApv).toStrictEqual('Qm9iIGFuZCBDaGFybGll')
 
     const protectedJson = {
-      alg,
-      enc,
-      apu: base64url(apu),
-      apv: base64url(apv),
-      epk: {
-        kty: 'OKP',
-        crv: 'X25519',
-        x: 'k9of_cpAajy0poW5gaixXGs9nHkwg1AFqUAFa39dyBc',
-      },
+      alg: 'ECDH-1PU+A128KW',
+      enc: 'A256CBC-HS512',
+      apu: 'QWxpY2U',
+      apv: 'Qm9iIGFuZCBDaGFybGll',
+      epk: { kty: 'OKP', crv: 'X25519', x: 'k9of_cpAajy0poW5gaixXGs9nHkwg1AFqUAFa39dyBc' },
     }
     const protectedString = JSON.stringify(protectedJson)
-    const protectedB64 = base64url(protectedString)
-    const protectedB64Buffer = Buffer.from(protectedB64)
-
-    expect(protectedJson).toMatchObject({
-      apu: 'QWxpY2U', // Alice
-      apv: 'Qm9iIGFuZCBDaGFybGll', // Bob and Charlie
-    })
+    const protectedB64 = Buffer.from(protectedString).toString('base64url')
+    const protectedB64Bytes = Uint8Array.from(Buffer.from(protectedB64))
 
     const cek = Key.fromSecretBytes({
       alg: KeyAlgs.AesA256CbcHs512,
@@ -112,13 +100,20 @@ describe('jose ecdh', () => {
         )
       ),
     })
-    const iv = Buffer.from('000102030405060708090a0b0c0d0e0f', 'hex')
-    const message = Uint8Array.from(Buffer.from('Three is a magic number'))
 
-    // TODO:
-    const encoded = cek.aeadEncrypt({ message, nonce: iv, aad: Uint8Array.from(protectedB64Buffer) })
-    const cipherText = encoded.buffer
-    const tag = encoded.tagPos
+    const iv = Uint8Array.from([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15])
+    const message = Uint8Array.from(Buffer.from('Three is a magic number.'))
+
+    const encoded = cek.aeadEncrypt({ message, nonce: iv, aad: protectedB64Bytes })
+
+    const ciphertext = encoded.ciphertext
+    const ccTag = encoded.tag
+
+    const expectedCiphertext = Uint8Array.from(Buffer.from('Az2IWsISEMDJvyc5XRL-3-d-RgNBOGolCsxFFoUXFYw', 'base64url'))
+    const expectedCcTag = Uint8Array.from(Buffer.from('HLb4fTlm8spGmij3RyOs2gJ4DpHM4hhVRwdF_hGb3WQ', 'base64url'))
+
+    expect(ciphertext).toStrictEqual(expectedCiphertext)
+    expect(ccTag).toStrictEqual(expectedCcTag)
 
     // TODO: this should also accept a string
     const derived = new Ecdh1PU({

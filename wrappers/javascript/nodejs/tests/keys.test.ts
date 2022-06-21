@@ -8,7 +8,8 @@ describe('keys', () => {
     const key = Key.generate(KeyAlgs.AesA128CbcHs256)
     expect(key.algorithm).toStrictEqual(KeyAlgs.AesA128CbcHs256)
 
-    const message = new Uint8Array(32).fill(1)
+    const messageString = 'test message'
+    const message = Uint8Array.from(Buffer.from(messageString))
     const aeadNonce = key.aeadRandomNonce
     const params = key.aeadParams
     expect(params.nonceLength).toStrictEqual(16)
