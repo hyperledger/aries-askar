@@ -3,6 +3,7 @@ import type { KeyAlgs } from '../enums'
 import { ariesAskar } from '../ariesAskar'
 
 import { Key } from './Key'
+import { Jwk } from './Jwk'
 
 // Tests
 export class EcdhEs {
@@ -56,13 +57,15 @@ export class EcdhEs {
     nonce,
   }: {
     encAlg: KeyAlgs
-    ephemeralKey: Key
-    receiverKey: Key
+    ephemeralKey: Key | Jwk
+    receiverKey: Key | Jwk
     message: Uint8Array
     aad?: Uint8Array
     nonce?: Uint8Array
   }) {
-    const derived = this.deriveKey({ encAlg, ephemeralKey, receiverKey, receive: false })
+    const eKey = ephemeralKey instanceof Jwk ? ephemeralKey.toKey() : ephemeralKey
+    const rKey = receiverKey instanceof Jwk ? receiverKey.toKey() : receiverKey
+    const derived = this.deriveKey({ encAlg, ephemeralKey: eKey, receiverKey: rKey, receive: false })
     return derived.aeadEncrypt({ message, aad, nonce })
   }
 
@@ -76,14 +79,16 @@ export class EcdhEs {
     aad,
   }: {
     encAlg: KeyAlgs
-    ephemeralKey: Key
-    receiverKey: Key
+    ephemeralKey: Key | Jwk
+    receiverKey: Key | Jwk
     ciphertext: Uint8Array
     nonce: Uint8Array
     tag: Uint8Array
     aad?: Uint8Array
   }) {
-    const derived = this.deriveKey({ encAlg, ephemeralKey, receiverKey, receive: true })
+    const eKey = ephemeralKey instanceof Jwk ? ephemeralKey.toKey() : ephemeralKey
+    const rKey = receiverKey instanceof Jwk ? receiverKey.toKey() : receiverKey
+    const derived = this.deriveKey({ encAlg, ephemeralKey: eKey, receiverKey: rKey, receive: true })
     return derived.aeadDecrypt({ tag, nonce, ciphertext, aad })
   }
 

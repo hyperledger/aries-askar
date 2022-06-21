@@ -14,7 +14,7 @@ describe('keys', () => {
     expect(params.nonceLength).toStrictEqual(16)
     expect(params.tagLength).toStrictEqual(16)
     const enc = key.aeadEncrypt({ message, nonce: aeadNonce })
-    const dec = key.aeadDecrypt({ ciphertext: enc.ciphertextAndTag, nonce: enc.nonce })
+    const dec = key.aeadDecrypt(enc.parts)
     expect(dec).toStrictEqual(message)
   })
 

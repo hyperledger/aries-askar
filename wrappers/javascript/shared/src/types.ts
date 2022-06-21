@@ -57,7 +57,7 @@ export class EncryptedBuffer {
     this.noncePos = noncePos
   }
 
-  public get ciphertextAndTag() {
+  public get ciphertextWithTag() {
     const p = this.noncePos
     return this.buffer.slice(0, p)
   }
@@ -69,7 +69,7 @@ export class EncryptedBuffer {
 
   public get nonce() {
     const p = this.noncePos
-    return this.buffer.slice(p, this.buffer.length)
+    return this.buffer.slice(p)
   }
 
   public get tag() {
@@ -79,7 +79,13 @@ export class EncryptedBuffer {
   }
 
   public get parts() {
-    return [this.ciphertextAndTag, this.tag, this.nonce]
+    const p1 = this.tagPos
+    const p2 = this.noncePos
+    return {
+      ciphertext: this.buffer.slice(0, p1),
+      tag: this.buffer.slice(p1, p2),
+      nonce: this.buffer.slice(p2),
+    }
   }
 }
 

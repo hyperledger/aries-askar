@@ -8,43 +8,46 @@ describe('jose ecdh', () => {
 
   test('ecdh es direct', () => {
     const bobKey = Key.generate(KeyAlgs.EcSecp256r1)
+    const bobJwk = bobKey.jwkPublic
     const ephemeralKey = Key.generate(KeyAlgs.EcSecp256r1)
-    const message = new Uint8Array(32).fill(1)
+    const ephemeralJwk = ephemeralKey.jwkPublic
+    const messageString = 'Helo there'
+    const message = Uint8Array.from(Buffer.from(messageString))
     const alg = 'ECDH-ES'
     const apu = 'Alice'
     const apv = 'Bob'
-    const enc = KeyAlgs.AesA256Gcm
+    const encAlg = KeyAlgs.AesA256Gcm
 
     const protectedJson = {
       alg,
-      enc,
+      enc: encAlg,
       apu: base64url(apu),
       apv: base64url(apv),
       epk: ephemeralKey,
     }
     const protectedB64 = base64url(JSON.stringify(protectedJson))
 
-    const encryptedMessage = new EcdhEs({ apv, apu, algId: enc }).encryptDirect({
-      encAlg: KeyAlgs.AesA256Gcm,
+    const encryptedMessage = new EcdhEs({ apv, apu, algId: encAlg }).encryptDirect({
+      encAlg,
       ephemeralKey,
       message,
-      receiverKey: bobKey,
+      receiverKey: bobJwk,
       aad: Uint8Array.from(Buffer.from(protectedB64)),
     })
 
-    const [ciphertextAndTag, tag, nonce] = encryptedMessage.parts
+    const { nonce, tag, ciphertext } = encryptedMessage.parts
     console.log(encryptedMessage.parts)
 
-    const messageReceived = new EcdhEs({ algId: enc, apu, apv }).decryptDirect({
-      encAlg: KeyAlgs.AesA256Gcm,
-      ephemeralKey: ephemeralKey,
+    const messageReceived = new EcdhEs({ algId: encAlg, apu, apv }).decryptDirect({
+      encAlg,
+      ephemeralKey: ephemeralJwk,
       receiverKey: bobKey,
-      ciphertext: ciphertextAndTag,
+      ciphertext,
       nonce,
       tag,
       aad: Uint8Array.from(Buffer.from(protectedB64)),
     })
-    console.log(messageReceived)
+    expect(Buffer.from(messageReceived).toString()).toStrictEqual(messageString)
   })
 
   xtest('ecdh 1pu wrapped expected', () => {

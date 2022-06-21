@@ -1,5 +1,5 @@
 import type { KeyAlgs, SigAlgs } from '../enums'
-import type { Jwk } from './Jwk'
+import { Jwk, JwkProps } from './Jwk'
 import type { LocalKeyHandle } from './handles'
 
 import { ariesAskar } from '../ariesAskar'
@@ -72,15 +72,12 @@ export class Key {
     return ariesAskar.keyGetSecretBytes({ localKeyHandle: this.handle })
   }
 
-  public get jwkPublic() {
-    return JSON.parse(ariesAskar.keyGetJwkPublic({ localKeyHandle: this.handle, algorithm: this.algorithm })) as Record<
-      string,
-      unknown
-    >
+  public get jwkPublic(): Jwk {
+    return Jwk.fromString(ariesAskar.keyGetJwkPublic({ localKeyHandle: this.handle, algorithm: this.algorithm }))
   }
 
   public get jwkSecret() {
-    return JSON.parse(ariesAskar.keyGetJwkSecret({ localKeyHandle: this.handle })) as Record<string, unknown>
+    return Jwk.fromString(ariesAskar.keyGetJwkPublic({ localKeyHandle: this.handle, algorithm: this.algorithm }))
   }
 
   public get jwkThumbprint() {
