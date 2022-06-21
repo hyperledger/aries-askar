@@ -48,8 +48,60 @@ describe('jose ecdh', () => {
     expect(Buffer.from(messageReceived).toString()).toStrictEqual(messageString)
   })
 
+  test('ecdh es wrapped', () => {
+    const bobKey = Key.generate(KeyAlgs.X25519)
+    const bobJwk = bobKey.jwkPublic
+    const ephemeralKey = Key.generate(KeyAlgs.X25519)
+    const ephemeralJwk = ephemeralKey.jwkPublic
+    const message = Uint8Array.from(Buffer.from('Hello there'))
+    const alg = 'ECDH-ES+A128KW'
+    const enc = 'A256GCM'
+    const apu = 'Alice'
+    const apv = 'bob'
+
+    const protectedJson = {
+      alg,
+      enc,
+      apu: base64url(apu),
+      apv: base64url(apv),
+      epk: ephemeralJwk,
+    }
+    const protectedString = JSON.stringify(protectedJson)
+    const protectedB64 = Buffer.from(protectedString).toString('base64url')
+    const protectedB64Bytes = Uint8Array.from(Buffer.from(protectedB64))
+
+    const cek = Key.generate(KeyAlgs.AesA256Gcm)
+
+    const encryptedMessage = cek.aeadEncrypt({ message, aad: protectedB64Bytes })
+    const { tag, nonce, ciphertext } = encryptedMessage.parts
+    const encryptedKey = new EcdhEs({ apv, apu, algId: alg }).senderWrapKey({
+      wrapAlg: KeyAlgs.AesA128Kw,
+      ephemeralKey,
+      receiverKey: bobJwk.toKey(),
+      cek,
+    }).ciphertext
+
+    const cekReceiver = new EcdhEs({ algId: alg, apu, apv }).receiverUnwrapKey({
+      wrapAlg: KeyAlgs.AesA128Kw,
+      encAlg: KeyAlgs.AesA256Gcm,
+      ephemeralKey: ephemeralJwk.toKey(),
+      receiverKey: bobKey,
+      ciphertext: encryptedKey,
+    })
+
+    const messageReceiver = cekReceiver.aeadDecrypt({ ciphertext, tag, nonce, aad: protectedB64Bytes })
+
+    expect(messageReceiver).toStrictEqual(message)
+  })
+
+  /**
+   *
+   * These tests have been implemented as a copy from the python wapper.
+   * The test vectores have been taken from:
+   * https://www.ietf.org/archive/id/draft-madden-jose-ecdh-1pu-04.txt
+   */
   test('ecdh 1pu wrapped expected', () => {
-    const ephem = Jwk.fromJson({
+    const ephemeral = Jwk.fromJson({
       crv: 'X25519',
       kty: 'OKP',
       d: 'x8EVZH4Fwk673_mUujnliJoSrLz0zYzzCWp5GUX2fc8',
@@ -71,7 +123,6 @@ describe('jose ecdh', () => {
     }).toKey()
 
     const alg = 'ECDH-1PU+A128KW'
-    const enc = KeyAlgs.AesA256CbcHs512
     const apu = 'Alice'
     const apv = 'Bob and Charlie'
     const base64urlApu = base64url(apu)
@@ -115,11 +166,84 @@ describe('jose ecdh', () => {
     expect(ciphertext).toStrictEqual(expectedCiphertext)
     expect(ccTag).toStrictEqual(expectedCcTag)
 
-    // TODO: this should also accept a string
     const derived = new Ecdh1PU({
       apv: Uint8Array.from(Buffer.from(apv)),
       apu: Uint8Array.from(Buffer.from(apu)),
       algId: Uint8Array.from(Buffer.from(alg)),
+    }).deriveKey({
+      encAlg: KeyAlgs.AesA128Kw,
+      receiverKey: bob,
+      senderKey: alice,
+      ccTag: ccTag,
+      ephemeralKey: ephemeral,
+      receive: false,
     })
+
+    expect(derived.secretBytes).toStrictEqual(Uint8Array.from(Buffer.from('df4c37a0668306a11e3d6b0074b5d8df', 'hex')))
+
+    const encryptedKey = derived.wrapKey({ other: cek }).ciphertextWithTag
+    expect(encryptedKey).toStrictEqual(
+      Uint8Array.from(
+        Buffer.from(
+          'pOMVA9_PtoRe7xXW1139NzzN1UhiFoio8lGto9cf0t8PyU-sjNXH8-LIRLycq8CHJQbDwvQeU1cSl55cQ0hGezJu2N9IY0QN',
+          'base64url'
+        )
+      )
+    )
+
+    const encryptedKey2 = new Ecdh1PU({
+      apv: Uint8Array.from(Buffer.from(apv)),
+      apu: Uint8Array.from(Buffer.from(apu)),
+      algId: Uint8Array.from(Buffer.from(alg)),
+    }).senderWrapKey({
+      wrapAlg: KeyAlgs.AesA128Kw,
+      cek,
+      ephemeralKey: ephemeral,
+      ccTag,
+      senderKey: alice,
+      receiverKey: bob,
+    })
+
+    expect(encryptedKey2.ciphertextWithTag).toStrictEqual(encryptedKey)
+
+    const derivedReceiver = new Ecdh1PU({
+      apv: Uint8Array.from(Buffer.from(apv)),
+      apu: Uint8Array.from(Buffer.from(apu)),
+      algId: Uint8Array.from(Buffer.from(alg)),
+    }).deriveKey({
+      encAlg: KeyAlgs.AesA128Kw,
+      ephemeralKey: ephemeral,
+      senderKey: alice,
+      receiverKey: bob,
+      ccTag,
+      receive: true,
+    })
+
+    const cekReceiver = derivedReceiver.unwrapKey({ alg: KeyAlgs.AesA256CbcHs512, ciphertext: encryptedKey })
+
+    const messageReceiver = cekReceiver.aeadDecrypt({
+      ciphertext,
+      nonce: iv,
+      aad: protectedB64Bytes,
+      tag: ccTag,
+    })
+
+    expect(messageReceiver).toStrictEqual(message)
+
+    const cekReceiver2 = new Ecdh1PU({
+      apv: Uint8Array.from(Buffer.from(apv)),
+      apu: Uint8Array.from(Buffer.from(apu)),
+      algId: Uint8Array.from(Buffer.from(alg)),
+    }).receiverUnwrapKey({
+      wrapAlg: KeyAlgs.AesA128Kw,
+      encAlg: KeyAlgs.AesA256CbcHs512,
+      ephemeralKey: ephemeral,
+      senderKey: alice,
+      receiverKey: bob,
+      ciphertext: encryptedKey,
+      ccTag,
+    })
+
+    expect(cekReceiver2.jwkSecret).toStrictEqual(cek.jwkSecret)
   })
 })
