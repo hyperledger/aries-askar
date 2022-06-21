@@ -94,6 +94,62 @@ describe('jose ecdh', () => {
     expect(messageReceiver).toStrictEqual(message)
   })
 
+  test('ecdh 1pu direct', () => {
+    const aliceKey = Key.generate(KeyAlgs.EcSecp256r1)
+    const aliceJwk = aliceKey.jwkPublic
+    const bobKey = Key.generate(KeyAlgs.EcSecp256r1)
+    const bobJwk = bobKey.jwkPublic
+    const ephemeralKey = Key.generate(KeyAlgs.EcSecp256r1)
+    const ephemeralJwk = ephemeralKey.jwkPublic
+    const message = Uint8Array.from(Buffer.from('Hello there'))
+    const alg = 'ECDH-1PU'
+    const enc = 'A256GCM'
+    const apu = 'Alice'
+    const apv = 'Bob'
+    const protectedJson = {
+      alg,
+      enc,
+      apu: base64url(apu),
+      apv: base64url(apv),
+      epk: ephemeralJwk,
+    }
+    const protectedString = JSON.stringify(protectedJson)
+    const protectedB64 = Buffer.from(protectedString).toString('base64url')
+    const protectedB64Bytes = Uint8Array.from(Buffer.from(protectedB64))
+
+    const encrypedMessage = new Ecdh1PU({
+      algId: Uint8Array.from(Buffer.from(enc)),
+      apu: Uint8Array.from(Buffer.from(apu)),
+      apv: Uint8Array.from(Buffer.from(apv)),
+    }).encryptDirect({
+      encAlg: KeyAlgs.AesA256Gcm,
+      ephemeralKey,
+      message,
+      senderKey: aliceKey,
+      receiverKey: bobJwk.toKey(),
+      aad: protectedB64Bytes,
+    })
+
+    const { nonce, tag, ciphertext } = encrypedMessage.parts
+
+    const messageReceiver = new Ecdh1PU({
+      algId: Uint8Array.from(Buffer.from(enc)),
+      apu: Uint8Array.from(Buffer.from(apu)),
+      apv: Uint8Array.from(Buffer.from(apv)),
+    }).decryptDirect({
+      encAlg: KeyAlgs.AesA256Gcm,
+      ephemeralKey,
+      senderKey: aliceJwk.toKey(),
+      receiverKey: bobKey,
+      ciphertext,
+      nonce,
+      tag,
+      aad: protectedB64Bytes,
+    })
+
+    expect(messageReceiver).toStrictEqual(message)
+  })
+
   /**
    *
    * These tests have been implemented as a copy from the python wapper.
