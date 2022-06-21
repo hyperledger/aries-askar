@@ -6,8 +6,6 @@
 #include <stdint.h>
 #include <stdlib.h>
 
-#define PAGE_SIZE 32
-
 typedef size_t ScanHandle;
 typedef size_t StoreHandle;
 typedef size_t SessionHandle;
