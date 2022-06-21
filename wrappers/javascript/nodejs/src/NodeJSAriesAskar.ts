@@ -365,22 +365,22 @@ export class NodeJSAriesAskar implements AriesAskar {
   }
 
   public keyCryptoBox(options: KeyCryptoBoxOptions): Uint8Array {
-    const { nonce, message, recipKey, senderKey } = serializeArguments(options)
+    const { nonce, message, recipientKey, senderKey } = serializeArguments(options)
     const ret = allocateSecretBuffer()
 
     // @ts-ignore
-    nativeAriesAskar.askar_key_crypto_box(recipKey, senderKey, message, nonce, ret)
+    nativeAriesAskar.askar_key_crypto_box(recipientKey, senderKey, message, nonce, ret)
     handleError()
 
     return new Uint8Array(secretBufferToBuffer(ret.deref()))
   }
 
   public keyCryptoBoxOpen(options: KeyCryptoBoxOpenOptions): Uint8Array {
-    const { nonce, message, senderKey, recipKey } = serializeArguments(options)
+    const { nonce, message, senderKey, recipientKey } = serializeArguments(options)
     const ret = allocateSecretBuffer()
 
     // @ts-ignore
-    nativeAriesAskar.askar_key_crypto_box_open(recipKey, senderKey, message, nonce, ret)
+    nativeAriesAskar.askar_key_crypto_box_open(recipientKey, senderKey, message, nonce, ret)
     handleError()
 
     return new Uint8Array(secretBufferToBuffer(ret.deref()))
@@ -419,24 +419,35 @@ export class NodeJSAriesAskar implements AriesAskar {
   }
 
   public keyDeriveEcdh1pu(options: KeyDeriveEcdh1puOptions): LocalKeyHandle {
-    const { senderKey, recipKey, alg, algId, apu, apv, ccTag, ephemKey, receive } = serializeArguments(options)
+    const { senderKey, recipientKey, alg, algId, apu, apv, ccTag, ephemeralKey, receive } = serializeArguments(options)
 
     const ret = allocatePointer()
 
-    // @ts-ignore
-    nativeAriesAskar.askar_key_derive_ecdh_1pu(alg, ephemKey, senderKey, recipKey, algId, apu, apv, ccTag, receive, ret)
+    nativeAriesAskar.askar_key_derive_ecdh_1pu(
+      alg,
+      // @ts-ignore
+      ephemeralKey,
+      senderKey,
+      recipientKey,
+      algId,
+      apu,
+      apv,
+      ccTag,
+      receive,
+      ret
+    )
     handleError()
 
     return new LocalKeyHandle(ret.deref())
   }
 
   public keyDeriveEcdhEs(options: KeyDeriveEcdhEsOptions): LocalKeyHandle {
-    const { receive, apv, apu, algId, recipKey, ephemKey, alg } = serializeArguments(options)
+    const { receive, apv, apu, algId, recipientKey, ephemeralKey, alg } = serializeArguments(options)
 
     const ret = allocatePointer()
 
     // @ts-ignore
-    nativeAriesAskar.askar_key_derive_ecdh_es(alg, ephemKey, recipKey, algId, apu, apv, receive, ret)
+    nativeAriesAskar.askar_key_derive_ecdh_es(alg, ephemeralKey, recipientKey, algId, apu, apv, receive, ret)
     handleError()
 
     return new LocalKeyHandle(ret.deref())

@@ -9,8 +9,9 @@ describe('CryptoBox', () => {
     const x25519Key = Key.generate(KeyAlgs.X25519)
 
     const message = Uint8Array.from(Buffer.from('foobar'))
-    const sealed = CryptoBox.seal({ receiverKey: x25519Key, message })
-    const opened = CryptoBox.sealOpen({ receiverKey: x25519Key, ciphertext: sealed })
+    const sealed = CryptoBox.seal({ recipientKey: x25519Key, message })
+
+    const opened = CryptoBox.sealOpen({ recipientKey: x25519Key, ciphertext: sealed })
     expect(opened).toStrictEqual(message)
   })
 })
