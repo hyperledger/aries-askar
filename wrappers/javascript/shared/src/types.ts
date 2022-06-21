@@ -79,7 +79,7 @@ export class EncryptedBuffer {
   }
 
   public get parts() {
-    return [this.ciphertext, this.tag, this.nonce]
+    return [this.ciphertextAndTag, this.tag, this.nonce]
   }
 }
 

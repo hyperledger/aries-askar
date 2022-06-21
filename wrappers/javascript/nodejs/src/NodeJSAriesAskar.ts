@@ -9,16 +9,9 @@
 /* eslint-disable @typescript-eslint/ban-ts-comment */
 /* eslint-disable no-console */
 
-import type {
-  NativeCallback,
-  NativeCallbackWithResponse,
-  NativeLogCallback,
-  SecretBufferType,
-  AeadParamsType,
-} from './ffi'
+import type { NativeCallback, NativeCallbackWithResponse, NativeLogCallback, AeadParamsType } from './ffi'
 import type {
   AriesAskar,
-  BufferFreeOptions,
   EntryListCountOptions,
   EntryListFreeOptions,
   EntryListGetCategoryOptions,
@@ -98,7 +91,6 @@ import {
   StoreHandle,
   LocalKeyHandle,
   AeadParams,
-  SecretBuffer,
   SessionHandle,
   KeyEntryListHandle,
 } from 'aries-askar-shared'
