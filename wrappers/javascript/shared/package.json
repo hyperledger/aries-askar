@@ -19,6 +19,7 @@
     "build"
   ],
   "scripts": {
+    "lint": "eslint .",
     "check-types": "tsc --noEmit -p tsconfig.build.json",
     "check-format": "yarn prettier --check",
     "format": "yarn prettier --write",

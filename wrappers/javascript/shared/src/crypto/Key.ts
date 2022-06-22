@@ -77,7 +77,7 @@ export class Key {
   }
 
   public get jwkSecret() {
-    return Jwk.fromString(ariesAskar.keyGetJwkPublic({ localKeyHandle: this.handle, algorithm: this.algorithm }))
+    return Jwk.fromString(ariesAskar.keyGetJwkSecret({ localKeyHandle: this.handle }))
   }
 
   public get jwkThumbprint() {
@@ -113,6 +113,6 @@ export class Key {
   }
 
   public unwrapKey(options: { alg: KeyAlgs; tag?: Uint8Array; ciphertext: Uint8Array; nonce?: Uint8Array }) {
-    return ariesAskar.keyUnwrapKey({ localKeyHandle: this.handle, ...options })
+    return new Key(ariesAskar.keyUnwrapKey({ localKeyHandle: this.handle, ...options }))
   }
 }

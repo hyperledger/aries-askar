@@ -6,7 +6,6 @@ import { Key } from './Key'
 
 // Tests
 export class Ecdh1PU {
-  // TODO: what type
   private algId: Uint8Array
   private apu: Uint8Array
   private apv: Uint8Array
@@ -17,17 +16,17 @@ export class Ecdh1PU {
     this.apv = apv
   }
 
-  private deriveKey({
+  public deriveKey({
     encAlg,
     ephemeralKey,
-    receiverKey,
+    recipientKey,
     senderKey,
     receive,
     ccTag,
   }: {
     encAlg: KeyAlgs
     ephemeralKey: Key
-    receiverKey: Key
+    recipientKey: Key
     senderKey: Key
     receive: boolean
     ccTag?: Uint8Array
@@ -39,8 +38,8 @@ export class Ecdh1PU {
         apv: this.apv,
         apu: this.apu,
         alg: encAlg,
-        ephemKey: ephemeralKey.handle,
-        recipKey: receiverKey.handle,
+        ephemeralKey: ephemeralKey.handle,
+        recipientKey: recipientKey.handle,
         senderKey: senderKey.handle,
         ccTag,
       })
@@ -49,7 +48,7 @@ export class Ecdh1PU {
 
   public encryptDirect({
     encAlg,
-    receiverKey,
+    recipientKey,
     ephemeralKey,
     senderKey,
     message,
@@ -58,20 +57,20 @@ export class Ecdh1PU {
   }: {
     encAlg: KeyAlgs
     ephemeralKey: Key
-    receiverKey: Key
+    recipientKey: Key
     senderKey: Key
     message: Uint8Array
     aad?: Uint8Array
     nonce?: Uint8Array
   }) {
-    const derived = this.deriveKey({ encAlg, ephemeralKey, receiverKey, senderKey, receive: false })
+    const derived = this.deriveKey({ encAlg, ephemeralKey, recipientKey, senderKey, receive: false })
     return derived.aeadEncrypt({ message, aad, nonce })
   }
 
   public decryptDirect({
     nonce,
     encAlg,
-    receiverKey,
+    recipientKey,
     ephemeralKey,
     senderKey,
     ciphertext,
@@ -80,42 +79,49 @@ export class Ecdh1PU {
   }: {
     encAlg: KeyAlgs
     ephemeralKey: Key
-    receiverKey: Key
+    recipientKey: Key
     senderKey: Key
     ciphertext: Uint8Array
     nonce: Uint8Array
     tag: Uint8Array
     aad?: Uint8Array
   }) {
-    const derived = this.deriveKey({ encAlg, ephemeralKey, receiverKey, senderKey, receive: true })
+    const derived = this.deriveKey({ encAlg, ephemeralKey, recipientKey, senderKey, receive: true })
     return derived.aeadDecrypt({ tag, nonce, ciphertext, aad })
   }
 
   public senderWrapKey({
     wrapAlg,
     ephemeralKey,
-    receiverKey,
+    recipientKey,
     senderKey,
     cek,
     ccTag,
   }: {
     wrapAlg: KeyAlgs
     ephemeralKey: Key
-    receiverKey: Key
+    recipientKey: Key
     senderKey: Key
     cek: Key
     ccTag: Uint8Array
   }) {
-    const derived = this.deriveKey({ encAlg: wrapAlg, ephemeralKey, receiverKey, senderKey, receive: false, ccTag })
+    const derived = this.deriveKey({
+      encAlg: wrapAlg,
+      ephemeralKey,
+      recipientKey,
+      senderKey,
+      receive: false,
+      ccTag,
+    })
     return derived.wrapKey({ other: cek })
   }
 
-  public receiverWrapKey({
+  public receiverUnwrapKey({
     wrapAlg,
-    receiverKey,
+    encAlg,
+    recipientKey,
     ephemeralKey,
     senderKey,
-    encAlg,
     ciphertext,
     nonce,
     tag,
@@ -124,14 +130,21 @@ export class Ecdh1PU {
     wrapAlg: KeyAlgs
     encAlg: KeyAlgs
     ephemeralKey: Key
-    receiverKey: Key
+    recipientKey: Key
     senderKey: Key
     ciphertext: Uint8Array
     nonce?: Uint8Array
     tag?: Uint8Array
     ccTag: Uint8Array
   }) {
-    const derived = this.deriveKey({ encAlg: wrapAlg, ephemeralKey, receiverKey, receive: true, senderKey, ccTag })
-    derived.unwrapKey({ tag, nonce, ciphertext, alg: encAlg })
+    const derived = this.deriveKey({
+      encAlg: wrapAlg,
+      ephemeralKey,
+      recipientKey,
+      receive: true,
+      senderKey,
+      ccTag,
+    })
+    return derived.unwrapKey({ tag, nonce, ciphertext, alg: encAlg })
   }
 }

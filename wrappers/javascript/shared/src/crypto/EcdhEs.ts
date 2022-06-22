@@ -7,12 +7,11 @@ import { Jwk } from './Jwk'
 
 // Tests
 export class EcdhEs {
-  // TODO: what type
-  private algId: string
-  private apu: string
-  private apv: string
+  private algId: Uint8Array
+  private apu: Uint8Array
+  private apv: Uint8Array
 
-  public constructor({ apv, apu, algId }: { algId: string; apu: string; apv: string }) {
+  public constructor({ apv, apu, algId }: { algId: Uint8Array; apu: Uint8Array; apv: Uint8Array }) {
     this.algId = algId
     this.apu = apu
     this.apv = apv
@@ -21,36 +20,30 @@ export class EcdhEs {
   private deriveKey({
     encAlg,
     ephemeralKey,
-    receiverKey,
+    recipientKey,
     receive,
   }: {
     encAlg: KeyAlgs
     ephemeralKey: Key
-    receiverKey: Key
+    recipientKey: Key
     receive: boolean
   }): Key {
     return new Key(
       ariesAskar.keyDeriveEcdhEs({
-        // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-        // @ts-ignore
         algId: this.algId,
         receive,
-        // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-        // @ts-ignore
         apv: this.apv,
-        // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-        // @ts-ignore
         apu: this.apu,
         alg: encAlg,
-        ephemKey: ephemeralKey.handle,
-        recipKey: receiverKey.handle,
+        ephemeralKey: ephemeralKey.handle,
+        recipientKey: recipientKey.handle,
       })
     )
   }
 
   public encryptDirect({
     encAlg,
-    receiverKey,
+    recipientKey,
     ephemeralKey,
     message,
     aad,
@@ -58,21 +51,21 @@ export class EcdhEs {
   }: {
     encAlg: KeyAlgs
     ephemeralKey: Key | Jwk
-    receiverKey: Key | Jwk
+    recipientKey: Key | Jwk
     message: Uint8Array
     aad?: Uint8Array
     nonce?: Uint8Array
   }) {
     const eKey = ephemeralKey instanceof Jwk ? ephemeralKey.toKey() : ephemeralKey
-    const rKey = receiverKey instanceof Jwk ? receiverKey.toKey() : receiverKey
-    const derived = this.deriveKey({ encAlg, ephemeralKey: eKey, receiverKey: rKey, receive: false })
+    const rKey = recipientKey instanceof Jwk ? recipientKey.toKey() : recipientKey
+    const derived = this.deriveKey({ encAlg, ephemeralKey: eKey, recipientKey: rKey, receive: false })
     return derived.aeadEncrypt({ message, aad, nonce })
   }
 
   public decryptDirect({
     nonce,
     encAlg,
-    receiverKey,
+    recipientKey,
     ciphertext,
     ephemeralKey,
     tag,
@@ -80,35 +73,35 @@ export class EcdhEs {
   }: {
     encAlg: KeyAlgs
     ephemeralKey: Key | Jwk
-    receiverKey: Key | Jwk
+    recipientKey: Key | Jwk
     ciphertext: Uint8Array
     nonce: Uint8Array
     tag: Uint8Array
     aad?: Uint8Array
   }) {
     const eKey = ephemeralKey instanceof Jwk ? ephemeralKey.toKey() : ephemeralKey
-    const rKey = receiverKey instanceof Jwk ? receiverKey.toKey() : receiverKey
-    const derived = this.deriveKey({ encAlg, ephemeralKey: eKey, receiverKey: rKey, receive: true })
+    const rKey = recipientKey instanceof Jwk ? recipientKey.toKey() : recipientKey
+    const derived = this.deriveKey({ encAlg, ephemeralKey: eKey, recipientKey: rKey, receive: true })
     return derived.aeadDecrypt({ tag, nonce, ciphertext, aad })
   }
 
   public senderWrapKey({
     wrapAlg,
     ephemeralKey,
-    receiverKey,
+    recipientKey,
     cek,
   }: {
     wrapAlg: KeyAlgs
     ephemeralKey: Key
-    receiverKey: Key
+    recipientKey: Key
     cek: Key
   }) {
-    const derived = this.deriveKey({ encAlg: wrapAlg, ephemeralKey, receiverKey, receive: false })
+    const derived = this.deriveKey({ encAlg: wrapAlg, ephemeralKey, recipientKey, receive: false })
     return derived.wrapKey({ other: cek })
   }
 
-  public receiverWrapKey({
-    receiverKey,
+  public receiverUnwrapKey({
+    recipientKey,
     wrapAlg,
     ephemeralKey,
     encAlg,
@@ -119,12 +112,12 @@ export class EcdhEs {
     wrapAlg: KeyAlgs
     encAlg: KeyAlgs
     ephemeralKey: Key
-    receiverKey: Key
+    recipientKey: Key
     ciphertext: Uint8Array
     nonce?: Uint8Array
     tag?: Uint8Array
   }) {
-    const derived = this.deriveKey({ encAlg: wrapAlg, ephemeralKey, receiverKey, receive: true })
-    derived.unwrapKey({ tag, nonce, ciphertext, alg: encAlg })
+    const derived = this.deriveKey({ encAlg: wrapAlg, ephemeralKey, recipientKey, receive: true })
+    return derived.unwrapKey({ tag, nonce, ciphertext, alg: encAlg })
   }
 }

@@ -79,12 +79,10 @@ export class EncryptedBuffer {
   }
 
   public get parts() {
-    const p1 = this.tagPos
-    const p2 = this.noncePos
     return {
-      ciphertext: this.buffer.slice(0, p1),
-      tag: this.buffer.slice(p1, p2),
-      nonce: this.buffer.slice(p2),
+      ciphertext: this.ciphertext,
+      tag: this.tag,
+      nonce: this.nonce,
     }
   }
 }

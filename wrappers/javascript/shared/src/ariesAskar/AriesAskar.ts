@@ -42,13 +42,13 @@ export type KeyAeadGetParamsOptions = { localKeyHandle: Uint8Array }
 export type KeyAeadRandomNonceOptions = { localKeyHandle: Uint8Array }
 export type KeyConvertOptions = { localKeyHandle: Uint8Array; alg: KeyAlgs }
 export type KeyCryptoBoxOptions = {
-  recipKey: Uint8Array
+  recipientKey: Uint8Array
   senderKey: Uint8Array
   message: Uint8Array
   nonce: Uint8Array
 }
 export type KeyCryptoBoxOpenOptions = {
-  recipKey: Uint8Array
+  recipientKey: Uint8Array
   senderKey: Uint8Array
   message: Uint8Array
   nonce: Uint8Array
@@ -57,9 +57,9 @@ export type KeyCryptoBoxSealOptions = { localKeyHandle: Uint8Array; message: Uin
 export type KeyCryptoBoxSealOpenOptions = { localKeyHandle: Uint8Array; ciphertext: Uint8Array }
 export type KeyDeriveEcdh1puOptions = {
   alg: KeyAlgs
-  ephemKey: Uint8Array
+  ephemeralKey: Uint8Array
   senderKey: Uint8Array
-  recipKey: Uint8Array
+  recipientKey: Uint8Array
   algId: Uint8Array
   apu: Uint8Array
   apv: Uint8Array
@@ -68,8 +68,8 @@ export type KeyDeriveEcdh1puOptions = {
 }
 export type KeyDeriveEcdhEsOptions = {
   alg: KeyAlgs
-  ephemKey: Uint8Array
-  recipKey: Uint8Array
+  ephemeralKey: Uint8Array
+  recipientKey: Uint8Array
   algId: Uint8Array
   apu: Uint8Array
   apv: Uint8Array

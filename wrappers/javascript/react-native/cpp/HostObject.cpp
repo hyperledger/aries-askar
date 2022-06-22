@@ -8,7 +8,7 @@ TurboModuleHostObject::TurboModuleHostObject(jsi::Runtime &rt) { return; }
 FunctionMap TurboModuleHostObject::functionMapping(jsi::Runtime &rt) {
   FunctionMap fMap;
   // TODO: add functions
-  fMap.insert(std::make_tuple("version", &ariesAskar::version));
+  fMap.insert(std::make_tuple("version", &ffi::version));
   return fMap;
 }
 

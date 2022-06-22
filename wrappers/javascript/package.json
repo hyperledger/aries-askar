@@ -22,7 +22,7 @@
     "prettier": "prettier --ignore-path .gitignore '**/*.+(js|json|ts|md|yml|yaml)'",
     "format": "yarn prettier --write",
     "check-format": "yarn prettier --list-different",
-    "lint": "eslint .",
+    "lint": "yarn workspaces run lint",
     "validate": "yarn lint && yarn check-types && yarn check-format",
     "reset": "find . -type dir -name node_modules | xargs rm -rf && rm -rf yarn.lock",
     "example": "yarn --cwd  react-native-example",
