@@ -65,7 +65,6 @@ jsi::Value storeProvision(jsi::Runtime &rt, jsi::Object options) {
                            recreate,
                            turboModuleUtility::callbackWithResponse, 
                            CallbackId(state));
-
     turboModuleUtility::handleError(rt, code);
     
 
@@ -77,11 +76,90 @@ jsi::Value storeGenerateRawKey(jsi::Runtime &rt, jsi::Object options) {
         turboModuleUtility::jsiToValue<ByteBuffer>(rt, options, "seed", true);
     
     const char* out;
-    askar_store_generate_raw_key(seed, &out);
+    ErrorCode code = askar_store_generate_raw_key(seed, &out);
+    turboModuleUtility::handleError(rt, code);
     
     return jsi::String::createFromAscii(rt, out);
 }
 
+jsi::Value storeClose(jsi::Runtime &rt, jsi::Object options) {
+  int64_t handle = 
+        turboModuleUtility::jsiToValue<int64_t>(rt, options, "storeHandle");
 
+  jsi::Function cb = options.getPropertyAsFunction(rt, "cb");
+  State *state = new State(&cb);
+  state->rt = &rt;
+
+  ErrorCode code = askar_store_close(handle, turboModuleUtility::callback, CallbackId(state));
+    turboModuleUtility::handleError(rt, code);
+
+  return jsi::Value::null();
+}
+
+jsi::Value storeCreateProfile(jsi::Runtime &rt, jsi::Object options) {
+  int64_t handle = 
+        turboModuleUtility::jsiToValue<int64_t>(rt, options, "storeHandle");
+  std::string profile = 
+        turboModuleUtility::jsiToValue<std::string>(rt, options, "profile");
+
+  jsi::Function cb = options.getPropertyAsFunction(rt, "cb");
+  State *state = new State(&cb);
+  state->rt = &rt;
+
+  ErrorCode code = askar_store_create_profile(handle, profile.c_str(), turboModuleUtility::callbackWithResponse, CallbackId(state));
+    turboModuleUtility::handleError(rt, code);
+
+  return jsi::Value::null();
+}
+
+jsi::Value storeGetProfileName(jsi::Runtime &rt, jsi::Object options) {
+  int64_t handle = 
+        turboModuleUtility::jsiToValue<int64_t>(rt, options, "storeHandle");
+
+  jsi::Function cb = options.getPropertyAsFunction(rt, "cb");
+  State *state = new State(&cb);
+  state->rt = &rt;
+
+  ErrorCode code = askar_store_get_profile_name(handle, turboModuleUtility::callbackWithResponse, CallbackId(state));
+    turboModuleUtility::handleError(rt, code);
+
+  return jsi::Value::null();
+}
+
+jsi::Value storeRekey(jsi::Runtime &rt, jsi::Object options) {
+  int64_t handle = 
+        turboModuleUtility::jsiToValue<int64_t>(rt, options, "storeHandle");
+  std::string keyMethod = 
+        turboModuleUtility::jsiToValue<std::string>(rt, options, "keyMethod");
+  std::string passKey = 
+        turboModuleUtility::jsiToValue<std::string>(rt, options, "passKey");
+
+  jsi::Function cb = options.getPropertyAsFunction(rt, "cb");
+  State *state = new State(&cb);
+  state->rt = &rt;
+
+  ErrorCode code = askar_store_get_profile_name(StoreHandle(handle), turboModuleUtility::callbackWithResponse, CallbackId(state));
+    turboModuleUtility::handleError(rt, code);
+
+  return jsi::Value::null();
+}
+
+jsi::Value storeRemove(jsi::Runtime &rt, jsi::Object options) {
+  std::string specUri = 
+        turboModuleUtility::jsiToValue<std::string>(rt, options, "specUri");
+
+  jsi::Function cb = options.getPropertyAsFunction(rt, "cb");
+  State *state = new State(&cb);
+  state->rt = &rt;
+
+  ErrorCode code = askar_store_remove(specUri.c_str(), turboModuleUtility::callbackWithResponse, CallbackId(state));
+    turboModuleUtility::handleError(rt, code);
+
+  return jsi::Value::null();
+}
+
+jsi::Value storeRemoveProfile(jsi::Runtime &rt, jsi::Object options) {
+  return jsi::Value::null();
+}
 
 }

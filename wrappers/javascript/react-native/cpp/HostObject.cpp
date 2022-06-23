@@ -13,8 +13,18 @@ FunctionMap TurboModuleHostObject::functionMapping(jsi::Runtime &rt) {
   fMap.insert(std::make_tuple("getCurrentError", &ariesAskar::getCurrentError));
   fMap.insert(std::make_tuple("storeGenerateRawKey", &ariesAskar::storeGenerateRawKey));
   fMap.insert(std::make_tuple("storeProvision", &ariesAskar::storeProvision));
+  fMap.insert(std::make_tuple("storeOpen", &ariesAskar::storeOpen));
+  fMap.insert(std::make_tuple("storeClose", &ariesAskar::storeClose));
+  fMap.insert(std::make_tuple("storeCreateProfile", &ariesAskar::storeCreateProfile));
+  fMap.insert(std::make_tuple("storeGenerateRawKey", &ariesAskar::storeGenerateRawKey));
+  fMap.insert(std::make_tuple("storeGetProfileName", &ariesAskar::storeGetProfileName));
+  fMap.insert(std::make_tuple("storeProvision", &ariesAskar::storeProvision));
+  fMap.insert(std::make_tuple("storeRekey", &ariesAskar::storeRekey));
+  fMap.insert(std::make_tuple("storeRemove", &ariesAskar::storeRemove));
+  fMap.insert(std::make_tuple("storeRemoveProfile", &ariesAskar::storeRemoveProfile));
   return fMap;
 }
+
 
 jsi::Function TurboModuleHostObject::call(jsi::Runtime &rt, const char *name, Cb cb) {
   return jsi::Function::createFromHostFunction(

@@ -1,25 +1,35 @@
 import React from 'react';
 import {SafeAreaView} from 'react-native';
 import {ReactNativeAriesAskar} from 'aries-askar-react-native';
-import {registerAriesAskar, ariesAskar} from 'aries-askar-shared';
+import {registerAriesAskar, ariesAskar, StoreHandle} from 'aries-askar-shared';
 
-const func = async () => {
+const tryTest = async (cb: () => Promise<any>) => {
+  try {
+    await cb();
+  } catch (e) {
+    console.error(e);
+  }
+};
+
+const startAndCloseStore = async () => {
   const key = ariesAskar.storeGenerateRawKey({
     seed: new Uint8Array(32).fill(1),
   });
-  const foo = await ariesAskar.storeProvision({
+  const handle = await ariesAskar.storeProvision({
     specUri: 'sqlite://:memory:',
     keyMethod: 'raw',
     passKey: key,
     recreate: true,
   });
-  return foo;
+  const storeHandle = new StoreHandle(handle);
+
+  await ariesAskar.storeClose({storeHandle});
 };
 
 export const App = () => {
   registerAriesAskar({askar: new ReactNativeAriesAskar()});
 
-  func().then(console.log).catch(console.error);
+  tryTest(startAndCloseStore);
 
   return <SafeAreaView />;
 };

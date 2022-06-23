@@ -52,6 +52,27 @@ void callbackWithResponse(CallbackId result, ErrorCode code, StoreHandle respons
 }
 
 template <>
+void callbackWithResponse(CallbackId result, ErrorCode code, const char* response) {
+  State *_state = reinterpret_cast<State *>(result);
+  State *state = static_cast<State *>(_state);
+  jsi::Function *cb = &state->cb;
+  jsi::Runtime *rt = reinterpret_cast<jsi::Runtime *>(state->rt);
+    jsi::String serializedResponse = jsi::String::createFromAscii(*rt, response);
+  cb->call(*rt, int(code) , serializedResponse);
+  delete state;
+}
+
+template <>
+void callbackWithResponse(CallbackId result, ErrorCode code, int8_t response) {
+  State *_state = reinterpret_cast<State *>(result);
+  State *state = static_cast<State *>(_state);
+  jsi::Function *cb = &state->cb;
+  jsi::Runtime *rt = reinterpret_cast<jsi::Runtime *>(state->rt);
+  cb->call(*rt, int(code) , int(response));
+  delete state;
+}
+
+template <>
 uint8_t jsiToValue(jsi::Runtime &rt, jsi::Object &options, const char *name,
                    bool optional) {
   jsi::Value value = options.getProperty(rt, name);

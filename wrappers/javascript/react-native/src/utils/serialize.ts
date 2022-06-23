@@ -1,7 +1,16 @@
+import { StoreHandle } from 'aries-askar-shared'
+
 export type Callback = (err: number) => void
 export type CallbackWithResponse = (err: number, response: string) => void
 
-type Argument = Record<string, unknown> | Array<unknown> | Date | Uint8Array | SerializedArgument | boolean
+type Argument =
+  | Record<string, unknown>
+  | Array<unknown>
+  | Date
+  | Uint8Array
+  | SerializedArgument
+  | boolean
+  | StoreHandle
 
 type SerializedArgument = string | number | Callback | CallbackWithResponse | ArrayBuffer | boolean
 
@@ -36,6 +45,8 @@ export type SerializedOptions<Type> = {
     ? ArrayBuffer
     : Type[Property] extends Uint8Array | undefined
     ? ArrayBuffer
+    : Type[Property] extends StoreHandle
+    ? number
     : unknown
 }
 
@@ -54,6 +65,8 @@ const serialize = (arg: Argument): SerializedArgument => {
         return arg.valueOf()
       } else if (arg instanceof Uint8Array) {
         return arg.buffer
+      } else if (arg instanceof StoreHandle) {
+        return arg.handle
       } else {
         return JSON.stringify(arg)
       }
