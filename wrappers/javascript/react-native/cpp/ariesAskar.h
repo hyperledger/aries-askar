@@ -9,10 +9,10 @@ using namespace facebook;
 
 namespace ariesAskar {
 
-std::string version();
+jsi::Value version(jsi::Runtime &rt, jsi::Object options);
+jsi::Value getCurrentError(jsi::Runtime &rt, jsi::Object options);
 // jsi::Value bufferfree(jsi::Runtime &rt, jsi::Object options);
-// jsi::Value getCurrentError(jsi::Runtime &rt, jsi::Object options);
-// 
+
 // jsi::Value setCustomLogger(jsi::Runtime &rt, jsi::Object options);
 // jsi::Value setDefaultLogger(jsi::Runtime &rt, jsi::Object options);
 // jsi::Value setMaxLogLevel(jsi::Runtime &rt, jsi::Object options);
@@ -24,26 +24,25 @@ std::string version();
 // jsi::Value entrylistgetname(jsi::Runtime &rt, jsi::Object options);
 // jsi::Value entrylistgettags(jsi::Runtime &rt, jsi::Object options);
 // jsi::Value entrylistgetvalue(jsi::Runtime &rt, jsi::Object options);
-// 
-// 
+ 
 // jsi::Value keyAeadDecrypt(jsi::Runtime &rt, jsi::Object options);
 // jsi::Value keyAeadEncrypt(jsi::Runtime &rt, jsi::Object options);
 // jsi::Value keyAeadGetPadding(jsi::Runtime &rt, jsi::Object options);
 // jsi::Value keyAeadGetParams(jsi::Runtime &rt, jsi::Object options);
 // jsi::Value keyAeadRandomNonce(jsi::Runtime &rt, jsi::Object options);
-// 
+ 
 // jsi::Value keyConvert(jsi::Runtime &rt, jsi::Object options);
 // jsi::Value keyFree(jsi::Runtime &rt, jsi::Object options);
-// 
+ 
 // jsi::Value keyCryptoBox(jsi::Runtime &rt, jsi::Object options);
 // jsi::Value keyCryptoBoxOpen(jsi::Runtime &rt, jsi::Object options);
 // jsi::Value keyCryptoBoxRandomNonce(jsi::Runtime &rt, jsi::Object options);
 // jsi::Value keyCryptoBoxSeal(jsi::Runtime &rt, jsi::Object options);
 // jsi::Value keyCryptoBoxSealOpen(jsi::Runtime &rt, jsi::Object options);
-// 
+ 
 // jsi::Value keyDeriveEcdh1Pu(jsi::Runtime &rt, jsi::Object options);
 // jsi::Value keyDeriveEcdhEs(jsi::Runtime &rt, jsi::Object options);
-// 
+ 
 // jsi::Value keyEntryListCount(jsi::Runtime &rt, jsi::Object options);
 // jsi::Value keyEntryListFree(jsi::Runtime &rt, jsi::Object options);
 // jsi::Value keyEntryListGetAlgorithm(jsi::Runtime &rt, jsi::Object options);
@@ -51,8 +50,8 @@ std::string version();
 // jsi::Value keyEntryListGetName(jsi::Runtime &rt, jsi::Object options);
 // jsi::Value keyEntryListGetTags(jsi::Runtime &rt, jsi::Object options);
 // jsi::Value keyEntryListLoadLocal(jsi::Runtime &rt, jsi::Object options);
-// 
-// 
+ 
+ 
 // jsi::Value keyFromJwk(jsi::Runtime &rt, jsi::Object options);
 // jsi::Value keyFromKeyExchange(jsi::Runtime &rt, jsi::Object options);
 // jsi::Value keyFromPublicBytes(jsi::Runtime &rt, jsi::Object options);
@@ -70,11 +69,11 @@ std::string version();
 // jsi::Value keyUnwrapKey(jsi::Runtime &rt, jsi::Object options);
 // jsi::Value keyVerifySignature(jsi::Runtime &rt, jsi::Object options);
 // jsi::Value keyWrapKey(jsi::Runtime &rt, jsi::Object options);
-// 
+ 
 // jsi::Value scanFree(jsi::Runtime &rt, jsi::Object options);
 // jsi::Value scanNext(jsi::Runtime &rt, jsi::Object options);
 // jsi::Value scanStart(jsi::Runtime &rt, jsi::Object options);
-// 
+ 
 // jsi::Value sessionClose(jsi::Runtime &rt, jsi::Object options);
 // jsi::Value sessionCount(jsi::Runtime &rt, jsi::Object options);
 // jsi::Value sessionFetch(jsi::Runtime &rt, jsi::Object options);
@@ -87,14 +86,18 @@ std::string version();
 // jsi::Value sessionStart(jsi::Runtime &rt, jsi::Object options);
 // jsi::Value sessionUpdate(jsi::Runtime &rt, jsi::Object options);
 // jsi::Value sessionUpdateKey(jsi::Runtime &rt, jsi::Object options);
-// 
+
+jsi::Value storeOpen(jsi::Runtime &rt, jsi::Object options);
 // jsi::Value storeClose(jsi::Runtime &rt, jsi::Object options);
 // jsi::Value storeCreateProfile(jsi::Runtime &rt, jsi::Object options);
-// jsi::Value storeGenerateRawKey(jsi::Runtime &rt, jsi::Object options);
+jsi::Value storeGenerateRawKey(jsi::Runtime &rt, jsi::Object options);
 // jsi::Value storeGetProfileName(jsi::Runtime &rt, jsi::Object options);
-// jsi::Value storeProvision(jsi::Runtime &rt, jsi::Object options);
+jsi::Value storeProvision(jsi::Runtime &rt, jsi::Object options);
 // jsi::Value storeRekey(jsi::Runtime &rt, jsi::Object options);
 // jsi::Value storeRemove(jsi::Runtime &rt, jsi::Object options);
 // jsi::Value storeRemoveProfile(jsi::Runtime &rt, jsi::Object options);
+
+
+
 
 } // namespace ariesAskar

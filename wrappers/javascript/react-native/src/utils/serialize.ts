@@ -1,9 +1,9 @@
 export type Callback = (err: number) => void
 export type CallbackWithResponse = (err: number, response: string) => void
 
-type Argument = Record<string, unknown> | Array<unknown> | Date | Uint8Array | SerializedArgument
+type Argument = Record<string, unknown> | Array<unknown> | Date | Uint8Array | SerializedArgument | boolean
 
-type SerializedArgument = string | number | Callback | CallbackWithResponse | ArrayBuffer
+type SerializedArgument = string | number | Callback | CallbackWithResponse | ArrayBuffer | boolean
 
 type SerializedArguments = Record<string, SerializedArgument>
 
@@ -34,6 +34,8 @@ export type SerializedOptions<Type> = {
     ? CallbackWithResponse
     : Type[Property] extends Uint8Array
     ? ArrayBuffer
+    : Type[Property] extends Uint8Array | undefined
+    ? ArrayBuffer
     : unknown
 }
 
@@ -41,6 +43,8 @@ const serialize = (arg: Argument): SerializedArgument => {
   switch (typeof arg) {
     case 'string':
       return arg
+    case 'boolean':
+      return Number(arg)
     case 'number':
       return arg
     case 'function':
@@ -54,14 +58,17 @@ const serialize = (arg: Argument): SerializedArgument => {
         return JSON.stringify(arg)
       }
     default:
-      throw new Error('could not serialize value')
+      // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
+      throw new Error(`Could not serialize value ${arg}`)
   }
 }
 
-const serializeArguments = (args: Record<string, Argument>) => {
+const serializeArguments = <T extends Record<string, Argument> = Record<string, Argument>>(
+  args: T
+): SerializedOptions<T> => {
   const retVal: SerializedArguments = {}
   Object.entries(args).forEach(([key, val]) => (retVal[key] = serialize(val)))
-  return retVal
+  return retVal as SerializedOptions<T>
 }
 
 export { serializeArguments }

@@ -81,14 +81,47 @@ import type {
   StoreRemoveProfileOptions,
 } from 'aries-askar-shared'
 
-import { ariesAskar } from 'aries-askar-shared'
+import { registerAriesAskar } from 'aries-askar-shared'
+
+import { ariesAskarReactNative } from './library'
+import { serializeArguments } from './utils'
 
 export class ReactNativeAriesAskar implements AriesAskar {
+  private promisify = (method: (cb: (err: number) => void) => void): Promise<void> => {
+    return new Promise((resolve, reject) => {
+      const _cb = (err: number) => {
+        if (err !== 0) reject(this.getCurrentError())
+        resolve()
+      }
+
+      method(_cb)
+    })
+  }
+
+  private promisifyWithResponse = <Return, Response = string>(
+    method: (cb: (err: number, response: Response) => void) => void
+  ): Promise<Return> => {
+    return new Promise((resolve, reject) => {
+      const _cb = (err: number, response: Response) => {
+        if (err !== 0) reject(this.getCurrentError())
+
+        switch (typeof response) {
+          case 'string':
+            response as unknown as Return
+            break
+          default:
+            resolve(response as unknown as Return)
+        }
+      }
+      method(_cb)
+    })
+  }
+
   public version(): string {
-    return ariesAskar.version({})
+    return ariesAskarReactNative.version({})
   }
   public getCurrentError(): string {
-    throw new Error('Method not implemented.')
+    return ariesAskarReactNative.getCurrentError({})
   }
   public bufferFree(options: BufferFreeOptions): void {
     throw new Error('Method not implemented.')
@@ -289,16 +322,24 @@ export class ReactNativeAriesAskar implements AriesAskar {
     throw new Error('Method not implemented.')
   }
   public storeGenerateRawKey(options: StoreGenerateRawKeyOptions): string {
-    throw new Error('Method not implemented.')
+    const serializedOptions = serializeArguments(options)
+    return ariesAskarReactNative.storeGenerateRawKey(serializedOptions)
   }
   public storeGetProfileName(options: StoreGetProfileNameOptions): Promise<string> {
     throw new Error('Method not implemented.')
   }
   public storeOpen(options: StoreOpenOptions): Promise<StoreHandle> {
-    throw new Error('Method not implemented.')
+    const serializedOptions = serializeArguments(options)
+    return this.promisifyWithResponse<StoreHandle, number>((cb) =>
+      ariesAskarReactNative.storeOpen({ cb, ...serializedOptions })
+    )
   }
+
   public storeProvision(options: StoreProvisionOptions): Promise<StoreHandle> {
-    throw new Error('Method not implemented.')
+    const serializedOptions = serializeArguments(options)
+    return this.promisifyWithResponse<StoreHandle, number>((cb) =>
+      ariesAskarReactNative.storeProvision({ cb, ...serializedOptions })
+    )
   }
   public storeRekey(options: StoreRekeyOptions): Promise<void> {
     throw new Error('Method not implemented.')

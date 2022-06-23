@@ -4,7 +4,7 @@
 
 #include <map>
 
-#include <ffi.h>
+#include <ariesAskar.h>
 #include <turboModuleUtility.h>
 
 using namespace facebook;

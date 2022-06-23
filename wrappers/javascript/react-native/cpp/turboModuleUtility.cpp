@@ -13,19 +13,16 @@ void registerTurboModule(jsi::Runtime &rt) {
 
 void assertValueIsObject(jsi::Runtime &rt, const jsi::Value *val) {
   val->asObject(rt);
-}
-
-void handleError(jsi::Runtime &rt, ErrorCode code) {
+} void handleError(jsi::Runtime &rt, ErrorCode code) {
   if (code == ErrorCode::Success)
     return;
 
-//    jsi::Value errorMessage = ariesAskar::getCurrentError(rt);
+   jsi::Value errorMessage = ariesAskar::getCurrentError(rt, jsi::Object(rt));
 
 
   jsi::Object JSON = rt.global().getPropertyAsObject(rt, "JSON");
   jsi::Function JSONParse = JSON.getPropertyAsFunction(rt, "parse");
-  jsi::Object parsedErrorObject =
-      JSONParse.call(rt, "{TODO: 'TODO'}").getObject(rt);
+  jsi::Object parsedErrorObject = JSONParse.call(rt, errorMessage).getObject(rt);
   jsi::Value message = parsedErrorObject.getProperty(rt, "message");
   if (message.isString()) {
     throw jsi::JSError(rt, message.getString(rt).utf8(rt));
@@ -44,19 +41,31 @@ void callback(CallbackId result, ErrorCode code) {
   delete state;
 }
 
-void callbackWithResponse(CallbackId result, ErrorCode code,
-                          const char *response) {
+template <>
+void callbackWithResponse(CallbackId result, ErrorCode code, StoreHandle response) {
   State *_state = reinterpret_cast<State *>(result);
   State *state = static_cast<State *>(_state);
   jsi::Function *cb = &state->cb;
   jsi::Runtime *rt = reinterpret_cast<jsi::Runtime *>(state->rt);
-
-  cb->call(*rt, int(code), response);
+  cb->call(*rt, int(code) ,int(response));
   delete state;
 }
 
 template <>
 uint8_t jsiToValue(jsi::Runtime &rt, jsi::Object &options, const char *name,
+                   bool optional) {
+  jsi::Value value = options.getProperty(rt, name);
+  if ((value.isNull() || value.isUndefined()) && optional)
+    return 0;
+
+  if (value.isNumber())
+    return value.asNumber();
+
+  throw jsi::JSError(rt, errorPrefix + name + errorInfix + "number");
+};
+
+template <>
+int8_t jsiToValue(jsi::Runtime &rt, jsi::Object &options, const char *name,
                    bool optional) {
   jsi::Value value = options.getProperty(rt, name);
   if ((value.isNull() || value.isUndefined()) && optional)

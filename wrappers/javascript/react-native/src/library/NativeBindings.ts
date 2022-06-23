@@ -2,14 +2,15 @@
 
 type EntryListHandle = number
 type LocalKeyHandle = number
+export type StoreHandle = number
 
 type ErrorCode = number
 
 type Callback = (err: number) => void
 
-type CallbackWithResponse = (err: number, response: string) => void
+type CallbackWithResponse<T = string> = (err: number, response: T) => void
 
-export interface AriesAskarNativeBindings {
+export interface NativeBindings {
   version({}): string
 
   getCurrentError({}): string
@@ -148,11 +149,17 @@ export interface AriesAskarNativeBindings {
 
   storeCreateProfile(options: any): ErrorCode
 
-  storeGenerateRawKey(options: any): ErrorCode
+  storeGenerateRawKey(options: { seed?: ArrayBuffer }): string
 
   storeGetProfileName(options: any): ErrorCode
 
-  storeOpen(options: any): ErrorCode
+  storeOpen(options: {
+    specUri: string
+    keyMethod?: string
+    passKey?: string
+    profile?: string
+    cb: CallbackWithResponse<StoreHandle>
+  }): ErrorCode
 
   storeProvision(options: any): ErrorCode
 

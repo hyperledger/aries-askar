@@ -8,12 +8,15 @@ TurboModuleHostObject::TurboModuleHostObject(jsi::Runtime &rt) { return; }
 FunctionMap TurboModuleHostObject::functionMapping(jsi::Runtime &rt) {
   FunctionMap fMap;
   // TODO: add functions
-  fMap.insert(std::make_tuple("version", &ffi::version));
+  fMap.insert(std::make_tuple("version", &ariesAskar::version));
+  fMap.insert(std::make_tuple("storeOpen", &ariesAskar::storeOpen));
+  fMap.insert(std::make_tuple("getCurrentError", &ariesAskar::getCurrentError));
+  fMap.insert(std::make_tuple("storeGenerateRawKey", &ariesAskar::storeGenerateRawKey));
+  fMap.insert(std::make_tuple("storeProvision", &ariesAskar::storeProvision));
   return fMap;
 }
 
-jsi::Function TurboModuleHostObject::call(jsi::Runtime &rt, const char *name,
-                                          Cb cb) {
+jsi::Function TurboModuleHostObject::call(jsi::Runtime &rt, const char *name, Cb cb) {
   return jsi::Function::createFromHostFunction(
       rt, jsi::PropNameID::forAscii(rt, name), 1,
       [this, cb](jsi::Runtime &rt, const jsi::Value &thisValue,
