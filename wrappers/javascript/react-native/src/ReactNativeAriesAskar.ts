@@ -107,7 +107,7 @@ export class ReactNativeAriesAskar implements AriesAskar {
 
         switch (typeof response) {
           case 'string':
-            response as unknown as Return
+            resolve(response as unknown as Return)
             break
           default:
             resolve(response as unknown as Return)
