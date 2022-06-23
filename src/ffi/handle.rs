@@ -17,10 +17,10 @@ impl<T: Send> ArcHandle<T> {
 
     pub fn load(&self) -> Result<Arc<T>, Error> {
         self.validate()?;
-        unsafe {
-            let result = mem::ManuallyDrop::new(Arc::from_raw(self.0));
+        
+            let result = unsafe { mem::ManuallyDrop::new(Arc::from_raw(self.0)) };
             Ok((&*result).clone())
-        }
+        
     }
 
     pub fn remove(&self) {
