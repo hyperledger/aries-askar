@@ -18,7 +18,7 @@ impl<T: Send> ArcHandle<T> {
     pub fn load(&self) -> Result<Arc<T>, Error> {
         self.validate()?;
         
-            let result = unsafe { mem::ManuallyDrop::new(Arc::from_raw(self.0)) };
+            let result = mem::ManuallyDrop::new(unsafe { Arc::from_raw(self.0) });
             Ok((&*result).clone())
         
     }
