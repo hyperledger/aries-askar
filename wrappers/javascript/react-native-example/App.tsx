@@ -1,7 +1,12 @@
 import React from 'react';
-import {SafeAreaView} from 'react-native';
+import {Button, SafeAreaView} from 'react-native';
 import {ReactNativeAriesAskar} from 'aries-askar-react-native';
-import {registerAriesAskar, ariesAskar, StoreHandle} from 'aries-askar-shared';
+import {
+  registerAriesAskar,
+  ariesAskar,
+  StoreHandle,
+  Session,
+} from 'aries-askar-shared';
 
 const tryTest = async (cb: () => Promise<any>) => {
   try {
@@ -11,47 +16,38 @@ const tryTest = async (cb: () => Promise<any>) => {
   }
 };
 
-const startAndGetProfileName = async () => {
+const startSession = async () => {
   const key = ariesAskar.storeGenerateRawKey({
     seed: new Uint8Array(32).fill(1),
   });
-  const handle = await ariesAskar.storeProvision({
+  const storeHandle = await ariesAskar.storeProvision({
     specUri: 'sqlite://:memory:',
     keyMethod: 'raw',
     passKey: key,
     recreate: true,
   });
-  const storeHandle = new StoreHandle(handle);
 
-  const profileName = await ariesAskar.storeGetProfileName({storeHandle});
-
-  if (!profileName) {
-    throw new Error('No Profilename');
-  }
-
-  await storeHandle.close();
-};
-
-const startAndCloseStore = async () => {
-  const key = ariesAskar.storeGenerateRawKey({
-    seed: new Uint8Array(32).fill(1),
+  const sessionHandle = await ariesAskar.sessionStart({
+    storeHandle,
+    asTransaction: false,
   });
-  const handle = await ariesAskar.storeProvision({
-    specUri: 'sqlite://:memory:',
-    keyMethod: 'raw',
-    passKey: key,
-    recreate: true,
-  });
-  const storeHandle = new StoreHandle(handle);
 
-  await storeHandle.close();
+  const session = new Session({
+    store: storeHandle,
+    handle: sessionHandle,
+    isTxn: false,
+  });
+
+  await session.insert({category: 'foo', name: 'bar', value: 'YEET'});
+  console.log(await session.fetch({category: 'foo', name: 'bar'}));
 };
 
 export const App = () => {
   registerAriesAskar({askar: new ReactNativeAriesAskar()});
 
-  tryTest(startAndCloseStore);
-  tryTest(startAndGetProfileName);
-
-  return <SafeAreaView />;
+  return (
+    <SafeAreaView>
+      <Button title="foo" onPress={startSession} />
+    </SafeAreaView>
+  );
 };

@@ -9,7 +9,7 @@ using namespace facebook;
 
 namespace turboModuleUtility {
 
-static const std::string errorPrefix  = "` is not of type ";
+static const std::string errorPrefix = "` is not of type ";
 static const std::string errorInfix = "Value `";
 
 // state of a callback function
@@ -40,7 +40,6 @@ void callback(CallbackId result, ErrorCode code);
 // Callback function that makes the host function async with response from rust
 // side
 template <typename T>
-void callbackWithResponse(CallbackId result, ErrorCode code,
-                          T response);
+void callbackWithResponse(CallbackId result, ErrorCode code, T response);
 
 } // namespace turboModuleUtility

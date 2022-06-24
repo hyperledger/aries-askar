@@ -3,7 +3,6 @@ import type { Key, SessionHandle, StoreHandle } from '../crypto'
 import type { KeyAlgs } from '../enums'
 
 import { ariesAskar } from '../ariesAskar'
-import { EntryListHandle } from '../crypto'
 import { EntryOperation } from '../enums/EntryOperation'
 import { AriesAskarError } from '../error'
 

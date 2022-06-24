@@ -1,4 +1,5 @@
-import { StoreHandle } from 'aries-askar-shared'
+import { EntryListHandle , SessionHandle, StoreHandle } from 'aries-askar-shared'
+
 
 export type Callback = (err: number) => void
 export type CallbackWithResponse = (err: number, response: string) => void
@@ -11,6 +12,8 @@ type Argument =
   | SerializedArgument
   | boolean
   | StoreHandle
+  | SessionHandle
+  | EntryListHandle
 
 type SerializedArgument = string | number | Callback | CallbackWithResponse | ArrayBuffer | boolean
 
@@ -47,11 +50,17 @@ export type SerializedOptions<Type> = {
     ? ArrayBuffer
     : Type[Property] extends StoreHandle
     ? number
+    : Type[Property] extends SessionHandle
+    ? number
+    : Type[Property] extends EntryListHandle
+    ? number
     : unknown
 }
 
 const serialize = (arg: Argument): SerializedArgument => {
   switch (typeof arg) {
+    case 'undefined':
+      return arg
     case 'string':
       return arg
     case 'boolean':
@@ -65,7 +74,7 @@ const serialize = (arg: Argument): SerializedArgument => {
         return arg.valueOf()
       } else if (arg instanceof Uint8Array) {
         return arg.buffer
-      } else if (arg instanceof StoreHandle) {
+      } else if (arg instanceof StoreHandle || arg instanceof SessionHandle || arg instanceof EntryListHandle) {
         return arg.handle
       } else {
         return JSON.stringify(arg)

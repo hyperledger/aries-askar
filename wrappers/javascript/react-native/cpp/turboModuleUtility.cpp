@@ -1,4 +1,5 @@
 #include <turboModuleUtility.h>
+#include <sstream>>
 
 namespace turboModuleUtility {
 
@@ -13,16 +14,17 @@ void registerTurboModule(jsi::Runtime &rt) {
 
 void assertValueIsObject(jsi::Runtime &rt, const jsi::Value *val) {
   val->asObject(rt);
-} void handleError(jsi::Runtime &rt, ErrorCode code) {
+}
+void handleError(jsi::Runtime &rt, ErrorCode code) {
   if (code == ErrorCode::Success)
     return;
 
-   jsi::Value errorMessage = ariesAskar::getCurrentError(rt, jsi::Object(rt));
-
+  jsi::Value errorMessage = ariesAskar::getCurrentError(rt, jsi::Object(rt));
 
   jsi::Object JSON = rt.global().getPropertyAsObject(rt, "JSON");
   jsi::Function JSONParse = JSON.getPropertyAsFunction(rt, "parse");
-  jsi::Object parsedErrorObject = JSONParse.call(rt, errorMessage).getObject(rt);
+  jsi::Object parsedErrorObject =
+      JSONParse.call(rt, errorMessage).getObject(rt);
   jsi::Value message = parsedErrorObject.getProperty(rt, "message");
   if (message.isString()) {
     throw jsi::JSError(rt, message.getString(rt).utf8(rt));
@@ -41,26 +43,43 @@ void callback(CallbackId result, ErrorCode code) {
   delete state;
 }
 
+// Session, Store and Scan Handle
 template <>
-void callbackWithResponse(CallbackId result, ErrorCode code, StoreHandle response) {
+void callbackWithResponse(CallbackId result, ErrorCode code, size_t response) {
   State *_state = reinterpret_cast<State *>(result);
   State *state = static_cast<State *>(_state);
   jsi::Function *cb = &state->cb;
   jsi::Runtime *rt = reinterpret_cast<jsi::Runtime *>(state->rt);
-  cb->call(*rt, int(code) ,int(response));
+  cb->call(*rt, int(code), int(response));
   delete state;
 }
 
 template <>
-void callbackWithResponse(CallbackId result, ErrorCode code, const char* response) {
+void callbackWithResponse(CallbackId result, ErrorCode code,
+                          const char *response) {
   State *_state = reinterpret_cast<State *>(result);
   State *state = static_cast<State *>(_state);
   jsi::Function *cb = &state->cb;
   jsi::Runtime *rt = reinterpret_cast<jsi::Runtime *>(state->rt);
   jsi::String serializedResponse = jsi::String::createFromAscii(*rt, response);
-  cb->call(*rt, int(code) , serializedResponse);
+  cb->call(*rt, int(code), serializedResponse);
   delete state;
 }
+
+template <>
+void callbackWithResponse(CallbackId result, ErrorCode code, EntryListHandle response) {
+  State *_state = reinterpret_cast<State *>(result);
+  State *state = static_cast<State *>(_state);
+  jsi::Function *cb = &state->cb;
+  jsi::Runtime *rt = reinterpret_cast<jsi::Runtime *>(state->rt);
+    
+  std::string serializedPointer = std::to_string(intptr_t(response._0));
+  jsi::String pointer = jsi::String::createFromAscii(*rt, serializedPointer);
+    
+  cb->call(*rt, int(code), serializedPointer);
+  delete state;
+}
+
 
 template <>
 void callbackWithResponse(CallbackId result, ErrorCode code, int8_t response) {
@@ -68,7 +87,17 @@ void callbackWithResponse(CallbackId result, ErrorCode code, int8_t response) {
   State *state = static_cast<State *>(_state);
   jsi::Function *cb = &state->cb;
   jsi::Runtime *rt = reinterpret_cast<jsi::Runtime *>(state->rt);
-  cb->call(*rt, int(code) , int(response));
+  cb->call(*rt, int(code), int(response));
+  delete state;
+}
+
+template <>
+void callbackWithResponse(CallbackId result, ErrorCode code, int64_t response) {
+  State *_state = reinterpret_cast<State *>(result);
+  State *state = static_cast<State *>(_state);
+  jsi::Function *cb = &state->cb;
+  jsi::Runtime *rt = reinterpret_cast<jsi::Runtime *>(state->rt);
+  cb->call(*rt, int(code), int(response));
   delete state;
 }
 
@@ -87,7 +116,7 @@ uint8_t jsiToValue(jsi::Runtime &rt, jsi::Object &options, const char *name,
 
 template <>
 int8_t jsiToValue(jsi::Runtime &rt, jsi::Object &options, const char *name,
-                   bool optional) {
+                  bool optional) {
   jsi::Value value = options.getProperty(rt, name);
   if ((value.isNull() || value.isUndefined()) && optional)
     return 0;
@@ -165,6 +194,15 @@ uint32_t jsiToValue(jsi::Runtime &rt, jsi::Object &options, const char *name,
 };
 
 template <>
+EntryListHandle jsiToValue(jsi::Runtime &rt, jsi::Object &options, const char *name, bool optional) {
+  std::string handle = turboModuleUtility::jsiToValue<std::string>(rt, options, name, optional);
+  FfiEntryList* ffiEntryListPtr = reinterpret_cast<FfiEntryList*>(std::stol(handle));
+  EntryListHandle entryListHandle = EntryListHandle {._0 =  ffiEntryListPtr};
+    
+  return entryListHandle;
+};
+
+template <>
 std::vector<int32_t>
 jsiToValue<std::vector<int32_t>>(jsi::Runtime &rt, jsi::Object &options,
                                  const char *name, bool optional) {
@@ -204,8 +242,7 @@ ByteBuffer jsiToValue<ByteBuffer>(jsi::Runtime &rt, jsi::Object &options,
   if (optional)
     return ByteBuffer{0, 0};
 
-  throw jsi::JSError(rt,
-                     errorPrefix + name + errorInfix + "Uint8Array");
+  throw jsi::JSError(rt, errorPrefix + name + errorInfix + "Uint8Array");
 }
 
 } // namespace turboModuleUtility

@@ -7,26 +7,53 @@ TurboModuleHostObject::TurboModuleHostObject(jsi::Runtime &rt) { return; }
 
 FunctionMap TurboModuleHostObject::functionMapping(jsi::Runtime &rt) {
   FunctionMap fMap;
-  // TODO: add functions
   fMap.insert(std::make_tuple("version", &ariesAskar::version));
   fMap.insert(std::make_tuple("storeOpen", &ariesAskar::storeOpen));
   fMap.insert(std::make_tuple("getCurrentError", &ariesAskar::getCurrentError));
-  fMap.insert(std::make_tuple("storeGenerateRawKey", &ariesAskar::storeGenerateRawKey));
+  fMap.insert(
+      std::make_tuple("storeGenerateRawKey", &ariesAskar::storeGenerateRawKey));
   fMap.insert(std::make_tuple("storeProvision", &ariesAskar::storeProvision));
   fMap.insert(std::make_tuple("storeOpen", &ariesAskar::storeOpen));
   fMap.insert(std::make_tuple("storeClose", &ariesAskar::storeClose));
-  fMap.insert(std::make_tuple("storeCreateProfile", &ariesAskar::storeCreateProfile));
-  fMap.insert(std::make_tuple("storeGenerateRawKey", &ariesAskar::storeGenerateRawKey));
-  fMap.insert(std::make_tuple("storeGetProfileName", &ariesAskar::storeGetProfileName));
+  fMap.insert(
+      std::make_tuple("storeCreateProfile", &ariesAskar::storeCreateProfile));
+  fMap.insert(
+      std::make_tuple("storeGenerateRawKey", &ariesAskar::storeGenerateRawKey));
+  fMap.insert(
+      std::make_tuple("storeGetProfileName", &ariesAskar::storeGetProfileName));
   fMap.insert(std::make_tuple("storeProvision", &ariesAskar::storeProvision));
   fMap.insert(std::make_tuple("storeRekey", &ariesAskar::storeRekey));
   fMap.insert(std::make_tuple("storeRemove", &ariesAskar::storeRemove));
-  fMap.insert(std::make_tuple("storeRemoveProfile", &ariesAskar::storeRemoveProfile));
+  fMap.insert(
+      std::make_tuple("storeRemoveProfile", &ariesAskar::storeRemoveProfile));
+  fMap.insert(std::make_tuple("sessionClose", &ariesAskar::sessionClose));
+  fMap.insert(std::make_tuple("sessionCount", &ariesAskar::sessionCount));
+  fMap.insert(std::make_tuple("sessionFetch", &ariesAskar::sessionFetch));
+  fMap.insert(std::make_tuple("sessionFetchAll", &ariesAskar::sessionFetchAll));
+  fMap.insert(
+      std::make_tuple("sessionFetchAllKeys", &ariesAskar::sessionFetchAllKeys));
+  fMap.insert(std::make_tuple("sessionFetchKey", &ariesAskar::sessionFetchKey));
+  fMap.insert(
+      std::make_tuple("sessionInsertKey", &ariesAskar::sessionInsertKey));
+  fMap.insert(
+      std::make_tuple("sessionRemoveAll", &ariesAskar::sessionRemoveAll));
+  fMap.insert(
+      std::make_tuple("sessionRemoveKey", &ariesAskar::sessionRemoveKey));
+  fMap.insert(std::make_tuple("sessionStart", &ariesAskar::sessionStart));
+  fMap.insert(std::make_tuple("sessionUpdate", &ariesAskar::sessionUpdate));
+  fMap.insert(
+      std::make_tuple("sessionUpdateKey", &ariesAskar::sessionUpdateKey));
+  fMap.insert(std::make_tuple("entryListGetName", &ariesAskar::entryListGetName));
+  fMap.insert(std::make_tuple("entryListGetValue", &ariesAskar::entryListGetValue));
+  fMap.insert(std::make_tuple("entryListGetCategory", &ariesAskar::entryListGetCategory));
+  fMap.insert(std::make_tuple("entryListGetTags", &ariesAskar::entryListGetTags));
+  fMap.insert(std::make_tuple("entryListCount", &ariesAskar::entryListCount));
+  fMap.insert(std::make_tuple("entryListFree", &ariesAskar::entryListFree));
   return fMap;
 }
 
-
-jsi::Function TurboModuleHostObject::call(jsi::Runtime &rt, const char *name, Cb cb) {
+jsi::Function TurboModuleHostObject::call(jsi::Runtime &rt, const char *name,
+                                          Cb cb) {
   return jsi::Function::createFromHostFunction(
       rt, jsi::PropNameID::forAscii(rt, name), 1,
       [this, cb](jsi::Runtime &rt, const jsi::Value &thisValue,
@@ -71,8 +98,8 @@ jsi::Value TurboModuleHostObject::get(jsi::Runtime &rt,
    * React that this element is not renderable.
    *
    */
-  if (propName == "$$typeof") return jsi::Value::undefined();
-  
+  if (propName == "$$typeof")
+    return jsi::Value::undefined();
 
   throw jsi::JSError(rt, "Function: " + propName + " is not defined");
 }

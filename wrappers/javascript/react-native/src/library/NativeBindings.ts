@@ -21,17 +21,17 @@ export interface NativeBindings {
 
   clearCustomLogger(options: any): void
 
-  entryListCount(options: { handle: EntryListHandle; count: number }): ErrorCode
+  entryListCount(options: any): number
 
-  entryListFree(options: { handle: EntryListHandle }): void
+  entryListFree(options: any): void
 
-  entryListGetCategory(options: any): ErrorCode
+  entryListGetCategory(options: any): string
 
-  entryListGetName(options: any): ErrorCode
+  entryListGetName(options: any): string
 
-  entryListGetTags(options: any): ErrorCode
+  entryListGetTags(options: any): string
 
-  entryListGetValue(options: any): ErrorCode
+  entryListGetValue(options: any): string
 
   keyAeadDecrypt(options: any): ErrorCode
 
