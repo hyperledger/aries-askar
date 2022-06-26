@@ -303,9 +303,17 @@ export class ReactNativeAriesAskar implements AriesAskar {
   }
 
   public async scanStart(options: ScanStartOptions): Promise<ScanHandle> {
-    const serializedOptions = serializeArguments(options)
+    const { category, storeHandle, limit, offset, profile, tagFilter } = serializeArguments(options)
     const handle = await this.promisifyWithResponse<number, number>((cb) =>
-      ariesAskarReactNative.scanStart({ cb, ...serializedOptions })
+      ariesAskarReactNative.scanStart({
+        cb,
+        category,
+        storeHandle,
+        limit: limit || -1,
+        offset: offset || -1,
+        profile,
+        tagFilter,
+      })
     )
 
     //  @ts-ignore

@@ -11,7 +11,6 @@ export class EntryList {
 
   public constructor({ handle, length }: { handle: EntryListHandle; length?: number }) {
     this._handle = handle
-    console.log(ariesAskar.entryListCount({ entryListHandle: handle }))
     this._length = length || ariesAskar.entryListCount({ entryListHandle: handle })
   }
 

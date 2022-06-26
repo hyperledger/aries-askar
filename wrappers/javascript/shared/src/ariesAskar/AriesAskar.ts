@@ -124,8 +124,8 @@ export type ScanFreeOptions = { scanHandle: ScanHandle }
 export type ScanNextOptions = { scanHandle: ScanHandle }
 export type ScanStartOptions = {
   storeHandle: StoreHandle
-  profile?: string
   category: string
+  profile?: string
   tagFilter?: Record<string, unknown>
   offset?: number
   limit?: number

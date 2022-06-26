@@ -385,15 +385,17 @@ jsi::Value sessionInsertKey(jsi::Runtime &rt, jsi::Object options) {
 jsi::Value sessionRemoveAll(jsi::Runtime &rt, jsi::Object options) {
   int64_t handle = jsiToValue<int64_t>(rt, options, "sessionHandle");
   std::string category = jsiToValue<std::string>(rt, options, "category");
-  std::string tagFilter = jsiToValue<std::string>(rt, options, "tagFilter");
+  std::string tagFilter =
+      jsiToValue<std::string>(rt, options, "tagFilter", true);
 
   jsi::Function cb = options.getPropertyAsFunction(rt, "cb");
   State *state = new State(&cb);
   state->rt = &rt;
 
-  ErrorCode code = askar_session_remove_all(
-      SessionHandle(handle), category.c_str(), tagFilter.c_str(),
-      callbackWithResponse, CallbackId(state));
+  ErrorCode code =
+      askar_session_remove_all(SessionHandle(handle), category.c_str(),
+                               tagFilter.length() ? tagFilter.c_str() : nullptr,
+                               callbackWithResponse, CallbackId(state));
 
   handleError(rt, code);
 
@@ -440,7 +442,7 @@ jsi::Value sessionUpdate(jsi::Runtime &rt, jsi::Object options) {
   std::string category = jsiToValue<std::string>(rt, options, "category");
   std::string name = jsiToValue<std::string>(rt, options, "name");
   std::string tags = jsiToValue<std::string>(rt, options, "tags", true);
-  ByteBuffer value = jsiToValue<ByteBuffer>(rt, options, "value");
+  ByteBuffer value = jsiToValue<ByteBuffer>(rt, options, "value", true);
   int64_t expiryMs = jsiToValue<int64_t>(rt, options, "expiryMs", true);
 
   jsi::Function cb = options.getPropertyAsFunction(rt, "cb");
@@ -508,6 +510,16 @@ jsi::Value scanStart(jsi::Runtime &rt, jsi::Object options) {
 };
 
 jsi::Value scanNext(jsi::Runtime &rt, jsi::Object options) {
+  int64_t handle = jsiToValue<int64_t>(rt, options, "scanHandle");
+
+  jsi::Function cb = options.getPropertyAsFunction(rt, "cb");
+  State *state = new State(&cb);
+  state->rt = &rt;
+
+  ErrorCode code =
+      askar_scan_next(handle, callbackWithResponse, CallbackId(state));
+  handleError(rt, code);
+
   return jsi::Value::null();
 };
 

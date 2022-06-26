@@ -1,10 +1,16 @@
 // TODO: do we need these classes?
 import { ariesAskar } from '../ariesAskar'
+import { AriesAskarError } from '../error'
 
 export class ArcHandle {
-  public handle: Uint8Array
+  public handle: Uint8Array | string
 
-  public constructor(handle: Uint8Array) {
+  public constructor(handle: Uint8Array | string) {
+    if (handle === '0') {
+      throw AriesAskarError.customError({
+        message: 'Invalid handle. This means that the function call succeeded but none was found.',
+      })
+    }
     this.handle = handle
   }
 }
