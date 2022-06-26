@@ -248,15 +248,17 @@ jsi::Value sessionClose(jsi::Runtime &rt, jsi::Object options) {
 jsi::Value sessionCount(jsi::Runtime &rt, jsi::Object options) {
   int64_t handle = jsiToValue<int64_t>(rt, options, "sessionHandle");
   std::string category = jsiToValue<std::string>(rt, options, "category");
-  std::string tagFilter = jsiToValue<std::string>(rt, options, "tagFilter");
+  std::string tagFilter =
+      jsiToValue<std::string>(rt, options, "tagFilter", true);
 
   jsi::Function cb = options.getPropertyAsFunction(rt, "cb");
   State *state = new State(&cb);
   state->rt = &rt;
 
-  ErrorCode code = askar_session_count(SessionHandle(handle), category.c_str(),
-                                       tagFilter.c_str(), callbackWithResponse,
-                                       CallbackId(state));
+  ErrorCode code =
+      askar_session_count(SessionHandle(handle), category.c_str(),
+                          tagFilter.length() ? tagFilter.c_str() : nullptr,
+                          callbackWithResponse, CallbackId(state));
   handleError(rt, code);
 
   return jsi::Value::null();
@@ -281,28 +283,22 @@ jsi::Value sessionFetch(jsi::Runtime &rt, jsi::Object options) {
 }
 
 jsi::Value sessionFetchAll(jsi::Runtime &rt, jsi::Object options) {
-  //  int64_t handle =
-  //        jsiToValue<int64_t>(rt, options,
-  //        "sessionHandle");
-  //  std::string category =
-  //        jsiToValue<std::string>(rt, options,
-  //        "category");
-  //  std::string tagFilter =
-  //        jsiToValue<std::string>(rt, options,
-  //        "tagFilter");
-  //  int64_t limit =
-  //        jsiToValue<int64_t>(rt, options, "limit");
-  //  int8_t forUpdate =
-  //        jsiToValue<int8_t>(rt, options, "forUpdate");
-  //
-  //  jsi::Function cb = options.getPropertyAsFunction(rt, "cb");
-  //  State *state = new State(&cb);
-  //  state->rt = &rt;
-  //
-  //  ErrorCode code = askar_session_fetch_all(SessionHandle(handle),
-  //  category.c_str(), tagFilter.c_str(), limit, forUpdate,
-  //  callbackWithResponse, CallbackId(state));
-  //  handleError(rt, code);
+  int64_t handle = jsiToValue<int64_t>(rt, options, "sessionHandle");
+  std::string category = jsiToValue<std::string>(rt, options, "category");
+  std::string tagFilter =
+      jsiToValue<std::string>(rt, options, "tagFilter", true);
+  int64_t limit = jsiToValue<int64_t>(rt, options, "limit", true);
+  int8_t forUpdate = jsiToValue<int8_t>(rt, options, "forUpdate");
+
+  jsi::Function cb = options.getPropertyAsFunction(rt, "cb");
+  State *state = new State(&cb);
+  state->rt = &rt;
+
+  ErrorCode code = askar_session_fetch_all(
+      SessionHandle(handle), category.c_str(),
+      tagFilter.length() ? tagFilter.c_str() : nullptr, limit, forUpdate,
+      callbackWithResponse, CallbackId(state));
+  handleError(rt, code);
 
   return jsi::Value::null();
 }

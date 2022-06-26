@@ -38,10 +38,12 @@ const startSession = async () => {
     isTxn: false,
   });
 
-  await session.insert({category: 'foo', name: 'bar', value: {foo: 'bar'}});
+  await session.insert({category: 'foo', name: 'bar', value: 'baz'});
+  console.log(await session.count({category: 'foo', name: 'bar'}));
   console.log(
     await session.fetch({category: 'foo', name: 'bar', isJson: true}),
   );
+  console.log(await session.fetchAll({category: 'foo'}));
 };
 
 export const App = () => {

@@ -217,7 +217,7 @@ export interface AriesAskar {
   setDefaultLogger(): void
   setMaxLogLevel(options: SetMaxLogLevelOptions): void
 
-  entryListCount(options: EntryListCountOptions): ErrorCode
+  entryListCount(options: EntryListCountOptions): number
   entryListFree(options: EntryListFreeOptions): void
   entryListGetCategory(options: EntryListGetCategoryOptions): string
   entryListGetName(options: EntryListGetNameOptions): string

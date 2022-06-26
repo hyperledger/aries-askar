@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/ban-ts-comment */
 import type {
   AeadParams,
   AriesAskar,
@@ -117,32 +118,41 @@ export class ReactNativeAriesAskar implements AriesAskar {
   public version(): string {
     return ariesAskarReactNative.version({})
   }
+
   public getCurrentError(): string {
     return ariesAskarReactNative.getCurrentError({})
   }
+
   public bufferFree(options: BufferFreeOptions): void {
     throw new Error('Method not implemented. bufferFree')
   }
+
   public clearCustomLogger(): void {
     throw new Error('Method not implemented. clearCustomLogger')
   }
+
   public setCustomLogger(options: SetCustomLoggerOptions): void {
     throw new Error('Method not implemented. setCustomLogger')
   }
+
   public setDefaultLogger(): void {
     throw new Error('Method not implemented. setDefaultLogger')
   }
+
   public setMaxLogLevel(options: SetMaxLogLevelOptions): void {
     throw new Error('Method not implemented. setMaxLogLevel')
   }
+
   public entryListCount(options: EntryListCountOptions): number {
     const serializedOptions = serializeArguments(options)
     return ariesAskarReactNative.entryListCount(serializedOptions)
   }
+
   public entryListFree(options: EntryListFreeOptions): void {
     const serializedOptions = serializeArguments(options)
     return ariesAskarReactNative.entryListFree(serializedOptions)
   }
+
   public entryListGetCategory(options: EntryListGetCategoryOptions): string {
     const serializedOptions = serializeArguments(options)
     return ariesAskarReactNative.entryListGetCategory(serializedOptions)
@@ -308,9 +318,16 @@ export class ReactNativeAriesAskar implements AriesAskar {
     return new EntryListHandle(handle)
   }
 
-  public sessionFetchAll(options: SessionFetchAllOptions): Promise<EntryListHandle> {
-    throw new Error('Method not implemented. sessionFetchAll')
+  public async sessionFetchAll(options: SessionFetchAllOptions): Promise<EntryListHandle> {
+    const serializedOptions = serializeArguments(options)
+    const handle = await this.promisifyWithResponse<number, number>((cb) =>
+      ariesAskarReactNative.sessionFetchAll({ cb, ...serializedOptions })
+    )
+
+    //  @ts-ignore
+    return new EntryListHandle(handle)
   }
+
   public sessionFetchAllKeys(options: SessionFetchAllKeysOptions): Promise<KeyEntryListHandle> {
     throw new Error('Method not implemented. sessionFetchAllKeys')
   }
