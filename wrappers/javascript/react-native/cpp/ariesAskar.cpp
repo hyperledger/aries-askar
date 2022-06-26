@@ -309,7 +309,7 @@ jsi::Value sessionFetchAllKeys(jsi::Runtime &rt, jsi::Object options) {
   //        jsiToValue<int64_t>(rt, options,
   //        "sessionHandle");
   //  std::string alg =
-  //        jsiToValue<std::string>(rt, options, "alg");
+  //        jsiToValue<std::string>(rt, options, "algorithm");
   //  std::string thumbprint =
   //        jsiToValue<std::string>(rt, options,
   //        "thumbprint");
@@ -532,5 +532,241 @@ jsi::Value scanFree(jsi::Runtime &rt, jsi::Object options) {
 
   return jsi::Value::null();
 };
+
+jsi::Value keyFromJwk(jsi::Runtime &rt, jsi::Object options) {
+  ByteBuffer jwk = jsiToValue<ByteBuffer>(rt, options, "jwk");
+
+  LocalKeyHandle out;
+
+  ErrorCode code = askar_key_from_jwk(jwk, &out);
+  handleError(rt, code);
+
+  std::string serializedPointer = std::to_string(intptr_t(out._0));
+  jsi::String pointer = jsi::String::createFromAscii(rt, serializedPointer);
+  return pointer;
+}
+
+jsi::Value keyFromKeyExchange(jsi::Runtime &rt, jsi::Object options) {
+  std::string alg = jsiToValue<std::string>(rt, options, "algorithm");
+  LocalKeyHandle skHandle = jsiToValue<LocalKeyHandle>(rt, options, "skHandle");
+  LocalKeyHandle pkHandle = jsiToValue<LocalKeyHandle>(rt, options, "pkHandle");
+
+  LocalKeyHandle out;
+
+  ErrorCode code = askar_key_from_key_exchange(alg, skHandle, pkHandle, &out);
+  handleError(rt, code);
+
+  std::string serializedPointer = std::to_string(intptr_t(out._0));
+  jsi::String pointer = jsi::String::createFromAscii(rt, serializedPointer);
+  return pointer;
+}
+
+jsi::Value keyFromPublicBytes(jsi::Runtime &rt, jsi::Object options) {
+  std::string alg = jsiToValue<std::string>(rt, options, "algorithm");
+  ByteBuffer publicKey = jsiToValue<ByteBuffer>(rt, options, "publicKey");
+
+  LocalKeyHandle out;
+
+  ErrorCode code = askar_key_from_public_bytes(alg, publicKey, &out);
+  handleError(rt, code);
+
+  std::string serializedPointer = std::to_string(intptr_t(out._0));
+  jsi::String pointer = jsi::String::createFromAscii(rt, serializedPointer);
+  return pointer;
+}
+
+jsi::Value keyFromSecretBuffer(jsi::Runtime &rt, jsi::Object options) {
+  std::string alg = jsiToValue<std::string>(rt, options, "algorithm");
+  ByteBuffer secretKey = jsiToValue<ByteBuffer>(rt, options, "secretKey");
+
+  LocalKeyHandle out;
+
+  ErrorCode code = askar_key_from_secret_bytes(alg, secretKey, &out);
+  handleError(rt, code);
+
+  std::string serializedPointer = std::to_string(intptr_t(out._0));
+  jsi::String pointer = jsi::String::createFromAscii(rt, serializedPointer);
+  return pointer;
+}
+
+jsi::Value keyFromSeed(jsi::Runtime &rt, jsi::Object options) {
+  std::string alg = jsiToValue<std::string>(rt, options, "algorithm");
+  ByteBuffer seed = jsiToValue<ByteBuffer>(rt, options, "seed");
+  std::string method = jsiToValue<std::string>(rt, options, "method");
+
+  LocalKeyHandle out;
+
+  ErrorCode code = askar_key_from_seed(alg, seed, method.c_str(), &out);
+  handleError(rt, code);
+
+  std::string serializedPointer = std::to_string(intptr_t(out._0));
+  jsi::String pointer = jsi::String::createFromAscii(rt, serializedPointer);
+  return pointer;
+}
+
+jsi::Value keyGenerate(jsi::Runtime &rt, jsi::Object options) {
+  std::string alg = jsiToValue<std::string>(rt, options, "algorithm");
+  int8_t ephemeral = jsiToValue<int8_t>(rt, options, "ephemeral");
+
+  LocalKeyHandle out;
+
+  ErrorCode code = askar_key_generate(alg, ephemeral, &out);
+  handleError(rt, code);
+
+  std::string serializedPointer = std::to_string(intptr_t(out._0));
+  jsi::String pointer = jsi::String::createFromAscii(rt, serializedPointer);
+  return pointer;
+}
+
+jsi::Value keyGetAlgorithm(jsi::Runtime &rt, jsi::Object options) {
+  LocalKeyHandle handle =
+      jsiToValue<LocalKeyHandle>(rt, options, "localKeyHandle");
+
+  const char *out;
+
+  ErrorCode code = askar_key_get_algorithm(handle, &out);
+  handleError(rt, code);
+
+  return jsi::String::createFromAscii(rt, out);
+}
+
+jsi::Value keyGetEphemeral(jsi::Runtime &rt, jsi::Object options) {
+  LocalKeyHandle handle =
+      jsiToValue<LocalKeyHandle>(rt, options, "localKeyHandle");
+
+  int8_t out;
+
+  ErrorCode code = askar_key_get_ephemeral(handle, &out);
+  handleError(rt, code);
+
+  return jsi::Value(out);
+}
+
+jsi::Value keyGetJwkPublic(jsi::Runtime &rt, jsi::Object options) {
+  LocalKeyHandle handle =
+      jsiToValue<LocalKeyHandle>(rt, options, "localKeyHandle");
+  std::string alg = jsiToValue<std::string> t(rt, options, "algorithm");
+
+  const char *out;
+
+  ErrorCode code = askar_key_get_jwk_public(handle, alg, &out);
+  handleError(rt, code);
+
+  return jsi::String::createFromAscii(rt, out);
+}
+
+jsi::Value keyGetJwkSecret(jsi::Runtime &rt, jsi::Object options) {
+  LocalKeyHandle handle =
+      jsiToValue<LocalKeyHandle>(rt, options, "localKeyHandle");
+  std::string alg = jsiToValue<std::string> t(rt, options, "algorithm");
+
+  SecretBuffer out;
+
+  ErrorCode code = askar_key_get_jwk_secret(handle, &out);
+  handleError(rt, code);
+
+  return secretBufferToArrayBuffer(rt, out);
+}
+
+jsi::Value keyGetJwkThumbprint(jsi::Runtime &rt, jsi::Object options) {
+  LocalKeyHandle handle =
+      jsiToValue<LocalKeyHandle>(rt, options, "localKeyHandle");
+  std::string alg = jsiToValue<std::string>(rt, options, "algorithm");
+
+  const char *out;
+
+  ErrorCode code = askar_key_get_jwk_thumbprint(handle, alg, &out);
+  handleError(rt, code);
+
+  return jsi::String::createFromAscii(rt, out);
+}
+
+jsi::Value keyGetPublicBytes(jsi::Runtime &rt, jsi::Object options) {
+  LocalKeyHandle handle =
+      jsiToValue<LocalKeyHandle>(rt, options, "localKeyHandle");
+
+  SecretBuffer out;
+
+  ErrorCode code = askar_key_get_public_bytes(handle, &out);
+  handleError(rt, code);
+
+  return secretBufferToArrayBuffer(rt, out);
+}
+
+jsi::Value keyGetSecretBytes(jsi::Runtime &rt, jsi::Object options) {
+  LocalKeyHandle handle =
+      jsiToValue<LocalKeyHandle>(rt, options, "localKeyHandle");
+
+  SecretBuffer out;
+
+  ErrorCode code = askar_key_get_secret_bytes(handle, &out);
+  handleError(rt, code);
+
+  return secretBufferToArrayBuffer(rt, out);
+}
+
+jsi::Value keySignMessage(jsi::Runtime &rt, jsi::Object options) {
+  LocalKeyHandle handle =
+      jsiToValue<LocalKeyHandle>(rt, options, "localKeyHandle");
+  ByteBuffer message = jsiToValue<ByteBuffer>(rt, options, "message");
+  std::string sigType = jsiToValue<std::string>(rt, options, "sigType");
+
+  secretBuffer out;
+
+  ErrorCode code = askar_key_sign_message(
+      handle, message, sigType.length() ? sigType.c_str() : nullptr, &out);
+  handleError(rt, code);
+
+  return secretBufferToArrayBuffer(rt, out);
+}
+
+jsi::Value keyUnwrapKey(jsi::Runtime &rt, jsi::Object options) {
+  LocalKeyHandle handle =
+      jsiToValue<LocalKeyHandle>(rt, options, "localKeyHandle");
+  std::string alg = jsiToValue<std::string>(rt, options, "algorithm");
+  ByteBuffer ciphertext = jsiToValue<ByteBuffer>(rt, options, "ciphertext");
+  ByteBuffer nonce = jsiToValue<ByteBuffer>(rt, options, "nonce", true);
+  ByteBuffer tag = jsiToValue<ByteBuffer>(rt, options, "tag", true);
+
+  LocalKeyHandle out;
+
+  ErrorCode code =
+      askar_key_unwrap_key(handle, alg.c_str(), ciphertext, nonce, tag, &out);
+  handleError(rt, code);
+
+  std::string serializedPointer = std::to_string(intptr_t(out._0));
+  jsi::String pointer = jsi::String::createFromAscii(rt, serializedPointer);
+  return pointer;
+}
+
+jsi::Value keyVerifySignature(jsi::Runtime &rt, jsi::Object options) {
+  LocalKeyHandle handle =
+      jsiToValue<LocalKeyHandle>(rt, options, "localKeyHandle");
+  ByteBuffer message = jsiToValue<ByteBuffer>(rt, options, "message");
+  ByteBuffer signature = jsiToValue<ByteBuffer>(rt, options, "signature");
+  std::string sigType = jsiToValue<std::string>(rt, options, "sigType", true);
+
+  int8_t out;
+
+  ErrorCode code = askar_key_verify_signature(
+      handle, message, signature, sigType.length ? sigType.c_str() : nullptr,
+      &out);
+
+  return jsi::Value(out);
+}
+
+jsi::Value keyWrapKey(jsi::Runtime &rt, jsi::Object options) {
+  LocalKeyHandle handle =
+      jsiToValue<LocalKeyHandle>(rt, options, "localKeyHandle");
+  LocalKeyHandle other = jsiToValue<LocalKeyHandle>(rt, options, "other");
+  ByteBuffer nonce = jsiToValue<ByteBuffer>(rt, options, "nonce", true);
+
+  EncryptedBuffer out;
+
+  ErrorCode code = askar_key_wrap_key(handle, other, nonce, &out);
+
+  // TODO: encryptedbuffer to object with the tag pos and all
+  jsi::Value::null();
+}
 
 } // namespace ariesAskar
