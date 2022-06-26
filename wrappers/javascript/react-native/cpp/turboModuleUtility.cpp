@@ -60,7 +60,8 @@ void callbackWithResponse(CallbackId result, ErrorCode code,
   State *state = static_cast<State *>(_state);
   jsi::Function *cb = &state->cb;
   jsi::Runtime *rt = reinterpret_cast<jsi::Runtime *>(state->rt);
-  jsi::String serializedResponse = jsi::String::createFromAscii(*rt, response);
+  jsi::String serializedResponse =
+      jsi::String::createFromAscii(*rt, response ? response : "PANIC");
   cb->call(*rt, int(code), serializedResponse);
   delete state;
 }

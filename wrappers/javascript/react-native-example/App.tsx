@@ -1,4 +1,4 @@
-import React, {useEffect, useState} from 'react';
+import React from 'react';
 import {Button, SafeAreaView} from 'react-native';
 import {ReactNativeAriesAskar} from 'aries-askar-react-native';
 import {registerAriesAskar, Store, StoreKeyMethod} from 'aries-askar-shared';
@@ -120,6 +120,90 @@ const storeScan = async (store: Store) => {
   await session.close();
 };
 
+const storeTransactionBasic = async (store: Store) => {
+  const txn = await store.openSession(true);
+  await txn.insert(firstEntry);
+
+  if ((await txn.count(firstEntry)) !== 1) {
+    console.error('1');
+    return 1;
+  }
+
+  if (!(await txn.fetch(firstEntry))) {
+    console.error('2');
+    return 1;
+  }
+
+  const found = await txn.fetchAll(firstEntry);
+
+  if (found.length !== 1) {
+    return 1;
+  }
+
+  await txn.commit();
+
+  await txn.close();
+
+  const session = await store.openSession();
+
+  if (!(await session.fetch(firstEntry))) {
+    return 1;
+  }
+
+  await session.close();
+};
+
+const storeProfile = async (store: Store) => {
+  const session = await store.openSession();
+  await session.insert(firstEntry);
+  await session.close();
+
+  const profile = await store.createProfile();
+
+  const session2 = await store.session(profile).open();
+  //Should not find previously stored record
+  if ((await session2.count(firstEntry)) !== 0) {
+    return 1;
+  }
+  await session2.insert(firstEntry);
+  if ((await session2.count(firstEntry)) !== 1) {
+    return 1;
+  }
+  await session2.close();
+
+  try {
+    await store.createProfile(profile);
+    return 1;
+  } catch (e) {}
+
+  const session3 = await store.session(profile).open();
+  if ((await session3.count(firstEntry)) !== 1) {
+    return 1;
+  }
+  await session3.close();
+
+  await store.removeProfile(profile);
+
+  const session4 = await store.session(profile).open();
+  if ((await session4.count(firstEntry)) !== 0) {
+    return 1;
+  }
+  await session4.close();
+
+  const session5 = await store.session('unknown profile').open();
+  try {
+    await session5.count(firstEntry);
+    return 1;
+  } catch (e) {}
+  await session5.close();
+
+  const session6 = await store.session(profile).open();
+  if ((await session6.count(firstEntry)) !== 0) {
+    return 1;
+  }
+  await session6.close();
+};
+
 export const App = () => {
   registerAriesAskar({askar: new ReactNativeAriesAskar()});
 
@@ -129,6 +213,8 @@ export const App = () => {
     'Store: remove': storeRemove,
     'Store: remove all': storeRemoveAll,
     'Store: Scan': storeScan,
+    'Store: Transaction Basic': storeTransactionBasic,
+    'Store: profile': storeProfile,
   };
 
   return (

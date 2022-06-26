@@ -343,9 +343,9 @@ export class ReactNativeAriesAskar implements AriesAskar {
   }
 
   public async sessionFetchAll(options: SessionFetchAllOptions): Promise<EntryListHandle> {
-    const serializedOptions = serializeArguments(options)
+    const { category, sessionHandle, forUpdate, limit, tagFilter } = serializeArguments(options)
     const handle = await this.promisifyWithResponse<number, number>((cb) =>
-      ariesAskarReactNative.sessionFetchAll({ cb, ...serializedOptions })
+      ariesAskarReactNative.sessionFetchAll({ cb, category, sessionHandle, forUpdate, limit: limit || -1, tagFilter })
     )
 
     //  @ts-ignore

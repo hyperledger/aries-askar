@@ -157,14 +157,15 @@ jsi::Value storeClose(jsi::Runtime &rt, jsi::Object options) {
 
 jsi::Value storeCreateProfile(jsi::Runtime &rt, jsi::Object options) {
   int64_t handle = jsiToValue<int64_t>(rt, options, "storeHandle");
-  std::string profile = jsiToValue<std::string>(rt, options, "profile");
+  std::string profile = jsiToValue<std::string>(rt, options, "profile", true);
 
   jsi::Function cb = options.getPropertyAsFunction(rt, "cb");
   State *state = new State(&cb);
   state->rt = &rt;
 
   ErrorCode code = askar_store_create_profile(
-      handle, profile.c_str(), callbackWithResponse, CallbackId(state));
+      handle, profile.length() ? profile.c_str() : nullptr,
+      callbackWithResponse, CallbackId(state));
   handleError(rt, code);
 
   return jsi::Value::null();
@@ -525,10 +526,10 @@ jsi::Value scanNext(jsi::Runtime &rt, jsi::Object options) {
 
 jsi::Value scanFree(jsi::Runtime &rt, jsi::Object options) {
   int64_t handle = jsiToValue<int64_t>(rt, options, "scanHandle");
-    
+
   ErrorCode code = askar_scan_free(ScanHandle(handle));
   handleError(rt, code);
-    
+
   return jsi::Value::null();
 };
 
