@@ -50,7 +50,6 @@ import type {
   KeyWrapKeyOptions,
   LocalKeyHandle,
   ScanFreeOptions,
-  ScanHandle,
   ScanNextOptions,
   ScanStartOptions,
   SecretBuffer,
@@ -79,7 +78,7 @@ import type {
   StoreRemoveProfileOptions,
 } from 'aries-askar-shared'
 
-import { EntryListHandle, StoreHandle, SessionHandle } from 'aries-askar-shared'
+import { EntryListHandle, StoreHandle, SessionHandle, ScanHandle } from 'aries-askar-shared'
 
 import { ariesAskarReactNative } from './library'
 import { serializeArguments } from './utils'
@@ -287,15 +286,32 @@ export class ReactNativeAriesAskar implements AriesAskar {
   public keyWrapKey(options: KeyWrapKeyOptions): EncryptedBuffer {
     throw new Error('Method not implemented. keyWrapKey')
   }
+
   public scanFree(options: ScanFreeOptions): void {
-    throw new Error('Method not implemented. scanFree')
+    const serializedOptions = serializeArguments(options)
+    ariesAskarReactNative.scanFree(serializedOptions)
   }
-  public scanNext(options: ScanNextOptions): Promise<EntryListHandle> {
-    throw new Error('Method not implemented. scanNext')
+
+  public async scanNext(options: ScanNextOptions): Promise<EntryListHandle> {
+    const serializedOptions = serializeArguments(options)
+    const handle = await this.promisifyWithResponse<number, number>((cb) =>
+      ariesAskarReactNative.scanNext({ cb, ...serializedOptions })
+    )
+
+    //  @ts-ignore
+    return new EntryListHandle(handle)
   }
-  public scanStart(options: ScanStartOptions): Promise<ScanHandle> {
-    throw new Error('Method not implemented. scanStart')
+
+  public async scanStart(options: ScanStartOptions): Promise<ScanHandle> {
+    const serializedOptions = serializeArguments(options)
+    const handle = await this.promisifyWithResponse<number, number>((cb) =>
+      ariesAskarReactNative.scanStart({ cb, ...serializedOptions })
+    )
+
+    //  @ts-ignore
+    return new ScanHandle(handle)
   }
+
   public sessionClose(options: SessionCloseOptions): Promise<void> {
     const serializedOptions = serializeArguments(options)
     return this.promisify((cb) => ariesAskarReactNative.sessionClose({ cb, ...serializedOptions }))

@@ -113,7 +113,7 @@ export interface NativeBindings {
 
   scanNext(options: any): ErrorCode
 
-  scanStart(options: any): ErrorCode
+  scanStart(options: any): number
 
   sessionClose(options: any): ErrorCode
 

@@ -53,6 +53,9 @@ FunctionMap TurboModuleHostObject::functionMapping(jsi::Runtime &rt) {
       std::make_tuple("entryListGetTags", &ariesAskar::entryListGetTags));
   fMap.insert(std::make_tuple("entryListCount", &ariesAskar::entryListCount));
   fMap.insert(std::make_tuple("entryListFree", &ariesAskar::entryListFree));
+  fMap.insert(std::make_tuple("scanFree", &ariesAskar::scanFree));
+  fMap.insert(std::make_tuple("scanNext", &ariesAskar::scanNex));
+  fMap.insert(std::make_tuple("scanStart", &ariesAskar::scanStart));
   return fMap;
 }
 

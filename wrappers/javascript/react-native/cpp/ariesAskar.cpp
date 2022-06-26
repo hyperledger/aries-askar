@@ -484,4 +484,35 @@ jsi::Value sessionUpdateKey(jsi::Runtime &rt, jsi::Object options) {
   return jsi::Value::null();
 }
 
+jsi::Value scanStart(jsi::Runtime &rt, jsi::Object options) {
+  int64_t handle = jsiToValue<int64_t>(rt, options, "storeHandle");
+  std::string category = jsiToValue<std::string>(rt, options, "category");
+
+  std::string tagFilter =
+      jsiToValue<std::string>(rt, options, "tagFilter", true);
+  std::string profile = jsiToValue<std::string>(rt, options, "profile", true);
+  int64_t offset = jsiToValue<int64_t>(rt, options, "offset", true);
+  int64_t limit = jsiToValue<int64_t>(rt, options, "limit", true);
+
+  jsi::Function cb = options.getPropertyAsFunction(rt, "cb");
+  State *state = new State(&cb);
+  state->rt = &rt;
+
+  ErrorCode code = askar_scan_start(
+      handle, profile.length() ? profile.c_str() : nullptr, category.c_str(),
+      tagFilter.length() ? tagFilter.c_str() : nullptr, offset, limit,
+      callbackWithResponse, CallbackId(state));
+  handleError(rt, code);
+
+  return jsi::Value::null();
+};
+
+jsi::Value scanNext(jsi::Runtime &rt, jsi::Object options) {
+  return jsi::Value::null();
+};
+
+jsi::Value scanFree(jsi::Runtime &rt, jsi::Object options) {
+  return jsi::Value::null();
+};
+
 } // namespace ariesAskar

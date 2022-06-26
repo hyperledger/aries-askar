@@ -69,9 +69,9 @@ jsi::Value entryListGetValue(jsi::Runtime &rt, jsi::Object options);
 // jsi::Value keyVerifySignature(jsi::Runtime &rt, jsi::Object options);
 // jsi::Value keyWrapKey(jsi::Runtime &rt, jsi::Object options);
 
-// jsi::Value scanFree(jsi::Runtime &rt, jsi::Object options);
-// jsi::Value scanNext(jsi::Runtime &rt, jsi::Object options);
-// jsi::Value scanStart(jsi::Runtime &rt, jsi::Object options);
+jsi::Value scanFree(jsi::Runtime &rt, jsi::Object options);
+jsi::Value scanNext(jsi::Runtime &rt, jsi::Object options);
+jsi::Value scanStart(jsi::Runtime &rt, jsi::Object options);
 
 jsi::Value sessionClose(jsi::Runtime &rt, jsi::Object options);
 jsi::Value sessionCount(jsi::Runtime &rt, jsi::Object options);
