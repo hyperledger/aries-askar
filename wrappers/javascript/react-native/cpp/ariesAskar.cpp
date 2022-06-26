@@ -524,6 +524,11 @@ jsi::Value scanNext(jsi::Runtime &rt, jsi::Object options) {
 };
 
 jsi::Value scanFree(jsi::Runtime &rt, jsi::Object options) {
+  int64_t handle = jsiToValue<int64_t>(rt, options, "scanHandle");
+    
+  ErrorCode code = askar_scan_free(ScanHandle(handle));
+  handleError(rt, code);
+    
   return jsi::Value::null();
 };
 
