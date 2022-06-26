@@ -158,12 +158,12 @@ export class ReactNativeAriesAskar implements AriesAskar {
     return ariesAskarReactNative.entryListGetTags(serializedOptions)
   }
 
-  public entryListGetValue(options: EntryListGetValueOptions): string {
+  public entryListGetValue(options: EntryListGetValueOptions): Uint8Array {
     const serializedOptions = serializeArguments(options)
     return ariesAskarReactNative.entryListGetValue(serializedOptions)
   }
 
-  public keyAeadDecrypt(options: KeyAeadDecryptOptions): SecretBuffer {
+  public keyAeadDecrypt(options: KeyAeadDecryptOptions): Uint8Array {
     throw new Error('Method not implemented. keyAeadDecrypt')
   }
   public keyAeadEncrypt(options: KeyAeadEncryptOptions): EncryptedBuffer {

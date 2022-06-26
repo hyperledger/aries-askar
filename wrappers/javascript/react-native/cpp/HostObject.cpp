@@ -43,10 +43,14 @@ FunctionMap TurboModuleHostObject::functionMapping(jsi::Runtime &rt) {
   fMap.insert(std::make_tuple("sessionUpdate", &ariesAskar::sessionUpdate));
   fMap.insert(
       std::make_tuple("sessionUpdateKey", &ariesAskar::sessionUpdateKey));
-  fMap.insert(std::make_tuple("entryListGetName", &ariesAskar::entryListGetName));
-  fMap.insert(std::make_tuple("entryListGetValue", &ariesAskar::entryListGetValue));
-  fMap.insert(std::make_tuple("entryListGetCategory", &ariesAskar::entryListGetCategory));
-  fMap.insert(std::make_tuple("entryListGetTags", &ariesAskar::entryListGetTags));
+  fMap.insert(
+      std::make_tuple("entryListGetName", &ariesAskar::entryListGetName));
+  fMap.insert(
+      std::make_tuple("entryListGetValue", &ariesAskar::entryListGetValue));
+  fMap.insert(std::make_tuple("entryListGetCategory",
+                              &ariesAskar::entryListGetCategory));
+  fMap.insert(
+      std::make_tuple("entryListGetTags", &ariesAskar::entryListGetTags));
   fMap.insert(std::make_tuple("entryListCount", &ariesAskar::entryListCount));
   fMap.insert(std::make_tuple("entryListFree", &ariesAskar::entryListFree));
   return fMap;

@@ -31,7 +31,7 @@ export interface NativeBindings {
 
   entryListGetTags(options: any): string
 
-  entryListGetValue(options: any): string
+  entryListGetValue(options: any): Uint8Array
 
   keyAeadDecrypt(options: any): ErrorCode
 

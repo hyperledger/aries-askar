@@ -222,7 +222,7 @@ export interface AriesAskar {
   entryListGetCategory(options: EntryListGetCategoryOptions): string
   entryListGetName(options: EntryListGetNameOptions): string
   entryListGetTags(options: EntryListGetTagsOptions): string
-  entryListGetValue(options: EntryListGetValueOptions): string
+  entryListGetValue(options: EntryListGetValueOptions): Uint8Array
 
   keyAeadDecrypt(options: KeyAeadDecryptOptions): Uint8Array
   keyAeadEncrypt(options: KeyAeadEncryptOptions): EncryptedBuffer

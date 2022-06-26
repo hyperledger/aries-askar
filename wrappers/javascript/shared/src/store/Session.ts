@@ -94,9 +94,7 @@ export class Session {
     expiryMs?: number
   }) {
     if (!this.handle) throw AriesAskarError.customError({ message: 'Cannot insert with a closed session' })
-    const serializedValue = JSON.stringify(value)
-    if (!serializedValue)
-      throw AriesAskarError.customError({ message: 'Either `value` or `valueJson` must be defined' })
+    const serializedValue = typeof value === 'string' ? value : JSON.stringify(value)
 
     // @ts-ignore
     const encoder = new TextEncoder()
@@ -119,19 +117,15 @@ export class Session {
     expiryMs,
     tags,
     value,
-    valueJson,
   }: {
     category: string
     name: string
-    value?: string
+    value: string | Record<string, unknown>
     tags?: Record<string, unknown>
     expiryMs?: number
-    valueJson?: unknown
   }) {
     if (!this.handle) throw AriesAskarError.customError({ message: 'Cannot replace with a closed session' })
-    const serializedValue = !value && valueJson ? JSON.stringify(valueJson) : value
-    if (!serializedValue)
-      throw AriesAskarError.customError({ message: 'Either `value` or `valueJson` must be defined' })
+    const serializedValue = typeof value === 'string' ? value : JSON.stringify(value)
 
     // @ts-ignore
     const encoder = new TextEncoder()

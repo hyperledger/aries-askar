@@ -11,3 +11,6 @@ test:
 test-with-log:
 	cd ../../ && cargo build
 	LIB_ARIES_ASKAR_PATH=~/Developer/work/essif/askar/aries-askar/target/debug LOG=1 yarn nodejs test jose 
+
+format-cpp:
+	clang-format -i react-native/cpp/*.cpp react-native/cpp/*.h

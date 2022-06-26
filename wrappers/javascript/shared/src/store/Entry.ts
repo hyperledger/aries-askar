@@ -24,13 +24,18 @@ export class Entry {
     return this._list.getName(this._position)
   }
 
-  public get value() {
-    return this.rawValue
+  public get value(): string {
+    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+    // @ts-ignore
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call
+    const decoder = new TextDecoder()
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
+    return decoder.decode(this.rawValue)
   }
 
   private get rawValue() {
-    // Temporary fix because the response seems to be inside another pair of quotes
-    return this._list.getValue(this._position).replace(/^"(.*)"$/, '$1')
+    // why does this not work return
+    return this._list.getValue(this._position)
   }
 
   public get tags() {
@@ -40,7 +45,8 @@ export class Entry {
   public toJson(shouldParseValueToJson = false): EntryObject {
     return {
       name: this.name,
-      // value: shouldParseValueToJson ? (JSON.parse(this.value) as Record<string, unknown>) : this.value,
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-argument
+      value: shouldParseValueToJson ? (JSON.parse(this.value) as Record<string, unknown>) : this.value,
       tags: this.tags,
       category: this.category,
     }
