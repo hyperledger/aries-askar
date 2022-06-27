@@ -1,9 +1,10 @@
 import type { KeyAlgs, SigAlgs } from '../enums'
-import { Jwk, JwkProps } from './Jwk'
 import type { LocalKeyHandle } from './handles'
 
 import { ariesAskar } from '../ariesAskar'
 import { KeyMethod, keyAlgFromString } from '../enums'
+
+import { Jwk, JwkProps } from './Jwk'
 
 // TODO: is this jwk type correct?
 
@@ -77,7 +78,13 @@ export class Key {
   }
 
   public get jwkSecret() {
-    return Jwk.fromString(ariesAskar.keyGetJwkSecret({ localKeyHandle: this.handle }))
+    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+    // @ts-ignore
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call
+    const decoder = new TextDecoder()
+    const secretBytes = ariesAskar.keyGetJwkSecret({ localKeyHandle: this.handle })
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
+    return Jwk.fromString(decoder.decode(secretBytes))
   }
 
   public get jwkThumbprint() {

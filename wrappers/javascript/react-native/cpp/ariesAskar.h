@@ -31,8 +31,8 @@ jsi::Value entryListGetValue(jsi::Runtime &rt, jsi::Object options);
 // jsi::Value keyAeadGetParams(jsi::Runtime &rt, jsi::Object options);
 // jsi::Value keyAeadRandomNonce(jsi::Runtime &rt, jsi::Object options);
 
-// jsi::Value keyConvert(jsi::Runtime &rt, jsi::Object options);
-// jsi::Value keyFree(jsi::Runtime &rt, jsi::Object options);
+jsi::Value keyConvert(jsi::Runtime &rt, jsi::Object options);
+jsi::Value keyFree(jsi::Runtime &rt, jsi::Object options);
 
 // jsi::Value keyCryptoBox(jsi::Runtime &rt, jsi::Object options);
 // jsi::Value keyCryptoBoxOpen(jsi::Runtime &rt, jsi::Object options);

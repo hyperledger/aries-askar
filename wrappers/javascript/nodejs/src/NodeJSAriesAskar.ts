@@ -256,7 +256,7 @@ export class NodeJSAriesAskar implements AriesAskar {
     nativeAriesAskar.askar_entry_list_get_category(entryListHandle, index, ret)
     handleError()
 
-    return ret.deref()
+    return ret.deref() as string
   }
 
   public entryListGetName(options: EntryListGetNameOptions): string {
@@ -267,7 +267,7 @@ export class NodeJSAriesAskar implements AriesAskar {
     nativeAriesAskar.askar_entry_list_get_name(entryListHandle, index, ret)
     handleError()
 
-    return ret.deref()
+    return ret.deref() as string
   }
 
   public entryListGetTags(options: EntryListGetTagsOptions): string {
@@ -278,10 +278,10 @@ export class NodeJSAriesAskar implements AriesAskar {
     nativeAriesAskar.askar_entry_list_get_tags(entryListHandle, index, ret)
     handleError()
 
-    return ret.deref()
+    return ret.deref() as string
   }
 
-  public entryListGetValue(options: EntryListGetValueOptions): string {
+  public entryListGetValue(options: EntryListGetValueOptions): Uint8Array {
     const { entryListHandle, index } = serializeArguments(options)
 
     const ret = allocateSecretBuffer()
@@ -290,7 +290,7 @@ export class NodeJSAriesAskar implements AriesAskar {
     nativeAriesAskar.askar_entry_list_get_value(entryListHandle, index, ret)
     handleError()
 
-    return secretBufferToBuffer(ret.deref()).toString()
+    return new Uint8Array(secretBufferToBuffer(ret.deref()))
   }
 
   public keyAeadDecrypt(options: KeyAeadDecryptOptions): Uint8Array {
@@ -636,7 +636,7 @@ export class NodeJSAriesAskar implements AriesAskar {
     return ret.deref()
   }
 
-  public keyGetJwkSecret(options: KeyGetJwkSecretOptions): string {
+  public keyGetJwkSecret(options: KeyGetJwkSecretOptions): Uint8Array {
     const { localKeyHandle } = serializeArguments(options)
     const ret = allocateSecretBuffer()
 
@@ -644,7 +644,7 @@ export class NodeJSAriesAskar implements AriesAskar {
     nativeAriesAskar.askar_key_get_jwk_secret(localKeyHandle, ret)
     handleError()
 
-    return secretBufferToBuffer(ret.deref()).toString()
+    return new Uint8Array(secretBufferToBuffer(ret.deref()))
   }
 
   public keyGetJwkThumbprint(options: KeyGetJwkThumbprintOptions): string {

@@ -1,6 +1,10 @@
+#include <vector>
+
 #include <turboModuleUtility.h>
 
 namespace turboModuleUtility {
+
+using byteVector = std::vector<uint8_t>;
 
 void registerTurboModule(jsi::Runtime &rt) {
   // Create a TurboModuleRustHostObject
@@ -206,6 +210,18 @@ EntryListHandle jsiToValue(jsi::Runtime &rt, jsi::Object &options,
 };
 
 template <>
+LocalKeyHandle jsiToValue(jsi::Runtime &rt, jsi::Object &options,
+                           const char *name, bool optional) {
+  std::string handle =
+      turboModuleUtility::jsiToValue<std::string>(rt, options, name, optional);
+  LocalKey *localKeyPtr =
+      reinterpret_cast<LocalKey *>(std::stol(handle));
+  LocalKeyHandle localKeyHandle = LocalKeyHandle{._0 = localKeyPtr};
+
+  return localKeyHandle;
+};
+
+template <>
 std::vector<int32_t>
 jsiToValue<std::vector<int32_t>>(jsi::Runtime &rt, jsi::Object &options,
                                  const char *name, bool optional) {
@@ -249,28 +265,27 @@ ByteBuffer jsiToValue<ByteBuffer>(jsi::Runtime &rt, jsi::Object &options,
 }
 
 jsi::ArrayBuffer byteBufferToArrayBuffer(jsi::Runtime &rt, ByteBuffer bb) {
-  const uint8_t *buffer = bb.data;
-  size_t length = bb.len;
-  jsi::Function arrayBufferCtor =
-      rt.global().getPropertyAsFunction(rt, "ArrayBuffer");
-  jsi::ArrayBuffer arrayBuffer =
-      arrayBufferCtor.callAsConstructor(rt, (int)length)
+    jsi::ArrayBuffer arrayBuffer = rt
+          .global()
+          .getPropertyAsFunction(rt, "ArrayBuffer")
+          .callAsConstructor(rt, int(bb.len))
           .getObject(rt)
           .getArrayBuffer(rt);
-  memcpy(arrayBuffer.data(rt), buffer, length);
-  return arrayBuffer;
+      
+    memcpy(arrayBuffer.data(rt), bb.data, bb.len);
+    return arrayBuffer;
 }
 
 jsi::ArrayBuffer secretBufferToArrayBuffer(jsi::Runtime &rt, SecretBuffer sb) {
-  const uint8_t *buffer = sb.data;
-  int64_t length = sb.len;
-  jsi::Function arrayBufferCtor =
-      rt.global().getPropertyAsFunction(rt, "ArrayBuffer");
-  jsi::ArrayBuffer arrayBuffer =
-      arrayBufferCtor.callAsConstructor(rt, int(length))
-          .getObject(rt)
-          .getArrayBuffer(rt);
-  memcpy(arrayBuffer.data(rt), buffer, length);
+  jsi::ArrayBuffer arrayBuffer = rt
+        .global()
+        .getPropertyAsFunction(rt, "ArrayBuffer")
+        .callAsConstructor(rt, int(sb.len))
+        .getObject(rt)
+        .getArrayBuffer(rt);
+    
+    // TODO: signature here is a weird. sb.data cannot go into ab.data()
+  memcpy(arrayBuffer.data(rt), sb.data, sb.len);
   return arrayBuffer;
 }
 

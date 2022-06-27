@@ -1,10 +1,10 @@
 /* eslint-disable no-empty-pattern */
 
 type EntryListHandle = number
-type LocalKeyHandle = number
-export type StoreHandle = number
 
-type ErrorCode = number
+type LocalKeyHandle = string
+
+export type StoreHandle = number
 
 type Callback = (err: number) => void
 
@@ -33,125 +33,125 @@ export interface NativeBindings {
 
   entryListGetValue(options: any): Uint8Array
 
-  keyAeadDecrypt(options: any): ErrorCode
+  keyAeadDecrypt(options: any): void
 
-  keyAeadEncrypt(options: any): ErrorCode
+  keyAeadEncrypt(options: any): void
 
-  keyAeadGetPadding(options: any): ErrorCode
+  keyAeadGetPadding(options: any): void
 
-  keyAeadGetParams(options: any): ErrorCode
+  keyAeadGetParams(options: any): void
 
-  keyAeadRandomNonce(options: any): ErrorCode
+  keyAeadRandomNonce(options: any): void
 
-  keyConvert(options: any): ErrorCode
+  keyConvert(options: any): LocalKeyHandle
 
-  keyCryptoBox(options: any): ErrorCode
+  keyCryptoBox(options: any): void
 
-  keyCryptoBoxOpen(options: any): ErrorCode
+  keyCryptoBoxOpen(options: any): void
 
-  keyCryptoBoxRandomNonce(options: any): ErrorCode
+  keyCryptoBoxRandomNonce(options: any): void
 
-  keyCryptoBoxSeal(options: any): ErrorCode
+  keyCryptoBoxSeal(options: any): void
 
-  keyCryptoBoxSealOpen(options: any): ErrorCode
+  keyCryptoBoxSealOpen(options: any): void
 
-  keyDeriveEcdh1pu(options: any): ErrorCode
+  keyDeriveEcdh1pu(options: any): void
 
-  keyDeriveEcdhEs(options: any): ErrorCode
+  keyDeriveEcdhEs(options: any): void
 
-  keyEntryListCount(options: any): ErrorCode
+  keyEntryListCount(options: any): void
 
-  ntryListFree(options: any): ErrorCode
+  ntryListFree(options: any): void
 
-  keyEntryListGetAlgorithm(options: any): ErrorCode
+  keyEntryListGetAlgorithm(options: any): void
 
-  keyEntryListGetMetadata(options: any): ErrorCode
+  keyEntryListGetMetadata(options: any): void
 
-  keyEntryListGetName(options: any): ErrorCode
+  keyEntryListGetName(options: any): void
 
-  keyEntryListGetTags(options: any): ErrorCode
+  keyEntryListGetTags(options: any): void
 
-  keyEntryListLoadLocal(options: any): ErrorCode
+  keyEntryListLoadLocal(options: any): void
 
-  ree(options: any): ErrorCode
+  keyFree(options: any): void
 
-  keyFromJwk(options: any): ErrorCode
+  keyFromJwk(options: any): LocalKeyHandle
 
-  keyFromKeyExchange(options: any): ErrorCode
+  keyFromKeyExchange(options: any): LocalKeyHandle
 
-  keyFromPublicBytes(options: any): ErrorCode
+  keyFromPublicBytes(options: any): LocalKeyHandle
 
-  keyFromSecretBytes(options: any): ErrorCode
+  keyFromSecretBytes(options: any): LocalKeyHandle
 
-  keyFromSeed(options: any): ErrorCode
+  keyFromSeed(options: any): LocalKeyHandle
 
-  keyGenerate(options: any): ErrorCode
+  keyGenerate(options: any): LocalKeyHandle
 
-  keyGetAlgorithm(options: any): ErrorCode
+  keyGetAlgorithm(options: any): string
 
-  keyGetEphemeral(options: any): ErrorCode
+  keyGetEphemeral(options: any): number
 
-  keyGetJwkPublic(options: any): ErrorCode
+  keyGetJwkPublic(options: any): string
 
-  keyGetJwkSecret(options: any): ErrorCode
+  keyGetJwkSecret(options: any): Uint8Array
 
-  keyGetJwkThumbprint(options: any): ErrorCode
+  keyGetJwkThumbprint(options: any): string
 
-  keyGetPublicBytes(options: any): ErrorCode
+  keyGetPublicBytes(options: any): Uint8Array
 
-  keyGetSecretBytes(options: any): ErrorCode
+  keyGetSecretBytes(options: any): Uint8Array
 
-  keySignMessage(options: any): ErrorCode
+  keySignMessage(options: any): Uint8Array
 
-  keyUnwrapKey(options: any): ErrorCode
+  keyUnwrapKey(options: any): LocalKeyHandle
 
-  keyVerifySignature(options: any): ErrorCode
+  keyVerifySignature(options: any): number
 
-  keyWrapKey(options: any): ErrorCode
+  keyWrapKey(options: any): { buffer: Uint8Array; tagPos: number; noncePos: number }
 
-  scanFree(options: any): ErrorCode
+  scanFree(options: any): void
 
-  scanNext(options: any): ErrorCode
+  scanNext(options: any): void
 
   scanStart(options: any): number
 
-  sessionClose(options: any): ErrorCode
+  sessionClose(options: any): void
 
-  sessionCount(options: any): ErrorCode
+  sessionCount(options: any): void
 
-  sessionFetch(options: any): ErrorCode
+  sessionFetch(options: any): void
 
-  sessionFetchAll(options: any): ErrorCode
+  sessionFetchAll(options: any): void
 
-  sessionFetchAllKeys(options: any): ErrorCode
+  sessionFetchAllKeys(options: any): void
 
-  sessionFetchKey(options: any): ErrorCode
+  sessionFetchKey(options: any): void
 
-  sessionInsertKey(options: any): ErrorCode
+  sessionInsertKey(options: any): void
 
-  sessionRemoveAll(options: any): ErrorCode
+  sessionRemoveAll(options: any): void
 
-  sessionRemoveKey(options: any): ErrorCode
+  sessionRemoveKey(options: any): void
 
-  sessionStart(options: any): ErrorCode
+  sessionStart(options: any): void
 
-  sessionUpdate(options: any): ErrorCode
+  sessionUpdate(options: any): void
 
-  sessionUpdateKey(options: any): ErrorCode
+  sessionUpdateKey(options: any): void
 
-  setCustomLogger(options: any): ErrorCode
+  setCustomLogger(options: any): void
 
-  setDefaultLogger(options: any): ErrorCode
+  setDefaultLogger(options: any): void
 
-  setMaxLogLevel(options: any): ErrorCode
+  setMaxLogLevel(options: any): void
 
-  storeClose(options: any): ErrorCode
+  storeClose(options: any): void
 
-  storeCreateProfile(options: any): ErrorCode
+  storeCreateProfile(options: any): void
 
   storeGenerateRawKey(options: { seed?: ArrayBuffer }): string
 
-  storeGetProfileName(options: any): ErrorCode
+  storeGetProfileName(options: any): void
 
   storeOpen(options: {
     specUri: string
@@ -159,13 +159,13 @@ export interface NativeBindings {
     passKey?: string
     profile?: string
     cb: CallbackWithResponse<StoreHandle>
-  }): ErrorCode
+  }): void
 
-  storeProvision(options: any): ErrorCode
+  storeProvision(options: any): void
 
-  storeRekey(options: any): ErrorCode
+  storeRekey(options: any): void
 
-  storeRemove(options: any): ErrorCode
+  storeRemove(options: any): void
 
-  storeRemoveProfile(options: any): ErrorCode
+  storeRemoveProfile(options: any): void
 }

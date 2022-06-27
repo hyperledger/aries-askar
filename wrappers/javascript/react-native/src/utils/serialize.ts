@@ -1,4 +1,6 @@
-import { EntryListHandle, ScanHandle, SessionHandle, StoreHandle } from 'aries-askar-shared'
+import type { ArcHandle } from 'aries-askar-shared'
+
+import { Jwk, EntryListHandle, ScanHandle, SessionHandle, StoreHandle } from 'aries-askar-shared'
 
 export type Callback = (err: number) => void
 export type CallbackWithResponse = (err: number, response: string) => void
@@ -13,7 +15,8 @@ type Argument =
   | StoreHandle
   | SessionHandle
   | ScanHandle
-  | EntryListHandle
+  | ArcHandle
+  | Jwk
 
 type SerializedArgument = string | number | Callback | CallbackWithResponse | ArrayBuffer | boolean
 
@@ -56,6 +59,8 @@ export type SerializedOptions<Type> = {
     ? number
     : Type[Property] extends EntryListHandle
     ? number
+    : Type[Property] extends Jwk
+    ? string
     : unknown
 }
 
@@ -76,6 +81,8 @@ const serialize = (arg: Argument): SerializedArgument => {
         return arg.valueOf()
       } else if (arg instanceof Uint8Array) {
         return arg.buffer
+      } else if (arg instanceof Jwk) {
+        return arg.toUint8Array()
       } else if (
         arg instanceof StoreHandle ||
         arg instanceof SessionHandle ||

@@ -3,7 +3,6 @@ import type {
   AeadParams,
   AriesAskar,
   BufferFreeOptions,
-  EncryptedBuffer,
   EntryListCountOptions,
   EntryListFreeOptions,
   EntryListGetCategoryOptions,
@@ -48,11 +47,9 @@ import type {
   KeyUnwrapKeyOptions,
   KeyVerifySignatureOptions,
   KeyWrapKeyOptions,
-  LocalKeyHandle,
   ScanFreeOptions,
   ScanNextOptions,
   ScanStartOptions,
-  SecretBuffer,
   SessionCloseOptions,
   SessionCountOptions,
   SessionFetchAllKeysOptions,
@@ -78,7 +75,14 @@ import type {
   StoreRemoveProfileOptions,
 } from 'aries-askar-shared'
 
-import { EntryListHandle, StoreHandle, SessionHandle, ScanHandle } from 'aries-askar-shared'
+import {
+  EncryptedBuffer,
+  LocalKeyHandle,
+  EntryListHandle,
+  StoreHandle,
+  SessionHandle,
+  ScanHandle,
+} from 'aries-askar-shared'
 
 import { ariesAskarReactNative } from './library'
 import { serializeArguments } from './utils'
@@ -169,7 +173,8 @@ export class ReactNativeAriesAskar implements AriesAskar {
 
   public entryListGetValue(options: EntryListGetValueOptions): Uint8Array {
     const serializedOptions = serializeArguments(options)
-    return ariesAskarReactNative.entryListGetValue(serializedOptions)
+    const buf = ariesAskarReactNative.entryListGetValue(serializedOptions)
+    return new Uint8Array(buf)
   }
 
   public keyAeadDecrypt(options: KeyAeadDecryptOptions): Uint8Array {
@@ -187,9 +192,14 @@ export class ReactNativeAriesAskar implements AriesAskar {
   public keyAeadRandomNonce(options: KeyAeadRandomNonceOptions): Uint8Array {
     throw new Error('Method not implemented. keyAeadRandomNonce')
   }
+
   public keyConvert(options: KeyConvertOptions): LocalKeyHandle {
-    throw new Error('Method not implemented. keyConvert')
+    const serializedOptions = serializeArguments(options)
+    const handle = ariesAskarReactNative.keyConvert(serializedOptions)
+
+    return new LocalKeyHandle(handle)
   }
+
   public keyCryptoBox(options: KeyCryptoBoxOptions): Uint8Array {
     throw new Error('Method not implemented. keyCryptoBox')
   }
@@ -232,59 +242,117 @@ export class ReactNativeAriesAskar implements AriesAskar {
   public keyEntryListLoadLocal(options: KeyEntryListLoadLocalOptions): LocalKeyHandle {
     throw new Error('Method not implemented. keyEntryListLoadLocal')
   }
+
   public keyFree(options: KeyFreeOptions): void {
-    throw new Error('Method not implemented. keyFree')
+    const serializedOptions = serializeArguments(options)
+    ariesAskarReactNative.keyFree(serializedOptions)
   }
+
   public keyFromJwk(options: KeyFromJwkOptions): LocalKeyHandle {
-    throw new Error('Method not implemented. keyFromJwk')
+    const serializedOptions = serializeArguments(options)
+    const handle = ariesAskarReactNative.keyFromJwk(serializedOptions)
+
+    return new LocalKeyHandle(handle)
   }
+
   public keyFromKeyExchange(options: KeyFromKeyExchangeOptions): LocalKeyHandle {
-    throw new Error('Method not implemented. keyFromKeyExchange')
+    const serializedOptions = serializeArguments(options)
+    const handle = ariesAskarReactNative.keyFromKeyExchange(serializedOptions)
+
+    return new LocalKeyHandle(handle)
   }
+
   public keyFromPublicBytes(options: KeyFromPublicBytesOptions): LocalKeyHandle {
-    throw new Error('Method not implemented. keyFromPublicBytes')
+    const serializedOptions = serializeArguments(options)
+    const handle = ariesAskarReactNative.keyFromPublicBytes(serializedOptions)
+
+    return new LocalKeyHandle(handle)
   }
+
   public keyFromSecretBytes(options: KeyFromSecretBytesOptions): LocalKeyHandle {
-    throw new Error('Method not implemented. keyFromSecretBytes')
+    const serializedOptions = serializeArguments(options)
+    const handle = ariesAskarReactNative.keyFromSecretBytes(serializedOptions)
+
+    return new LocalKeyHandle(handle)
   }
+
   public keyFromSeed(options: KeyFromSeedOptions): LocalKeyHandle {
-    throw new Error('Method not implemented. keyFromSeed')
+    const serializedOptions = serializeArguments(options)
+    const handle = ariesAskarReactNative.keyFromSeed(serializedOptions)
+
+    return new LocalKeyHandle(handle)
   }
+
   public keyGenerate(options: KeyGenerateOptions): LocalKeyHandle {
-    throw new Error('Method not implemented. keyGenerate')
+    const serializedOptions = serializeArguments(options)
+    const handle = ariesAskarReactNative.keyGenerate(serializedOptions)
+
+    return new LocalKeyHandle(handle)
   }
+
   public keyGetAlgorithm(options: KeyGetAlgorithmOptions): string {
-    throw new Error('Method not implemented. keyGetAlgorithm')
+    const serializedOptions = serializeArguments(options)
+    return ariesAskarReactNative.keyGetAlgorithm(serializedOptions)
   }
+
   public keyGetEphemeral(options: KeyGetEphemeralOptions): number {
-    throw new Error('Method not implemented. keyGetEphemeral')
+    const serializedOptions = serializeArguments(options)
+    return ariesAskarReactNative.keyGetEphemeral(serializedOptions)
   }
+
   public keyGetJwkPublic(options: KeyGetJwkPublicOptions): string {
-    throw new Error('Method not implemented. keyGetJwkPublic')
+    const serializedOptions = serializeArguments(options)
+    return ariesAskarReactNative.keyGetJwkPublic(serializedOptions)
   }
-  public keyGetJwkSecret(options: KeyGetJwkSecretOptions): string {
-    throw new Error('Method not implemented. keyGetJwkSecret')
+
+  public keyGetJwkSecret(options: KeyGetJwkSecretOptions): Uint8Array {
+    const serializedOptions = serializeArguments(options)
+    const buf = ariesAskarReactNative.keyGetJwkSecret(serializedOptions)
+    return new Uint8Array(buf)
   }
+
   public keyGetJwkThumbprint(options: KeyGetJwkThumbprintOptions): string {
-    throw new Error('Method not implemented. keyGetJwkThumbprint')
+    const serializedOptions = serializeArguments(options)
+    return ariesAskarReactNative.keyGetJwkThumbprint(serializedOptions)
   }
+
   public keyGetPublicBytes(options: KeyGetPublicBytesOptions): Uint8Array {
-    throw new Error('Method not implemented. keyGetPublicBytes')
+    const serializedOptions = serializeArguments(options)
+    const buf = ariesAskarReactNative.keyGetPublicBytes(serializedOptions)
+    return new Uint8Array(buf)
   }
+
   public keyGetSecretBytes(options: KeyGetSecretBytesOptions): Uint8Array {
-    throw new Error('Method not implemented. keyGetSecretBytes')
+    const serializedOptions = serializeArguments(options)
+    const buf = ariesAskarReactNative.keyGetSecretBytes(serializedOptions)
+    return new Uint8Array(buf)
   }
+
   public keySignMessage(options: KeySignMessageOptions): Uint8Array {
-    throw new Error('Method not implemented. keySignMessage')
+    const serializedOptions = serializeArguments(options)
+    const buf = ariesAskarReactNative.keySignMessage(serializedOptions)
+    return new Uint8Array(buf)
   }
+
   public keyUnwrapKey(options: KeyUnwrapKeyOptions): LocalKeyHandle {
-    throw new Error('Method not implemented. keyUnwrapKey')
+    const serializedOptions = serializeArguments(options)
+    const handle = ariesAskarReactNative.keyUnwrapKey(serializedOptions)
+
+    return new LocalKeyHandle(handle)
   }
+
   public keyVerifySignature(options: KeyVerifySignatureOptions): boolean {
-    throw new Error('Method not implemented. keyVerifySignature')
+    const serializedOptions = serializeArguments(options)
+    const result = ariesAskarReactNative.keyVerifySignature(serializedOptions)
+
+    return !!result
   }
+
   public keyWrapKey(options: KeyWrapKeyOptions): EncryptedBuffer {
-    throw new Error('Method not implemented. keyWrapKey')
+    const serializedOptions = serializeArguments(options)
+    const result = ariesAskarReactNative.keyWrapKey(serializedOptions)
+
+    return new EncryptedBuffer(result)
   }
 
   public scanFree(options: ScanFreeOptions): void {

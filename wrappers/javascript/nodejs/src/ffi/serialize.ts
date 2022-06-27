@@ -1,5 +1,5 @@
 import type { ByteBufferStruct, SecretBufferStruct } from '../ffi'
-import type { ByteBuffer, SecretBuffer } from 'aries-askar-shared'
+import type { ByteBuffer, KeyEntryListHandle, SecretBuffer } from 'aries-askar-shared'
 
 import { ArcHandle, StoreHandle, SessionHandle, ScanHandle, Jwk } from 'aries-askar-shared'
 import { NULL } from 'ref-napi'
@@ -15,6 +15,7 @@ type Argument =
   | StoreHandle
   | SessionHandle
   | ScanHandle
+  | KeyEntryListHandle
   | Array<unknown>
   | Date
   | Uint8Array
@@ -80,7 +81,7 @@ export type SerializedOptions<Type> = Required<{
     : Type[Property] extends ScanHandle
     ? number
     : Type[Property] extends ArcHandle
-    ? Buffer
+    ? string
     : Type[Property] extends Jwk
     ? ByteBuffer
     : unknown

@@ -254,7 +254,7 @@ export interface AriesAskar {
   keyGetAlgorithm(options: KeyGetAlgorithmOptions): string
   keyGetEphemeral(options: KeyGetEphemeralOptions): number
   keyGetJwkPublic(options: KeyGetJwkPublicOptions): string
-  keyGetJwkSecret(options: KeyGetJwkSecretOptions): string
+  keyGetJwkSecret(options: KeyGetJwkSecretOptions): Uint8Array
   keyGetJwkThumbprint(options: KeyGetJwkThumbprintOptions): string
   keyGetPublicBytes(options: KeyGetPublicBytesOptions): Uint8Array
   keyGetSecretBytes(options: KeyGetSecretBytesOptions): Uint8Array

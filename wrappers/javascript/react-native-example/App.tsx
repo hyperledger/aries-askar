@@ -12,6 +12,7 @@ import {
   storeScan,
   storeTransactionBasic,
 } from './tests/store.test';
+import {keyBlsG1Keygen, keyBlsG2Keygen, keyEd25519} from './tests/keys.test';
 
 const doTest = async (
   cb: (store: Store) => Promise<1 | undefined>,
@@ -47,6 +48,12 @@ export const App = () => {
     'Store: profile': storeProfile,
   };
 
+  const keyTestCases: Record<string, () => any> = {
+    'Key: BLS G2 Keygen': keyBlsG2Keygen,
+    'Key: BLS G1 Keygen': keyBlsG1Keygen,
+    'Key: Ed25519': keyEd25519,
+  };
+
   return (
     <SafeAreaView>
       <Button
@@ -57,13 +64,23 @@ export const App = () => {
           );
         }}
       />
-      {Object.entries(storeTestCases).map(([funcName, cb]) => (
-        <Button
-          title={funcName}
-          onPress={() => doTest(cb, funcName)}
-          key={funcName}
-        />
-      ))}
+      <Button
+        title="Key: All"
+        onPress={() => {
+          Object.entries(keyTestCases).map(
+            async ([funcName, cb]) => await doTest(cb, funcName),
+          );
+        }}
+      />
+      {Object.entries({...storeTestCases, ...keyTestCases}).map(
+        ([funcName, cb]) => (
+          <Button
+            title={funcName}
+            onPress={() => doTest(cb, funcName)}
+            key={funcName}
+          />
+        ),
+      )}
     </SafeAreaView>
   );
 };
