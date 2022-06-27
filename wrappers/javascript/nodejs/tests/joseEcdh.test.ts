@@ -205,7 +205,7 @@ describe('jose ecdh', () => {
     expect(base64urlApv).toStrictEqual('Qm9iIGFuZCBDaGFybGll')
 
     const protectedJson = {
-      algorithm: 'ECDH-1PU+A128KW',
+      alg: 'ECDH-1PU+A128KW',
       enc: 'A256CBC-HS512',
       apu: 'QWxpY2U',
       apv: 'Qm9iIGFuZCBDaGFybGll',
