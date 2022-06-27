@@ -22,7 +22,7 @@ export const SecretBufferStruct = ByteBufferStruct
 export const SecretBufferStructPtr = ByteBufferStructPtr
 
 export const EncryptedBufferStruct = CStruct({
-  buffer: SecretBufferStruct,
+  secretBuffer: SecretBufferStruct,
   tag_pos: FFI_INT64,
   nonce_pos: FFI_INT64,
 })
@@ -30,8 +30,8 @@ export const EncryptedBufferStruct = CStruct({
 export const EncryptedBufferStructPtr = ref.refType(EncryptedBufferStruct)
 
 export const AeadParamsStruct = CStruct({
-  nonceLength: FFI_INT32,
-  tagLength: FFI_INT32,
+  nonce_length: FFI_INT32,
+  tag_length: FFI_INT32,
 })
 
 export const AeadParamsStructPtr = ref.refType(AeadParamsStruct)

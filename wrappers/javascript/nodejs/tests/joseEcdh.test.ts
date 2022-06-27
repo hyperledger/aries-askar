@@ -1,4 +1,5 @@
 import { Ecdh1PU, EcdhEs, Jwk, Key, KeyAlgs } from 'aries-askar-shared'
+import { uint8arrayToByteBufferStruct } from 'nodejs/src/ffi'
 
 import { base64url, setup } from './utils'
 
@@ -227,9 +228,12 @@ describe('jose ecdh', () => {
     const iv = Uint8Array.from([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15])
     const message = Uint8Array.from(Buffer.from('Three is a magic number.'))
 
-    const { ciphertext, tag: ccTag } = cek.aeadEncrypt({ message, nonce: iv, aad: protectedB64Bytes })
+    const enc = cek.aeadEncrypt({ message, nonce: iv, aad: protectedB64Bytes })
+
+    const { ciphertext, tag: ccTag } = enc.parts
 
     expect(Buffer.from(ciphertext).toString('base64url')).toStrictEqual('Az2IWsISEMDJvyc5XRL-3-d-RgNBOGolCsxFFoUXFYw')
+    // TODO: why does this output: H0ipUyFCLS4bc4nwnG7nDYG4QBNmq2GOy11HeEku5zI
     expect(Buffer.from(ccTag).toString('base64url')).toStrictEqual('HLb4fTlm8spGmij3RyOs2gJ4DpHM4hhVRwdF_hGb3WQ')
 
     const derived = new Ecdh1PU({

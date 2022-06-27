@@ -15,7 +15,7 @@ import { ByteBufferStruct } from './structures'
 export const byteBufferClassToStruct = ({ len, data }: ByteBuffer) => {
   return ByteBufferStruct({
     len,
-    data: Buffer.from(data) as Pointer<TypedArray<number, number>>,
+    data: data as Pointer<TypedArray<number, number>>,
   })
 }
 
@@ -36,7 +36,7 @@ export const secretBufferToBuffer = byteBufferToBuffer
 
 export const encryptedBufferStructToClass = (encryptedBuffer: EncryptedBufferType) => {
   // @ts-ignore
-  const buffer = Uint8Array.from(secretBufferToBuffer(encryptedBuffer.buffer))
+  const buffer = Uint8Array.from(secretBufferToBuffer(encryptedBuffer.secretBuffer))
   // @ts-ignore
   const noncePos = encryptedBuffer.nonce_pos
   // @ts-ignore

@@ -336,7 +336,7 @@ export class NodeJSAriesAskar implements AriesAskar {
 
     const aeadParams: AeadParamsType = ret.deref()
     // @ts-ignore
-    return new AeadParams(aeadParams)
+    return new AeadParams({ nonceLength: aeadParams.nonce_length, taglength: aead.tag_length })
   }
 
   public keyAeadRandomNonce(options: KeyAeadRandomNonceOptions): Uint8Array {

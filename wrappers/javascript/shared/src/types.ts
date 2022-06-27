@@ -1,5 +1,3 @@
-import type { KeyAlgs } from './enums'
-
 type ByteBufferOptions = {
   len: number
   data: Uint8Array

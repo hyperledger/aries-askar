@@ -82,7 +82,7 @@ export type SerializedOptions<Type> = Required<{
     : Type[Property] extends ScanHandle
     ? number
     : Type[Property] extends ArcHandle
-    ? string
+    ? Buffer
     : Type[Property] extends Jwk
     ? typeof ByteBufferStruct
     : Type[Property] extends Key
