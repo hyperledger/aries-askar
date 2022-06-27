@@ -303,17 +303,20 @@ jsi::Value sessionFetchAllKeys(jsi::Runtime &rt, jsi::Object options) {
   auto sessionHandle = jsiToValue<int64_t>(rt, options, "sessionHandle");
   auto algorithm = jsiToValue<std::string>(rt, options, "algorithm", true);
   auto thumbprint = jsiToValue<std::string>(rt, options, "thumbprint", true);
-  auto tagFilter = jsiToValue<std::string>(rt, options, "tagFilter",true);
+  auto tagFilter = jsiToValue<std::string>(rt, options, "tagFilter", true);
   auto limit = jsiToValue<int64_t>(rt, options, "limit", true);
   // TODO: is this really not required? compare with python
-  auto forUpdate = jsiToValue<int8_t>(rt, options, "forUpdate", true);
+  auto forUpdate = jsiToValue<int8_t>(rt, options, "forUpdate");
 
   jsi::Function cb = options.getPropertyAsFunction(rt, "cb");
   State *state = new State(&cb);
   state->rt = &rt;
 
   ErrorCode code = askar_session_fetch_all_keys(
-      sessionHandle, algorithm.length() ? algorithm.c_str() : nullptr, thumbprint.length() ? thumbprint.c_str() : nullptr, tagFilter.length() ? tagFilter.c_str() : nullptr, limit, forUpdate, callbackWithResponse, CallbackId(state));
+      sessionHandle, algorithm.length() ? algorithm.c_str() : nullptr,
+      thumbprint.length() ? thumbprint.c_str() : nullptr,
+      tagFilter.length() ? tagFilter.c_str() : nullptr, limit, forUpdate,
+      callbackWithResponse, CallbackId(state));
   handleError(rt, code);
 
   return jsi::Value::null();
@@ -463,8 +466,8 @@ jsi::Value scanStart(jsi::Runtime &rt, jsi::Object options) {
 
   auto tagFilter = jsiToValue<std::string>(rt, options, "tagFilter", true);
   auto profile = jsiToValue<std::string>(rt, options, "profile", true);
-  int64_t offset = jsiToValue<int64_t>(rt, options, "offset", true);
-  int64_t limit = jsiToValue<int64_t>(rt, options, "limit", true);
+  auto offset = jsiToValue<int64_t>(rt, options, "offset", true);
+  auto limit = jsiToValue<int64_t>(rt, options, "limit", true);
 
   jsi::Function cb = options.getPropertyAsFunction(rt, "cb");
   State *state = new State(&cb);

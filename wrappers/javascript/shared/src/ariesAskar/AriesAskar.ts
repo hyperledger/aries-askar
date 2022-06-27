@@ -153,11 +153,11 @@ export type SessionFetchAllOptions = {
 }
 export type SessionFetchAllKeysOptions = {
   sessionHandle: SessionHandle
+  forUpdate: boolean
   algorithm?: string
   thumbprint?: string
   tagFilter?: Record<string, unknown>
   limit?: number
-  forUpdate?: boolean
 }
 export type SessionFetchKeyOptions = { sessionHandle: SessionHandle; name: string; forUpdate: boolean }
 export type SessionInsertKeyOptions = {
