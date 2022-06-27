@@ -6,9 +6,11 @@
 TurboModuleHostObject::TurboModuleHostObject(jsi::Runtime &rt) { return; }
 FunctionMap TurboModuleHostObject::functionMapping(jsi::Runtime &rt) {
   FunctionMap fMap;
+
   fMap.insert(std::make_tuple("version", &ariesAskar::version));
-  fMap.insert(std::make_tuple("storeOpen", &ariesAskar::storeOpen));
   fMap.insert(std::make_tuple("getCurrentError", &ariesAskar::getCurrentError));
+
+  fMap.insert(std::make_tuple("storeOpen", &ariesAskar::storeOpen));
   fMap.insert(
       std::make_tuple("storeGenerateRawKey", &ariesAskar::storeGenerateRawKey));
   fMap.insert(std::make_tuple("storeProvision", &ariesAskar::storeProvision));
@@ -25,6 +27,7 @@ FunctionMap TurboModuleHostObject::functionMapping(jsi::Runtime &rt) {
   fMap.insert(std::make_tuple("storeRemove", &ariesAskar::storeRemove));
   fMap.insert(
       std::make_tuple("storeRemoveProfile", &ariesAskar::storeRemoveProfile));
+
   fMap.insert(std::make_tuple("sessionClose", &ariesAskar::sessionClose));
   fMap.insert(std::make_tuple("sessionCount", &ariesAskar::sessionCount));
   fMap.insert(std::make_tuple("sessionFetch", &ariesAskar::sessionFetch));
@@ -42,6 +45,7 @@ FunctionMap TurboModuleHostObject::functionMapping(jsi::Runtime &rt) {
   fMap.insert(std::make_tuple("sessionUpdate", &ariesAskar::sessionUpdate));
   fMap.insert(
       std::make_tuple("sessionUpdateKey", &ariesAskar::sessionUpdateKey));
+
   fMap.insert(
       std::make_tuple("entryListGetName", &ariesAskar::entryListGetName));
   fMap.insert(
@@ -52,31 +56,50 @@ FunctionMap TurboModuleHostObject::functionMapping(jsi::Runtime &rt) {
       std::make_tuple("entryListGetTags", &ariesAskar::entryListGetTags));
   fMap.insert(std::make_tuple("entryListCount", &ariesAskar::entryListCount));
   fMap.insert(std::make_tuple("entryListFree", &ariesAskar::entryListFree));
+
   fMap.insert(std::make_tuple("scanFree", &ariesAskar::scanFree));
   fMap.insert(std::make_tuple("scanNext", &ariesAskar::scanNext));
   fMap.insert(std::make_tuple("scanStart", &ariesAskar::scanStart));
+
   fMap.insert(std::make_tuple("keyFromJwk", &ariesAskar::keyFromJwk));
-  fMap.insert(std::make_tuple("keyFromKeyExchange", &ariesAskar::keyFromKeyExchange));
-  fMap.insert(std::make_tuple("keyFromPublicBytes", &ariesAskar::keyFromPublicBytes));
-  fMap.insert(std::make_tuple("keyFromSecretBytes", &ariesAskar::keyFromSecretBytes));
+  fMap.insert(
+      std::make_tuple("keyFromKeyExchange", &ariesAskar::keyFromKeyExchange));
+  fMap.insert(
+      std::make_tuple("keyFromPublicBytes", &ariesAskar::keyFromPublicBytes));
+  fMap.insert(
+      std::make_tuple("keyFromSecretBytes", &ariesAskar::keyFromSecretBytes));
   fMap.insert(std::make_tuple("keyFromSeed", &ariesAskar::keyFromSeed));
   fMap.insert(std::make_tuple("keyGenerate", &ariesAskar::keyGenerate));
   fMap.insert(std::make_tuple("keyGetAlgorithm", &ariesAskar::keyGetAlgorithm));
   fMap.insert(std::make_tuple("keyGetEphemeral", &ariesAskar::keyGetEphemeral));
   fMap.insert(std::make_tuple("keyGetJwkPublic", &ariesAskar::keyGetJwkPublic));
   fMap.insert(std::make_tuple("keyGetJwkSecret", &ariesAskar::keyGetJwkSecret));
-  fMap.insert(std::make_tuple("keyGetJwkThumbprint", &ariesAskar::keyGetJwkThumbprint));
-  fMap.insert(std::make_tuple("keyGetPublicBytes", &ariesAskar::keyGetPublicBytes));
-  fMap.insert(std::make_tuple("keyGetSecretBytes", &ariesAskar::keyGetSecretBytes));
+  fMap.insert(
+      std::make_tuple("keyGetJwkThumbprint", &ariesAskar::keyGetJwkThumbprint));
+  fMap.insert(
+      std::make_tuple("keyGetPublicBytes", &ariesAskar::keyGetPublicBytes));
+  fMap.insert(
+      std::make_tuple("keyGetSecretBytes", &ariesAskar::keyGetSecretBytes));
   fMap.insert(std::make_tuple("keySignMessage", &ariesAskar::keySignMessage));
   fMap.insert(std::make_tuple("keyUnwrapKey", &ariesAskar::keyUnwrapKey));
-  fMap.insert(std::make_tuple("keyVerifySignature", &ariesAskar::keyVerifySignature));
+  fMap.insert(
+      std::make_tuple("keyVerifySignature", &ariesAskar::keyVerifySignature));
   fMap.insert(std::make_tuple("keyWrapKey", &ariesAskar::keyWrapKey));
+
   fMap.insert(std::make_tuple("keyConvert", &ariesAskar::keyConvert));
   fMap.insert(std::make_tuple("keyFree", &ariesAskar::keyFree));
+
+  fMap.insert(std::make_tuple("keyCryptoBox", &ariesAskar::keyCryptoBox));
+  fMap.insert(
+      std::make_tuple("keyCryptoBoxOpen", &ariesAskar::keyCryptoBoxOpen));
+  fMap.insert(std::make_tuple("keyCryptoBoxRandomNonce",
+                              &ariesAskar::keyCryptoBoxRandomNonce));
+  fMap.insert(
+      std::make_tuple("keyCryptoBoxSeal", &ariesAskar::keyCryptoBoxSeal));
+  fMap.insert(std::make_tuple("keyCryptoBoxSealOpen",
+                              &ariesAskar::keyCryptoBoxSealOpen));
   return fMap;
 }
-
 
 jsi::Function TurboModuleHostObject::call(jsi::Runtime &rt, const char *name,
                                           Cb cb) {

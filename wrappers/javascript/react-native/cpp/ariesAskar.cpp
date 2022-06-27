@@ -553,7 +553,8 @@ jsi::Value keyFromKeyExchange(jsi::Runtime &rt, jsi::Object options) {
 
   LocalKeyHandle out;
 
-  ErrorCode code = askar_key_from_key_exchange(alg.c_str(), skHandle, pkHandle, &out);
+  ErrorCode code =
+      askar_key_from_key_exchange(alg.c_str(), skHandle, pkHandle, &out);
   handleError(rt, code);
 
   std::string serializedPointer = std::to_string(intptr_t(out._0));
@@ -788,10 +789,72 @@ jsi::Value keyConvert(jsi::Runtime &rt, jsi::Object options) {
 jsi::Value keyFree(jsi::Runtime &rt, jsi::Object options) {
   LocalKeyHandle handle =
       jsiToValue<LocalKeyHandle>(rt, options, "localKeyHandle");
-  
+
   askar_key_free(handle);
 
   return jsi::Value::null();
 };
+
+jsi::Value keyCryptoBox(jsi::Runtime &rt, jsi::Object options) {
+  auto recipientKey = jsiToValue<LocalKeyHandle>(rt, options, "recipientKey");
+  auto senderKey = jsiToValue<LocalKeyHandle>(rt, options, "senderKey");
+  auto message = jsiToValue<ByteBuffer>(rt, options, "message");
+  auto nonce = jsiToValue<ByteBuffer>(rt, options, "nonce");
+
+  SecretBuffer out;
+
+  ErrorCode code = askar_key_crypto_box(recipientKey, senderKey, message, nonce, &out);
+  handleError(rt, code);
+
+  return secretBufferToArrayBuffer(rt, out);
+}
+
+jsi::Value keyCryptoBoxOpen(jsi::Runtime &rt, jsi::Object options) {
+  auto recipientKey = jsiToValue<LocalKeyHandle>(rt, options, "recipientKey");
+  auto senderKey = jsiToValue<LocalKeyHandle>(rt, options, "senderKey");
+  auto message = jsiToValue<ByteBuffer>(rt, options, "message");
+  auto nonce = jsiToValue<ByteBuffer>(rt, options, "nonce");
+
+  SecretBuffer out;
+
+  ErrorCode code = askar_key_crypto_box_open(recipientKey, senderKey, message, nonce, &out);
+  handleError(rt, code);
+
+  return secretBufferToArrayBuffer(rt, out);
+}
+
+jsi::Value keyCryptoBoxRandomNonce(jsi::Runtime &rt, jsi::Object options) {
+  SecretBuffer out;
+
+  ErrorCode code = askar_key_crypto_box_random_nonce(&out);
+  handleError(rt, code);
+
+  return secretBufferToArrayBuffer(rt, out);
+
+}
+
+jsi::Value keyCryptoBoxSeal(jsi::Runtime &rt, jsi::Object options) {
+  auto handle = jsiToValue<LocalKeyHandle>(rt, options, "localKeyHandle");
+  auto message = jsiToValue<ByteBuffer>(rt, options, "message");
+
+  SecretBuffer out;
+
+  ErrorCode code = askar_key_crypto_box_seal(handle, message, &out);
+  handleError(rt, code);
+
+  return secretBufferToArrayBuffer(rt, out);
+}
+
+jsi::Value keyCryptoBoxSealOpen(jsi::Runtime &rt, jsi::Object options) {
+  auto handle = jsiToValue<LocalKeyHandle>(rt, options, "localKeyHandle");
+  auto ciphertext = jsiToValue<ByteBuffer>(rt, options, "ciphertext");
+
+  SecretBuffer out;
+
+  ErrorCode code = raskar_key_crypto_box_seal_open(handle, ciphertext, &out);
+  handleError(rt, code);
+
+  return secretBufferToArrayBuffer(rt, out);
+}
 
 } // namespace ariesAskar

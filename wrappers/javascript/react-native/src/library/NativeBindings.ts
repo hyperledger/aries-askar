@@ -31,7 +31,7 @@ export interface NativeBindings {
 
   entryListGetTags(options: any): string
 
-  entryListGetValue(options: any): Uint8Array
+  entryListGetValue(options: any): ArrayBuffer
 
   keyAeadDecrypt(options: any): void
 
@@ -45,15 +45,15 @@ export interface NativeBindings {
 
   keyConvert(options: any): LocalKeyHandle
 
-  keyCryptoBox(options: any): void
+  keyCryptoBox(options: any): ArrayBuffer
 
-  keyCryptoBoxOpen(options: any): void
+  keyCryptoBoxOpen(options: any): ArrayBuffer
 
-  keyCryptoBoxRandomNonce(options: any): void
+  keyCryptoBoxRandomNonce(options: Record<string, never>): ArrayBuffer
 
-  keyCryptoBoxSeal(options: any): void
+  keyCryptoBoxSeal(options: any): ArrayBuffer
 
-  keyCryptoBoxSealOpen(options: any): void
+  keyCryptoBoxSealOpen(options: any): ArrayBuffer
 
   keyDeriveEcdh1pu(options: any): void
 
@@ -93,21 +93,21 @@ export interface NativeBindings {
 
   keyGetJwkPublic(options: any): string
 
-  keyGetJwkSecret(options: any): Uint8Array
+  keyGetJwkSecret(options: any): ArrayBuffer
 
   keyGetJwkThumbprint(options: any): string
 
-  keyGetPublicBytes(options: any): Uint8Array
+  keyGetPublicBytes(options: any): ArrayBuffer
 
-  keyGetSecretBytes(options: any): Uint8Array
+  keyGetSecretBytes(options: any): ArrayBuffer
 
-  keySignMessage(options: any): Uint8Array
+  keySignMessage(options: any): ArrayBuffer
 
   keyUnwrapKey(options: any): LocalKeyHandle
 
   keyVerifySignature(options: any): number
 
-  keyWrapKey(options: any): { buffer: Uint8Array; tagPos: number; noncePos: number }
+  keyWrapKey(options: any): { buffer: ArrayBuffer; tagPos: number; noncePos: number }
 
   scanFree(options: any): void
 

@@ -13,6 +13,7 @@ import {
   storeTransactionBasic,
 } from './tests/store.test';
 import {keyBlsG1Keygen, keyBlsG2Keygen, keyEd25519} from './tests/keys.test';
+import {cryptoBoxSeal} from './tests/cryptoBox.test';
 
 const doTest = async (
   cb: (store: Store) => Promise<1 | undefined>,
@@ -54,6 +55,10 @@ export const App = () => {
     'Key: Ed25519': keyEd25519,
   };
 
+  const cryptoBoxTestCases: Record<string, () => any> = {
+    'CryptoBox: seal': cryptoBoxSeal,
+  };
+
   return (
     <SafeAreaView>
       <Button
@@ -72,15 +77,25 @@ export const App = () => {
           );
         }}
       />
-      {Object.entries({...storeTestCases, ...keyTestCases}).map(
-        ([funcName, cb]) => (
-          <Button
-            title={funcName}
-            onPress={() => doTest(cb, funcName)}
-            key={funcName}
-          />
-        ),
-      )}
+      <Button
+        title="CryptoBox: All"
+        onPress={() => {
+          Object.entries(cryptoBoxTestCases).map(
+            async ([funcName, cb]) => await doTest(cb, funcName),
+          );
+        }}
+      />
+      {Object.entries({
+        ...storeTestCases,
+        ...keyTestCases,
+        ...cryptoBoxTestCases,
+      }).map(([funcName, cb]) => (
+        <Button
+          title={funcName}
+          onPress={() => doTest(cb, funcName)}
+          key={funcName}
+        />
+      ))}
     </SafeAreaView>
   );
 };

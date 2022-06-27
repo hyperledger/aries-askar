@@ -201,20 +201,34 @@ export class ReactNativeAriesAskar implements AriesAskar {
   }
 
   public keyCryptoBox(options: KeyCryptoBoxOptions): Uint8Array {
-    throw new Error('Method not implemented. keyCryptoBox')
+    const serializedOptions = serializeArguments(options)
+    const buf = ariesAskarReactNative.keyCryptoBox(serializedOptions)
+    return new Uint8Array(buf)
   }
+
   public keyCryptoBoxOpen(options: KeyCryptoBoxOpenOptions): Uint8Array {
-    throw new Error('Method not implemented. keyCryptoBoxOpen')
+    const serializedOptions = serializeArguments(options)
+    const buf = ariesAskarReactNative.keyCryptoBoxOpen(serializedOptions)
+    return new Uint8Array(buf)
   }
+
   public keyCryptoBoxRandomNonce(): Uint8Array {
-    throw new Error('Method not implemented. keyCryptoBoxRandomNonce')
+    const buf = ariesAskarReactNative.keyCryptoBoxRandomNonce({})
+    return new Uint8Array(buf)
   }
+
   public keyCryptoBoxSeal(options: KeyCryptoBoxSealOptions): Uint8Array {
-    throw new Error('Method not implemented. keyCryptoBoxSeal')
+    const serializedOptions = serializeArguments(options)
+    const buf = ariesAskarReactNative.keyCryptoBoxSeal(serializedOptions)
+    return new Uint8Array(buf)
   }
+
   public keyCryptoBoxSealOpen(options: KeyCryptoBoxSealOpenOptions): Uint8Array {
-    throw new Error('Method not implemented. keyCryptoBoxSealOpen')
+    const serializedOptions = serializeArguments(options)
+    const buf = ariesAskarReactNative.keyCryptoBoxSealOpen(serializedOptions)
+    return new Uint8Array(buf)
   }
+
   public keyDeriveEcdh1pu(options: KeyDeriveEcdh1puOptions): LocalKeyHandle {
     throw new Error('Method not implemented. keyDeriveEcdh1pu')
   }

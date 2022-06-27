@@ -11,6 +11,7 @@ namespace ariesAskar {
 
 jsi::Value version(jsi::Runtime &rt, jsi::Object options);
 jsi::Value getCurrentError(jsi::Runtime &rt, jsi::Object options);
+
 // jsi::Value bufferfree(jsi::Runtime &rt, jsi::Object options);
 
 // jsi::Value setCustomLogger(jsi::Runtime &rt, jsi::Object options);
@@ -34,11 +35,11 @@ jsi::Value entryListGetValue(jsi::Runtime &rt, jsi::Object options);
 jsi::Value keyConvert(jsi::Runtime &rt, jsi::Object options);
 jsi::Value keyFree(jsi::Runtime &rt, jsi::Object options);
 
-// jsi::Value keyCryptoBox(jsi::Runtime &rt, jsi::Object options);
-// jsi::Value keyCryptoBoxOpen(jsi::Runtime &rt, jsi::Object options);
-// jsi::Value keyCryptoBoxRandomNonce(jsi::Runtime &rt, jsi::Object options);
-// jsi::Value keyCryptoBoxSeal(jsi::Runtime &rt, jsi::Object options);
-// jsi::Value keyCryptoBoxSealOpen(jsi::Runtime &rt, jsi::Object options);
+jsi::Value keyCryptoBox(jsi::Runtime &rt, jsi::Object options);
+jsi::Value keyCryptoBoxOpen(jsi::Runtime &rt, jsi::Object options);
+jsi::Value keyCryptoBoxRandomNonce(jsi::Runtime &rt, jsi::Object options);
+jsi::Value keyCryptoBoxSeal(jsi::Runtime &rt, jsi::Object options);
+jsi::Value keyCryptoBoxSealOpen(jsi::Runtime &rt, jsi::Object options);
 
 // jsi::Value keyDeriveEcdh1Pu(jsi::Runtime &rt, jsi::Object options);
 // jsi::Value keyDeriveEcdhEs(jsi::Runtime &rt, jsi::Object options);
