@@ -208,7 +208,7 @@ export type StoreRekeyOptions = { storeHandle: StoreHandle; keyMethod: string; p
 export type StoreRemoveOptions = { specUri: string }
 export type StoreRemoveProfileOptions = { storeHandle: StoreHandle; profile: string }
 
-export interface AriesAskar {
+export type AriesAskar = {
   version(): string
   getCurrentError(): string
   // bufferFree(options: BufferFreeOptions): void
