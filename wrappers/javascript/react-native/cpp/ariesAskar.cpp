@@ -17,8 +17,7 @@ jsi::Value getCurrentError(jsi::Runtime &rt, jsi::Object options) {
 };
 
 jsi::Value entryListCount(jsi::Runtime &rt, jsi::Object options) {
-  auto handle =
-      jsiToValue<EntryListHandle>(rt, options, "entryListHandle");
+  auto handle = jsiToValue<EntryListHandle>(rt, options, "entryListHandle");
 
   int32_t out;
 
@@ -28,8 +27,7 @@ jsi::Value entryListCount(jsi::Runtime &rt, jsi::Object options) {
   return jsi::Value(out);
 };
 jsi::Value entryListFree(jsi::Runtime &rt, jsi::Object options) {
-  auto handle =
-      jsiToValue<EntryListHandle>(rt, options, "entryListHandle");
+  auto handle = jsiToValue<EntryListHandle>(rt, options, "entryListHandle");
 
   askar_entry_list_free(handle);
 
@@ -37,8 +35,7 @@ jsi::Value entryListFree(jsi::Runtime &rt, jsi::Object options) {
 }
 
 jsi::Value entryListGetCategory(jsi::Runtime &rt, jsi::Object options) {
-  auto handle =
-      jsiToValue<EntryListHandle>(rt, options, "entryListHandle");
+  auto handle = jsiToValue<EntryListHandle>(rt, options, "entryListHandle");
   auto index = jsiToValue<int32_t>(rt, options, "index");
 
   const char *out;
@@ -50,8 +47,7 @@ jsi::Value entryListGetCategory(jsi::Runtime &rt, jsi::Object options) {
 }
 
 jsi::Value entryListGetTags(jsi::Runtime &rt, jsi::Object options) {
-  auto handle =
-      jsiToValue<EntryListHandle>(rt, options, "entryListHandle");
+  auto handle = jsiToValue<EntryListHandle>(rt, options, "entryListHandle");
   auto index = jsiToValue<int32_t>(rt, options, "index");
 
   const char *out;
@@ -63,8 +59,7 @@ jsi::Value entryListGetTags(jsi::Runtime &rt, jsi::Object options) {
 }
 
 jsi::Value entryListGetValue(jsi::Runtime &rt, jsi::Object options) {
-  auto handle =
-      jsiToValue<EntryListHandle>(rt, options, "entryListHandle");
+  auto handle = jsiToValue<EntryListHandle>(rt, options, "entryListHandle");
   auto index = jsiToValue<int32_t>(rt, options, "index");
 
   SecretBuffer out;
@@ -76,8 +71,7 @@ jsi::Value entryListGetValue(jsi::Runtime &rt, jsi::Object options) {
 }
 
 jsi::Value entryListGetName(jsi::Runtime &rt, jsi::Object options) {
-  auto handle =
-      jsiToValue<EntryListHandle>(rt, options, "entryListHandle");
+  auto handle = jsiToValue<EntryListHandle>(rt, options, "entryListHandle");
   auto index = jsiToValue<int32_t>(rt, options, "index");
 
   const char *out;
@@ -90,8 +84,7 @@ jsi::Value entryListGetName(jsi::Runtime &rt, jsi::Object options) {
 
 jsi::Value storeOpen(jsi::Runtime &rt, jsi::Object options) {
   auto specUri = jsiToValue<std::string>(rt, options, "specUri");
-  auto keyMethod =
-      jsiToValue<std::string>(rt, options, "keyMethod", true);
+  auto keyMethod = jsiToValue<std::string>(rt, options, "keyMethod", true);
   auto passKey = jsiToValue<std::string>(rt, options, "passKey", true);
   auto profile = jsiToValue<std::string>(rt, options, "profile", true);
 
@@ -112,8 +105,7 @@ jsi::Value storeOpen(jsi::Runtime &rt, jsi::Object options) {
 
 jsi::Value storeProvision(jsi::Runtime &rt, jsi::Object options) {
   auto specUri = jsiToValue<std::string>(rt, options, "specUri");
-  auto keyMethod =
-      jsiToValue<std::string>(rt, options, "keyMethod", true);
+  auto keyMethod = jsiToValue<std::string>(rt, options, "keyMethod", true);
   auto passKey = jsiToValue<std::string>(rt, options, "passKey", true);
   auto profile = jsiToValue<std::string>(rt, options, "profile", true);
   auto recreate = jsiToValue<int8_t>(rt, options, "recreate");
@@ -249,8 +241,7 @@ jsi::Value sessionClose(jsi::Runtime &rt, jsi::Object options) {
 jsi::Value sessionCount(jsi::Runtime &rt, jsi::Object options) {
   auto handle = jsiToValue<int64_t>(rt, options, "sessionHandle");
   auto category = jsiToValue<std::string>(rt, options, "category");
-  auto tagFilter =
-      jsiToValue<std::string>(rt, options, "tagFilter", true);
+  auto tagFilter = jsiToValue<std::string>(rt, options, "tagFilter", true);
 
   jsi::Function cb = options.getPropertyAsFunction(rt, "cb");
   State *state = new State(&cb);
@@ -286,8 +277,7 @@ jsi::Value sessionFetch(jsi::Runtime &rt, jsi::Object options) {
 jsi::Value sessionFetchAll(jsi::Runtime &rt, jsi::Object options) {
   auto handle = jsiToValue<int64_t>(rt, options, "sessionHandle");
   auto category = jsiToValue<std::string>(rt, options, "category");
-  auto tagFilter =
-      jsiToValue<std::string>(rt, options, "tagFilter", true);
+  auto tagFilter = jsiToValue<std::string>(rt, options, "tagFilter", true);
   int64_t limit = jsiToValue<int64_t>(rt, options, "limit", true);
   int8_t forUpdate = jsiToValue<int8_t>(rt, options, "forUpdate");
 
@@ -386,8 +376,7 @@ jsi::Value sessionInsertKey(jsi::Runtime &rt, jsi::Object options) {
 jsi::Value sessionRemoveAll(jsi::Runtime &rt, jsi::Object options) {
   auto handle = jsiToValue<int64_t>(rt, options, "sessionHandle");
   auto category = jsiToValue<std::string>(rt, options, "category");
-  auto tagFilter =
-      jsiToValue<std::string>(rt, options, "tagFilter", true);
+  auto tagFilter = jsiToValue<std::string>(rt, options, "tagFilter", true);
 
   jsi::Function cb = options.getPropertyAsFunction(rt, "cb");
   State *state = new State(&cb);
@@ -491,8 +480,7 @@ jsi::Value scanStart(jsi::Runtime &rt, jsi::Object options) {
   auto handle = jsiToValue<int64_t>(rt, options, "storeHandle");
   auto category = jsiToValue<std::string>(rt, options, "category");
 
-  auto tagFilter =
-      jsiToValue<std::string>(rt, options, "tagFilter", true);
+  auto tagFilter = jsiToValue<std::string>(rt, options, "tagFilter", true);
   auto profile = jsiToValue<std::string>(rt, options, "profile", true);
   int64_t offset = jsiToValue<int64_t>(rt, options, "offset", true);
   int64_t limit = jsiToValue<int64_t>(rt, options, "limit", true);
@@ -620,8 +608,7 @@ jsi::Value keyGenerate(jsi::Runtime &rt, jsi::Object options) {
 }
 
 jsi::Value keyGetAlgorithm(jsi::Runtime &rt, jsi::Object options) {
-  auto handle =
-      jsiToValue<LocalKeyHandle>(rt, options, "localKeyHandle");
+  auto handle = jsiToValue<LocalKeyHandle>(rt, options, "localKeyHandle");
 
   const char *out;
 
@@ -632,8 +619,7 @@ jsi::Value keyGetAlgorithm(jsi::Runtime &rt, jsi::Object options) {
 }
 
 jsi::Value keyGetEphemeral(jsi::Runtime &rt, jsi::Object options) {
-  auto handle =
-      jsiToValue<LocalKeyHandle>(rt, options, "localKeyHandle");
+  auto handle = jsiToValue<LocalKeyHandle>(rt, options, "localKeyHandle");
 
   int8_t out;
 
@@ -644,8 +630,7 @@ jsi::Value keyGetEphemeral(jsi::Runtime &rt, jsi::Object options) {
 }
 
 jsi::Value keyGetJwkPublic(jsi::Runtime &rt, jsi::Object options) {
-  auto handle =
-      jsiToValue<LocalKeyHandle>(rt, options, "localKeyHandle");
+  auto handle = jsiToValue<LocalKeyHandle>(rt, options, "localKeyHandle");
   auto alg = jsiToValue<std::string>(rt, options, "algorithm");
 
   const char *out;
@@ -657,8 +642,7 @@ jsi::Value keyGetJwkPublic(jsi::Runtime &rt, jsi::Object options) {
 }
 
 jsi::Value keyGetJwkSecret(jsi::Runtime &rt, jsi::Object options) {
-  auto handle =
-      jsiToValue<LocalKeyHandle>(rt, options, "localKeyHandle");
+  auto handle = jsiToValue<LocalKeyHandle>(rt, options, "localKeyHandle");
 
   SecretBuffer out;
 
@@ -669,8 +653,7 @@ jsi::Value keyGetJwkSecret(jsi::Runtime &rt, jsi::Object options) {
 }
 
 jsi::Value keyGetJwkThumbprint(jsi::Runtime &rt, jsi::Object options) {
-  auto handle =
-      jsiToValue<LocalKeyHandle>(rt, options, "localKeyHandle");
+  auto handle = jsiToValue<LocalKeyHandle>(rt, options, "localKeyHandle");
   auto alg = jsiToValue<std::string>(rt, options, "alg");
 
   const char *out;
@@ -682,8 +665,7 @@ jsi::Value keyGetJwkThumbprint(jsi::Runtime &rt, jsi::Object options) {
 }
 
 jsi::Value keyGetPublicBytes(jsi::Runtime &rt, jsi::Object options) {
-  auto handle =
-      jsiToValue<LocalKeyHandle>(rt, options, "localKeyHandle");
+  auto handle = jsiToValue<LocalKeyHandle>(rt, options, "localKeyHandle");
 
   SecretBuffer out;
 
@@ -694,8 +676,7 @@ jsi::Value keyGetPublicBytes(jsi::Runtime &rt, jsi::Object options) {
 }
 
 jsi::Value keyGetSecretBytes(jsi::Runtime &rt, jsi::Object options) {
-  auto handle =
-      jsiToValue<LocalKeyHandle>(rt, options, "localKeyHandle");
+  auto handle = jsiToValue<LocalKeyHandle>(rt, options, "localKeyHandle");
 
   SecretBuffer out;
 
@@ -706,8 +687,7 @@ jsi::Value keyGetSecretBytes(jsi::Runtime &rt, jsi::Object options) {
 }
 
 jsi::Value keySignMessage(jsi::Runtime &rt, jsi::Object options) {
-  auto handle =
-      jsiToValue<LocalKeyHandle>(rt, options, "localKeyHandle");
+  auto handle = jsiToValue<LocalKeyHandle>(rt, options, "localKeyHandle");
   auto message = jsiToValue<ByteBuffer>(rt, options, "message");
   auto sigType = jsiToValue<std::string>(rt, options, "sigType", true);
 
@@ -721,8 +701,7 @@ jsi::Value keySignMessage(jsi::Runtime &rt, jsi::Object options) {
 }
 
 jsi::Value keyUnwrapKey(jsi::Runtime &rt, jsi::Object options) {
-  auto handle =
-      jsiToValue<LocalKeyHandle>(rt, options, "localKeyHandle");
+  auto handle = jsiToValue<LocalKeyHandle>(rt, options, "localKeyHandle");
   auto alg = jsiToValue<std::string>(rt, options, "alg");
   auto ciphertext = jsiToValue<ByteBuffer>(rt, options, "ciphertext");
   auto nonce = jsiToValue<ByteBuffer>(rt, options, "nonce", true);
@@ -740,8 +719,7 @@ jsi::Value keyUnwrapKey(jsi::Runtime &rt, jsi::Object options) {
 }
 
 jsi::Value keyVerifySignature(jsi::Runtime &rt, jsi::Object options) {
-  auto handle =
-      jsiToValue<LocalKeyHandle>(rt, options, "localKeyHandle");
+  auto handle = jsiToValue<LocalKeyHandle>(rt, options, "localKeyHandle");
   auto message = jsiToValue<ByteBuffer>(rt, options, "message");
   auto signature = jsiToValue<ByteBuffer>(rt, options, "signature");
   auto sigType = jsiToValue<std::string>(rt, options, "sigType", true);
@@ -771,8 +749,7 @@ jsi::Value keyWrapKey(jsi::Runtime &rt, jsi::Object options) {
 }
 
 jsi::Value keyConvert(jsi::Runtime &rt, jsi::Object options) {
-  auto handle =
-      jsiToValue<LocalKeyHandle>(rt, options, "localKeyHandle");
+  auto handle = jsiToValue<LocalKeyHandle>(rt, options, "localKeyHandle");
   auto alg = jsiToValue<std::string>(rt, options, "alg");
 
   LocalKeyHandle out;
@@ -786,8 +763,7 @@ jsi::Value keyConvert(jsi::Runtime &rt, jsi::Object options) {
 };
 
 jsi::Value keyFree(jsi::Runtime &rt, jsi::Object options) {
-  auto handle =
-      jsiToValue<LocalKeyHandle>(rt, options, "localKeyHandle");
+  auto handle = jsiToValue<LocalKeyHandle>(rt, options, "localKeyHandle");
 
   askar_key_free(handle);
 
@@ -870,7 +846,9 @@ jsi::Value keyDeriveEcdh1Pu(jsi::Runtime &rt, jsi::Object options) {
 
   LocalKeyHandle out;
 
-  ErrorCode code = askar_key_derive_ecdh_1pu(alg.c_str(), ephemeralKey, senderKey, recipientKey, algId, apu, apv, ccTag, receive, &out);
+  ErrorCode code = askar_key_derive_ecdh_1pu(alg.c_str(), ephemeralKey,
+                                             senderKey, recipientKey, algId,
+                                             apu, apv, ccTag, receive, &out);
   handleError(rt, code);
 
   auto serializedPointer = std::to_string(intptr_t(out._0));
@@ -889,12 +867,86 @@ jsi::Value keyDeriveEcdhEs(jsi::Runtime &rt, jsi::Object options) {
 
   LocalKeyHandle out;
 
-  ErrorCode code = askar_key_derive_ecdh_es(alg.c_str(), ephemeralKey, recipientKey, algId, apu, apv, receive, &out);
+  ErrorCode code = askar_key_derive_ecdh_es(
+      alg.c_str(), ephemeralKey, recipientKey, algId, apu, apv, receive, &out);
   handleError(rt, code);
 
   auto serializedPointer = std::to_string(intptr_t(out._0));
   jsi::String pointer = jsi::String::createFromAscii(rt, serializedPointer);
   return pointer;
+}
+
+jsi::Value keyAeadDecrypt(jsi::Runtime &rt, jsi::Object options) {
+  auto handle = jsiToValue<LocalKeyHandle>(rt, options, "localKeyHandle");
+  auto ciphertext = jsiToValue<ByteBuffer>(rt, options, "ciphertext");
+  auto nonce = jsiToValue<ByteBuffer>(rt, options, "nonce");
+  auto tag = jsiToValue<ByteBuffer>(rt, options, "tag", true);
+  auto aad = jsiToValue<ByteBuffer>(rt, options, "aad", true);
+
+  SecretBuffer out;
+
+  ErrorCode code =
+      askar_key_aead_decrypt(handle, ciphertext, nonce, tag, aad, &out);
+  handleError(rt, code);
+
+  return secretBufferToArrayBuffer(rt, out);
+}
+
+jsi::Value keyAeadEncrypt(jsi::Runtime &rt, jsi::Object options) {
+  auto handle = jsiToValue<LocalKeyHandle>(rt, options, "localKeyHandle");
+  auto message = jsiToValue<ByteBuffer>(rt, options, "message");
+  auto nonce = jsiToValue<ByteBuffer>(rt, options, "nonce", true);
+  auto aad = jsiToValue<ByteBuffer>(rt, options, "aad", true);
+
+  EncryptedBuffer out;
+
+  ErrorCode code = askar_key_aead_encrypt(handle, message, nonce, aad, &out);
+  handleError(rt, code);
+
+  auto object = jsi::Object(rt);
+  object.setProperty(rt, "buffer", secretBufferToArrayBuffer(rt, out.buffer));
+  object.setProperty(rt, "tagPos", int(out.tag_pos));
+  object.setProperty(rt, "noncePos", int(out.nonce_pos));
+
+  return object;
+}
+
+jsi::Value keyAeadGetPadding(jsi::Runtime &rt, jsi::Object options) {
+  auto handle = jsiToValue<LocalKeyHandle>(rt, options, "localKeyHandle");
+  auto messageLength = jsiToValue<int64_t>(rt, options, "msgLen");
+
+  int32_t out;
+
+  ErrorCode code = askar_key_aead_get_padding(handle, messageLength, &out);
+  handleError(rt, code);
+
+  return jsi::Value(out);
+}
+
+jsi::Value keyAeadGetParams(jsi::Runtime &rt, jsi::Object options) {
+  auto handle = jsiToValue<LocalKeyHandle>(rt, options, "localKeyHandle");
+
+  AeadParams out;
+
+  ErrorCode code = askar_key_aead_get_params(handle, &out);
+  handleError(rt, code);
+
+  auto object = jsi::Object(rt);
+  object.setProperty(rt, "nonceLength", out.nonce_length);
+  object.setProperty(rt, "tagLength", out.tag_length);
+
+  return object;
+}
+
+jsi::Value keyAeadRandomNonce(jsi::Runtime &rt, jsi::Object options) {
+  auto handle = jsiToValue<LocalKeyHandle>(rt, options, "localKeyHandle");
+
+  SecretBuffer out;
+
+  ErrorCode code = askar_key_aead_random_nonce(handle, &out);
+  handleError(rt, code);
+
+  return secretBufferToArrayBuffer(rt, out);
 }
 
 } // namespace ariesAskar

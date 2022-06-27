@@ -33,15 +33,15 @@ export interface NativeBindings {
 
   entryListGetValue(options: any): ArrayBuffer
 
-  keyAeadDecrypt(options: any): void
+  keyAeadDecrypt(options: any): ArrayBuffer
 
-  keyAeadEncrypt(options: any): void
+  keyAeadEncrypt(options: any): { noncePos: number; tagPos: number; buffer: ArrayBuffer }
 
-  keyAeadGetPadding(options: any): void
+  keyAeadGetPadding(options: any): number
 
-  keyAeadGetParams(options: any): void
+  keyAeadGetParams(options: any): { nonceLength: number; tagLength: number }
 
-  keyAeadRandomNonce(options: any): void
+  keyAeadRandomNonce(options: any): ArrayBuffer
 
   keyConvert(options: any): LocalKeyHandle
 

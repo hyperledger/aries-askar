@@ -26,11 +26,11 @@ jsi::Value entryListGetName(jsi::Runtime &rt, jsi::Object options);
 jsi::Value entryListGetTags(jsi::Runtime &rt, jsi::Object options);
 jsi::Value entryListGetValue(jsi::Runtime &rt, jsi::Object options);
 
-// jsi::Value keyAeadDecrypt(jsi::Runtime &rt, jsi::Object options);
-// jsi::Value keyAeadEncrypt(jsi::Runtime &rt, jsi::Object options);
-// jsi::Value keyAeadGetPadding(jsi::Runtime &rt, jsi::Object options);
-// jsi::Value keyAeadGetParams(jsi::Runtime &rt, jsi::Object options);
-// jsi::Value keyAeadRandomNonce(jsi::Runtime &rt, jsi::Object options);
+jsi::Value keyAeadDecrypt(jsi::Runtime &rt, jsi::Object options);
+jsi::Value keyAeadEncrypt(jsi::Runtime &rt, jsi::Object options);
+jsi::Value keyAeadGetPadding(jsi::Runtime &rt, jsi::Object options);
+jsi::Value keyAeadGetParams(jsi::Runtime &rt, jsi::Object options);
+jsi::Value keyAeadRandomNonce(jsi::Runtime &rt, jsi::Object options);
 
 jsi::Value keyConvert(jsi::Runtime &rt, jsi::Object options);
 jsi::Value keyFree(jsi::Runtime &rt, jsi::Object options);

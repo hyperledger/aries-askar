@@ -14,8 +14,8 @@ type EncryptedBufferOptions = {
 }
 
 type AeadParamsOptions = {
-  nonce_length: number
-  tag_length: number
+  nonceLength: number
+  tagLength: number
 }
 
 export class ByteBuffer {
@@ -91,9 +91,9 @@ export class AeadParams {
   public nonceLength: number
   public tagLength: number
 
-  public constructor({ nonce_length, tag_length }: AeadParamsOptions) {
-    this.nonceLength = nonce_length
-    this.tagLength = tag_length
+  public constructor({ nonceLength, tagLength }: AeadParamsOptions) {
+    this.nonceLength = nonceLength
+    this.tagLength = tagLength
   }
 }
 

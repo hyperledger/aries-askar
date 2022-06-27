@@ -1,6 +1,5 @@
 /* eslint-disable @typescript-eslint/ban-ts-comment */
 import type {
-  AeadParams,
   AriesAskar,
   BufferFreeOptions,
   EntryListCountOptions,
@@ -76,6 +75,7 @@ import type {
 } from 'aries-askar-shared'
 
 import {
+  AeadParams,
   EncryptedBuffer,
   LocalKeyHandle,
   EntryListHandle,
@@ -178,19 +178,34 @@ export class ReactNativeAriesAskar implements AriesAskar {
   }
 
   public keyAeadDecrypt(options: KeyAeadDecryptOptions): Uint8Array {
-    throw new Error('Method not implemented. keyAeadDecrypt')
+    const serializedOptions = serializeArguments(options)
+    const buf = ariesAskarReactNative.keyAeadDecrypt(serializedOptions)
+    return new Uint8Array(buf)
   }
+
   public keyAeadEncrypt(options: KeyAeadEncryptOptions): EncryptedBuffer {
-    throw new Error('Method not implemented. keyAeadEncrypt')
+    const serializedOptions = serializeArguments(options)
+    const { buffer, noncePos, tagPos } = ariesAskarReactNative.keyAeadEncrypt(serializedOptions)
+
+    return new EncryptedBuffer({ tagPos, noncePos, buffer: new Uint8Array(buffer) })
   }
+
   public keyAeadGetPadding(options: KeyAeadGetPaddingOptions): number {
-    throw new Error('Method not implemented. keyAeadGetPadding')
+    const serializedOptions = serializeArguments(options)
+    return ariesAskarReactNative.keyAeadGetPadding(serializedOptions)
   }
+
   public keyAeadGetParams(options: KeyAeadGetParamsOptions): AeadParams {
-    throw new Error('Method not implemented. keyAeadGetParams')
+    const serializedOptions = serializeArguments(options)
+    const { tagLength, nonceLength } = ariesAskarReactNative.keyAeadGetParams(serializedOptions)
+
+    return new AeadParams({ nonceLength, tagLength })
   }
+
   public keyAeadRandomNonce(options: KeyAeadRandomNonceOptions): Uint8Array {
-    throw new Error('Method not implemented. keyAeadRandomNonce')
+    const serializedOptions = serializeArguments(options)
+    const buf = ariesAskarReactNative.keyAeadRandomNonce(serializedOptions)
+    return new Uint8Array(buf)
   }
 
   public keyConvert(options: KeyConvertOptions): LocalKeyHandle {
