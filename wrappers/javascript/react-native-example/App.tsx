@@ -119,15 +119,6 @@ export const App = () => {
           );
         }}
       />
-      {Object.entries({
-        ...joseEcdhTestCases,
-      }).map(([funcName, cb]) => (
-        <Button
-          title={funcName}
-          onPress={() => doTest(cb, funcName)}
-          key={funcName}
-        />
-      ))}
     </SafeAreaView>
   );
 };

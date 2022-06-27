@@ -471,9 +471,17 @@ export class ReactNativeAriesAskar implements AriesAskar {
   }
 
   public async sessionFetchAllKeys(options: SessionFetchAllKeysOptions): Promise<KeyEntryListHandle> {
-    const serializedOptions = serializeArguments(options)
+    const { sessionHandle, algorithm, forUpdate, limit, thumbprint, tagFilter } = serializeArguments(options)
     const handle = await this.promisifyWithResponse<string>((cb) =>
-      ariesAskarReactNative.sessionFetchAllKeys({ cb, ...serializedOptions })
+      ariesAskarReactNative.sessionFetchAllKeys({
+        cb,
+        sessionHandle,
+        algorithm,
+        forUpdate: forUpdate || -1,
+        limit: limit || -1,
+        thumbprint,
+        tagFilter,
+      })
     )
 
     //  @ts-ignore

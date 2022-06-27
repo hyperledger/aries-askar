@@ -90,12 +90,10 @@ export const storeTransactionBasic = async (store: Store) => {
   await txn.insert(firstEntry);
 
   if ((await txn.count(firstEntry)) !== 1) {
-    console.error('1');
     return 1;
   }
 
   if (!(await txn.fetch(firstEntry))) {
-    console.error('2');
     return 1;
   }
 
@@ -190,7 +188,6 @@ export const storeKeyStore = async (store: Store) => {
     fetchedKey1.tags !== {a: 'b'} &&
     fetchedKey1.metadata !== 'metadata'
   ) {
-    console.log(fetchedKey1);
     return 1;
   }
 
@@ -208,7 +205,6 @@ export const storeKeyStore = async (store: Store) => {
   ) {
     return 1;
   }
-  console.log('5');
 
   if (key.jwkThumbprint !== fetchedKey2.key.jwkThumbprint) {
     return 1;
@@ -219,7 +215,6 @@ export const storeKeyStore = async (store: Store) => {
     thumbprint: key.jwkThumbprint,
     tagFilter: {a: 'c'},
   });
-  console.log('6');
 
   if (
     found[0].name !== keyName &&
@@ -230,13 +225,11 @@ export const storeKeyStore = async (store: Store) => {
   }
 
   await session.removeKey({name: keyName});
-  console.log('7');
 
   try {
     await session.fetchKey({name: keyName});
     return 1;
   } catch (e) {}
-  console.log('8');
 
   await session.close();
 };
