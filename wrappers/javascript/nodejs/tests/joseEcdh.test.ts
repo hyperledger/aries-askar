@@ -204,7 +204,7 @@ describe('jose ecdh', () => {
     expect(base64urlApv).toStrictEqual('Qm9iIGFuZCBDaGFybGll')
 
     const protectedJson = {
-      alg: 'ECDH-1PU+A128KW',
+      algorithm: 'ECDH-1PU+A128KW',
       enc: 'A256CBC-HS512',
       apu: 'QWxpY2U',
       apv: 'Qm9iIGFuZCBDaGFybGll',
@@ -215,7 +215,7 @@ describe('jose ecdh', () => {
     const protectedB64Bytes = Uint8Array.from(Buffer.from(protectedB64))
 
     const cek = Key.fromSecretBytes({
-      alg: KeyAlgs.AesA256CbcHs512,
+      algorithm: KeyAlgs.AesA256CbcHs512,
       secretKey: Uint8Array.from(
         Buffer.from(
           'fffefdfcfbfaf9f8f7f6f5f4f3f2f1f0efeeedecebeae9e8e7e6e5e4e3e2e1e0dfdedddcdbdad9d8d7d6d5d4d3d2d1d0cfcecdcccbcac9c8c7c6c5c4c3c2c1c0',
@@ -291,7 +291,7 @@ describe('jose ecdh', () => {
       receive: true,
     })
 
-    const cekReceiver = derivedReceiver.unwrapKey({ alg: KeyAlgs.AesA256CbcHs512, ciphertext: encryptedKey })
+    const cekReceiver = derivedReceiver.unwrapKey({ algorithm: KeyAlgs.AesA256CbcHs512, ciphertext: encryptedKey })
 
     const messageReceived = cekReceiver.aeadDecrypt({
       ciphertext,

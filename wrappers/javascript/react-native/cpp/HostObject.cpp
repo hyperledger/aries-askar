@@ -112,6 +112,21 @@ FunctionMap TurboModuleHostObject::functionMapping(jsi::Runtime &rt) {
   fMap.insert(
       std::make_tuple("keyAeadRandomNonce", &ariesAskar::keyAeadRandomNonce));
 
+  fMap.insert(
+      std::make_tuple("keyEntryListCount", &ariesAskar::keyEntryListCount));
+  fMap.insert(
+      std::make_tuple("keyEntryListFree", &ariesAskar::keyEntryListFree));
+  fMap.insert(std::make_tuple("keyEntryListGetAlgorithm",
+                              &ariesAskar::keyEntryListGetAlgorithm));
+  fMap.insert(std::make_tuple("keyEntryListGetMetadata",
+                              &ariesAskar::keyEntryListGetMetadata));
+  fMap.insert(
+      std::make_tuple("keyEntryListGetName", &ariesAskar::keyEntryListGetName));
+  fMap.insert(
+      std::make_tuple("keyEntryListGetTags", &ariesAskar::keyEntryListGetTags));
+  fMap.insert(std::make_tuple("keyEntryListLoadLocal",
+                              &ariesAskar::keyEntryListLoadLocal));
+
   return fMap;
 }
 

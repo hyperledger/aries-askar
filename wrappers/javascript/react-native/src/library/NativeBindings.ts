@@ -59,19 +59,19 @@ export interface NativeBindings {
 
   keyDeriveEcdhEs(options: any): LocalKeyHandle
 
-  keyEntryListCount(options: any): void
+  keyEntryListCount(options: any): number
 
-  ntryListFree(options: any): void
+  keyEntryListFree(options: any): void
 
-  keyEntryListGetAlgorithm(options: any): void
+  keyEntryListGetAlgorithm(options: any): string
 
-  keyEntryListGetMetadata(options: any): void
+  keyEntryListGetMetadata(options: any): string
 
-  keyEntryListGetName(options: any): void
+  keyEntryListGetName(options: any): string
 
-  keyEntryListGetTags(options: any): void
+  keyEntryListGetTags(options: any): string
 
-  keyEntryListLoadLocal(options: any): void
+  keyEntryListLoadLocal(options: any): LocalKeyHandle
 
   keyFree(options: any): void
 

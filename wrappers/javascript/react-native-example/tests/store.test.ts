@@ -1,5 +1,11 @@
-import {Store, StoreKeyMethod} from 'aries-askar-shared';
-import {firstEntry, secondEntry} from './fixtures';
+import {
+  AriesAskarError,
+  Store,
+  Key,
+  KeyAlgs,
+  StoreKeyMethod,
+} from 'aries-askar-shared';
+import {firstEntry, secondEntry} from './utils';
 
 const getRawKey = Store.generateRawKey;
 
@@ -161,4 +167,76 @@ export const storeProfile = async (store: Store) => {
     return 1;
   }
   await session6.close();
+};
+
+export const storeKeyStore = async (store: Store) => {
+  const session = await store.openSession();
+
+  const key = Key.generate(KeyAlgs.Ed25519);
+
+  const keyName = 'testKey';
+
+  await session.insertKey({
+    key,
+    name: keyName,
+    metadata: 'metadata',
+    tags: {a: 'b'},
+  });
+
+  const fetchedKey1 = await session.fetchKey({name: keyName});
+
+  if (
+    fetchedKey1.name !== keyName &&
+    fetchedKey1.tags !== {a: 'b'} &&
+    fetchedKey1.metadata !== 'metadata'
+  ) {
+    console.log(fetchedKey1);
+    return 1;
+  }
+
+  await session.updateKey({
+    name: keyName,
+    metadata: 'updated metadata',
+    tags: {a: 'c'},
+  });
+  const fetchedKey2 = await session.fetchKey({name: keyName});
+
+  if (
+    fetchedKey2.name !== keyName &&
+    fetchedKey2.tags !== {a: 'c'} &&
+    fetchedKey2.metadata !== 'updated metadata'
+  ) {
+    return 1;
+  }
+  console.log('5');
+
+  if (key.jwkThumbprint !== fetchedKey2.key.jwkThumbprint) {
+    return 1;
+  }
+
+  const found = await session.fetchAllKeys({
+    algorithm: KeyAlgs.Ed25519,
+    thumbprint: key.jwkThumbprint,
+    tagFilter: {a: 'c'},
+  });
+  console.log('6');
+
+  if (
+    found[0].name !== keyName &&
+    found[0].tags !== {a: 'c'} &&
+    found[0].metadata !== 'updated metadata'
+  ) {
+    return 1;
+  }
+
+  await session.removeKey({name: keyName});
+  console.log('7');
+
+  try {
+    await session.fetchKey({name: keyName});
+    return 1;
+  } catch (e) {}
+  console.log('8');
+
+  await session.close();
 };

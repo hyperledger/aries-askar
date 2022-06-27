@@ -5,6 +5,7 @@ import {registerAriesAskar, Store} from 'aries-askar-shared';
 import {
   setupStore,
   storeInsert,
+  storeKeyStore,
   storeProfile,
   storeRemove,
   storeRemoveAll,
@@ -53,6 +54,7 @@ export const App = () => {
     'Store: Scan': storeScan,
     'Store: Transaction Basic': storeTransactionBasic,
     'Store: profile': storeProfile,
+    'Store: key store': storeKeyStore,
   };
 
   const keyTestCases: Record<string, () => any> = {
@@ -117,18 +119,15 @@ export const App = () => {
           );
         }}
       />
+      {Object.entries({
+        ...joseEcdhTestCases,
+      }).map(([funcName, cb]) => (
+        <Button
+          title={funcName}
+          onPress={() => doTest(cb, funcName)}
+          key={funcName}
+        />
+      ))}
     </SafeAreaView>
   );
 };
-
-//{Object.entries({
-//  ...storeTestCases,
-//  ...keyTestCases,
-//  ...cryptoBoxTestCases,
-//}).map(([funcName, cb]) => (
-//  <Button
-//    title={funcName}
-//    onPress={() => doTest(cb, funcName)}
-//    key={funcName}
-//  />
-//))}

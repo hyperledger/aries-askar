@@ -44,13 +44,13 @@ jsi::Value keyCryptoBoxSealOpen(jsi::Runtime &rt, jsi::Object options);
 jsi::Value keyDeriveEcdh1pu(jsi::Runtime &rt, jsi::Object options);
 jsi::Value keyDeriveEcdhEs(jsi::Runtime &rt, jsi::Object options);
 
-// jsi::Value keyEntryListCount(jsi::Runtime &rt, jsi::Object options);
-// jsi::Value keyEntryListFree(jsi::Runtime &rt, jsi::Object options);
-// jsi::Value keyEntryListGetAlgorithm(jsi::Runtime &rt, jsi::Object options);
-// jsi::Value keyEntryListGetMetadata(jsi::Runtime &rt, jsi::Object options);
-// jsi::Value keyEntryListGetName(jsi::Runtime &rt, jsi::Object options);
-// jsi::Value keyEntryListGetTags(jsi::Runtime &rt, jsi::Object options);
-// jsi::Value keyEntryListLoadLocal(jsi::Runtime &rt, jsi::Object options);
+jsi::Value keyEntryListCount(jsi::Runtime &rt, jsi::Object options);
+jsi::Value keyEntryListFree(jsi::Runtime &rt, jsi::Object options);
+jsi::Value keyEntryListGetAlgorithm(jsi::Runtime &rt, jsi::Object options);
+jsi::Value keyEntryListGetMetadata(jsi::Runtime &rt, jsi::Object options);
+jsi::Value keyEntryListGetName(jsi::Runtime &rt, jsi::Object options);
+jsi::Value keyEntryListGetTags(jsi::Runtime &rt, jsi::Object options);
+jsi::Value keyEntryListLoadLocal(jsi::Runtime &rt, jsi::Object options);
 
 jsi::Value keyFromJwk(jsi::Runtime &rt, jsi::Object options);
 jsi::Value keyFromKeyExchange(jsi::Runtime &rt, jsi::Object options);

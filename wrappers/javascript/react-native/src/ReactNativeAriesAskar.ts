@@ -26,7 +26,6 @@ import type {
   KeyEntryListGetMetadataOptions,
   KeyEntryListGetNameOptions,
   KeyEntryListGetTagsOptions,
-  KeyEntryListHandle,
   KeyEntryListLoadLocalOptions,
   KeyFreeOptions,
   KeyFromJwkOptions,
@@ -82,6 +81,7 @@ import {
   StoreHandle,
   SessionHandle,
   ScanHandle,
+  KeyEntryListHandle,
 } from 'aries-askar-shared'
 
 import { ariesAskarReactNative } from './library'
@@ -257,25 +257,40 @@ export class ReactNativeAriesAskar implements AriesAskar {
   }
 
   public keyEntryListCount(options: KeyEntryListCountOptions): number {
-    throw new Error('Method not implemented. keyEntryListCount')
+    const serializedOptions = serializeArguments(options)
+    return ariesAskarReactNative.keyEntryListCount(serializedOptions)
   }
+
   public keyEntryListFree(options: KeyEntryListFreeOptions): void {
-    throw new Error('Method not implemented. keyEntryListFree')
+    const serializedOptions = serializeArguments(options)
+    ariesAskarReactNative.keyEntryListFree(serializedOptions)
   }
+
   public keyEntryListGetAlgorithm(options: KeyEntryListGetAlgorithmOptions): string {
-    throw new Error('Method not implemented. keyEntryListGetAlgorithm')
+    const serializedOptions = serializeArguments(options)
+    return ariesAskarReactNative.keyEntryListGetAlgorithm(serializedOptions)
   }
+
   public keyEntryListGetMetadata(options: KeyEntryListGetMetadataOptions): string {
-    throw new Error('Method not implemented. keyEntryListGetMetadata')
+    const serializedOptions = serializeArguments(options)
+    return ariesAskarReactNative.keyEntryListGetMetadata(serializedOptions)
   }
+
   public keyEntryListGetName(options: KeyEntryListGetNameOptions): string {
-    throw new Error('Method not implemented. keyEntryListGetName')
+    const serializedOptions = serializeArguments(options)
+    return ariesAskarReactNative.keyEntryListGetName(serializedOptions)
   }
+
   public keyEntryListGetTags(options: KeyEntryListGetTagsOptions): string {
-    throw new Error('Method not implemented. keyEntryListGetTags')
+    const serializedOptions = serializeArguments(options)
+    return ariesAskarReactNative.keyEntryListGetTags(serializedOptions)
   }
+
   public keyEntryListLoadLocal(options: KeyEntryListLoadLocalOptions): LocalKeyHandle {
-    throw new Error('Method not implemented. keyEntryListLoadLocal')
+    const serializedOptions = serializeArguments(options)
+    const handle = ariesAskarReactNative.keyEntryListLoadLocal(serializedOptions)
+
+    return new LocalKeyHandle(handle)
   }
 
   public keyFree(options: KeyFreeOptions): void {
@@ -455,16 +470,38 @@ export class ReactNativeAriesAskar implements AriesAskar {
     return new EntryListHandle(handle)
   }
 
-  public sessionFetchAllKeys(options: SessionFetchAllKeysOptions): Promise<KeyEntryListHandle> {
-    throw new Error('Method not implemented. sessionFetchAllKeys')
+  public async sessionFetchAllKeys(options: SessionFetchAllKeysOptions): Promise<KeyEntryListHandle> {
+    const serializedOptions = serializeArguments(options)
+    const handle = await this.promisifyWithResponse<string>((cb) =>
+      ariesAskarReactNative.sessionFetchAllKeys({ cb, ...serializedOptions })
+    )
+
+    //  @ts-ignore
+    return new KeyEntryListHandle(handle)
   }
-  public sessionFetchKey(options: SessionFetchKeyOptions): Promise<KeyEntryListHandle> {
-    throw new Error('Method not implemented. sessionFetchKey')
+  public async sessionFetchKey(options: SessionFetchKeyOptions): Promise<KeyEntryListHandle> {
+    const serializedOptions = serializeArguments(options)
+    const handle = await this.promisifyWithResponse<string>((cb) =>
+      ariesAskarReactNative.sessionFetchKey({ cb, ...serializedOptions })
+    )
+
+    //  @ts-ignore
+    return new KeyEntryListHandle(handle)
   }
 
   public sessionInsertKey(options: SessionInsertKeyOptions): Promise<void> {
-    const serializedOptions = serializeArguments(options)
-    return this.promisify((cb) => ariesAskarReactNative.sessionInsertKey({ cb, ...serializedOptions }))
+    const { sessionHandle, name, localKeyHandle, expiryMs, metadata, tags } = serializeArguments(options)
+    return this.promisify((cb) =>
+      ariesAskarReactNative.sessionInsertKey({
+        cb,
+        sessionHandle,
+        name,
+        localKeyHandle,
+        expiryMs: expiryMs || -1,
+        metadata,
+        tags,
+      })
+    )
   }
 
   public sessionRemoveAll(options: SessionRemoveAllOptions): Promise<number> {

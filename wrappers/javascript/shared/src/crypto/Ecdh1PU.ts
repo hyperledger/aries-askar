@@ -37,10 +37,10 @@ export class Ecdh1PU {
         receive,
         apv: this.apv,
         apu: this.apu,
-        alg: encAlg,
-        ephemeralKey: ephemeralKey.handle,
-        recipientKey: recipientKey.handle,
-        senderKey: senderKey.handle,
+        algorithm: encAlg,
+        ephemeralKey: ephemeralKey,
+        recipientKey: recipientKey,
+        senderKey: senderKey,
         ccTag,
       })
     )
@@ -145,6 +145,6 @@ export class Ecdh1PU {
       senderKey,
       ccTag,
     })
-    return derived.unwrapKey({ tag, nonce, ciphertext, alg: encAlg })
+    return derived.unwrapKey({ tag, nonce, ciphertext, algorithm: encAlg })
   }
 }

@@ -128,7 +128,7 @@ describe('Store and Session', () => {
     expect(key.jwkThumbprint === fetchedKey.key.jwkThumbprint).toBeTruthy()
 
     const found = await session.fetchAllKeys({
-      alg: KeyAlgs.Ed25519,
+      algorithm: KeyAlgs.Ed25519,
       thumbprint: key.jwkThumbprint,
       tagFilter: { a: 'c' },
     })

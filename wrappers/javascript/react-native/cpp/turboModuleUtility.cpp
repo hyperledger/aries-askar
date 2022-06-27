@@ -86,6 +86,21 @@ void callbackWithResponse(CallbackId result, ErrorCode code,
 }
 
 template <>
+void callbackWithResponse(CallbackId result, ErrorCode code,
+                          KeyEntryListHandle response) {
+  State *_state = reinterpret_cast<State *>(result);
+  State *state = static_cast<State *>(_state);
+  jsi::Function *cb = &state->cb;
+  jsi::Runtime *rt = reinterpret_cast<jsi::Runtime *>(state->rt);
+
+  std::string serializedPointer = std::to_string(intptr_t(response._0));
+  jsi::String pointer = jsi::String::createFromAscii(*rt, serializedPointer);
+
+  cb->call(*rt, int(code), serializedPointer);
+  delete state;
+}
+
+template <>
 void callbackWithResponse(CallbackId result, ErrorCode code, int8_t response) {
   State *_state = reinterpret_cast<State *>(result);
   State *state = static_cast<State *>(_state);
@@ -139,8 +154,10 @@ std::string jsiToValue<std::string>(jsi::Runtime &rt, jsi::Object &options,
   if ((value.isNull() || value.isUndefined()) && optional)
     return std::string();
 
-  if (value.isString())
-    return value.asString(rt).utf8(rt);
+  if (value.isString()) {
+    auto x = value.asString(rt).utf8(rt);
+    return x;
+  }
 
   throw jsi::JSError(rt, errorPrefix + name + errorInfix + "string");
 }
@@ -198,10 +215,21 @@ uint32_t jsiToValue(jsi::Runtime &rt, jsi::Object &options, const char *name,
 };
 
 template <>
+KeyEntryListHandle jsiToValue(jsi::Runtime &rt, jsi::Object &options,
+                              const char *name, bool optional) {
+  std::string handle = jsiToValue<std::string>(rt, options, name, optional);
+  FfiKeyEntryList *ffiKeyEntryListPtr =
+      reinterpret_cast<FfiKeyEntryList *>(std::stol(handle));
+  KeyEntryListHandle keyEntryListHandle =
+      KeyEntryListHandle{._0 = ffiKeyEntryListPtr};
+
+  return keyEntryListHandle;
+};
+
+template <>
 EntryListHandle jsiToValue(jsi::Runtime &rt, jsi::Object &options,
                            const char *name, bool optional) {
-  std::string handle =
-      turboModuleUtility::jsiToValue<std::string>(rt, options, name, optional);
+  std::string handle = jsiToValue<std::string>(rt, options, name, optional);
   FfiEntryList *ffiEntryListPtr =
       reinterpret_cast<FfiEntryList *>(std::stol(handle));
   EntryListHandle entryListHandle = EntryListHandle{._0 = ffiEntryListPtr};
@@ -212,8 +240,7 @@ EntryListHandle jsiToValue(jsi::Runtime &rt, jsi::Object &options,
 template <>
 LocalKeyHandle jsiToValue(jsi::Runtime &rt, jsi::Object &options,
                           const char *name, bool optional) {
-  std::string handle =
-      turboModuleUtility::jsiToValue<std::string>(rt, options, name, optional);
+  std::string handle = jsiToValue<std::string>(rt, options, name, optional);
   LocalKey *localKeyPtr = reinterpret_cast<LocalKey *>(std::stol(handle));
   LocalKeyHandle localKeyHandle = LocalKeyHandle{._0 = localKeyPtr};
 

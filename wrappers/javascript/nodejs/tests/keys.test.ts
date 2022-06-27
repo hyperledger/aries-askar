@@ -21,7 +21,7 @@ describe('keys', () => {
 
   test('Bls G2 Keygen', () => {
     const seed = Uint8Array.from(Buffer.from('testseed000000000000000000000001'))
-    const key = Key.fromSeed({ alg: KeyAlgs.Bls12381G2, seed })
+    const key = Key.fromSeed({ algorithm: KeyAlgs.Bls12381G2, seed })
 
     expect(key.jwkPublic).toMatchObject({
       crv: 'BLS12381_G2',
@@ -32,7 +32,7 @@ describe('keys', () => {
 
   test('Bls G1 Keygen', () => {
     const seed = Uint8Array.from(Buffer.from('testseed000000000000000000000001'))
-    const key = Key.fromSeed({ alg: KeyAlgs.Bls12381G1, seed })
+    const key = Key.fromSeed({ algorithm: KeyAlgs.Bls12381G1, seed })
 
     expect(key.jwkPublic).toMatchObject({
       crv: 'BLS12381_G1',
@@ -48,10 +48,10 @@ describe('keys', () => {
     const signature = key.signMessage({ message })
     expect(key.verifySignature({ message, signature })).toStrictEqual(true)
 
-    const x25519Key = key.convertkey({ alg: KeyAlgs.X25519 })
+    const x25519Key = key.convertkey({ algorithm: KeyAlgs.X25519 })
     const x25519Key2 = Key.generate(KeyAlgs.X25519)
 
-    const kex = x25519Key.keyFromKeyExchange({ alg: KeyAlgs.Chacha20XC20P, publicKey: x25519Key2 })
+    const kex = x25519Key.keyFromKeyExchange({ algorithm: KeyAlgs.Chacha20XC20P, publicKey: x25519Key2 })
     expect(kex).toBeInstanceOf(Key)
 
     expect(key.jwkPublic).toMatchObject({

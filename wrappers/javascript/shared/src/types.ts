@@ -96,9 +96,3 @@ export class AeadParams {
     this.tagLength = tagLength
   }
 }
-
-export interface ILocalKeyHandle<K = Record<string, unknown>> {
-  alg: KeyAlgs
-  inner: K
-  ephemeral: boolean
-}

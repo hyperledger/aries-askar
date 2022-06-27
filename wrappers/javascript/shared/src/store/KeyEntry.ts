@@ -14,7 +14,6 @@ export class KeyEntry {
   private _list: KeyEntryListHandle
   private _pos: number
 
-  // TODO: what is pos
   public constructor({ list, pos }: { list: KeyEntryListHandle; pos: number }) {
     this._list = list
     this._pos = pos

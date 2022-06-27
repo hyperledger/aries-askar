@@ -34,9 +34,9 @@ export class EcdhEs {
         receive,
         apv: this.apv,
         apu: this.apu,
-        alg: encAlg,
-        ephemeralKey: ephemeralKey.handle,
-        recipientKey: recipientKey.handle,
+        algorithm: encAlg,
+        ephemeralKey,
+        recipientKey,
       })
     )
   }
@@ -118,6 +118,6 @@ export class EcdhEs {
     tag?: Uint8Array
   }) {
     const derived = this.deriveKey({ encAlg: wrapAlg, ephemeralKey, recipientKey, receive: true })
-    return derived.unwrapKey({ tag, nonce, ciphertext, alg: encAlg })
+    return derived.unwrapKey({ tag, nonce, ciphertext, algorithm: encAlg })
   }
 }

@@ -1,9 +1,6 @@
 import {Ecdh1PU, EcdhEs, Jwk, Key, KeyAlgs} from 'aries-askar-shared';
 import {Buffer} from 'buffer';
-
-const base64 = (str: string) => Buffer.from(str).toString('base64');
-const base64url = (str: string) =>
-  base64(str).replace(/\+/g, '_').replace(/\//g, '-').replace(/[=]+$/g, '');
+import {base64url} from './utils';
 
 export const joseEcdhEsDirect = () => {
   const bobKey = Key.generate(KeyAlgs.EcSecp256r1);
@@ -232,7 +229,7 @@ export const joseEcdh1puWrappedExpected = () => {
   const protectedB64Bytes = Uint8Array.from(Buffer.from(protectedB64));
 
   const cek = Key.fromSecretBytes({
-    alg: KeyAlgs.AesA256CbcHs512,
+    algorithm: KeyAlgs.AesA256CbcHs512,
     secretKey: Uint8Array.from(
       Buffer.from(
         'fffefdfcfbfaf9f8f7f6f5f4f3f2f1f0efeeedecebeae9e8e7e6e5e4e3e2e1e0dfdedddcdbdad9d8d7d6d5d4d3d2d1d0cfcecdcccbcac9c8c7c6c5c4c3c2c1c0',
@@ -331,7 +328,7 @@ export const joseEcdh1puWrappedExpected = () => {
   });
 
   const cekReceiver = derivedReceiver.unwrapKey({
-    alg: KeyAlgs.AesA256CbcHs512,
+    algorithm: KeyAlgs.AesA256CbcHs512,
     ciphertext: encryptedKey,
   });
 

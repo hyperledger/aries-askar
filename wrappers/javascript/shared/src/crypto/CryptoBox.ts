@@ -18,21 +18,21 @@ export class CryptoBox {
     message: Uint8Array
     nonce: Uint8Array
   }) {
-    return ariesAskar.keyCryptoBox({ nonce, message, senderKey: senderKey.handle, recipientKey: recipientKey.handle })
+    return ariesAskar.keyCryptoBox({ nonce, message, senderKey, recipientKey })
   }
 
   public static open({
-    reciverKey,
+    recipientKey,
     senderKey,
     message,
     nonce,
   }: {
-    reciverKey: Key
+    recipientKey: Key
     senderKey: Key
     message: Uint8Array
     nonce: Uint8Array
   }) {
-    return ariesAskar.keyCryptoBoxOpen({ nonce, message, senderKey: senderKey.handle, recipientKey: reciverKey.handle })
+    return ariesAskar.keyCryptoBoxOpen({ nonce, message, senderKey, recipientKey })
   }
 
   public static seal({ recipientKey, message }: { recipientKey: Key; message: Uint8Array }) {

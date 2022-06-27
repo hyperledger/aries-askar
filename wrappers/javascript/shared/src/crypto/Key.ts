@@ -4,9 +4,7 @@ import type { LocalKeyHandle } from './handles'
 import { ariesAskar } from '../ariesAskar'
 import { KeyMethod, keyAlgFromString } from '../enums'
 
-import { Jwk, JwkProps } from './Jwk'
-
-// TODO: is this jwk type correct?
+import { Jwk } from './Jwk'
 
 export class Key {
   private localKeyHandle: LocalKeyHandle
@@ -15,28 +13,27 @@ export class Key {
     this.localKeyHandle = handle
   }
 
-  public static generate(alg: KeyAlgs, ephemeral = false) {
-    return new Key(ariesAskar.keyGenerate({ alg, ephemeral }))
+  public static generate(algorithm: KeyAlgs, ephemeral = false) {
+    return new Key(ariesAskar.keyGenerate({ algorithm, ephemeral }))
   }
 
-  // TODO: enum the method
   public static fromSeed({
     method = KeyMethod.None,
-    alg,
+    algorithm,
     seed,
   }: {
-    alg: KeyAlgs
+    algorithm: KeyAlgs
     seed: Uint8Array
     method?: KeyMethod
   }) {
-    return new Key(ariesAskar.keyFromSeed({ alg, method, seed }))
+    return new Key(ariesAskar.keyFromSeed({ algorithm, method, seed }))
   }
 
-  public static fromSecretBytes(options: { alg: KeyAlgs; secretKey: Uint8Array }) {
+  public static fromSecretBytes(options: { algorithm: KeyAlgs; secretKey: Uint8Array }) {
     return new Key(ariesAskar.keyFromSecretBytes(options))
   }
 
-  public static fromPublicBytes(options: { alg: KeyAlgs; publicKey: Uint8Array }) {
+  public static fromPublicBytes(options: { algorithm: KeyAlgs; publicKey: Uint8Array }) {
     return new Key(ariesAskar.keyFromPublicBytes(options))
   }
 
@@ -44,16 +41,16 @@ export class Key {
     return new Key(ariesAskar.keyFromJwk(options))
   }
 
-  public convertkey(options: { alg: KeyAlgs }) {
+  public convertkey(options: { algorithm: KeyAlgs }) {
     return new Key(ariesAskar.keyConvert({ localKeyHandle: this.handle, ...options }))
   }
 
-  public keyFromKeyExchange({ alg, publicKey }: { alg: KeyAlgs; publicKey: Key }) {
-    return new Key(ariesAskar.keyFromKeyExchange({ skHandle: this.handle, pkHandle: publicKey.handle, alg }))
+  public keyFromKeyExchange({ algorithm, publicKey }: { algorithm: KeyAlgs; publicKey: Key }) {
+    return new Key(ariesAskar.keyFromKeyExchange({ skHandle: this.handle, pkHandle: publicKey.handle, algorithm }))
   }
 
   public get handle() {
-    return this.localKeyHandle.handle
+    return this.localKeyHandle
   }
 
   public get algorithm() {
@@ -119,7 +116,7 @@ export class Key {
     return ariesAskar.keyWrapKey({ localKeyHandle: this.handle, other: other.handle, nonce })
   }
 
-  public unwrapKey(options: { alg: KeyAlgs; tag?: Uint8Array; ciphertext: Uint8Array; nonce?: Uint8Array }) {
+  public unwrapKey(options: { algorithm: KeyAlgs; tag?: Uint8Array; ciphertext: Uint8Array; nonce?: Uint8Array }) {
     return new Key(ariesAskar.keyUnwrapKey({ localKeyHandle: this.handle, ...options }))
   }
 }

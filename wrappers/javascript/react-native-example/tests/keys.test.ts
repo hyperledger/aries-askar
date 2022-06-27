@@ -6,7 +6,7 @@ export const keyBlsG2Keygen = () => {
     116, 101, 115, 116, 115, 101, 101, 100, 48, 48, 48, 48, 48, 48, 48, 48, 48,
     48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 49,
   ]);
-  const key = Key.fromSeed({alg: KeyAlgs.Bls12381G2, seed});
+  const key = Key.fromSeed({algorithm: KeyAlgs.Bls12381G2, seed});
   const jwkPublic = key.jwkPublic;
 
   if (jwkPublic.crv !== 'BLS12381_G2') {
@@ -29,7 +29,7 @@ export const keyBlsG1Keygen = () => {
     116, 101, 115, 116, 115, 101, 101, 100, 48, 48, 48, 48, 48, 48, 48, 48, 48,
     48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 49,
   ]);
-  const key = Key.fromSeed({alg: KeyAlgs.Bls12381G1, seed});
+  const key = Key.fromSeed({algorithm: KeyAlgs.Bls12381G1, seed});
   const jwkPublic = key.jwkPublic;
 
   if (jwkPublic.crv !== 'BLS12381_G1') {
@@ -63,11 +63,11 @@ export const keyEd25519 = () => {
     return 1;
   }
 
-  const x25519Key = key.convertkey({alg: KeyAlgs.X25519});
+  const x25519Key = key.convertkey({algorithm: KeyAlgs.X25519});
   const x25519Key2 = Key.generate(KeyAlgs.X25519);
 
   const kex = x25519Key.keyFromKeyExchange({
-    alg: KeyAlgs.Chacha20XC20P,
+    algorithm: KeyAlgs.Chacha20XC20P,
     publicKey: x25519Key2,
   });
 

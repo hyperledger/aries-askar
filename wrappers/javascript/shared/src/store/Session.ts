@@ -184,7 +184,7 @@ export class Session {
       metadata,
       name,
       sessionHandle: this.handle,
-      localKeyHandle: key.handle,
+      localKeyHandle: key.handle.handle,
     })
   }
 
@@ -197,12 +197,12 @@ export class Session {
 
   public async fetchAllKeys({
     forUpdate = false,
-    alg,
+    algorithm,
     limit,
     tagFilter,
     thumbprint,
   }: {
-    alg?: KeyAlgs
+    algorithm?: KeyAlgs
     thumbprint?: string
     tagFilter?: Record<string, unknown>
     limit?: number
@@ -214,7 +214,7 @@ export class Session {
       limit,
       tagFilter,
       thumbprint,
-      algorithm: alg,
+      algorithm,
       sessionHandle: this.handle,
     })
 

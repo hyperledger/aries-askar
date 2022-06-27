@@ -1,6 +1,13 @@
-import type { ArcHandle } from 'aries-askar-shared'
-
-import { Jwk, EntryListHandle, ScanHandle, SessionHandle, StoreHandle } from 'aries-askar-shared'
+import {
+  ArcHandle,
+  Jwk,
+  EntryListHandle,
+  ScanHandle,
+  SessionHandle,
+  StoreHandle,
+  LocalKeyHandle,
+  Key,
+} from 'aries-askar-shared'
 
 export type Callback = (err: number) => void
 export type CallbackWithResponse = (err: number, response: string) => void
@@ -57,8 +64,8 @@ export type SerializedOptions<Type> = {
     ? number
     : Type[Property] extends ScanHandle
     ? number
-    : Type[Property] extends EntryListHandle
-    ? number
+    : Type[Property] extends ArcHandle
+    ? string
     : Type[Property] extends Jwk
     ? string
     : unknown
@@ -83,11 +90,13 @@ const serialize = (arg: Argument): SerializedArgument => {
         return arg.buffer
       } else if (arg instanceof Jwk) {
         return arg.toUint8Array().buffer
+      } else if (arg instanceof Key) {
+        return arg.handle.handle
       } else if (
         arg instanceof StoreHandle ||
         arg instanceof SessionHandle ||
-        arg instanceof EntryListHandle ||
-        arg instanceof ScanHandle
+        arg instanceof ScanHandle ||
+        arg instanceof ArcHandle
       ) {
         return arg.handle
       } else {
