@@ -10,8 +10,10 @@
     "lint": "eslint . --ext .js,.jsx,.ts,.tsx"
   },
   "dependencies": {
-    "aries-askar-shared": "*",
     "aries-askar-react-native": "*",
+    "aries-askar-shared": "*",
+    "base64url": "^3.0.1",
+    "buffer": "^6.0.3",
     "react": "17.0.2",
     "react-native": "0.68.2"
   },

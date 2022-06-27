@@ -41,8 +41,8 @@ jsi::Value keyCryptoBoxRandomNonce(jsi::Runtime &rt, jsi::Object options);
 jsi::Value keyCryptoBoxSeal(jsi::Runtime &rt, jsi::Object options);
 jsi::Value keyCryptoBoxSealOpen(jsi::Runtime &rt, jsi::Object options);
 
-// jsi::Value keyDeriveEcdh1Pu(jsi::Runtime &rt, jsi::Object options);
-// jsi::Value keyDeriveEcdhEs(jsi::Runtime &rt, jsi::Object options);
+jsi::Value keyDeriveEcdh1Pu(jsi::Runtime &rt, jsi::Object options);
+jsi::Value keyDeriveEcdhEs(jsi::Runtime &rt, jsi::Object options);
 
 // jsi::Value keyEntryListCount(jsi::Runtime &rt, jsi::Object options);
 // jsi::Value keyEntryListFree(jsi::Runtime &rt, jsi::Object options);

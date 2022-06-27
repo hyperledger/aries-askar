@@ -55,9 +55,9 @@ export interface NativeBindings {
 
   keyCryptoBoxSealOpen(options: any): ArrayBuffer
 
-  keyDeriveEcdh1pu(options: any): void
+  keyDeriveEcdh1pu(options: any): LocalKeyHandle
 
-  keyDeriveEcdhEs(options: any): void
+  keyDeriveEcdhEs(options: any): LocalKeyHandle
 
   keyEntryListCount(options: any): void
 

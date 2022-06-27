@@ -230,11 +230,17 @@ export class ReactNativeAriesAskar implements AriesAskar {
   }
 
   public keyDeriveEcdh1pu(options: KeyDeriveEcdh1puOptions): LocalKeyHandle {
-    throw new Error('Method not implemented. keyDeriveEcdh1pu')
+    const serializedOptions = serializeArguments(options)
+    const handle = ariesAskarReactNative.keyDeriveEcdh1pu(serializedOptions)
+    return new LocalKeyHandle(handle)
   }
+
   public keyDeriveEcdhEs(options: KeyDeriveEcdhEsOptions): LocalKeyHandle {
-    throw new Error('Method not implemented. keyDeriveEcdhEs')
+    const serializedOptions = serializeArguments(options)
+    const handle = ariesAskarReactNative.keyDeriveEcdhEs(serializedOptions)
+    return new LocalKeyHandle(handle)
   }
+
   public keyEntryListCount(options: KeyEntryListCountOptions): number {
     throw new Error('Method not implemented. keyEntryListCount')
   }

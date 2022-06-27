@@ -2,8 +2,8 @@ import type { KeyAlgs } from '../enums'
 
 import { ariesAskar } from '../ariesAskar'
 
-import { Key } from './Key'
 import { Jwk } from './Jwk'
+import { Key } from './Key'
 
 // Tests
 export class EcdhEs {

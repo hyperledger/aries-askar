@@ -82,7 +82,7 @@ const serialize = (arg: Argument): SerializedArgument => {
       } else if (arg instanceof Uint8Array) {
         return arg.buffer
       } else if (arg instanceof Jwk) {
-        return arg.toUint8Array()
+        return arg.toUint8Array().buffer
       } else if (
         arg instanceof StoreHandle ||
         arg instanceof SessionHandle ||
