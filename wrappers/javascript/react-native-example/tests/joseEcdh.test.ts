@@ -210,7 +210,7 @@ export const joseEcdh1puWrappedExpected = () => {
   }
 
   if (base64urlApv !== 'Qm9iIGFuZCBDaGFybGll') {
-    return 1;
+    return 2;
   }
 
   const protectedJson = {
@@ -253,7 +253,7 @@ export const joseEcdh1puWrappedExpected = () => {
   );
 
   if (!ciphertext.every((v, i) => expectedCiphertext[i] === v)) {
-    return 1;
+    return 3;
   }
 
   const expectedCcTag = Uint8Array.from(
@@ -261,7 +261,7 @@ export const joseEcdh1puWrappedExpected = () => {
   );
 
   if (!ccTag.every((v, i) => expectedCcTag[i] === v)) {
-    return 1;
+    return 4;
   }
 
   const derived = new Ecdh1PU({
@@ -282,7 +282,7 @@ export const joseEcdh1puWrappedExpected = () => {
   );
 
   if (!derived.secretBytes.every((v, i) => expectedSecretBytes[i] === v)) {
-    return 1;
+    return 5;
   }
   const encryptedKey = derived.wrapKey({other: cek}).ciphertextWithTag;
 
@@ -294,7 +294,7 @@ export const joseEcdh1puWrappedExpected = () => {
   );
 
   if (!encryptedKey.every((v, i) => expectedEncryptedKey[i] === v)) {
-    return 1;
+    return 6;
   }
 
   const encryptedKey2 = new Ecdh1PU({
@@ -311,7 +311,7 @@ export const joseEcdh1puWrappedExpected = () => {
   });
 
   if (!encryptedKey2.ciphertextWithTag.every((v, i) => encryptedKey[i] === v)) {
-    return 1;
+    return 7;
   }
 
   const derivedReceiver = new Ecdh1PU({
@@ -340,7 +340,7 @@ export const joseEcdh1puWrappedExpected = () => {
   });
 
   if (!messageReceived.every((v, i) => message[i] === v)) {
-    return 1;
+    return 8;
   }
 
   const cekReceiver2 = new Ecdh1PU({
@@ -365,6 +365,6 @@ export const joseEcdh1puWrappedExpected = () => {
     cekReceiver2JwkSecret.crv !== cekJwkSecret.crv &&
     cekReceiver2JwkSecret.x !== cekJwkSecret.x
   ) {
-    return 1;
+    return 9;
   }
 };

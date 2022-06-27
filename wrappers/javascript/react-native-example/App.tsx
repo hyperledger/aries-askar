@@ -23,14 +23,14 @@ import {
 } from './tests/joseEcdh.test';
 
 const doTest = async (
-  cb: (store: Store) => Promise<1 | undefined>,
+  cb: (store: Store) => Promise<number | undefined>,
   name: string,
 ) => {
   try {
     const store = await setupStore();
     const res = await cb(store);
     if (res) {
-      console.error(`Test ${name} failed`);
+      console.error(`Test ${name}:${res} failed`);
     } else {
       console.log(`Test ${name} succeeded`);
     }
@@ -45,7 +45,7 @@ export const App = () => {
 
   const storeTestCases: Record<
     string,
-    (store: Store) => Promise<1 | undefined>
+    (store: Store) => Promise<number | undefined>
   > = {
     'Store: insert': storeInsert,
     'Store: replace': storeReplace,

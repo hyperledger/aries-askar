@@ -38,7 +38,7 @@ export const storeReplace = async (store: Store) => {
   const updatedEntry = {...firstEntry, value: 'bar', tags: {update: 'baz'}};
   await session.replace(updatedEntry);
   if ((await session.count(firstEntry)) !== 1) {
-    return 1;
+    return 2;
   }
 
   await session.close();
@@ -52,7 +52,7 @@ export const storeRemove = async (store: Store) => {
   }
   await session.remove(firstEntry);
   if ((await session.count(firstEntry)) !== 0) {
-    return 1;
+    return 2;
   }
 
   await session.close();
@@ -67,7 +67,7 @@ export const storeRemoveAll = async (store: Store) => {
   }
   await session.removeAll({category: firstEntry.category});
   if ((await session.count(firstEntry)) !== 0) {
-    return 1;
+    return 2;
   }
 
   await session.close();
@@ -94,13 +94,13 @@ export const storeTransactionBasic = async (store: Store) => {
   }
 
   if (!(await txn.fetch(firstEntry))) {
-    return 1;
+    return 2;
   }
 
   const found = await txn.fetchAll(firstEntry);
 
   if (found.length !== 1) {
-    return 1;
+    return 3;
   }
 
   await txn.commit();
@@ -110,7 +110,7 @@ export const storeTransactionBasic = async (store: Store) => {
   const session = await store.openSession();
 
   if (!(await session.fetch(firstEntry))) {
-    return 1;
+    return 4;
   }
 
   await session.close();
@@ -130,18 +130,18 @@ export const storeProfile = async (store: Store) => {
   }
   await session2.insert(firstEntry);
   if ((await session2.count(firstEntry)) !== 1) {
-    return 1;
+    return 2;
   }
   await session2.close();
 
   try {
     await store.createProfile(profile);
-    return 1;
+    return 3;
   } catch (e) {}
 
   const session3 = await store.session(profile).open();
   if ((await session3.count(firstEntry)) !== 1) {
-    return 1;
+    return 4;
   }
   await session3.close();
 
@@ -149,20 +149,20 @@ export const storeProfile = async (store: Store) => {
 
   const session4 = await store.session(profile).open();
   if ((await session4.count(firstEntry)) !== 0) {
-    return 1;
+    return 5;
   }
   await session4.close();
 
   const session5 = await store.session('unknown profile').open();
   try {
     await session5.count(firstEntry);
-    return 1;
+    return 6;
   } catch (e) {}
   await session5.close();
 
   const session6 = await store.session(profile).open();
   if ((await session6.count(firstEntry)) !== 0) {
-    return 1;
+    return 7;
   }
   await session6.close();
 };
@@ -203,11 +203,11 @@ export const storeKeyStore = async (store: Store) => {
     fetchedKey2.tags !== {a: 'c'} &&
     fetchedKey2.metadata !== 'updated metadata'
   ) {
-    return 1;
+    return 2;
   }
 
   if (key.jwkThumbprint !== fetchedKey2.key.jwkThumbprint) {
-    return 1;
+    return 3;
   }
 
   const found = await session.fetchAllKeys({
@@ -221,14 +221,14 @@ export const storeKeyStore = async (store: Store) => {
     found[0].tags !== {a: 'c'} &&
     found[0].metadata !== 'updated metadata'
   ) {
-    return 1;
+    return 4;
   }
 
   await session.removeKey({name: keyName});
 
   try {
     await session.fetchKey({name: keyName});
-    return 1;
+    return 5;
   } catch (e) {}
 
   await session.close();
