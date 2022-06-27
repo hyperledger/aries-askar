@@ -16,6 +16,7 @@ import {keyBlsG1Keygen, keyBlsG2Keygen, keyEd25519} from './tests/keys.test';
 import {cryptoBoxSeal} from './tests/cryptoBox.test';
 import {
   joseEcdh1puDirect,
+  joseEcdh1puWrappedExpected,
   joseEcdhEsDirect,
   joseEcdhEsWrapped,
 } from './tests/joseEcdh.test';
@@ -68,10 +69,22 @@ export const App = () => {
     'Jose ECDH: es direct': joseEcdhEsDirect,
     'Jose ECDH: es wrapped': joseEcdhEsWrapped,
     'Jose ECDH: 1pu direct': joseEcdh1puDirect,
+    'Jose ECDH: 1pu wrapped expected': joseEcdh1puWrappedExpected,
   };
 
   return (
     <SafeAreaView>
+      <Button
+        title="All"
+        onPress={() => {
+          Object.entries({
+            ...storeTestCases,
+            ...keyTestCases,
+            ...cryptoBoxTestCases,
+            ...joseEcdhTestCases,
+          }).map(async ([funcName, cb]) => await doTest(cb, funcName));
+        }}
+      />
       <Button
         title="Store: All"
         onPress={() => {

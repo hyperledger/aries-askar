@@ -293,14 +293,14 @@ describe('jose ecdh', () => {
 
     const cekReceiver = derivedReceiver.unwrapKey({ alg: KeyAlgs.AesA256CbcHs512, ciphertext: encryptedKey })
 
-    const messageReceiver = cekReceiver.aeadDecrypt({
+    const messageReceived = cekReceiver.aeadDecrypt({
       ciphertext,
       nonce: iv,
       aad: protectedB64Bytes,
       tag: ccTag,
     })
 
-    expect(messageReceiver).toStrictEqual(message)
+    expect(messageReceived).toStrictEqual(message)
 
     const cekReceiver2 = new Ecdh1PU({
       apv: Uint8Array.from(Buffer.from(apv)),
