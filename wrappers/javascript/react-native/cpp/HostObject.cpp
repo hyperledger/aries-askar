@@ -100,7 +100,7 @@ FunctionMap TurboModuleHostObject::functionMapping(jsi::Runtime &rt) {
                               &ariesAskar::keyCryptoBoxSealOpen));
 
   fMap.insert(
-      std::make_tuple("keyDeriveEcdh1Pu", &ariesAskar::keyDeriveEcdh1Pu));
+      std::make_tuple("keyDeriveEcdh1pu", &ariesAskar::keyDeriveEcdh1pu));
   fMap.insert(std::make_tuple("keyDeriveEcdhEs", &ariesAskar::keyDeriveEcdhEs));
 
   fMap.insert(std::make_tuple("keyAeadDecrypt", &ariesAskar::keyAeadDecrypt));

@@ -385,9 +385,9 @@ export class ReactNativeAriesAskar implements AriesAskar {
 
   public keyWrapKey(options: KeyWrapKeyOptions): EncryptedBuffer {
     const serializedOptions = serializeArguments(options)
-    const result = ariesAskarReactNative.keyWrapKey(serializedOptions)
+    const { buffer, noncePos, tagPos } = ariesAskarReactNative.keyWrapKey(serializedOptions)
 
-    return new EncryptedBuffer(result)
+    return new EncryptedBuffer({ tagPos, noncePos, buffer: new Uint8Array(buffer) })
   }
 
   public scanFree(options: ScanFreeOptions): void {

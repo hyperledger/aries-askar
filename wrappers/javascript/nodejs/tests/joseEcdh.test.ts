@@ -105,9 +105,9 @@ describe('jose ecdh', () => {
       ciphertext: encryptedKey,
     })
 
-    const messageReceiver = cekReceiver.aeadDecrypt({ ciphertext, tag, nonce, aad: protectedB64Bytes })
+    const messageReceived = cekReceiver.aeadDecrypt({ ciphertext, tag, nonce, aad: protectedB64Bytes })
 
-    expect(messageReceiver).toStrictEqual(message)
+    expect(messageReceived).toStrictEqual(message)
   })
 
   test('ecdh 1pu direct', () => {
@@ -148,7 +148,7 @@ describe('jose ecdh', () => {
 
     const { nonce, tag, ciphertext } = encrypedMessage.parts
 
-    const messageReceiver = new Ecdh1PU({
+    const messageReceived = new Ecdh1PU({
       algId: Uint8Array.from(Buffer.from(enc)),
       apu: Uint8Array.from(Buffer.from(apu)),
       apv: Uint8Array.from(Buffer.from(apv)),
@@ -163,7 +163,7 @@ describe('jose ecdh', () => {
       aad: protectedB64Bytes,
     })
 
-    expect(messageReceiver).toStrictEqual(message)
+    expect(messageReceived).toStrictEqual(message)
   })
 
   /**

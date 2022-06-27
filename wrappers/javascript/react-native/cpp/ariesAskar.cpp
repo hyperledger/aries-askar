@@ -744,8 +744,12 @@ jsi::Value keyWrapKey(jsi::Runtime &rt, jsi::Object options) {
   ErrorCode code = askar_key_wrap_key(handle, other, nonce, &out);
   handleError(rt, code);
 
-  // TODO: encryptedbuffer to object with the tag pos and all
-  return jsi::Value::null();
+    auto object = jsi::Object(rt);
+    object.setProperty(rt, "buffer", secretBufferToArrayBuffer(rt, out.buffer));
+    object.setProperty(rt, "tagPos", int(out.tag_pos));
+    object.setProperty(rt, "noncePos", int(out.nonce_pos));
+
+    return object;
 }
 
 jsi::Value keyConvert(jsi::Runtime &rt, jsi::Object options) {
@@ -833,7 +837,7 @@ jsi::Value keyCryptoBoxSealOpen(jsi::Runtime &rt, jsi::Object options) {
   return secretBufferToArrayBuffer(rt, out);
 }
 
-jsi::Value keyDeriveEcdh1Pu(jsi::Runtime &rt, jsi::Object options) {
+jsi::Value keyDeriveEcdh1pu(jsi::Runtime &rt, jsi::Object options) {
   auto ephemeralKey = jsiToValue<LocalKeyHandle>(rt, options, "ephemeralKey");
   auto senderKey = jsiToValue<LocalKeyHandle>(rt, options, "senderKey");
   auto recipientKey = jsiToValue<LocalKeyHandle>(rt, options, "recipientKey");
@@ -841,7 +845,7 @@ jsi::Value keyDeriveEcdh1Pu(jsi::Runtime &rt, jsi::Object options) {
   auto algId = jsiToValue<ByteBuffer>(rt, options, "algId");
   auto apu = jsiToValue<ByteBuffer>(rt, options, "apu");
   auto apv = jsiToValue<ByteBuffer>(rt, options, "apv");
-  auto ccTag = jsiToValue<ByteBuffer>(rt, options, "ccTag");
+  auto ccTag = jsiToValue<ByteBuffer>(rt, options, "ccTag", true);
   auto receive = jsiToValue<int8_t>(rt, options, "receive");
 
   LocalKeyHandle out;

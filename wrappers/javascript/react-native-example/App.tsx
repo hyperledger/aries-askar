@@ -14,7 +14,11 @@ import {
 } from './tests/store.test';
 import {keyBlsG1Keygen, keyBlsG2Keygen, keyEd25519} from './tests/keys.test';
 import {cryptoBoxSeal} from './tests/cryptoBox.test';
-import {joseEcdhEsDirect} from './tests/joseEcdh.test';
+import {
+  joseEcdh1puDirect,
+  joseEcdhEsDirect,
+  joseEcdhEsWrapped,
+} from './tests/joseEcdh.test';
 
 const doTest = async (
   cb: (store: Store) => Promise<1 | undefined>,
@@ -62,6 +66,8 @@ export const App = () => {
 
   const joseEcdhTestCases: Record<string, () => any> = {
     'Jose ECDH: es direct': joseEcdhEsDirect,
+    'Jose ECDH: es wrapped': joseEcdhEsWrapped,
+    'Jose ECDH: 1pu direct': joseEcdh1puDirect,
   };
 
   return (
