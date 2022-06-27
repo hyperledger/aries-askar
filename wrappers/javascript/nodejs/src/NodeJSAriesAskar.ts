@@ -351,12 +351,12 @@ export class NodeJSAriesAskar implements AriesAskar {
   }
 
   public keyConvert(options: KeyConvertOptions): LocalKeyHandle {
-    const { localKeyHandle, alg } = serializeArguments(options)
+    const { localKeyHandle, algorithm } = serializeArguments(options)
 
     const ret = allocatePointer()
 
     // @ts-ignore
-    nativeAriesAskar.askar_key_convert(localKeyHandle, alg, ret)
+    nativeAriesAskar.askar_key_convert(localKeyHandle, algorithm, ret)
     handleError()
 
     return new LocalKeyHandle(ret.deref())
@@ -417,12 +417,13 @@ export class NodeJSAriesAskar implements AriesAskar {
   }
 
   public keyDeriveEcdh1pu(options: KeyDeriveEcdh1puOptions): LocalKeyHandle {
-    const { senderKey, recipientKey, alg, algId, apu, apv, ccTag, ephemeralKey, receive } = serializeArguments(options)
+    const { senderKey, recipientKey, algorithm, algId, apu, apv, ccTag, ephemeralKey, receive } =
+      serializeArguments(options)
 
     const ret = allocatePointer()
 
     nativeAriesAskar.askar_key_derive_ecdh_1pu(
-      alg,
+      algorithm,
       // @ts-ignore
       ephemeralKey,
       senderKey,
@@ -440,12 +441,12 @@ export class NodeJSAriesAskar implements AriesAskar {
   }
 
   public keyDeriveEcdhEs(options: KeyDeriveEcdhEsOptions): LocalKeyHandle {
-    const { receive, apv, apu, algId, recipientKey, ephemeralKey, alg } = serializeArguments(options)
+    const { receive, apv, apu, algId, recipientKey, ephemeralKey, algorithm } = serializeArguments(options)
 
     const ret = allocatePointer()
 
     // @ts-ignore
-    nativeAriesAskar.askar_key_derive_ecdh_es(alg, ephemeralKey, recipientKey, algId, apu, apv, receive, ret)
+    nativeAriesAskar.askar_key_derive_ecdh_es(algorithm, ephemeralKey, recipientKey, algId, apu, apv, receive, ret)
     handleError()
 
     return new LocalKeyHandle(ret.deref())
@@ -543,60 +544,60 @@ export class NodeJSAriesAskar implements AriesAskar {
   }
 
   public keyFromKeyExchange(options: KeyFromKeyExchangeOptions): LocalKeyHandle {
-    const { alg, pkHandle, skHandle } = serializeArguments(options)
+    const { algorithm, pkHandle, skHandle } = serializeArguments(options)
 
     const ret = allocatePointer()
 
     // @ts-ignore
-    nativeAriesAskar.askar_key_from_key_exchange(alg, skHandle, pkHandle, ret)
+    nativeAriesAskar.askar_key_from_key_exchange(algorithm, skHandle, pkHandle, ret)
     handleError()
 
     return new LocalKeyHandle(ret.deref())
   }
 
   public keyFromPublicBytes(options: KeyFromPublicBytesOptions): LocalKeyHandle {
-    const { publicKey, alg } = serializeArguments(options)
+    const { publicKey, algorithm } = serializeArguments(options)
 
     const ret = allocatePointer()
 
     // @ts-ignore
-    nativeAriesAskar.askar_key_from_public_bytes(alg, publicKey, ret)
+    nativeAriesAskar.askar_key_from_public_bytes(algorithm, publicKey, ret)
     handleError()
 
     return new LocalKeyHandle(ret.deref())
   }
 
   public keyFromSecretBytes(options: KeyFromSecretBytesOptions): LocalKeyHandle {
-    const { secretKey, alg } = serializeArguments(options)
+    const { secretKey, algorithm } = serializeArguments(options)
 
     const ret = allocatePointer()
 
     // @ts-ignore
-    nativeAriesAskar.askar_key_from_secret_bytes(alg, secretKey, ret)
+    nativeAriesAskar.askar_key_from_secret_bytes(algorithm, secretKey, ret)
     handleError()
 
     return new LocalKeyHandle(ret.deref())
   }
 
   public keyFromSeed(options: KeyFromSeedOptions): LocalKeyHandle {
-    const { alg, method, seed } = serializeArguments(options)
+    const { algorithm, method, seed } = serializeArguments(options)
 
     const ret = allocatePointer()
 
     // @ts-ignore
-    nativeAriesAskar.askar_key_from_seed(alg, seed, method, ret)
+    nativeAriesAskar.askar_key_from_seed(algorithm, seed, method, ret)
     handleError()
 
     return new LocalKeyHandle(ret.deref())
   }
 
   public keyGenerate(options: KeyGenerateOptions): LocalKeyHandle {
-    const { alg, ephemeral } = serializeArguments(options)
+    const { algorithm, ephemeral } = serializeArguments(options)
 
     const ret = allocatePointer()
 
     // @ts-ignore
-    nativeAriesAskar.askar_key_generate(alg, ephemeral, ret)
+    nativeAriesAskar.askar_key_generate(algorithm, ephemeral, ret)
     handleError()
 
     return new LocalKeyHandle(ret.deref())
@@ -692,12 +693,12 @@ export class NodeJSAriesAskar implements AriesAskar {
   }
 
   public keyUnwrapKey(options: KeyUnwrapKeyOptions): LocalKeyHandle {
-    const { localKeyHandle, alg, ciphertext, nonce, tag } = serializeArguments(options)
+    const { localKeyHandle, algorithm, ciphertext, nonce, tag } = serializeArguments(options)
 
     const ret = allocatePointer()
 
     // @ts-ignore
-    nativeAriesAskar.askar_key_unwrap_key(localKeyHandle, alg, ciphertext, nonce, tag, ret)
+    nativeAriesAskar.askar_key_unwrap_key(localKeyHandle, algorithm, ciphertext, nonce, tag, ret)
     handleError()
 
     return new LocalKeyHandle(ret.deref())

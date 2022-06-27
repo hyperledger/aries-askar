@@ -36,7 +36,7 @@ export const secretBufferToBuffer = byteBufferToBuffer
 
 export const encryptedBufferStructToClass = (encryptedBuffer: EncryptedBufferType) => {
   // @ts-ignore
-  const buffer = Uint8Array.from(secretBufferToBuffer(encryptedBuffer.secretBuffer))
+  const buffer = Uint8Array.from(secretBufferToBuffer(encryptedBuffer.buffer))
   // @ts-ignore
   const noncePos = encryptedBuffer.nonce_pos
   // @ts-ignore

@@ -227,16 +227,10 @@ describe('jose ecdh', () => {
     const iv = Uint8Array.from([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15])
     const message = Uint8Array.from(Buffer.from('Three is a magic number.'))
 
-    const encoded = cek.aeadEncrypt({ message, nonce: iv, aad: protectedB64Bytes })
+    const { ciphertext, tag: ccTag } = cek.aeadEncrypt({ message, nonce: iv, aad: protectedB64Bytes })
 
-    const ciphertext = encoded.ciphertext
-    const ccTag = encoded.tag
-
-    const expectedCiphertext = Uint8Array.from(Buffer.from('Az2IWsISEMDJvyc5XRL-3-d-RgNBOGolCsxFFoUXFYw', 'base64url'))
-    const expectedCcTag = Uint8Array.from(Buffer.from('HLb4fTlm8spGmij3RyOs2gJ4DpHM4hhVRwdF_hGb3WQ', 'base64url'))
-
-    expect(ciphertext).toStrictEqual(expectedCiphertext)
-    expect(ccTag).toStrictEqual(expectedCcTag)
+    expect(Buffer.from(ciphertext).toString('base64url')).toStrictEqual('Az2IWsISEMDJvyc5XRL-3-d-RgNBOGolCsxFFoUXFYw')
+    expect(Buffer.from(ccTag).toString('base64url')).toStrictEqual('HLb4fTlm8spGmij3RyOs2gJ4DpHM4hhVRwdF_hGb3WQ')
 
     const derived = new Ecdh1PU({
       apv: Uint8Array.from(Buffer.from(apv)),
@@ -246,7 +240,7 @@ describe('jose ecdh', () => {
       encAlg: KeyAlgs.AesA128Kw,
       recipientKey: bob,
       senderKey: alice,
-      ccTag: ccTag,
+      ccTag,
       ephemeralKey: ephemeral,
       receive: false,
     })
