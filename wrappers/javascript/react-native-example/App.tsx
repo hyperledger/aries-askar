@@ -1,6 +1,9 @@
 import React from 'react';
-import {Button, SafeAreaView} from 'react-native';
-import {ReactNativeAriesAskar} from 'aries-askar-react-native';
+import {Button, SafeAreaView, Text} from 'react-native';
+import {
+  ReactNativeAriesAskar,
+  ariesAskarReactNative,
+} from 'aries-askar-react-native';
 import {registerAriesAskar, Store} from 'aries-askar-shared';
 import {
   setupStore,
@@ -22,7 +25,7 @@ import {
   joseEcdhEsWrapped,
 } from './tests/joseEcdh.test';
 
-const doTest = async (
+const doAsyncTest = async (
   cb: (store: Store) => Promise<number | undefined>,
   name: string,
 ) => {
@@ -35,6 +38,19 @@ const doTest = async (
       console.log(`Test ${name} succeeded`);
     }
     store.close(true);
+  } catch (e) {
+    console.error(`Test ${name} failed with mesage: ${e}`);
+  }
+};
+
+const doTest = (cb: () => number | undefined, name: string) => {
+  try {
+    const res = cb();
+    if (res) {
+      console.error(`Test ${name}:${res} failed`);
+    } else {
+      console.log(`Test ${name} succeeded`);
+    }
   } catch (e) {
     console.error(`Test ${name} failed with mesage: ${e}`);
   }
@@ -77,45 +93,34 @@ export const App = () => {
   return (
     <SafeAreaView>
       <Button
-        title="All"
-        onPress={() => {
-          Object.entries({
-            ...storeTestCases,
-            ...keyTestCases,
-            ...cryptoBoxTestCases,
-            ...joseEcdhTestCases,
-          }).map(async ([funcName, cb]) => await doTest(cb, funcName));
-        }}
-      />
-      <Button
         title="Store: All"
         onPress={() => {
           Object.entries(storeTestCases).map(
-            async ([funcName, cb]) => await doTest(cb, funcName),
+            async ([funcName, cb]) => await doAsyncTest(cb, funcName),
           );
         }}
       />
       <Button
         title="Key: All"
         onPress={() => {
-          Object.entries(keyTestCases).map(
-            async ([funcName, cb]) => await doTest(cb, funcName),
+          Object.entries(keyTestCases).map(async ([funcName, cb]) =>
+            doTest(cb, funcName),
           );
         }}
       />
       <Button
         title="CryptoBox: All"
         onPress={() => {
-          Object.entries(cryptoBoxTestCases).map(
-            async ([funcName, cb]) => await doTest(cb, funcName),
+          Object.entries(cryptoBoxTestCases).map(async ([funcName, cb]) =>
+            doTest(cb, funcName),
           );
         }}
       />
       <Button
         title="Jose ECDH: All"
         onPress={() => {
-          Object.entries(joseEcdhTestCases).map(
-            async ([funcName, cb]) => await doTest(cb, funcName),
+          Object.entries(joseEcdhTestCases).map(async ([funcName, cb]) =>
+            doTest(cb, funcName),
           );
         }}
       />

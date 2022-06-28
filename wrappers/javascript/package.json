@@ -10,6 +10,7 @@
       "react-native-example"
     ],
     "nohoist": [
+      "**/@react-native-community",
       "**/react-native-codegen",
       "**/react-native",
       "react-native/**"
