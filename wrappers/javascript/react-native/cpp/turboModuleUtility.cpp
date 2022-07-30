@@ -6,7 +6,14 @@ namespace turboModuleUtility {
 
 using byteVector = std::vector<uint8_t>;
 
-void registerTurboModule(jsi::Runtime &rt) {
+std::shared_ptr<react::CallInvoker> invoker;
+
+std::shared_ptr<react::CallInvoker> getInvoker() { return invoker; }
+
+void registerTurboModule(jsi::Runtime &rt,
+                         std::shared_ptr<react::CallInvoker> jsCallInvoker) {
+  // Setting the callInvoker for async code
+  invoker = jsCallInvoker;
   // Create a TurboModuleRustHostObject
   auto instance = std::make_shared<TurboModuleHostObject>(rt);
   // Create a JS equivalent object of the instance
@@ -37,87 +44,94 @@ void handleError(jsi::Runtime &rt, ErrorCode code) {
 };
 
 void callback(CallbackId result, ErrorCode code) {
-  State *_state = reinterpret_cast<State *>(result);
-  State *state = static_cast<State *>(_state);
-  jsi::Function *cb = &state->cb;
-  jsi::Runtime *rt = reinterpret_cast<jsi::Runtime *>(state->rt);
-
-  cb->call(*rt, int(code));
-  delete state;
+  invoker->invokeAsync([result, code]() {
+    State *_state = reinterpret_cast<State *>(result);
+    State *state = static_cast<State *>(_state);
+    jsi::Function *cb = &state->cb;
+    jsi::Runtime *rt = reinterpret_cast<jsi::Runtime *>(state->rt);
+    cb->call(*rt, int(code));
+  });
+  //  delete state;
 }
 
 // Session, Store and Scan Handle
 template <>
 void callbackWithResponse(CallbackId result, ErrorCode code, size_t response) {
-  State *_state = reinterpret_cast<State *>(result);
-  State *state = static_cast<State *>(_state);
-  jsi::Function *cb = &state->cb;
-  jsi::Runtime *rt = reinterpret_cast<jsi::Runtime *>(state->rt);
-  cb->call(*rt, int(code), int(response));
-  delete state;
+  invoker->invokeAsync([result, code, response]() {
+    State *_state = reinterpret_cast<State *>(result);
+    State *state = static_cast<State *>(_state);
+    jsi::Function *cb = &state->cb;
+    jsi::Runtime *rt = reinterpret_cast<jsi::Runtime *>(state->rt);
+    cb->call(*rt, int(code), int(response));
+  });
 }
 
 template <>
 void callbackWithResponse(CallbackId result, ErrorCode code,
                           const char *response) {
-  State *_state = reinterpret_cast<State *>(result);
-  State *state = static_cast<State *>(_state);
-  jsi::Function *cb = &state->cb;
-  jsi::Runtime *rt = reinterpret_cast<jsi::Runtime *>(state->rt);
-  jsi::String serializedResponse =
-      jsi::String::createFromAscii(*rt, response ? response : "PANIC");
-  cb->call(*rt, int(code), serializedResponse);
-  delete state;
+  invoker->invokeAsync([result, code, response]() {
+    State *_state = reinterpret_cast<State *>(result);
+    State *state = static_cast<State *>(_state);
+    jsi::Function *cb = &state->cb;
+    jsi::Runtime *rt = reinterpret_cast<jsi::Runtime *>(state->rt);
+    jsi::String serializedResponse =
+        jsi::String::createFromAscii(*rt, response ? response : "PANIC");
+    cb->call(*rt, int(code), serializedResponse);
+  });
 }
 
 template <>
 void callbackWithResponse(CallbackId result, ErrorCode code,
                           EntryListHandle response) {
-  State *_state = reinterpret_cast<State *>(result);
-  State *state = static_cast<State *>(_state);
-  jsi::Function *cb = &state->cb;
-  jsi::Runtime *rt = reinterpret_cast<jsi::Runtime *>(state->rt);
+  invoker->invokeAsync([result, code, response]() {
+    State *_state = reinterpret_cast<State *>(result);
+    State *state = static_cast<State *>(_state);
+    jsi::Function *cb = &state->cb;
+    jsi::Runtime *rt = reinterpret_cast<jsi::Runtime *>(state->rt);
 
-  std::string serializedPointer = std::to_string(intptr_t(response._0));
-  jsi::String pointer = jsi::String::createFromAscii(*rt, serializedPointer);
+    std::string serializedPointer = std::to_string(intptr_t(response._0));
+    jsi::String pointer = jsi::String::createFromAscii(*rt, serializedPointer);
 
-  cb->call(*rt, int(code), serializedPointer);
-  delete state;
+    cb->call(*rt, int(code), serializedPointer);
+  });
 }
 
 template <>
 void callbackWithResponse(CallbackId result, ErrorCode code,
                           KeyEntryListHandle response) {
-  State *_state = reinterpret_cast<State *>(result);
-  State *state = static_cast<State *>(_state);
-  jsi::Function *cb = &state->cb;
-  jsi::Runtime *rt = reinterpret_cast<jsi::Runtime *>(state->rt);
+  invoker->invokeAsync([result, code, response]() {
+    State *_state = reinterpret_cast<State *>(result);
+    State *state = static_cast<State *>(_state);
+    jsi::Function *cb = &state->cb;
+    jsi::Runtime *rt = reinterpret_cast<jsi::Runtime *>(state->rt);
 
-  std::string serializedPointer = std::to_string(intptr_t(response._0));
-  jsi::String pointer = jsi::String::createFromAscii(*rt, serializedPointer);
+    std::string serializedPointer = std::to_string(intptr_t(response._0));
+    jsi::String pointer = jsi::String::createFromAscii(*rt, serializedPointer);
 
-  cb->call(*rt, int(code), serializedPointer);
-  delete state;
+    cb->call(*rt, int(code), serializedPointer);
+  });
 }
 
 template <>
 void callbackWithResponse(CallbackId result, ErrorCode code, int8_t response) {
-  State *_state = reinterpret_cast<State *>(result);
-  State *state = static_cast<State *>(_state);
-  jsi::Function *cb = &state->cb;
-  jsi::Runtime *rt = reinterpret_cast<jsi::Runtime *>(state->rt);
-  cb->call(*rt, int(code), int(response));
-  delete state;
+  invoker->invokeAsync([result, code, response]() {
+    State *_state = reinterpret_cast<State *>(result);
+    State *state = static_cast<State *>(_state);
+    jsi::Function *cb = &state->cb;
+    jsi::Runtime *rt = reinterpret_cast<jsi::Runtime *>(state->rt);
+    cb->call(*rt, int(code), int(response));
+  });
 }
 
 template <>
 void callbackWithResponse(CallbackId result, ErrorCode code, int64_t response) {
-  State *_state = reinterpret_cast<State *>(result);
-  State *state = static_cast<State *>(_state);
-  jsi::Function *cb = &state->cb;
-  jsi::Runtime *rt = reinterpret_cast<jsi::Runtime *>(state->rt);
-  cb->call(*rt, int(code), int(response));
-  delete state;
+  invoker->invokeAsync([result, code, response]() {
+    State *_state = reinterpret_cast<State *>(result);
+    State *state = static_cast<State *>(_state);
+    jsi::Function *cb = &state->cb;
+    jsi::Runtime *rt = reinterpret_cast<jsi::Runtime *>(state->rt);
+    cb->call(*rt, int(code), int(response));
+  });
 }
 
 template <>

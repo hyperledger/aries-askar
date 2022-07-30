@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/ban-ts-comment */
 import type {
   AriesAskar,
   BufferFreeOptions,
@@ -412,11 +411,10 @@ export class ReactNativeAriesAskar implements AriesAskar {
 
   public async scanNext(options: ScanNextOptions): Promise<EntryListHandle> {
     const serializedOptions = serializeArguments(options)
-    const handle = await this.promisifyWithResponse<number, number>((cb) =>
+    const handle = await this.promisifyWithResponse<string>((cb) =>
       ariesAskarReactNative.scanNext({ cb, ...serializedOptions })
     )
 
-    //  @ts-ignore
     return new EntryListHandle(handle)
   }
 
@@ -434,7 +432,6 @@ export class ReactNativeAriesAskar implements AriesAskar {
       })
     )
 
-    //  @ts-ignore
     return new ScanHandle(handle)
   }
 
@@ -452,21 +449,19 @@ export class ReactNativeAriesAskar implements AriesAskar {
 
   public async sessionFetch(options: SessionFetchOptions): Promise<EntryListHandle> {
     const serializedOptions = serializeArguments(options)
-    const handle = await this.promisifyWithResponse<number, number>((cb) =>
+    const handle = await this.promisifyWithResponse<string>((cb) =>
       ariesAskarReactNative.sessionFetch({ cb, ...serializedOptions })
     )
 
-    //  @ts-ignore
     return new EntryListHandle(handle)
   }
 
   public async sessionFetchAll(options: SessionFetchAllOptions): Promise<EntryListHandle> {
     const { category, sessionHandle, forUpdate, limit, tagFilter } = serializeArguments(options)
-    const handle = await this.promisifyWithResponse<number, number>((cb) =>
+    const handle = await this.promisifyWithResponse<string>((cb) =>
       ariesAskarReactNative.sessionFetchAll({ cb, category, sessionHandle, forUpdate, limit: limit || -1, tagFilter })
     )
 
-    //  @ts-ignore
     return new EntryListHandle(handle)
   }
 
@@ -484,7 +479,6 @@ export class ReactNativeAriesAskar implements AriesAskar {
       })
     )
 
-    //  @ts-ignore
     return new KeyEntryListHandle(handle)
   }
   public async sessionFetchKey(options: SessionFetchKeyOptions): Promise<KeyEntryListHandle> {
@@ -493,7 +487,6 @@ export class ReactNativeAriesAskar implements AriesAskar {
       ariesAskarReactNative.sessionFetchKey({ cb, ...serializedOptions })
     )
 
-    //  @ts-ignore
     return new KeyEntryListHandle(handle)
   }
 

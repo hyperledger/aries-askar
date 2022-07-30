@@ -1,10 +1,7 @@
 import React from 'react';
-import {Button, SafeAreaView, Text} from 'react-native';
-import {
-  ReactNativeAriesAskar,
-  ariesAskarReactNative,
-} from 'aries-askar-react-native';
-import {registerAriesAskar, Store} from 'aries-askar-shared';
+import {Button, SafeAreaView} from 'react-native';
+import {Key, KeyAlgs, registerAriesAskar, Store} from 'aries-askar-shared';
+import {ReactNativeAriesAskar} from 'aries-askar-react-native';
 import {
   setupStore,
   storeInsert,
@@ -58,7 +55,6 @@ const doTest = (cb: () => number | undefined, name: string) => {
 
 export const App = () => {
   registerAriesAskar({askar: new ReactNativeAriesAskar()});
-
   const storeTestCases: Record<
     string,
     (store: Store) => Promise<number | undefined>
@@ -92,6 +88,12 @@ export const App = () => {
 
   return (
     <SafeAreaView>
+      <Button
+        title="dbg"
+        onPress={() => {
+          console.log(Key.generate(KeyAlgs.Ed25519, 0));
+        }}
+      />
       <Button
         title="Store: All"
         onPress={() => {

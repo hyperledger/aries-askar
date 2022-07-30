@@ -97,6 +97,7 @@ jsi::Value storeOpen(jsi::Runtime &rt, jsi::Object options) {
   jsi::Function cb = options.getPropertyAsFunction(rt, "cb");
   State *state = new State(&cb);
   state->rt = &rt;
+  state->invoker = turboModuleUtility::getInvoker();
 
   ErrorCode code = askar_store_open(
       specUri.c_str(), keyMethod.length() ? keyMethod.c_str() : nullptr,
@@ -582,7 +583,8 @@ jsi::Value keyFromSeed(jsi::Runtime &rt, jsi::Object options) {
 
 jsi::Value keyGenerate(jsi::Runtime &rt, jsi::Object options) {
   auto algorithm = jsiToValue<std::string>(rt, options, "algorithm");
-  auto ephemeral = jsiToValue<int8_t>(rt, options, "ephemeral");
+  //  auto ephemeral = jsiToValue<int8_t>(rt, options, "ephemeral");
+  auto ephemeral = 0;
 
   LocalKeyHandle out;
 

@@ -65,6 +65,8 @@ export type SerializedOptions<Type> = {
 
 const serialize = (arg: Argument): SerializedArgument => {
   switch (typeof arg) {
+    case 'undefined':
+      return arg
     case 'string':
       return arg
     case 'boolean':

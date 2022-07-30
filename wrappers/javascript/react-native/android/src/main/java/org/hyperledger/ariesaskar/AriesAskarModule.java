@@ -2,18 +2,30 @@ package org.hyperledger.ariesaskar;
 
 import android.util.Log;
 
+import androidx.annotation.Keep;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import com.facebook.proguard.annotations.DoNotStrip;
 
 import com.facebook.react.bridge.JavaScriptContextHolder;
 import com.facebook.react.bridge.ReactContextBaseJavaModule;
 import com.facebook.react.bridge.ReactApplicationContext;
+import com.facebook.react.bridge.ReactContext;
 import com.facebook.react.bridge.ReactMethod;
 import com.facebook.react.module.annotations.ReactModule;
+import com.facebook.react.turbomodule.core.CallInvokerHolderImpl;
+import com.facebook.react.turbomodule.core.interfaces.CallInvokerHolder;
 
-@ReactModule(name = AriesAskarModule.NAME)
+@Keep
+@DoNotStrip
 public class AriesAskarModule extends ReactContextBaseJavaModule {
-    public static final String NAME = "AriesAskar";
+    static {
+      System.loadLibrary("ariesaskarreactnative");
+    }
+
+    public static final String NAME = "RNAriesAskar";
+
+    static String TAG = "RNAriesAskar";
 
     public AriesAskarModule(ReactApplicationContext reactContext) {
         super(reactContext);
@@ -22,23 +34,23 @@ public class AriesAskarModule extends ReactContextBaseJavaModule {
     @Override
     @NonNull
     public String getName() {
-        return NAME;
+        return TAG;
     }
+
+    private static native void installNative(long jsiRuntimePointer, CallInvokerHolderImpl jsCallInvokerHolder);
 
     @ReactMethod(isBlockingSynchronousMethod = true)
     public boolean install() {
       try {
-        Log.i(NAME, "Loading C++ library...");
         System.loadLibrary("ariesaskarreactnative");
-
-        JavaScriptContextHolder jsContext = getReactApplicationContext().getJavaScriptContextHolder();
-        nativeInstall(jsContext.get());
+        ReactContext context = getReactApplicationContext();
+        long jsContextPointer = context.getJavaScriptContextHolder().get();
+        CallInvokerHolderImpl holder = (CallInvokerHolderImpl) context.getCatalystInstance().getJSCallInvokerHolder();
+        installNative(jsContextPointer, holder);
         return true;
       } catch (Exception exception) {
         Log.e(NAME, "Failed to install JSI Bindings!", exception);
         return false;
       }
     }
-
-    private static native void nativeInstall(long jsiPtr);
 }

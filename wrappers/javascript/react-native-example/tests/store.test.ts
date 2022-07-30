@@ -1,10 +1,4 @@
-import {
-  AriesAskarError,
-  Store,
-  Key,
-  KeyAlgs,
-  StoreKeyMethod,
-} from 'aries-askar-shared';
+import {Store, Key, KeyAlgs, StoreKeyMethod} from 'aries-askar-shared';
 import {firstEntry, secondEntry} from './utils';
 
 const getRawKey = Store.generateRawKey;

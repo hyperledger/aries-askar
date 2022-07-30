@@ -3,6 +3,7 @@
 #include <jsi/jsi.h>
 
 #include <HostObject.h>
+#include <ReactCommon/CallInvoker.h>
 #include <include/libaries_askar.h>
 
 using namespace facebook;
@@ -16,12 +17,16 @@ static const std::string errorInfix = "` is not of type ";
 struct State {
   jsi::Function cb;
   jsi::Runtime *rt;
+  std::shared_ptr<react::CallInvoker> invoker;
 
   State(jsi::Function *cb_) : cb(std::move(*cb_)) {}
 };
 
+std::shared_ptr<react::CallInvoker> getInvoker();
+
 // Install the Turbomodule
-void registerTurboModule(jsi::Runtime &rt);
+void registerTurboModule(jsi::Runtime &rt,
+                         std::shared_ptr<react::CallInvoker> jsCallInvoker);
 
 // Asserts that a jsi::Value is an object and can be safely transformed
 void assertValueIsObject(jsi::Runtime &rt, const jsi::Value *val);
