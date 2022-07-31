@@ -25,10 +25,6 @@ def getExtOrIntegerDefault(name) {
   return rootProject.ext.get(name)
 }
 
-def getExtHermesEnabled(name) {
-  return rootProject.ext.get(name)
-}
-
 static def findNodeModules(baseDir, isHermesEnabled) {
   def basePath = baseDir.toPath().normalize()
   while (basePath) {
@@ -41,7 +37,7 @@ static def findNodeModules(baseDir, isHermesEnabled) {
     }
     basePath = basePath.getParent()
   }
-  throw new GradleException("aries askar: Failed to find node_modules/ path!")
+  throw new GradleException("aries askar: Failed to find node_modules path!")
 }
 
 def isHermesEnabled = "False"
@@ -51,7 +47,7 @@ rootProject.getSubprojects().forEach({project ->
   }
 })
 def nodeModules = findNodeModules(projectDir, isHermesEnabled);
-logger.warn("aries askar: node_modules/ found at: ${nodeModules}");
+logger.warn("aries askar: node modules found at: ${nodeModules}");
 
 def reactNative = new File("$nodeModules/react-native")
 
@@ -125,7 +121,7 @@ repositories {
   def androidSourcesName = 'React Native sources'
 
   if (rootProject.ext.has('reactNativeAndroidRoot')) {
-    defaultDir = rootProject.ext.get('reactNativeAndroidRoot')hermes
+    defaultDir = rootProject.ext.get('reactNativeAndroidRoot')
   } else {
     defaultDir = file("$nodeModules/react-native/android")
   }
