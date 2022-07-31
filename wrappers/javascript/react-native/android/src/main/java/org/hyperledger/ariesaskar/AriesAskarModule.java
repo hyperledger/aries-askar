@@ -23,9 +23,9 @@ public class AriesAskarModule extends ReactContextBaseJavaModule {
       System.loadLibrary("ariesaskarreactnative");
     }
 
-    public static final String NAME = "RNAriesAskar";
+    public static final String NAME = "AriesAskar";
 
-    static String TAG = "RNAriesAskar";
+    static String TAG = "AriesAskar";
 
     public AriesAskarModule(ReactApplicationContext reactContext) {
         super(reactContext);

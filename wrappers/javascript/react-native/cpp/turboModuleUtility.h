@@ -1,9 +1,9 @@
 #pragma once
 
 #include <jsi/jsi.h>
+#include <ReactCommon/CallInvoker.h>
 
 #include <HostObject.h>
-#include <ReactCommon/CallInvoker.h>
 #include <include/libaries_askar.h>
 
 using namespace facebook;
@@ -17,12 +17,9 @@ static const std::string errorInfix = "` is not of type ";
 struct State {
   jsi::Function cb;
   jsi::Runtime *rt;
-  std::shared_ptr<react::CallInvoker> invoker;
 
   State(jsi::Function *cb_) : cb(std::move(*cb_)) {}
 };
-
-std::shared_ptr<react::CallInvoker> getInvoker();
 
 // Install the Turbomodule
 void registerTurboModule(jsi::Runtime &rt,

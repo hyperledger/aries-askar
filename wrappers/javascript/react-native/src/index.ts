@@ -4,7 +4,7 @@
 
 import { NativeModules } from 'react-native'
 
-const module = NativeModules.RNAriesAskar
+const module = NativeModules.AriesAskar
 if (!module.install()) throw Error('Unable to install the turboModule: ariesAskar')
 
 // Reexport everything from shared

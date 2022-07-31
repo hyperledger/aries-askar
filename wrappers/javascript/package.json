@@ -11,9 +11,7 @@
     ],
     "nohoist": [
       "**/@react-native-community",
-      "**/react-native-codegen",
-      "**/react-native",
-      "react-native/**"
+      "**/react-native-codegen"
     ]
   },
   "scripts": {

@@ -97,7 +97,6 @@ jsi::Value storeOpen(jsi::Runtime &rt, jsi::Object options) {
   jsi::Function cb = options.getPropertyAsFunction(rt, "cb");
   State *state = new State(&cb);
   state->rt = &rt;
-  state->invoker = turboModuleUtility::getInvoker();
 
   ErrorCode code = askar_store_open(
       specUri.c_str(), keyMethod.length() ? keyMethod.c_str() : nullptr,

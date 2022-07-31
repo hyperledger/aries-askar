@@ -8,8 +8,6 @@ using byteVector = std::vector<uint8_t>;
 
 std::shared_ptr<react::CallInvoker> invoker;
 
-std::shared_ptr<react::CallInvoker> getInvoker() { return invoker; }
-
 void registerTurboModule(jsi::Runtime &rt,
                          std::shared_ptr<react::CallInvoker> jsCallInvoker) {
   // Setting the callInvoker for async code
@@ -322,7 +320,7 @@ jsi::ArrayBuffer secretBufferToArrayBuffer(jsi::Runtime &rt, SecretBuffer sb) {
                                      .getObject(rt)
                                      .getArrayBuffer(rt);
 
-  // TODO: signature here is a weird. sb.data cannot go into ab.data()
+  // TODO: signature here is weird. sb.data cannot go into ab.data()
   memcpy(arrayBuffer.data(rt), sb.data, sb.len);
   return arrayBuffer;
 }

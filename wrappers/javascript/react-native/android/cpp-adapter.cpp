@@ -11,7 +11,7 @@ struct AriesAskarModule : jni::JavaClass<AriesAskarModule> {
 public:
   __unused static constexpr auto kJavaDescriptor = "Lorg/hyperledger/ariesaskar/AriesAskarModule;";
 
-  static constexpr auto TAG = "RNAriesAskar";
+  static constexpr auto TAG = "AriesAskar";
 
   static void registerNatives() {
     javaClassStatic()->registerNatives({ makeNativeMethod("installNative", AriesAskarModule::installNative) });

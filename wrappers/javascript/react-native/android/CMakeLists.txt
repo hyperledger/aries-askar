@@ -1,15 +1,18 @@
 cmake_minimum_required(VERSION 3.9.0)
+project(ariesaskarreactnative)
 
 set (PACKAGE_NAME "ariesaskarreactnative")
 set (LIB_NAME "ariesaskar")
 set (BUILD_DIR ${CMAKE_SOURCE_DIR}/build)
 
 file (GLOB LIBFBJNI_INCLUDE_DIR "${BUILD_DIR}/fbjni-*-headers.jar/")
+file (GLOB LIBRN_DIR "${BUILD_DIR}/react-native-0*/jni/${ANDROID_ABI}")
+file (GLOB LIBASKAR_DIR "${CMAKE_SOURCE_DIR}/libs/${ANDROID_ABI}")
 
 include_directories(
-  ${CMAKE_SOURCE_DIR}/libs/${ANDROID_ABI}
   ../cpp
   ../cpp/include
+  "${LIBASKAR_DIR}"
   "${LIBFBJNI_INCLUDE_DIR}"
   "${NODE_MODULES_DIR}/react-native/React"
   "${NODE_MODULES_DIR}/react-native/React/Base"
@@ -17,15 +20,7 @@ include_directories(
   "${NODE_MODULES_DIR}/react-native/ReactCommon/jsi"
   "${NODE_MODULES_DIR}/react-native/ReactCommon/callinvoker"
   "${NODE_MODULES_DIR}/react-native/ReactAndroid/src/main/jni"
-  # foo
-  "${NODE_MODULES_DIR}/react-native/React"
-  "${NODE_MODULES_DIR}/react-native/React/Base"
-  "${NODE_MODULES_DIR}/react-native/ReactAndroid/src/main/jni"
   "${NODE_MODULES_DIR}/react-native/ReactAndroid/src/main/java/com/facebook/react/turbomodule/core/jni"
-  "${NODE_MODULES_DIR}/react-native/ReactCommon"
-  "${NODE_MODULES_DIR}/react-native/ReactCommon/callinvoker"
-  "${NODE_MODULES_DIR}/react-native/ReactCommon/jsi"
-  "${NODE_MODULES_DIR}/react-native/ReactCommon/jsi"
 )
 
 add_library(
@@ -44,10 +39,6 @@ set_target_properties(
   CXX_EXTENSION OFF
   POSITION_INDEPENDENT_CODE ON
 )
-
-# file (GLOB LIBRN_DIR  "${PREBUILT_DIR}/${ANDROID_ABI}")
-file (GLOB LIBRN_DIR "${BUILD_DIR}/react-native-0*/jni/${ANDROID_ABI}")
-file (GLOB LIBASKAR_DIR "${CMAKE_SOURCE_DIR}/libs/${ANDROID_ABI}")
 
 find_library(
   LOG_LIB

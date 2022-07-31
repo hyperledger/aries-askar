@@ -1,12 +1,4 @@
-# OSX
-#
-.DS_Store
-
-# XDE
 .expo/
-
-# VSCode
-.vscode/
 jsconfig.json
 
 # Xcode
@@ -56,5 +48,8 @@ android/keystores/debug.keystore
 .expo-shared/*
 
 # Native Libraries 
-react-native/ios/Frameworks/*
+react-native/ios/Frameworks
 react-native/android/libs
+
+# Example app
+react-native-example
