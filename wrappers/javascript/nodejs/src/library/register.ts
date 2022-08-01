@@ -59,7 +59,7 @@ const getLibrary = () => {
   // Casting here as a string because there is a guard of none of the paths
   const validLibraryPath = libaries.find((l) => doesPathExist(l)) as string
 
-  // TODO
+  // TODO fix the typing conversion
   // eslint-disable-next-line @typescript-eslint/ban-ts-comment
   // @ts-ignore
   return Library(validLibraryPath, nativeBindings)

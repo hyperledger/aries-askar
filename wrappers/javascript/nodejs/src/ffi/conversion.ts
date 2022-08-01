@@ -1,26 +1,20 @@
-/* eslint-disable no-console */
 /* eslint-disable @typescript-eslint/ban-ts-comment */
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 /* eslint-disable @typescript-eslint/no-unsafe-argument */
-import type { ByteBufferType, EncryptedBufferType } from './structures'
+import type { EncryptedBufferType } from './structures'
 import type { TypedArray } from 'ref-array-di'
 import type { Pointer } from 'ref-napi'
 
-import { AriesAskarError, ByteBuffer, EncryptedBuffer } from 'aries-askar-shared'
+import { ByteBuffer, EncryptedBuffer } from 'aries-askar-shared'
 import { reinterpret } from 'ref-napi'
 
 import { ByteBufferStruct } from './structures'
 
-// TODO: Does this do correct conversion? The data -> pointer scenario
 export const byteBufferClassToStruct = ({ len, data }: ByteBuffer) => {
   return ByteBufferStruct({
     len,
     data: data as Pointer<TypedArray<number, number>>,
   })
-}
-
-export const byteBufferToReference = (byteBuffer: ByteBufferType) => {
-  throw AriesAskarError.customError({ message: 'Method byteBufferToReference not implemented' })
 }
 
 export const secretBufferClassToStruct = byteBufferClassToStruct

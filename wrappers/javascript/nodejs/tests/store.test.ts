@@ -95,8 +95,6 @@ describe('Store and Session', () => {
 
     await txn.commit()
 
-    await txn.close()
-
     const session = await store.openSession()
 
     await expect(session.fetch(firstEntry)).resolves.toMatchObject(firstEntry)
