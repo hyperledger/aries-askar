@@ -77,7 +77,6 @@ export class Store {
     return remove ? await Store.remove(this.uri) : false
   }
 
-  // TODO: when true, this segfaults...
   public static async remove(uri: string) {
     return await ariesAskar.storeRemove({ specUri: uri })
   }

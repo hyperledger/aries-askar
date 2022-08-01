@@ -11,13 +11,10 @@ import { EntryList } from './EntryList'
 import { KeyEntryList } from './KeyEntryList'
 
 export class Session {
-  // TODO: where is the store used?
-  private store: StoreHandle
   private _handle?: SessionHandle
   private isTxn: boolean
 
-  public constructor({ store, handle, isTxn }: { store: StoreHandle; handle?: SessionHandle; isTxn: boolean }) {
-    this.store = store
+  public constructor({ handle, isTxn }: { handle?: SessionHandle; isTxn: boolean }) {
     this._handle = handle
     this.isTxn = isTxn
   }
@@ -242,6 +239,9 @@ export class Session {
     await ariesAskar.sessionRemoveKey({ name, sessionHandle: this.handle })
   }
 
+  /**
+   * @note also closes the session
+   */
   public async commit() {
     if (!this.isTxn) throw AriesAskarError.customError({ message: 'Session is not a transaction' })
     if (!this.handle) throw AriesAskarError.customError({ message: 'Cannot commit a closed session' })
@@ -257,9 +257,7 @@ export class Session {
   }
 
   public async close() {
-    // TODO: I do not think we should throw an error here
-    // if (!this.handle) throw AriesAskarError.customError({  message: 'Cannot close a closed session' })
-    if (!this.handle) return
+    if (!this.handle) throw AriesAskarError.customError({ message: 'Cannot close a closed session' })
     await this.handle.close(false)
     this._handle = undefined
   }

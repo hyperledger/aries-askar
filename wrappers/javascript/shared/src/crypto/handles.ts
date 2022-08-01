@@ -1,4 +1,3 @@
-// TODO: do we need these classes?
 import { ariesAskar } from '../ariesAskar'
 import { AriesAskarError } from '../error'
 

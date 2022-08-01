@@ -305,7 +305,6 @@ jsi::Value sessionFetchAllKeys(jsi::Runtime &rt, jsi::Object options) {
   auto thumbprint = jsiToValue<std::string>(rt, options, "thumbprint", true);
   auto tagFilter = jsiToValue<std::string>(rt, options, "tagFilter", true);
   auto limit = jsiToValue<int64_t>(rt, options, "limit", true);
-  // TODO: is this really not required? compare with python
   auto forUpdate = jsiToValue<int8_t>(rt, options, "forUpdate");
 
   jsi::Function cb = options.getPropertyAsFunction(rt, "cb");

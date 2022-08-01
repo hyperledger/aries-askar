@@ -26,6 +26,6 @@ export class OpenSession {
       asTransaction: this.isTxn,
       storeHandle: this.store,
     })
-    return new Session({ store: this.store, isTxn: this.isTxn, handle: sessionHandle })
+    return new Session({ isTxn: this.isTxn, handle: sessionHandle })
   }
 }

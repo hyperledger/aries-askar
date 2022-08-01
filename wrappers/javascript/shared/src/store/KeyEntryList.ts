@@ -26,7 +26,6 @@ export class KeyEntryList {
     return new KeyEntry({ list: this.handle, pos: index })
   }
 
-  // TODO: is this required?
   public forEach(cb: (entry: KeyEntry, index?: number) => unknown) {
     for (let i = 0; i < this.length; i++) {
       cb(this.getEntryByIndex(i), i)

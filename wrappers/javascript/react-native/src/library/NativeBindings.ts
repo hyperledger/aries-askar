@@ -1,51 +1,13 @@
-import type { AriesAskar } from 'aries-askar-shared'
-
 type LocalKeyHandle = string
 
 type CallbackWithResponse<T> = (err: number, response: T) => void
 type Callback = (err: number) => void
 
-// interface TypeMap {
-//   SecretBuffer: ArrayBuffer
-//   EntryListHandle: string
-//   LocalKeyHandle: string
-//   KeyEntryListHandle: string
-//   SessionHandle: number
-//   StoreHandle: number
-//   ScanHandle: number
-//   SigAlgs: string
-//   KeyAlgs: string
-//   LogLevel: number
-//   boolean: number
-//   Key: string
-//   Jwk: string
-//   ArrayBuffer: ArrayBuffer
-//   'Record<string, unknown>': string
-//   string: string
-//   number: number
-// }
-//
-// type Func = (params: Record<string, keyof TypeMap> | never) => unknown
-//
-// type Params<T> = T extends (...args: infer P) => unknown ? P : never
-//
-// type MapParams<T extends Record<string, keyof TypeMap>> = {
-//   [Property in keyof T]: TypeMap[T[Property]]
-// }
-//
-// type SerializeTypes<T extends Record<string, Func>> = {
-//   [Property in keyof T]: Params<T[Property]>[0] extends Record<string, unknown>
-//     ? (options: MapParams<Params<T[Property]>[0]>) => ReturnType<T[Property]>
-//     : T[Property]
-// }
-//
-// export type NativeBindings = SerializeTypes<AriesAskar>
-
+// TODO: convert all any types
 export interface NativeBindings {
   version(options: Record<string, never>): string
   getCurrentError(options: Record<string, never>): string
   setConfig(options: { config: string }): null
-  bufferFree(options: { secretBuffer: ArrayBuffer }): void
   clearCustomLogger(options: Record<string, never>): void
 
   entryListCount(options: { entryListHandle: string }): number

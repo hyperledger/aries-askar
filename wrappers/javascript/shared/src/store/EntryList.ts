@@ -32,7 +32,6 @@ export class EntryList {
     }
   }
 
-  // TODO: is this being used?
   public find(cb: (entry: Entry, index?: number) => boolean): Entry | undefined {
     for (let i = 0; i < this.length; i++) {
       const item = this.getEntryByIndex(i)

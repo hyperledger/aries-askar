@@ -13,8 +13,6 @@ import type { AeadParams, EncryptedBuffer, SecretBuffer } from '../types'
 
 export type ErrorCode = number
 
-export type BufferFreeOptions = { secretBuffer: SecretBuffer }
-
 export type SetCustomLoggerOptions = { logLevel: LogLevel; flush?: boolean; enabled?: boolean }
 export type SetMaxLogLevelOptions = { logLevel: number }
 
@@ -211,7 +209,6 @@ export type StoreRemoveProfileOptions = { storeHandle: StoreHandle; profile: str
 export type AriesAskar = {
   version(): string
   getCurrentError(): string
-  // bufferFree(options: BufferFreeOptions): void
   clearCustomLogger(): void
 
   setCustomLogger(options: SetCustomLoggerOptions): void

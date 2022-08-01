@@ -1,6 +1,5 @@
 import type {
   AriesAskar,
-  BufferFreeOptions,
   EntryListCountOptions,
   EntryListFreeOptions,
   EntryListGetCategoryOptions,
@@ -123,10 +122,6 @@ export class ReactNativeAriesAskar implements AriesAskar {
 
   public getCurrentError(): string {
     return ariesAskarReactNative.getCurrentError({})
-  }
-
-  public bufferFree(options: BufferFreeOptions): void {
-    throw new Error('Method not implemented. bufferFree')
   }
 
   public clearCustomLogger(): void {

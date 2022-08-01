@@ -1,17 +1,12 @@
 name: build-ios
 
 on:
-  pull_request:
-    branches:
-      - main
   push:
     branches:
-      # // TODO: remove
-      - "**"
       - main
 
 env:
-  LIB_NAME: aries_askar 
+  LIB_NAME: aries_askar
   HEADER_FILE: include/libaries_askar.h
 
 jobs:
