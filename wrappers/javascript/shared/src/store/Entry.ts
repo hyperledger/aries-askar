@@ -45,7 +45,6 @@ export class Entry {
   public toJson(shouldParseValueToJson = false): EntryObject {
     return {
       name: this.name,
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-argument
       value: shouldParseValueToJson ? (JSON.parse(this.value) as Record<string, unknown>) : this.value,
       tags: this.tags,
       category: this.category,

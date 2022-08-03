@@ -1,16 +1,13 @@
-/* eslint-disable @typescript-eslint/ban-ts-comment */
-/* eslint-disable @typescript-eslint/no-unsafe-assignment */
-/* eslint-disable @typescript-eslint/no-unsafe-argument */
-import type { EncryptedBufferType } from './structures'
+import type { ByteBufferType, EncryptedBufferType } from './structures'
 import type { TypedArray } from 'ref-array-di'
 import type { Pointer } from 'ref-napi'
 
-import { ByteBuffer, EncryptedBuffer } from 'aries-askar-shared'
+import { EncryptedBuffer } from 'aries-askar-shared'
 import { reinterpret } from 'ref-napi'
 
 import { ByteBufferStruct } from './structures'
 
-export const byteBufferClassToStruct = ({ len, data }: ByteBuffer) => {
+export const byteBufferClassToStruct = ({ len, data }: ByteBufferType) => {
   return ByteBufferStruct({
     len,
     data: data as Pointer<TypedArray<number, number>>,
@@ -19,22 +16,16 @@ export const byteBufferClassToStruct = ({ len, data }: ByteBuffer) => {
 
 export const secretBufferClassToStruct = byteBufferClassToStruct
 
-export const uint8arrayToByteBufferStruct = (buf: Uint8Array) => {
-  const byteBuffer = ByteBuffer.fromUint8Array(buf)
-  return byteBufferClassToStruct(byteBuffer)
+export const uint8arrayToByteBufferStruct = (buf: Buffer) => {
+  return byteBufferClassToStruct({ data: buf, len: buf.length })
 }
 
-export const byteBufferToBuffer = (buffer: { data: Buffer; len: number }) => reinterpret(buffer.data, buffer.len)
+export const byteBufferToBuffer = ({ data, len }: ByteBufferType) => reinterpret(data, len)
 
 export const secretBufferToBuffer = byteBufferToBuffer
 
-export const encryptedBufferStructToClass = (encryptedBuffer: EncryptedBufferType) => {
-  // @ts-ignore
-  const buffer = Uint8Array.from(secretBufferToBuffer(encryptedBuffer.secretBuffer))
-  // @ts-ignore
-  const noncePos = encryptedBuffer.noncePos
-  // @ts-ignore
-  const tagPos = encryptedBuffer.tagPos
+export const encryptedBufferStructToClass = ({ secretBuffer, tagPos, noncePos }: EncryptedBufferType) => {
+  const buffer = Uint8Array.from(secretBufferToBuffer(secretBuffer))
 
   return new EncryptedBuffer({ tagPos, noncePos, buffer })
 }

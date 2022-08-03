@@ -1,47 +1,12 @@
-type ByteBufferOptions = {
-  len: number
-  data: Uint8Array
-}
-
-type SecretBufferOptions = ByteBufferOptions
-
-type EncryptedBufferOptions = {
+export type EncryptedBufferOptions = {
   buffer: Uint8Array
   tagPos: number
   noncePos: number
 }
 
-type AeadParamsOptions = {
+export type AeadParamsOptions = {
   nonceLength: number
   tagLength: number
-}
-
-export class ByteBuffer {
-  public len: number
-  public data: Uint8Array
-
-  public constructor({ data, len }: ByteBufferOptions) {
-    this.data = data
-    this.len = len
-  }
-
-  public static fromUint8Array(data: Uint8Array): ByteBuffer {
-    return new ByteBuffer({ data, len: data.length })
-  }
-}
-
-export class SecretBuffer {
-  public len: number
-  public data: Uint8Array
-
-  public constructor({ data, len }: SecretBufferOptions) {
-    this.data = data
-    this.len = len
-  }
-
-  public static fromUint8Array(data: Uint8Array): SecretBuffer {
-    return new SecretBuffer({ data, len: data.length })
-  }
 }
 
 export class EncryptedBuffer {

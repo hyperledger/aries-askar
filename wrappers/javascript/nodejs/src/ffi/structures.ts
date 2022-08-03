@@ -36,7 +36,6 @@ export const AeadParamsStruct = CStruct({
 
 export const AeadParamsStructPtr = ref.refType(AeadParamsStruct)
 
-export type ByteBufferType = typeof ByteBufferStruct
-export type SecretBufferType = typeof SecretBufferStruct
-export type EncryptedBufferType = typeof EncryptedBufferStruct
-export type AeadParamsType = typeof AeadParamsStruct
+export type EncryptedBufferType = { secretBuffer: SecretBufferType; tagPos: number; noncePos: number }
+export type ByteBufferType = { data: Buffer; len: number }
+export type SecretBufferType = ByteBufferType

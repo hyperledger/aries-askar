@@ -9,11 +9,26 @@ import type {
   StoreHandle,
 } from '../crypto'
 import type { KeyAlgs, LogLevel, SigAlgs } from '../enums'
-import type { AeadParams, EncryptedBuffer, SecretBuffer } from '../types'
+import type { AeadParams, EncryptedBuffer } from '../types'
 
 export type ErrorCode = number
 
-export type SetCustomLoggerOptions = { logLevel: LogLevel; flush?: boolean; enabled?: boolean }
+export type NativeLogCallback = (
+  context: unknown,
+  level: number,
+  target: string,
+  message: string,
+  modulePath: string,
+  file: string,
+  line: number
+) => void
+
+export type SetCustomLoggerOptions = {
+  logLevel: LogLevel
+  flush?: boolean
+  enabled?: boolean
+  logger: NativeLogCallback
+}
 export type SetMaxLogLevelOptions = { logLevel: number }
 
 export type EntryListCountOptions = { entryListHandle: EntryListHandle }
@@ -160,7 +175,7 @@ export type SessionFetchAllKeysOptions = {
 export type SessionFetchKeyOptions = { sessionHandle: SessionHandle; name: string; forUpdate: boolean }
 export type SessionInsertKeyOptions = {
   sessionHandle: SessionHandle
-  localKeyHandle: string | Uint8Array
+  localKeyHandle: LocalKeyHandle
   name: string
   metadata?: string
   tags?: Record<string, unknown>

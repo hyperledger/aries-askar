@@ -1,5 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unsafe-return */
-import type { Key, SessionHandle, StoreHandle } from '../crypto'
+import type { Key, SessionHandle } from '../crypto'
 import type { KeyAlgs } from '../enums'
 
 import { ariesAskar } from '../ariesAskar'
@@ -93,10 +92,12 @@ export class Session {
     if (!this.handle) throw AriesAskarError.customError({ message: 'Cannot insert with a closed session' })
     const serializedValue = typeof value === 'string' ? value : JSON.stringify(value)
 
+    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
     // @ts-ignore
     const encoder = new TextEncoder()
 
     await ariesAskar.sessionUpdate({
+      // eslint-disable-next-line @typescript-eslint/ban-ts-comment
       // @ts-ignore
       value: new Uint8Array(encoder.encode(serializedValue)),
       expiryMs,
@@ -181,7 +182,7 @@ export class Session {
       metadata,
       name,
       sessionHandle: this.handle,
-      localKeyHandle: key.handle.handle,
+      localKeyHandle: key.handle,
     })
   }
 
