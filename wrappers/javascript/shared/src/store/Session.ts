@@ -94,11 +94,11 @@ export class Session {
 
     // eslint-disable-next-line @typescript-eslint/ban-ts-comment
     // @ts-ignore
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call
     const encoder = new TextEncoder()
 
     await ariesAskar.sessionUpdate({
-      // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-      // @ts-ignore
+      // eslint-disable-next-line @typescript-eslint/ban-ts-comment, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access
       value: new Uint8Array(encoder.encode(serializedValue)),
       expiryMs,
       tags,
@@ -125,11 +125,13 @@ export class Session {
     if (!this.handle) throw AriesAskarError.customError({ message: 'Cannot replace with a closed session' })
     const serializedValue = typeof value === 'string' ? value : JSON.stringify(value)
 
+    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
     // @ts-ignore
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call
     const encoder = new TextEncoder()
 
     await ariesAskar.sessionUpdate({
-      // @ts-ignore
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
       value: new Uint8Array(encoder.encode(serializedValue)),
       expiryMs,
       tags,

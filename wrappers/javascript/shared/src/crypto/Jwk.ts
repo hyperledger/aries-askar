@@ -36,8 +36,11 @@ export class Jwk {
   }
 
   public toUint8Array() {
+    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
     // @ts-ignore
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call
     const encoder = new TextEncoder()
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
     const encoded = encoder.encode(JSON.stringify(this)) as Uint8Array
     return encoded
   }
