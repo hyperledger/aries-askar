@@ -3,3 +3,5 @@ target
 *.db-shm
 *.db-wal
 Cargo.lock
+.DS_Store
+*.tgz
