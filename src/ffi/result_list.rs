@@ -1,6 +1,8 @@
 use std::{ffi::CString, os::raw::c_char, ptr};
 
-use super::{handle::ArcHandle, key::LocalKeyHandle, secret::SecretBuffer, ErrorCode};
+use super::{
+    handle::ArcHandle, key::LocalKeyHandle, secret::SecretBuffer, utils::encode_cstr, ErrorCode,
+};
 use crate::{
     error::Error,
     kms::KeyEntry,
@@ -75,7 +77,8 @@ pub extern "C" fn askar_entry_list_get_category(
         check_useful_c_ptr!(category);
         let results = handle.load()?;
         let entry = results.get_row(index)?;
-        unsafe { *category = CString::new(entry.category.as_str()).unwrap().into_raw() };
+        let cstr = encode_cstr(&entry.category);
+        unsafe { *category = cstr };
         Ok(ErrorCode::Success)
     }
 }
@@ -90,7 +93,8 @@ pub extern "C" fn askar_entry_list_get_name(
         check_useful_c_ptr!(name);
         let results = handle.load()?;
         let entry = results.get_row(index)?;
-        unsafe { *name = CString::new(entry.name.as_str()).unwrap().into_raw() };
+        let cstr = encode_cstr(&entry.name);
+        unsafe { *name = cstr };
         Ok(ErrorCode::Success)
     }
 }
@@ -105,7 +109,8 @@ pub extern "C" fn askar_entry_list_get_value(
         check_useful_c_ptr!(value);
         let results = handle.load()?;
         let entry = results.get_row(index)?;
-        unsafe { *value = SecretBuffer::from_secret(entry.value.as_ref()); }
+        let buffer = SecretBuffer::from_secret(entry.value.as_ref());
+        unsafe { *value = buffer };
         Ok(ErrorCode::Success)
     }
 }
@@ -123,8 +128,9 @@ pub extern "C" fn askar_entry_list_get_tags(
         if entry.tags.is_empty() {
             unsafe { *tags = ptr::null() };
         } else {
-            let tag_json = serde_json::to_vec(&EntryTagSet::from(entry.tags.as_slice())).unwrap();
-            unsafe { *tags = CString::new(tag_json).unwrap().into_raw() };
+            let tag_json = serde_json::to_string(&EntryTagSet::from(entry.tags.as_slice())).unwrap();
+            let cstr = encode_cstr(tag_json);
+            unsafe { *tags = cstr };
         }
         Ok(ErrorCode::Success)
     }
@@ -167,11 +173,8 @@ pub extern "C" fn askar_key_entry_list_get_algorithm(
         check_useful_c_ptr!(alg);
         let results = handle.load()?;
         let entry = results.get_row(index)?;
-        if let Some(alg_name) = entry.algorithm() {
-            unsafe { *alg = CString::new(alg_name).unwrap().into_raw() };
-        } else {
-            unsafe { *alg = ptr::null() };
-        }
+        let cstr = encode_cstr(entry.algorithm().unwrap_or_default());
+        unsafe { *alg = cstr };
         Ok(ErrorCode::Success)
     }
 }
@@ -186,7 +189,8 @@ pub extern "C" fn askar_key_entry_list_get_name(
         check_useful_c_ptr!(name);
         let results = handle.load()?;
         let entry = results.get_row(index)?;
-        unsafe { *name = CString::new(entry.name.as_str()).unwrap().into_raw() };
+        let cstr = encode_cstr(&entry.name);
+        unsafe { *name = cstr };
         Ok(ErrorCode::Success)
     }
 }
@@ -201,11 +205,8 @@ pub extern "C" fn askar_key_entry_list_get_metadata(
         check_useful_c_ptr!(metadata);
         let results = handle.load()?;
         let entry = results.get_row(index)?;
-        if let Some(m) = entry.metadata() {
-            unsafe { *metadata = CString::new(m).unwrap().into_raw(); }
-        } else {
-            unsafe { *metadata = ptr::null(); }
-        }
+        let cstr = encode_cstr(entry.metadata().unwrap_or_default());
+        unsafe { *metadata = cstr };
         Ok(ErrorCode::Success)
     }
 }
@@ -224,7 +225,8 @@ pub extern "C" fn askar_key_entry_list_get_tags(
             unsafe { *tags = ptr::null() };
         } else {
             let tag_json = serde_json::to_vec(&EntryTagSet::from(entry.tags.as_slice())).unwrap();
-            unsafe { *tags = CString::new(tag_json).unwrap().into_raw() };
+            let cstr = CString::new(tag_json).unwrap().into_raw();
+            unsafe { *tags = cstr };
         }
         Ok(ErrorCode::Success)
     }
@@ -242,7 +244,8 @@ pub extern "C" fn askar_key_entry_list_load_local(
         let results = handle.load()?;
         let entry = results.get_row(index)?;
         let key = entry.load_local_key()?;
-        unsafe { *out = LocalKeyHandle::create(key) };
+        let handle = LocalKeyHandle::create(key);
+        unsafe { *out = handle };
         Ok(ErrorCode::Success)
     }
 }

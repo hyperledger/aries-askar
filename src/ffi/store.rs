@@ -1,13 +1,14 @@
 use std::{collections::BTreeMap, os::raw::c_char, ptr, str::FromStr, sync::Arc};
 
 use async_lock::{Mutex, MutexGuardArc, RwLock};
-use ffi_support::{rust_string_to_c, ByteBuffer, FfiStr};
+use ffi_support::{ByteBuffer, FfiStr};
 use once_cell::sync::Lazy;
 
 use super::{
     error::set_last_error,
     key::LocalKeyHandle,
     result_list::{EntryListHandle, FfiEntryList, FfiKeyEntryList, KeyEntryListHandle},
+    utils::encode_cstr,
     CallbackId, EnsureCallback, ErrorCode, ResourceHandle,
 };
 use crate::{
@@ -137,8 +138,8 @@ pub extern "C" fn askar_store_generate_raw_key(
             s if s.is_empty() => None,
             s => Some(s)
         };
-        let key = generate_raw_store_key(seed)?;
-        unsafe { *out = rust_string_to_c(key.to_string()); }
+        let key = encode_cstr(generate_raw_store_key(seed)?.into_string());
+        unsafe { *out = key; }
         Ok(ErrorCode::Success)
     }
 }
@@ -271,7 +272,7 @@ pub extern "C" fn askar_store_create_profile(
         let profile = profile.into_opt_string();
         let cb = EnsureCallback::new(move |result|
             match result {
-                Ok(name) => cb(cb_id, ErrorCode::Success, rust_string_to_c(name)),
+                Ok(name) => cb(cb_id, ErrorCode::Success, encode_cstr(name)),
                 Err(err) => cb(cb_id, set_last_error(Some(err)), ptr::null()),
             }
         );
@@ -298,7 +299,7 @@ pub extern "C" fn askar_store_get_profile_name(
         let cb = cb.ok_or_else(|| err_msg!("No callback provided"))?;
         let cb = EnsureCallback::new(move |result|
             match result {
-                Ok(name) => cb(cb_id, ErrorCode::Success, rust_string_to_c(name)),
+                Ok(name) => cb(cb_id, ErrorCode::Success, encode_cstr(name)),
                 Err(err) => cb(cb_id, set_last_error(Some(err)), ptr::null_mut()),
             }
         );

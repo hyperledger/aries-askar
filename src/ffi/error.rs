@@ -1,9 +1,8 @@
 use crate::error::{Error, ErrorKind};
+use crate::ffi::utils::encode_cstr;
 
 use std::os::raw::c_char;
 use std::sync::RwLock;
-
-use ffi_support::rust_string_to_c;
 
 use once_cell::sync::Lazy;
 
@@ -53,7 +52,7 @@ impl<T> From<Result<T, Error>> for ErrorCode {
 pub extern "C" fn askar_get_current_error(error_json_p: *mut *const c_char) -> ErrorCode {
     trace!("askar_get_current_error");
 
-    let error = rust_string_to_c(get_current_error_json());
+    let error = encode_cstr(get_current_error_json());
     unsafe { *error_json_p = error };
 
     ErrorCode::Success

@@ -528,7 +528,7 @@ pub fn decrypt_scan_entry(
     let tags = key.decrypt_entry_tags(
         decode_tags(enc_entry.tags).map_err(|_| err_msg!(Unexpected, "Error decoding tags"))?,
     )?;
-    Ok(Entry::new(category.to_string(), name, value, tags))
+    Ok(Entry::new(category, name, value, tags))
 }
 
 pub fn expiry_timestamp(expire_ms: i64) -> Result<Expiry, Error> {

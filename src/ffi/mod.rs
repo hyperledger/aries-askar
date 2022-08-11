@@ -1,8 +1,6 @@
 use std::marker::PhantomData;
 use std::os::raw::c_char;
 
-use ffi_support::rust_string_to_c;
-
 #[cfg(feature = "jemalloc")]
 #[global_allocator]
 static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
@@ -22,6 +20,7 @@ mod log;
 mod result_list;
 mod secret;
 mod store;
+mod utils;
 
 use self::error::ErrorCode;
 use crate::error::Error;
@@ -61,6 +60,6 @@ impl<T, F: Fn(Result<T, Error>)> Drop for EnsureCallback<T, F> {
 }
 
 #[no_mangle]
-pub extern "C" fn askar_version() -> *mut c_char {
-    rust_string_to_c(LIB_VERSION.to_owned())
+pub extern "C" fn askar_version() -> *const c_char {
+    self::utils::encode_cstr(LIB_VERSION)
 }

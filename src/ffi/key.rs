@@ -1,10 +1,11 @@
 use std::{os::raw::c_char, str::FromStr};
 
-use ffi_support::{rust_string_to_c, ByteBuffer, FfiStr};
+use ffi_support::{ByteBuffer, FfiStr};
 
 use super::{
     handle::ArcHandle,
     secret::{EncryptedBuffer, SecretBuffer},
+    utils::encode_cstr,
     ErrorCode,
 };
 use crate::kms::{
@@ -32,7 +33,8 @@ pub extern "C" fn askar_key_generate(
         check_useful_c_ptr!(out);
         let alg = KeyAlg::from_str(alg)?;
         let key = LocalKey::generate(alg, ephemeral != 0)?;
-        unsafe { *out = LocalKeyHandle::create(key) };
+        let handle = LocalKeyHandle::create(key);
+        unsafe { *out = handle };
         Ok(ErrorCode::Success)
     }
 }
@@ -50,7 +52,8 @@ pub extern "C" fn askar_key_from_seed(
         check_useful_c_ptr!(out);
         let alg = KeyAlg::from_str(alg)?;
         let key = LocalKey::from_seed(alg, seed.as_slice(), method.as_opt_str())?;
-        unsafe { *out = LocalKeyHandle::create(key) };
+        let handle = LocalKeyHandle::create(key);
+        unsafe { *out = handle };
         Ok(ErrorCode::Success)
     }
 }
@@ -61,7 +64,8 @@ pub extern "C" fn askar_key_from_jwk(jwk: ByteBuffer, out: *mut LocalKeyHandle) 
         trace!("Load key from JWK");
         check_useful_c_ptr!(out);
         let key = LocalKey::from_jwk_slice(jwk.as_slice())?;
-        unsafe { *out = LocalKeyHandle::create(key) };
+        let handle = LocalKeyHandle::create(key);
+        unsafe { *out = handle };
         Ok(ErrorCode::Success)
     }
 }
@@ -78,7 +82,8 @@ pub extern "C" fn askar_key_from_public_bytes(
         check_useful_c_ptr!(out);
         let alg = KeyAlg::from_str(alg)?;
         let key = LocalKey::from_public_bytes(alg, public.as_slice())?;
-        unsafe { *out = LocalKeyHandle::create(key) };
+        let handle = LocalKeyHandle::create(key);
+        unsafe { *out = handle };
         Ok(ErrorCode::Success)
     }
 }
@@ -93,7 +98,8 @@ pub extern "C" fn askar_key_get_public_bytes(
         check_useful_c_ptr!(out);
         let key = handle.load()?;
         let public = key.to_public_bytes()?;
-        unsafe { *out = SecretBuffer::from_secret(public) };
+        let buffer = SecretBuffer::from_secret(public);
+        unsafe { *out = buffer };
         Ok(ErrorCode::Success)
     }
 }
@@ -110,7 +116,8 @@ pub extern "C" fn askar_key_from_secret_bytes(
         check_useful_c_ptr!(out);
         let alg = KeyAlg::from_str(alg)?;
         let key = LocalKey::from_secret_bytes(alg, secret.as_slice())?;
-        unsafe { *out = LocalKeyHandle::create(key) };
+        let handle = LocalKeyHandle::create(key);
+        unsafe { *out = handle };
         Ok(ErrorCode::Success)
     }
 }
@@ -125,7 +132,8 @@ pub extern "C" fn askar_key_get_secret_bytes(
         check_useful_c_ptr!(out);
         let key = handle.load()?;
         let public = key.to_secret_bytes()?;
-        unsafe { *out = SecretBuffer::from_secret(public) };
+        let buffer = SecretBuffer::from_secret(public);
+        unsafe { *out = buffer };
         Ok(ErrorCode::Success)
     }
 }
@@ -142,7 +150,8 @@ pub extern "C" fn askar_key_convert(
         check_useful_c_ptr!(out);
         let alg = KeyAlg::from_str(alg)?;
         let key = handle.load()?.convert_key(alg)?;
-        unsafe { *out = LocalKeyHandle::create(key) };
+        let handle = LocalKeyHandle::create(key);
+        unsafe { *out = handle };
         Ok(ErrorCode::Success)
     }
 }
@@ -162,7 +171,8 @@ pub extern "C" fn askar_key_from_key_exchange(
         let sk = sk_handle.load()?;
         let pk = pk_handle.load()?;
         let key = sk.to_key_exchange(alg, &pk)?;
-        unsafe { *out = LocalKeyHandle::create(key) };
+        let handle = LocalKeyHandle::create(key);
+        unsafe { *out = handle };
         Ok(ErrorCode::Success)
     }
 }
@@ -181,7 +191,8 @@ pub extern "C" fn askar_key_get_algorithm(
         trace!("Get key algorithm: {}", handle);
         check_useful_c_ptr!(out);
         let key = handle.load()?;
-        unsafe { *out = rust_string_to_c(key.algorithm().as_str()) };
+        let cstr = encode_cstr(key.algorithm().as_str());
+        unsafe { *out = cstr };
         Ok(ErrorCode::Success)
     }
 }
@@ -208,8 +219,8 @@ pub extern "C" fn askar_key_get_jwk_public(
         check_useful_c_ptr!(out);
         let key = handle.load()?;
         let alg = alg.as_opt_str().map(KeyAlg::from_str).transpose()?;
-        let jwk = key.to_jwk_public(alg)?;
-        unsafe { *out = rust_string_to_c(jwk) };
+        let jwk = encode_cstr(key.to_jwk_public(alg)?);
+        unsafe { *out = jwk };
         Ok(ErrorCode::Success)
     }
 }
@@ -223,8 +234,8 @@ pub extern "C" fn askar_key_get_jwk_secret(
         trace!("Get key JWK secret: {}", handle);
         check_useful_c_ptr!(out);
         let key = handle.load()?;
-        let jwk = key.to_jwk_secret()?;
-        unsafe { *out = SecretBuffer::from_secret(jwk) };
+        let jwk = SecretBuffer::from_secret(key.to_jwk_secret()?);
+        unsafe { *out = jwk };
         Ok(ErrorCode::Success)
     }
 }
@@ -240,8 +251,8 @@ pub extern "C" fn askar_key_get_jwk_thumbprint(
         check_useful_c_ptr!(out);
         let key = handle.load()?;
         let alg = alg.as_opt_str().map(KeyAlg::from_str).transpose()?;
-        let thumb = key.to_jwk_thumbprint(alg)?;
-        unsafe { *out = rust_string_to_c(thumb) };
+        let thumb = encode_cstr(key.to_jwk_thumbprint(alg)?);
+        unsafe { *out = thumb };
         Ok(ErrorCode::Success)
     }
 }
@@ -255,8 +266,8 @@ pub extern "C" fn askar_key_aead_random_nonce(
         trace!("AEAD create nonce: {}", handle);
         check_useful_c_ptr!(out);
         let key = handle.load()?;
-        let nonce = key.aead_random_nonce()?;
-        unsafe { *out = SecretBuffer::from_secret(nonce) };
+        let nonce = SecretBuffer::from_secret(key.aead_random_nonce()?);
+        unsafe { *out = nonce };
         Ok(ErrorCode::Success)
     }
 }
@@ -270,11 +281,14 @@ pub extern "C" fn askar_key_aead_get_params(
         trace!("AEAD get params: {}", handle);
         check_useful_c_ptr!(out);
         let key = handle.load()?;
-        let params = key.aead_params()?;
-        unsafe { *out = AeadParams {
-            nonce_length: params.nonce_length as i32,
-            tag_length: params.tag_length as i32
-        } };
+        let params = {
+            let p = key.aead_params()?;
+            AeadParams {
+                nonce_length: p.nonce_length as i32,
+                tag_length: p.tag_length as i32
+            }
+        };
+        unsafe { *out = params };
         Ok(ErrorCode::Success)
     }
 }
@@ -331,7 +345,8 @@ pub extern "C" fn askar_key_aead_decrypt(
         check_useful_c_ptr!(out);
         let key = handle.load()?;
         let dec = key.aead_decrypt((ciphertext.as_slice(), tag.as_slice()), nonce.as_slice(), aad.as_slice())?;
-        unsafe { *out = SecretBuffer::from_secret(dec) };
+        let buffer = SecretBuffer::from_secret(dec);
+        unsafe { *out = buffer };
         Ok(ErrorCode::Success)
     }
 }
@@ -348,7 +363,8 @@ pub extern "C" fn askar_key_sign_message(
         check_useful_c_ptr!(out);
         let key = handle.load()?;
         let sig = key.sign_message(message.as_slice(), sig_type.as_opt_str())?;
-        unsafe { *out = SecretBuffer::from_secret(sig) };
+        let buffer = SecretBuffer::from_secret(sig);
+        unsafe { *out = buffer };
         Ok(ErrorCode::Success)
     }
 }
@@ -384,7 +400,8 @@ pub extern "C" fn askar_key_wrap_key(
         let key = handle.load()?;
         let other = other.load()?;
         let result = key.wrap_key(&*other, nonce.as_slice())?;
-        unsafe { *out = EncryptedBuffer::from_encrypted(result) };
+        let buffer = EncryptedBuffer::from_encrypted(result);
+        unsafe { *out = buffer };
         Ok(ErrorCode::Success)
     }
 }
@@ -405,7 +422,8 @@ pub extern "C" fn askar_key_unwrap_key(
         let key = handle.load()?;
         let alg = KeyAlg::from_str(alg)?;
         let result = key.unwrap_key(alg, (ciphertext.as_slice(), tag.as_slice()), nonce.as_slice())?;
-        unsafe { *out = LocalKeyHandle::create(result) };
+        let handle = LocalKeyHandle::create(result);
+        unsafe { *out = handle };
         Ok(ErrorCode::Success)
     }
 }
@@ -416,7 +434,8 @@ pub extern "C" fn askar_key_crypto_box_random_nonce(out: *mut SecretBuffer) -> E
         trace!("crypto box random nonce");
         check_useful_c_ptr!(out);
         let nonce = crypto_box_random_nonce()?;
-        unsafe { *out = SecretBuffer::from_secret(&nonce[..]) };
+        let buffer = SecretBuffer::from_secret(&nonce[..]);
+        unsafe { *out = buffer };
         Ok(ErrorCode::Success)
     }
 }
@@ -440,7 +459,8 @@ pub extern "C" fn askar_key_crypto_box(
             message.as_slice(),
             nonce.as_slice()
         )?;
-        unsafe { *out = SecretBuffer::from_secret(message) };
+        let buffer = SecretBuffer::from_secret(message);
+        unsafe { *out = buffer };
         Ok(ErrorCode::Success)
     }
 }
@@ -464,7 +484,8 @@ pub extern "C" fn askar_key_crypto_box_open(
             message.as_slice(),
             nonce.as_slice()
         )?;
-        unsafe { *out = SecretBuffer::from_secret(message) };
+        let buffer = SecretBuffer::from_secret(message);
+        unsafe { *out = buffer };
         Ok(ErrorCode::Success)
     }
 }
@@ -480,7 +501,8 @@ pub extern "C" fn askar_key_crypto_box_seal(
         check_useful_c_ptr!(out);
         let key = handle.load()?;
         let enc = crypto_box_seal(&key, message.as_slice())?;
-        unsafe { *out = SecretBuffer::from_secret(enc) };
+        let buffer = SecretBuffer::from_secret(enc);
+        unsafe { *out = buffer };
         Ok(ErrorCode::Success)
     }
 }
@@ -496,7 +518,8 @@ pub extern "C" fn askar_key_crypto_box_seal_open(
         check_useful_c_ptr!(out);
         let key = handle.load()?;
         let enc = crypto_box_seal_open(&key, ciphertext.as_slice())?;
-        unsafe { *out = SecretBuffer::from_secret(enc) };
+        let buffer = SecretBuffer::from_secret(enc);
+        unsafe { *out = buffer };
         Ok(ErrorCode::Success)
     }
 }
@@ -528,7 +551,8 @@ pub extern "C" fn askar_key_derive_ecdh_es(
             apv.as_slice(),
             receive == 1
         )?;
-        unsafe { *out = LocalKeyHandle::create(key) };
+        let handle = LocalKeyHandle::create(key);
+        unsafe { *out = handle };
         Ok(ErrorCode::Success)
     }
 }
@@ -565,7 +589,8 @@ pub extern "C" fn askar_key_derive_ecdh_1pu(
             cc_tag.as_slice(),
             receive == 1
         )?;
-        unsafe { *out = LocalKeyHandle::create(key) };
+        let handle = LocalKeyHandle::create(key);
+        unsafe { *out = handle };
         Ok(ErrorCode::Success)
     }
 }

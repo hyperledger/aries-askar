@@ -3,7 +3,6 @@ use zeroize::Zeroize;
 use std::{
     borrow::Cow,
     fmt::{self, Debug, Formatter},
-    mem::ManuallyDrop,
     ops::Deref,
 };
 
@@ -17,6 +16,14 @@ impl PassKey<'_> {
         PassKey(Some(Cow::Borrowed(&**self)))
     }
 
+    /// Access the passkey as a str
+    pub fn as_str(&self) -> &str {
+        match self.0.as_deref() {
+            None => "",
+            Some(s) => s,
+        }
+    }
+
     /// Create an empty passkey
     pub fn empty() -> PassKey<'static> {
         PassKey(None)
@@ -26,14 +33,15 @@ impl PassKey<'_> {
         self.0.is_none()
     }
 
-    pub(crate) fn into_owned(self) -> PassKey<'static> {
-        let mut slf = ManuallyDrop::new(self);
-        let val = slf.0.take();
-        PassKey(match val {
-            None => None,
-            Some(Cow::Borrowed(s)) => Some(Cow::Owned(s.to_string())),
-            Some(Cow::Owned(s)) => Some(Cow::Owned(s)),
-        })
+    pub(crate) fn into_owned(mut self) -> PassKey<'static> {
+        PassKey(self.0.take().map(|s| Cow::Owned(s.into_owned())))
+    }
+
+    pub(crate) fn into_string(mut self) -> String {
+        match self.0.take() {
+            None => String::new(),
+            Some(s) => s.into_owned(),
+        }
     }
 }
 
@@ -51,10 +59,7 @@ impl Deref for PassKey<'_> {
     type Target = str;
 
     fn deref(&self) -> &str {
-        match self.0.as_ref() {
-            None => "",
-            Some(s) => s.as_ref(),
-        }
+        self.as_str()
     }
 }
 
