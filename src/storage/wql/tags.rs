@@ -5,12 +5,9 @@ pub type TagQuery = AbstractQuery<TagName, String>;
 
 pub fn tag_query(query: Query) -> Result<TagQuery, Error> {
     let result = query
-        .map_names(|k| {
-            if k.starts_with("~") {
-                Result::<_, ()>::Ok(TagName::Plaintext(k[1..].to_string()))
-            } else {
-                Ok(TagName::Encrypted(k))
-            }
+        .map_names(|k| match k.strip_prefix('~') {
+            Some(plain) => Result::<_, ()>::Ok(TagName::Plaintext(plain.to_string())),
+            None => Ok(TagName::Encrypted(k)),
         })
         .unwrap();
     validate_tag_query(&result)?;
@@ -37,9 +34,9 @@ impl ToString for TagName {
     }
 }
 
-impl Into<String> for &TagName {
-    fn into(self) -> String {
-        self.to_string()
+impl From<&TagName> for String {
+    fn from(tag: &TagName) -> Self {
+        tag.to_string()
     }
 }
 
@@ -56,7 +53,7 @@ pub trait TagQueryEncoder {
 
     fn encode_name(&mut self, name: &TagName) -> Result<Self::Arg, Error>;
 
-    fn encode_value(&mut self, value: &String, is_plaintext: bool) -> Result<Self::Arg, Error>;
+    fn encode_value(&mut self, value: &str, is_plaintext: bool) -> Result<Self::Arg, Error>;
 
     fn encode_op_clause(
         &mut self,
@@ -199,17 +196,14 @@ where
 fn encode_tag_op<V, E>(
     op: CompareOp,
     name: &TagName,
-    value: &String,
+    value: &str,
     enc: &mut E,
     negate: bool,
 ) -> Result<Option<V>, Error>
 where
     E: TagQueryEncoder<Clause = V>,
 {
-    let is_plaintext = match &name {
-        TagName::Plaintext(_) => true,
-        _ => false,
-    };
+    let is_plaintext = matches!(name, TagName::Plaintext(_));
     let enc_name = enc.encode_name(name)?;
     let enc_value = enc.encode_value(value, is_plaintext)?;
     let op = if negate { op.negate() } else { op };
@@ -219,20 +213,17 @@ where
 
 fn encode_tag_in<V, E>(
     name: &TagName,
-    values: &Vec<String>,
+    values: &[String],
     enc: &mut E,
     negate: bool,
 ) -> Result<Option<V>, Error>
 where
     E: TagQueryEncoder<Clause = V>,
 {
-    let is_plaintext = match &name {
-        TagName::Plaintext(_) => true,
-        _ => false,
-    };
+    let is_plaintext = matches!(name, TagName::Plaintext(_));
     let enc_name = enc.encode_name(name)?;
     let enc_values = values
-        .into_iter()
+        .iter()
         .map(|val| enc.encode_value(val, is_plaintext))
         .collect::<Result<Vec<_>, Error>>()?;
 
@@ -246,10 +237,7 @@ where
     match names.len() {
         0 => Ok(None),
         1 => {
-            let is_plaintext = match names[0] {
-                TagName::Plaintext(_) => true,
-                _ => false,
-            };
+            let is_plaintext = matches!(names[0], TagName::Plaintext(_));
             let enc_name = enc.encode_name(&names[0])?;
             enc.encode_exist_clause(enc_name, is_plaintext, negate)
         }
@@ -267,7 +255,7 @@ where
 
 fn encode_tag_conj<V, E>(
     op: ConjunctionOp,
-    subqueries: &Vec<TagQuery>,
+    subqueries: &[TagQuery],
     enc: &mut E,
     negate: bool,
 ) -> Result<Option<V>, Error>
@@ -276,7 +264,7 @@ where
 {
     let op = if negate { op.negate() } else { op };
     let clauses = subqueries
-        .into_iter()
+        .iter()
         .flat_map(|q| encode_tag_query(q, enc, negate).transpose())
         .collect::<Result<Vec<_>, Error>>()?;
 
@@ -299,8 +287,8 @@ mod tests {
             Ok(name.to_string())
         }
 
-        fn encode_value(&mut self, value: &String, _is_plaintext: bool) -> Result<String, Error> {
-            Ok(value.clone())
+        fn encode_value(&mut self, value: &str, _is_plaintext: bool) -> Result<String, Error> {
+            Ok(value.to_string())
         }
 
         fn encode_op_clause(
@@ -342,12 +330,12 @@ mod tests {
             clauses: Vec<Self::Clause>,
         ) -> Result<Option<Self::Clause>, Error> {
             let mut r = String::new();
-            r.push_str("(");
+            r.push('(');
             r.extend(Itertools::intersperse(
                 clauses.iter().map(String::as_str),
                 op.as_sql_str(),
             ));
-            r.push_str(")");
+            r.push(')');
             Ok(Some(r))
         }
     }

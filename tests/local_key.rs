@@ -1,8 +1,8 @@
 use aries_askar::kms::{KeyAlg, LocalKey};
 
-const ERR_CREATE_KEYPAIR: &'static str = "Error creating keypair";
-const ERR_SIGN: &'static str = "Error signing message";
-const ERR_VERIFY: &'static str = "Error verifying signature";
+const ERR_CREATE_KEYPAIR: &str = "Error creating keypair";
+const ERR_SIGN: &str = "Error signing message";
+const ERR_VERIFY: &str = "Error verifying signature";
 
 pub async fn localkey_sign_verify() {
     let keypair = LocalKey::generate(KeyAlg::Ed25519, true).expect(ERR_CREATE_KEYPAIR);
@@ -10,40 +10,27 @@ pub async fn localkey_sign_verify() {
     let message = b"message".to_vec();
     let sig = keypair.sign_message(&message, None).expect(ERR_SIGN);
 
-    assert_eq!(
-        keypair
-            .verify_signature(&message, &sig, None)
-            .expect(ERR_VERIFY),
-        true
-    );
+    assert!(keypair
+        .verify_signature(&message, &sig, None)
+        .expect(ERR_VERIFY));
 
-    assert_eq!(
-        keypair
-            .verify_signature(b"bad input", &sig, None)
-            .expect(ERR_VERIFY),
-        false
-    );
+    assert!(!keypair
+        .verify_signature(b"bad input", &sig, None)
+        .expect(ERR_VERIFY));
 
-    assert_eq!(
-        keypair.verify_signature(
+    assert!(
+        !keypair.verify_signature(
             // [0u8; 64]
             b"xt19s1sp2UZCGhy9rNyb1FtxdKiDGZZPNFnc1KiM9jYYEuHxuwNeFf1oQKsn8zv6yvYBGhXa83288eF4MqN1oDq",
             &sig,None
-        ).expect(ERR_VERIFY),
-        false
+        ).expect(ERR_VERIFY)
     );
 
-    assert_eq!(
-        keypair
-            .verify_signature(&message, b"bad sig", None)
-            .is_err(),
-        true
-    );
+    assert!(keypair
+        .verify_signature(&message, b"bad sig", None)
+        .is_err());
 
-    assert_eq!(
-        keypair
-            .verify_signature(&message, &sig, Some("invalid type"))
-            .is_err(),
-        true
-    );
+    assert!(keypair
+        .verify_signature(&message, &sig, Some("invalid type"))
+        .is_err());
 }

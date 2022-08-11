@@ -8,7 +8,7 @@ use crate::{
 mod argon2;
 use self::argon2::{Level as Argon2Level, SaltSize as Argon2Salt};
 
-pub const METHOD_ARGON2I: &'static str = "argon2i";
+pub const METHOD_ARGON2I: &str = "argon2i";
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum KdfMethod {
@@ -27,25 +27,21 @@ impl KdfMethod {
         let level = level_and_detail.next().unwrap_or_default();
         let detail = level_and_detail.next().unwrap_or_default();
         match method {
-            METHOD_ARGON2I => {
-                if let Some(level) = Argon2Level::from_str(level) {
-                    Some((
-                        Self::Argon2i(level),
-                        if detail.is_empty() {
-                            "".to_owned()
-                        } else {
-                            format!("?{}", detail)
-                        },
-                    ))
-                } else {
-                    None
-                }
-            }
+            METHOD_ARGON2I => Argon2Level::from_str(level).map(|level| {
+                (
+                    Self::Argon2i(level),
+                    if detail.is_empty() {
+                        "".to_owned()
+                    } else {
+                        format!("?{}", detail)
+                    },
+                )
+            }),
             _ => None,
         }
     }
 
-    pub fn to_string(&self, detail: Option<&str>) -> String {
+    pub fn encode(&self, detail: Option<&str>) -> String {
         match self {
             Self::Argon2i(level) => format!(
                 "{}:{}:{}{}",
@@ -63,7 +59,7 @@ impl KdfMethod {
                 let salt = level.generate_salt();
                 let key = level.derive_key(password.as_bytes(), salt.as_ref())?;
                 let detail = format!("?salt={}", salt.as_hex());
-                Ok((key.into(), detail))
+                Ok((key, detail))
             }
         }
     }
@@ -73,7 +69,7 @@ impl KdfMethod {
             Self::Argon2i(level) => {
                 let salt = parse_salt::<Argon2Salt>(detail)?;
                 let key = level.derive_key(password.as_bytes(), salt.as_ref())?;
-                Ok(key.into())
+                Ok(key)
             }
         }
     }

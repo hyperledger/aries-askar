@@ -155,7 +155,7 @@ impl<DB: ExtDatabase> DbSession<DB> {
     }
 }
 
-impl<'q, DB: ExtDatabase> Drop for DbSession<DB> {
+impl<DB: ExtDatabase> Drop for DbSession<DB> {
     fn drop(&mut self) {
         if self.txn_depth > 0 {
             self.txn_depth = 0;
@@ -436,7 +436,7 @@ pub fn replace_arg_placeholders<Q: QueryPrepare + ?Sized>(
             '$' => Some((start_offs + 2, index)),
             '0'..='9' => {
                 let mut end_offs = start_offs + 2;
-                while let Some(c) = iter.next() {
+                for c in iter {
                     if ('0'..='9').contains(&c) {
                         end_offs += 1;
                     } else {
@@ -545,8 +545,8 @@ pub fn encode_tag_filter<Q: QueryPrepare>(
     if let Some(tag_filter) = tag_filter {
         let tag_query = tag_query(tag_filter.query)?;
         let mut enc = TagSqlEncoder::new(
-            |name| Ok(key.encrypt_tag_name(ProfileKey::prepare_input(name.as_bytes()))?),
-            |value| Ok(key.encrypt_tag_value(ProfileKey::prepare_input(value.as_bytes()))?),
+            |name| key.encrypt_tag_name(ProfileKey::prepare_input(name.as_bytes())),
+            |value| key.encrypt_tag_value(ProfileKey::prepare_input(value.as_bytes())),
         );
         if let Some(filter) = enc.encode_query(&tag_query)? {
             let filter = replace_arg_placeholders::<Q>(&filter, (offset as i64) + 1);
@@ -605,9 +605,9 @@ where
     Ok(query)
 }
 
-pub fn init_keys<'a>(
+pub fn init_keys(
     method: StoreKeyMethod,
-    pass_key: PassKey<'a>,
+    pass_key: PassKey<'_>,
 ) -> Result<(ProfileKey, Vec<u8>, StoreKey, String), Error> {
     if method == StoreKeyMethod::RawKey && pass_key.is_empty() {
         // disallow random key for a new database

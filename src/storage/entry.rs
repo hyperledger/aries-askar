@@ -16,13 +16,15 @@ use zeroize::Zeroize;
 use super::wql;
 use crate::{crypto::buffer::SecretBytes, error::Error};
 
+type BoxStream<'a, T> = Pin<Box<dyn Stream<Item = T> + Send + 'a>>;
+
 pub(crate) fn sorted_tags(tags: &Vec<EntryTag>) -> Vec<&EntryTag> {
-    if tags.len() > 0 {
+    if tags.is_empty() {
+        Vec::new()
+    } else {
         let mut tags = tags.iter().collect::<Vec<&EntryTag>>();
         tags.sort();
         tags
-    } else {
-        Vec::new()
     }
 }
 
@@ -309,7 +311,7 @@ impl Serialize for EntryTagSet<'_> {
                 S: Serializer,
             {
                 if self.1 {
-                    serializer.serialize_str(&self.0)
+                    serializer.serialize_str(self.0)
                 } else {
                     serializer.collect_str(&format_args!("~{}", self.0))
                 }
@@ -322,7 +324,7 @@ impl Serialize for EntryTagSet<'_> {
                 EntryTag::Encrypted(name, val) => (TagName(name.as_str(), true), val.as_str()),
                 EntryTag::Plaintext(name, val) => (TagName(name.as_str(), false), val.as_str()),
             };
-            tags.entry(name).or_insert_with(|| vec![]).push(value);
+            tags.entry(name).or_insert_with(Vec::new).push(value);
         }
 
         let mut map = serializer.serialize_map(Some(tags.len()))?;
@@ -370,6 +372,7 @@ impl TagFilter {
 
     /// Get the inverse of a tag filter
     #[inline]
+    #[allow(clippy::should_implement_trait)]
     pub fn not(filter: TagFilter) -> Self {
         Self {
             query: wql::Query::Not(Box::new(filter.query)),
@@ -471,7 +474,7 @@ impl FromStr for TagFilter {
 
 /// An active record scan of a store backend
 pub struct Scan<'s, T> {
-    stream: Option<Pin<Box<dyn Stream<Item = Result<Vec<T>, Error>> + Send + 's>>>,
+    stream: Option<BoxStream<'s, Result<Vec<T>, Error>>>,
     page_size: usize,
 }
 

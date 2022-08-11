@@ -1,6 +1,6 @@
 mod utils;
 
-const ERR_CLOSE: &'static str = "Error closing database";
+const ERR_CLOSE: &str = "Error closing database";
 
 macro_rules! backend_tests {
     ($init:expr) => {
@@ -231,30 +231,26 @@ mod sqlite {
     #[test]
     fn create_remove_db() {
         log_init();
-        let fname = format!("sqlite-test-{}.db", uuid::Uuid::new_v4().to_string());
-        assert_eq!(
-            Path::new(&fname).exists(),
-            false,
+        let fname = format!("sqlite-test-{}.db", uuid::Uuid::new_v4().hyphenated());
+        assert!(
+            !Path::new(&fname).exists(),
             "Oops, should be a unique filename"
         );
 
         let key = generate_raw_store_key(None).expect("Error creating raw key");
         block_on(async move {
-            assert_eq!(
-                SqliteStoreOptions::new(fname.as_str())
-                    .expect("Error initializing sqlite store options")
-                    .remove_backend()
-                    .await
-                    .expect("Error removing sqlite store"),
-                false
-            );
+            assert!(!SqliteStoreOptions::new(fname.as_str())
+                .expect("Error initializing sqlite store options")
+                .remove_backend()
+                .await
+                .expect("Error removing sqlite store"));
 
             let store = SqliteStoreOptions::new(fname.as_str())
                 .expect("Error initializing sqlite store options")
                 .provision_backend(StoreKeyMethod::RawKey, key.as_ref(), None, false)
                 .await
                 .expect("Error provisioning sqlite store");
-            assert_eq!(Path::new(&fname).exists(), true);
+            assert!(Path::new(&fname).exists());
 
             let store2 = SqliteStoreOptions::new(fname.as_str())
                 .expect("Error initializing sqlite store options")
@@ -264,24 +260,21 @@ mod sqlite {
             store2.close().await.expect("Error closing sqlite store");
 
             store.close().await.expect("Error closing sqlite store");
-            assert_eq!(Path::new(&fname).exists(), true);
+            assert!(Path::new(&fname).exists());
 
-            assert_eq!(
-                SqliteStoreOptions::new(fname.as_str())
-                    .expect("Error initializing sqlite store options")
-                    .remove_backend()
-                    .await
-                    .expect("Error removing sqlite store"),
-                true
-            );
-            assert_eq!(Path::new(&fname).exists(), false);
+            assert!(SqliteStoreOptions::new(fname.as_str())
+                .expect("Error initializing sqlite store options")
+                .remove_backend()
+                .await
+                .expect("Error removing sqlite store"));
+            assert!(!Path::new(&fname).exists());
         })
     }
 
     #[test]
     fn rekey_db() {
         log_init();
-        let fname = format!("sqlite-rekey-{}.db", uuid::Uuid::new_v4().to_string());
+        let fname = format!("sqlite-rekey-{}.db", uuid::Uuid::new_v4().hyphenated());
         let key1 = generate_raw_store_key(None).expect("Error creating raw key");
         let key2 = generate_raw_store_key(None).expect("Error creating raw key");
         assert_ne!(key1, key2);
@@ -320,7 +313,7 @@ mod sqlite {
     #[test]
     fn txn_contention_file() {
         log_init();
-        let fname = format!("sqlite-contention-{}.db", uuid::Uuid::new_v4().to_string());
+        let fname = format!("sqlite-contention-{}.db", uuid::Uuid::new_v4().hyphenated());
         let key = generate_raw_store_key(None).expect("Error creating raw key");
 
         block_on(async move {

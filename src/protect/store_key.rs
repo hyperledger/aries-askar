@@ -12,9 +12,9 @@ use crate::{
     error::Error,
 };
 
-pub const PREFIX_KDF: &'static str = "kdf";
-pub const PREFIX_RAW: &'static str = "raw";
-pub const PREFIX_NONE: &'static str = "none";
+pub const PREFIX_KDF: &str = "kdf";
+pub const PREFIX_RAW: &str = "raw";
+pub const PREFIX_NONE: &str = "none";
 
 pub type StoreKeyType = Chacha20Key<C20P>;
 
@@ -195,10 +195,9 @@ impl StoreKeyReference {
     pub fn compare_method(&self, method: &StoreKeyMethod) -> bool {
         match self {
             // Self::ManagedKey(_keyref) => matches!(method, WrapKeyMethod::CreateManagedKey(..)),
-            Self::DeriveKey(kdf_method, _detail) => match method {
-                StoreKeyMethod::DeriveKey(m) if m == kdf_method => true,
-                _ => false,
-            },
+            Self::DeriveKey(kdf_method, _detail) => {
+                matches!(method, StoreKeyMethod::DeriveKey(m) if m == kdf_method)
+            }
             Self::RawKey => *method == StoreKeyMethod::RawKey,
             Self::Unprotected => *method == StoreKeyMethod::Unprotected,
         }
@@ -207,7 +206,7 @@ impl StoreKeyReference {
     pub fn into_uri(self) -> String {
         match self {
             // Self::ManagedKey(keyref) => keyref,
-            Self::DeriveKey(method, detail) => method.to_string(Some(detail.as_str())),
+            Self::DeriveKey(method, detail) => method.encode(Some(detail.as_str())),
             Self::RawKey => PREFIX_RAW.to_string(),
             Self::Unprotected => PREFIX_NONE.to_string(),
         }
@@ -272,7 +271,7 @@ mod tests {
         let unwrapped = key.unwrap_data(wrapped).expect("Error unwrapping data");
         assert_eq!(unwrapped, &input[..]);
         let key_uri = key_ref.into_uri();
-        assert_eq!(key_uri.starts_with("kdf:argon2i:13:mod?salt="), true);
+        assert!(key_uri.starts_with("kdf:argon2i:13:mod?salt="));
     }
 
     #[test]
@@ -304,7 +303,7 @@ mod tests {
             .resolve("not my pass".into())
             .expect("Error deriving comparison key");
         let unwrapped_err = check_bad_pass.unwrap_data(wrapped);
-        assert_eq!(unwrapped_err.is_err(), true);
+        assert!(unwrapped_err.is_err());
     }
 
     #[test]
@@ -315,7 +314,7 @@ mod tests {
         let (key, key_ref) = StoreKeyMethod::RawKey
             .resolve(raw_key.as_ref())
             .expect("Error resolving raw key");
-        assert_eq!(key.is_empty(), false);
+        assert!(!key.is_empty());
         let wrapped = key
             .wrap_data((&input[..]).into())
             .expect("Error wrapping input");
@@ -330,10 +329,10 @@ mod tests {
         assert_eq!(unwrapped, &input[..]);
 
         let check_no_key = key_ref.resolve(None.into());
-        assert_eq!(check_no_key.is_err(), true);
+        assert!(check_no_key.is_err());
 
         let check_bad_key = key_ref.resolve("not the key".into());
-        assert_eq!(check_bad_key.is_err(), true);
+        assert!(check_bad_key.is_err());
     }
 
     #[test]
@@ -342,7 +341,7 @@ mod tests {
         let (key, key_ref) = StoreKeyMethod::Unprotected
             .resolve(None.into())
             .expect("Error resolving unprotected");
-        assert_eq!(key.is_empty(), true);
+        assert!(key.is_empty());
         let wrapped = key
             .wrap_data((&input[..]).into())
             .expect("Error wrapping unprotected");
