@@ -28,6 +28,7 @@ pub struct Ecdh1PU<'d> {
 
 impl<'d> Ecdh1PU<'d> {
     /// Create a new KDF instance
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         ephem_key: &'d dyn AnyKey,
         send_key: &'d dyn AnyKey,
@@ -83,7 +84,7 @@ impl KeyDerivation for Ecdh1PU<'_> {
         pub_w.buffer_write(&output_len.to_be_bytes())?; // output length in bits
         if !self.cc_tag.is_empty() {
             pub_w.buffer_write(&(self.cc_tag.len() as u32).to_be_bytes())?;
-            pub_w.buffer_write(&self.cc_tag)?;
+            pub_w.buffer_write(self.cc_tag)?;
         }
 
         ConcatKDF::<Sha256>::derive_key(

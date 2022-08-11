@@ -17,7 +17,7 @@ use crate::{
 };
 
 /// A secure representation for fixed-length keys
-#[derive(Clone, Hash)]
+#[derive(Clone)]
 #[repr(transparent)]
 pub struct ArrayKey<L: ArrayLength<u8>>(
     GenericArray<u8, L>,

@@ -30,20 +30,18 @@ getrandom = ["rand/getrandom"]
 std_rng = ["getrandom", "rand/std", "rand/std_rng"]
 
 [dependencies]
-aead = "0.4"
+aead = "0.5"
 aes-core = { package = "aes", version = "0.8", default-features = false, optional = true }
-# pre-release uses latest aes dependency, avoiding duplication
-aes-gcm = { version = "0.10.0-pre", default-features = false, features = ["aes"], optional = true }
+aes-gcm = { version = "0.10", default-features = false, features = ["aes"], optional = true }
 arbitrary = { version = "1.0", optional = true, features = ["derive"] }
 argon2 = { version = "0.3", default-features = false, features = ["alloc", "password-hash"], optional = true }
 base64 = { version = "0.13", default-features = false }
 blake2 = { version = "0.10", default-features = false }
 bls12_381 = { version = "0.7", default-features = false, features = ["groups", "zeroize"], optional = true }
 cbc = { version = "0.1", optional = true }
-chacha20 = { version = "0.9" }  # should match chacha20poly1305
-# pre-release version relaxes zeroize dependency
-chacha20poly1305 = { version = "0.10.0-pre", default-features = false, optional = true }
-crypto_box_rs = { package = "crypto_box", version = "0.6", default-features = false, features = ["u64_backend"], optional = true }
+chacha20 = { version = "0.9" }  # should match chacha20poly1305 dependency version
+chacha20poly1305 = { version = "0.10", default-features = false, optional = true }
+crypto_box_rs = { package = "crypto_box", version = "0.8", default-features = false, optional = true }
 curve25519-dalek = { version = "3.1", default-features = false, features = ["u64_backend"], optional = true }
 ed25519-dalek = { version = "1.0", default-features = false, features = ["u64_backend"], optional = true }
 elliptic-curve = { version = "0.12", default-features = false, features = ["sec1"], optional = true }

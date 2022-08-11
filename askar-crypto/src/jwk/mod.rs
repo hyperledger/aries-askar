@@ -82,7 +82,7 @@ pub fn write_jwk_thumbprint<K: ToJwk + ?Sized>(
 pub trait FromJwk: Sized {
     /// Import the key from a JWK string reference
     fn from_jwk(jwk: &str) -> Result<Self, Error> {
-        JwkParts::from_str(jwk).and_then(Self::from_jwk_parts)
+        JwkParts::from_slice(jwk.as_bytes()).and_then(Self::from_jwk_parts)
     }
 
     /// Import the key from a JWK byte slice

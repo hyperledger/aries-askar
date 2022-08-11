@@ -13,7 +13,7 @@ use super::{string::MaybeStr, HexRepr, ResizeBuffer, WriteBuffer};
 use crate::error::Error;
 
 /// A heap-allocated, zeroized byte buffer
-#[derive(Clone, Default, Hash, Zeroize)]
+#[derive(Clone, Default, Zeroize)]
 pub struct SecretBytes(Vec<u8>);
 
 impl SecretBytes {
@@ -62,6 +62,12 @@ impl SecretBytes {
     #[inline]
     pub fn capacity(&self) -> usize {
         self.0.capacity()
+    }
+
+    /// Determine if the buffer is empty
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
     }
 
     /// Accessor for the length of the buffer contents
@@ -267,7 +273,7 @@ impl WriteBuffer for SecretBytes {
 
 impl ResizeBuffer for SecretBytes {
     fn buffer_insert(&mut self, pos: usize, data: &[u8]) -> Result<(), Error> {
-        self.splice(pos..pos, data.into_iter().cloned())
+        self.splice(pos..pos, data.iter().cloned())
     }
 
     fn buffer_remove(&mut self, range: Range<usize>) -> Result<(), Error> {

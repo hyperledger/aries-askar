@@ -189,12 +189,15 @@ impl<'a> NormalizedIter<'a> {
 impl Iterator for NormalizedIter<'_> {
     type Item = char;
     fn next(&mut self) -> Option<Self::Item> {
-        while let Some(c) = self.chars.next() {
-            if c != '-' && c != '_' && c != ' ' {
-                return Some(c.to_ascii_lowercase());
+        loop {
+            if let Some(c) = self.chars.next() {
+                if c != '-' && c != '_' && c != ' ' {
+                    return Some(c.to_ascii_lowercase());
+                }
+            } else {
+                return None;
             }
         }
-        None
     }
 }
 
@@ -262,10 +265,10 @@ mod tests {
 
     #[test]
     fn cmp_normalize() {
-        assert_eq!(normalize_alg("Test").unwrap() == "test", true);
-        assert_eq!(normalize_alg("t-e-s-t").unwrap() == "test", true);
-        assert_eq!(normalize_alg("--TE__ST--").unwrap() == "test", true);
-        assert_eq!(normalize_alg("t-e-s-t").unwrap() == "tes", false);
-        assert_eq!(normalize_alg("t-e-s-t").unwrap() == "testt", false);
+        assert!(normalize_alg("Test").unwrap() == "test");
+        assert!(normalize_alg("t-e-s-t").unwrap() == "test");
+        assert!(normalize_alg("--TE__ST--").unwrap() == "test");
+        assert!(normalize_alg("t-e-s-t").unwrap() != "tes");
+        assert!(normalize_alg("t-e-s-t").unwrap() != "testt");
     }
 }

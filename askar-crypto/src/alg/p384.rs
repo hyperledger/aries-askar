@@ -10,10 +10,10 @@ pub use p384::NistP384;
 use super::ec_common;
 
 /// The 'crv' value of a P-384 key JWK
-pub const JWK_CURVE: &'static str = "P-384";
+pub const JWK_CURVE: &str = "P-384";
 
 /// The 'kty' value of a P-384 key JWK
-pub const JWK_KEY_TYPE: &'static str = ec_common::JWK_KEY_TYPE;
+pub const JWK_KEY_TYPE: &str = ec_common::JWK_KEY_TYPE;
 
 impl_ec_key_type!(
     NistP384,
@@ -111,8 +111,8 @@ mod tests {
         let kp = P384KeyPair::from_secret_bytes(&test_pvt).unwrap();
         let sig = kp.sign(&test_msg[..]).unwrap();
         assert_eq!(sig, &test_sig[..]);
-        assert_eq!(kp.verify_signature(&test_msg[..], &sig[..]), true);
-        assert_eq!(kp.verify_signature(b"Not the message", &sig[..]), false);
-        assert_eq!(kp.verify_signature(&test_msg[..], &[0u8; 64]), false);
+        assert!(kp.verify_signature(&test_msg[..], &sig[..]));
+        assert!(!kp.verify_signature(b"Not the message", &sig[..]));
+        assert!(!kp.verify_signature(&test_msg[..], &[0u8; 64]));
     }
 }

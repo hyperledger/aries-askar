@@ -22,6 +22,12 @@ impl<D: Digest> HashBuffer<D> {
     }
 }
 
+impl<D: Digest> Default for HashBuffer<D> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<D: Debug + Digest> WriteBuffer for HashBuffer<D> {
     fn buffer_write(&mut self, data: &[u8]) -> Result<(), Error> {
         self.0.update(data);
@@ -48,7 +54,7 @@ impl Hashable for &[u8] {
 
 impl<T: Hashable> Hashable for &[T] {
     fn hash_into(&self, hasher: &mut impl Update) -> Result<(), Error> {
-        for item in self.into_iter() {
+        for item in self.iter() {
             item.hash_into(hasher)?;
         }
         Ok(())

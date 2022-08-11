@@ -21,7 +21,7 @@ use crate::{
 };
 
 /// The 'kty' value of an elliptic curve key JWK
-pub const JWK_KEY_TYPE: &'static str = "EC";
+pub const JWK_KEY_TYPE: &str = "EC";
 
 // SECURITY: PublicKey contains an elliptic_curve::AffinePoint, which is always
 // checked to be on the curve when loaded:
@@ -58,11 +58,7 @@ impl<C: EcKeyType> EcKeyPair<C> {
 
     /// Sign a message with the secret key
     pub fn sign(&self, message: &[u8]) -> Option<C::Signature> {
-        if let Some(skey) = self.secret.as_ref() {
-            Some(C::sign(skey, message))
-        } else {
-            None
-        }
+        self.secret.as_ref().map(|skey| C::sign(skey, message))
     }
 
     /// Verify a signature with the public key
@@ -81,7 +77,7 @@ impl<C: EcKeyType> KeyGen for EcKeyPair<C> {
     fn generate(mut rng: impl KeyMaterial) -> Result<Self, Error> {
         ArrayKey::<C::FieldSize>::temp(|buf| loop {
             rng.read_okm(buf);
-            if let Ok(key) = SecretKey::from_be_bytes(&buf) {
+            if let Ok(key) = SecretKey::from_be_bytes(buf) {
                 return Ok(Self::from_secret_key(key));
             }
         })
@@ -108,7 +104,7 @@ impl<C: EcKeyType> KeySecretBytes for EcKeyPair<C> {
         if let Some(sk) = self.secret.as_ref() {
             ArrayKey::<C::FieldSize>::temp(|arr| {
                 write_sk(sk, &mut arr[..]);
-                f(Some(&arr))
+                f(Some(arr))
             })
         } else {
             f(None)
@@ -155,7 +151,7 @@ impl<C: EcKeyType> KeyPublicBytes for EcKeyPair<C> {
     fn with_public_bytes<O>(&self, f: impl FnOnce(&[u8]) -> O) -> O {
         ArrayKey::<Self::PublicKeySize>::temp(|buf| {
             C::encode_pk(&self.public, &mut *buf, true);
-            f(&buf)
+            f(buf)
         })
     }
 }
@@ -300,6 +296,8 @@ pub fn write_sk<C: Curve>(sk: &SecretKey<C>, out: &mut [u8]) {
     }
 }
 
+pub type EcCoord<K> = GenericArray<u8, FieldSize<K>>;
+
 /// Common trait for concrete elliptic-curve implementations.
 /// This mainly exists in order to avoid excessive bounds on
 /// the trait implementations for EcKeyPair.
@@ -319,20 +317,9 @@ pub trait EcKeyType: PrimeCurve + ProjectiveArithmetic {
 
     fn encode_pk(pk: &PublicKey<Self>, out: &mut [u8], compress: bool);
 
-    fn pk_from_coordinates(
-        x: &GenericArray<u8, FieldSize<Self>>,
-        y: &GenericArray<u8, FieldSize<Self>>,
-    ) -> Result<PublicKey<Self>, Error>;
+    fn pk_from_coordinates(x: &EcCoord<Self>, y: &EcCoord<Self>) -> Result<PublicKey<Self>, Error>;
 
-    fn pk_to_coordinates(
-        pk: &PublicKey<Self>,
-    ) -> Result<
-        (
-            GenericArray<u8, FieldSize<Self>>,
-            GenericArray<u8, FieldSize<Self>>,
-        ),
-        Error,
-    >;
+    fn pk_to_coordinates(pk: &PublicKey<Self>) -> Result<(EcCoord<Self>, EcCoord<Self>), Error>;
 }
 
 macro_rules! impl_ec_key_type {
@@ -343,7 +330,7 @@ macro_rules! impl_ec_key_type {
             Signature, SignatureSize, SigningKey, VerifyingKey,
         };
         use elliptic_curve::{
-            generic_array::{typenum::Unsigned, GenericArray},
+            generic_array::typenum::Unsigned,
             sec1::{Coordinates, EncodedPoint, FromEncodedPoint, ToEncodedPoint},
             FieldSize, PublicKey, SecretKey,
         };
@@ -368,8 +355,8 @@ macro_rules! impl_ec_key_type {
 
             #[inline]
             fn pk_from_coordinates(
-                pk_x: &GenericArray<u8, Self::FieldSize>,
-                pk_y: &GenericArray<u8, Self::FieldSize>,
+                pk_x: &$crate::alg::ec_common::EcCoord<Self>,
+                pk_y: &$crate::alg::ec_common::EcCoord<Self>,
             ) -> Result<PublicKey<Self>, $crate::error::Error> {
                 Option::from(PublicKey::from_encoded_point(
                     &EncodedPoint::<Self>::from_affine_coordinates(pk_x, pk_y, false),
@@ -382,8 +369,8 @@ macro_rules! impl_ec_key_type {
                 pk: &PublicKey<Self>,
             ) -> Result<
                 (
-                    GenericArray<u8, Self::FieldSize>,
-                    GenericArray<u8, Self::FieldSize>,
+                    $crate::alg::ec_common::EcCoord<Self>,
+                    $crate::alg::ec_common::EcCoord<Self>,
                 ),
                 $crate::error::Error,
             > {
@@ -480,9 +467,9 @@ pub(super) mod tests {
         let test_msg = b"This is a dummy message for use with tests";
         let kp = EcKeyPair::<C>::random().unwrap();
         let sig = kp.sign(&test_msg[..]).unwrap();
-        assert_eq!(kp.verify_signature(&test_msg[..], sig.as_ref()), true);
-        assert_eq!(kp.verify_signature(b"Not the message", sig.as_ref()), false);
-        assert_eq!(kp.verify_signature(&test_msg[..], &[0u8; 64]), false);
+        assert!(kp.verify_signature(&test_msg[..], sig.as_ref()));
+        assert!(!kp.verify_signature(b"Not the message", sig.as_ref()));
+        assert!(!kp.verify_signature(&test_msg[..], &[0u8; 64]));
         assert_eq!(sig.as_ref().len(), C::SIGNATURE_TYPE.signature_length());
     }
 }

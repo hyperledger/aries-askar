@@ -1,6 +1,7 @@
 use core::{
     fmt::{self, Debug, Display, Formatter},
     ops::{BitAnd, BitOr},
+    str::FromStr,
 };
 
 use serde::{
@@ -65,20 +66,24 @@ impl KeyOps {
             Self::DeriveBits => "deriveBits",
         }
     }
+}
+
+impl FromStr for KeyOps {
+    type Err = ();
 
     /// Parse a key operation from a string reference
-    pub fn from_str(key: &str) -> Option<Self> {
-        match key {
-            "sign" => Some(Self::Sign),
-            "verify" => Some(Self::Verify),
-            "encrypt" => Some(Self::Encrypt),
-            "decrypt" => Some(Self::Decrypt),
-            "wrapKey" => Some(Self::WrapKey),
-            "unwrapKey" => Some(Self::UnwrapKey),
-            "deriveKey" => Some(Self::DeriveKey),
-            "deriveBits" => Some(Self::DeriveBits),
-            _ => None,
-        }
+    fn from_str(key: &str) -> Result<Self, ()> {
+        Ok(match key {
+            "sign" => Self::Sign,
+            "verify" => Self::Verify,
+            "encrypt" => Self::Encrypt,
+            "decrypt" => Self::Decrypt,
+            "wrapKey" => Self::WrapKey,
+            "unwrapKey" => Self::UnwrapKey,
+            "deriveKey" => Self::DeriveKey,
+            "deriveBits" => Self::DeriveBits,
+            _ => return Err(()),
+        })
     }
 }
 
@@ -218,7 +223,7 @@ impl<'de> Visitor<'de> for KeyOpsVisitor {
     {
         let mut ops = KeyOpsSet::new();
         while let Some(op) = seq.next_element()? {
-            if let Some(op) = KeyOps::from_str(op) {
+            if let Ok(op) = KeyOps::from_str(op) {
                 if ops & op {
                     return Err(serde::de::Error::duplicate_field(op.as_str()));
                 } else {
@@ -258,8 +263,8 @@ mod tests {
 
     #[test]
     fn invariants() {
-        assert_eq!(KeyOpsSet::new().is_empty(), true);
-        assert_eq!(KeyOpsSet::from(KeyOps::Decrypt).is_empty(), false);
+        assert!(KeyOpsSet::new().is_empty());
+        assert!(!KeyOpsSet::from(KeyOps::Decrypt).is_empty());
         assert_eq!(KeyOpsSet::new(), KeyOpsSet::new());
         assert_ne!(KeyOpsSet::from(KeyOps::Decrypt), KeyOpsSet::new());
         assert_ne!(KeyOps::Decrypt, KeyOps::Encrypt);
