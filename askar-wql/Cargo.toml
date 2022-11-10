@@ -5,8 +5,10 @@ edition = "2018"
 authors = ["Hyperledger Aries Contributors <aries@lists.hyperledger.org>"]
 description = "Hyperledger Aries Askar Wallet Query Language"
 license = "MIT OR Apache-2.0"
-readme = "README.md"
+readme = "../README.md"
 repository = "https://github.com/hyperledger/aries-askar/"
+categories = ["authentication", "cryptography"]
+keywords = ["hyperledger", "indy", "ssi", "verifiable", "credentials"]
 
 [lib]
 name = "askar_wql"
