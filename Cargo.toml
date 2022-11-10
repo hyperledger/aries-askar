@@ -1,5 +1,5 @@
 [workspace]
-members = ["askar-bbs", "askar-crypto"]
+members = ["askar-bbs", "askar-crypto", "askar-wql"]
 
 [package]
 name = "aries-askar"
@@ -38,6 +38,7 @@ pg_test = ["postgres"]
 hex-literal = "0.3"
 
 [dependencies]
+askar-wql = { path = "./askar-wql/", version = "0.1.0"}
 async-lock = "2.5"
 async-stream = "0.3"
 bs58 = "0.4"
@@ -48,7 +49,6 @@ ffi-support = { version = "0.4", optional = true }
 futures-lite = "1.11"
 hex = "0.4"
 hmac = "0.12"
-indy-wql = "0.4"
 itertools = "0.10"
 jemallocator = { version = "0.3", optional = true }
 log = { version = "0.4", optional = true }
