@@ -44,10 +44,8 @@ impl<K, V> AbstractQuery<K, V> {
                 Some(other) => Some(Self::Not(Box::new(other))),
             },
             Self::And(subqueries) => {
-                let mut subqueries: Vec<Self> = subqueries
-                    .into_iter()
-                    .filter_map(Self::optimise)
-                    .collect();
+                let mut subqueries: Vec<Self> =
+                    subqueries.into_iter().filter_map(Self::optimise).collect();
 
                 match subqueries.len() {
                     0 => None,
@@ -56,10 +54,8 @@ impl<K, V> AbstractQuery<K, V> {
                 }
             }
             Self::Or(subqueries) => {
-                let mut subqueries: Vec<Self> = subqueries
-                    .into_iter()
-                    .filter_map(Self::optimise)
-                    .collect();
+                let mut subqueries: Vec<Self> =
+                    subqueries.into_iter().filter_map(Self::optimise).collect();
 
                 match subqueries.len() {
                     0 => None,
@@ -200,9 +196,7 @@ mod serde_support {
             let v = JsonValue::deserialize(deserializer)?;
 
             match v {
-                JsonValue::Object(map) => {
-                    parse_query(map).map_err(de::Error::missing_field)
-                }
+                JsonValue::Object(map) => parse_query(map).map_err(de::Error::missing_field),
                 JsonValue::Array(array) => {
                     // cast old restrictions format to wql
                     let mut res: Vec<JsonValue> = Vec::new();
@@ -403,7 +397,6 @@ mod serde_support {
         }
     }
 }
-
 
 #[cfg(test)]
 mod tests {
