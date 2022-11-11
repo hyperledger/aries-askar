@@ -83,6 +83,12 @@ jobs:
           command: test
           args: --manifest-path ./askar-crypto/Cargo.toml --no-default-features
 
+      - name: Test askar-wql
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: --manifest-path ./askar-wql/Cargo.toml
+
       - name: Test askar-bbs no_std
         uses: actions-rs/cargo@v1
         with:
