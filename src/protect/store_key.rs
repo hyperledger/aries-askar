@@ -308,6 +308,18 @@ mod tests {
     }
 
     #[test]
+    fn raw_key_seed_lengths() {
+        // 'short' is less than 32 bytes
+        let _ = generate_raw_store_key(Some(b"short key"))
+            .expect("Error creating raw key from short seed");
+        // 'long' is greater than 32 bytes
+        let _ = generate_raw_store_key(Some(
+            b"long key long key long key long key long key long key long key",
+        ))
+        .expect("Error creating raw key from long seed");
+    }
+
+    #[test]
     fn raw_key_wrap() {
         let input = b"test data";
         let raw_key = generate_raw_store_key(None).unwrap();
