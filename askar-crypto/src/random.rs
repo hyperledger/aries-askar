@@ -124,7 +124,7 @@ impl RandomDet {
     /// Construct a new `RandomDet` instance from a seed value
     pub fn new(seed: &[u8]) -> Self {
         let mut sd = [0u8; DETERMINISTIC_SEED_LENGTH];
-        let seed_len = seed.len().max(DETERMINISTIC_SEED_LENGTH);
+        let seed_len = seed.len().min(DETERMINISTIC_SEED_LENGTH);
         sd[..seed_len].copy_from_slice(&seed[..seed_len]);
         Self::from_seed(sd)
     }
