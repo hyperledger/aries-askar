@@ -119,7 +119,7 @@ impl PostgresStoreOptions {
             conn_opts.log_slow_statements(log::LevelFilter::Debug, Default::default());
         }
         PgPoolOptions::default()
-            .connect_timeout(self.connect_timeout)
+            .acquire_timeout(self.connect_timeout)
             .idle_timeout(self.idle_timeout)
             .max_connections(self.max_connections)
             .min_connections(self.min_connections)
