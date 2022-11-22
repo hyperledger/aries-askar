@@ -245,20 +245,33 @@ jobs:
       - name: Test package
         shell: sh
         run: |
+          ulimit -c unlimited
+          mkdir cores
+          echo cores/core | sudo tee /proc/sys/kernel/core_pattern
           pip install pytest pytest-asyncio dist/*
           echo "-- Test SQLite in-memory --"
           python -m pytest --log-cli-level=WARNING -k "not contention"
           echo "-- Test SQLite file DB --"
-          TEST_STORE_URI=sqlite://test.db python -m pytest --log-cli-level=WARNING -k "not contention"
+          TEST_STORE_URI=sqlite://test.db sudo python -m pytest --log-cli-level=WARNING -k "not contention"
           if [ -n "$POSTGRES_URL" ]; then
             echo "-- Test Postgres DB --"
-            TEST_STORE_URI="$POSTGRES_URL" python -m pytest --log-cli-level=WARNING -k "not contention"
+            TEST_STORE_URI="$POSTGRES_URL" sudo python -m pytest --log-cli-level=WARNING -k "not contention"
           fi
         working-directory: wrappers/python
         env:
           no_proxy: "*" # python issue 30385
           RUST_BACKTRACE: full
           # RUST_LOG: debug
+
+      - if: always()
+        shell: sh
+        run: sudo chmod -R +rwx cores
+
+      - if: always()
+        uses: actions/upload-artifact@master
+        with:
+          name: crashes
+          path: cores
 
       - name: Upload python package
         uses: actions/upload-artifact@v2
