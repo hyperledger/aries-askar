@@ -5,3 +5,4 @@ target
 Cargo.lock
 .DS_Store
 *.tgz
+.idea

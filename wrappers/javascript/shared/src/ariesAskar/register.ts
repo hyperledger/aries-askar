@@ -1,4 +1,4 @@
-import type { AriesAskar } from '../AriesAskar'
+import type { AriesAskar } from './AriesAskar'
 
 export let ariesAskar: AriesAskar
 
