@@ -2,7 +2,11 @@
   "extends": "./tsconfig.build.json",
   "compilerOptions": {
     "baseUrl": ".",
-    "types": ["node"]
+    "paths": {
+      "aries-askar-shared": ["shared/src"],
+      "aries-askar-react-native": ["react-native/src"],
+      "aries-askar-nodejs": ["nodejs/src"]
+    },
   },
   "exclude": ["node_modules", "**/build/**", "build"]
 }
