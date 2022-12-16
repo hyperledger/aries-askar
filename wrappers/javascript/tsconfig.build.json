@@ -10,7 +10,8 @@
     "types": [],
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
-    "resolveJsonModule": true
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
   },
   "exclude": ["node_modules", "build", "**/build/**"]
 }
