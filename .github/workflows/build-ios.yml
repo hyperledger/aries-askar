@@ -18,9 +18,12 @@ jobs:
         architecture: [aarch64-apple-ios, aarch64-apple-ios-sim, x86_64-apple-ios]
     steps:
       - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          target: ${{ matrix.architecture }}
       - uses: actions-rs/cargo@v1
         with:
-          use-cross: true
           command: build
           args: --target ${{matrix.architecture}} --release
       - name: Save static library
