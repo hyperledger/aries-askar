@@ -3,15 +3,14 @@
   "private": true,
   "license": "Apache-2.0",
   "workspaces": {
-    "packages": [
-      "shared",
-      "react-native",
-      "nodejs",
-      "react-native-app"
-    ],
+    "packages": ["shared", "react-native", "nodejs", "react-native-app"],
     "nohoist": [
-      "**/@react-native-community",
-      "**/react-native-codegen"
+      "**/react-native",
+      "**/react-native/**",
+      "**/react-native-scripts",
+      "**/react-native-scripts/**",
+      "**/expo",
+      "**/expo/**"
     ]
   },
   "scripts": {
