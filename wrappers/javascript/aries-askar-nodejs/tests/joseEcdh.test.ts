@@ -2,7 +2,7 @@ import { Ecdh1PU, EcdhEs, Jwk, Key, KeyAlgs } from 'aries-askar-shared'
 
 import { base64url, setup } from './utils'
 
-import { uint8arrayToByteBufferStruct } from 'nodejs/src/ffi'
+import { uint8arrayToByteBufferStruct } from 'aries-askar-nodejs/src/ffi'
 
 describe('jose ecdh', () => {
   beforeAll(() => setup())

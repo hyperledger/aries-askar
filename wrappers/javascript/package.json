@@ -4,30 +4,28 @@
   "license": "Apache-2.0",
   "workspaces": {
     "packages": [
-      "shared",
-      "react-native",
-      "nodejs",
-      "react-native-example"
-    ],
-    "nohoist": [
-      "**/@react-native-community",
-      "**/react-native-codegen"
+      "aries-askar-shared",
+      "aries-askar-react-native",
+      "aries-askar-nodejs"
     ]
   },
   "scripts": {
-    "check-types": "yarn workspaces run tsc --noEmit -p tsconfig.build.json",
+    "check-types": "yarn workspaces run tsc --noEmit -p tsconfig.json",
     "build": "yarn workspaces run build",
     "clean": "yarn workspaces run clean",
     "prettier": "prettier --ignore-path .gitignore '**/*.+(js|json|ts|md|yml|yaml)'",
     "format": "yarn prettier --write",
     "check-format": "yarn prettier --list-different",
-    "lint": "yarn workspaces run lint",
+    "lint": "eslint .",
     "validate": "yarn lint && yarn check-types && yarn check-format",
     "reset": "find . -type dir -name node_modules | xargs rm -rf && rm -rf yarn.lock",
     "example": "yarn --cwd  react-native-example",
-    "react-native": "yarn --cwd react-native",
-    "shared": "yarn --cwd shared",
-    "nodejs": "yarn --cwd nodejs"
+    "react-native": "yarn --cwd aries-askar-react-native",
+    "shared": "yarn --cwd aries-askar-shared",
+    "nodejs": "yarn --cwd aries-askar-nodejs",
+    "test": "cross-env yarn nodejs test",
+    "test:local-build": "cross-env LIB_ARIES_ASKAR_PATH=../../../target/release yarn test",
+    "set-version": "npx lerna version --exact --no-git-tag-version --no-push --yes"
   },
   "repository": {
     "type": "git",
@@ -39,11 +37,13 @@
     "@types/eslint": "^8.4.1",
     "@typescript-eslint/eslint-plugin": "^5.11.0",
     "@typescript-eslint/parser": "^5.11.0",
+    "cross-env": "^7.0.3",
     "eslint": "^8.8.0",
     "eslint-config-prettier": "^8.3.0",
     "eslint-import-resolver-typescript": "^2.5.0",
     "eslint-plugin-import": "^2.25.4",
     "eslint-plugin-prettier": "^4.0.0",
+    "metro-react-native-babel-preset": "^0.74.0",
     "prettier": "^2.5.1",
     "typescript": "^4.5.5"
   },

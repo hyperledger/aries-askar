@@ -9,10 +9,11 @@ name: "Aries-Askar"
     types: [created]
   workflow_dispatch:
     inputs:
-      publish:
-        description: "Publish packages"
+      publish-wrappers:
+        description: 'Publish Wrappers to Registries'
         required: true
-        default: "false"
+        default: false
+        type: boolean        
 
 jobs:
   check:
@@ -217,7 +218,6 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install setuptools wheel twine auditwheel
-
       - name: Fetch library artifacts
         uses: actions/download-artifact@v2
         with:
@@ -231,7 +231,6 @@ jobs:
           pg_isready
           sudo -u postgres psql -c "ALTER USER postgres WITH PASSWORD 'postgres'"
           echo "POSTGRES_URL=postgres://postgres:postgres@localhost:5432/test-db" >> $GITHUB_ENV
-
       - name: Build package
         shell: sh
         run: |
@@ -267,9 +266,8 @@ jobs:
           path: wrappers/python/dist/*
 
       - if: |
-          (github.event_name == 'release' ||
-            (github.event_name == 'workflow_dispatch' &&
-             github.event.inputs.publish == 'true'))
+          github.event_name == 'release' ||
+          (github.event_name == 'workflow_dispatch' && github.event.inputs.publish-wrappers == 'true')
         name: Publish python package
         env:
           TWINE_USERNAME: ${{ secrets.PYPI_USERNAME }}
@@ -277,3 +275,64 @@ jobs:
         run: |
           twine upload --skip-existing dist/*
         working-directory: wrappers/python
+
+  build-javascript:
+    name: Build and Test JavaScript wrapper
+    needs: [build-manylinux]
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: wrappers/javascript
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Set up Node.JS 16.x
+        uses: actions/setup-node@v3
+        with:
+          node-version: 16.x
+
+      - name: Fetch library artifacts
+        uses: actions/download-artifact@v2
+        with:
+          name: library-${{ runner.os }}
+
+      - name: Install dependencies
+        run: yarn install
+
+      - name: Build JavaScript Wrapper
+        run: yarn build
+
+      - name: Lint JavaScript Wrapper
+        run: yarn lint
+
+      - name: Format Check JavaScript Wrapper
+        run: yarn check-format
+
+      - name: Type Check JavaScript Wrapper
+        run: yarn check-types
+
+      - name: Test JavaScript Wrapper
+        env:
+          # binary is downloaded to root of repository
+          LIB_ARIES_ASKAR_PATH: ../../../
+        run: yarn test
+
+      - name: Set NPM config
+        if: |
+          github.event_name == 'release' ||
+          (github.event_name == 'workflow_dispatch' && github.event.inputs.publish-wrappers == 'true')
+        run: |
+          echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" >> .npmrc
+          echo "registry=https://registry.npmjs.org/" >> .npmrc
+          echo "always-auth=true" >> .npmrc
+      # TODO: this will currently publish the version as defined in the package.json. If the version already
+      # exists on NPM it will skip the publishing. This means if a new version is released, but the version hasn't been
+      # updated in the package.json files yet, it won't publish to NPM (which is kinda nice). We should however add a check
+      # to see if the JS version matches the release version (do we want to keep the js and rust version in sync?)
+      - name: Publish JavaScript Wrapper
+        if: |
+          github.event_name == 'release' ||
+          (github.event_name == 'workflow_dispatch' && github.event.inputs.publish-wrappers == 'true')
+        run: npx lerna publish from-package --no-push --no-private --yes --no-git-tag-version

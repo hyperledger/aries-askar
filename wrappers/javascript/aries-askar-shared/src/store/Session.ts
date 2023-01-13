@@ -98,7 +98,7 @@ export class Session {
     const encoder = new TextEncoder()
 
     await ariesAskar.sessionUpdate({
-      // eslint-disable-next-line @typescript-eslint/ban-ts-comment, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access
+      // eslint-disable-next-line @typescript-eslint/ban-ts-comment, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
       value: new Uint8Array(encoder.encode(serializedValue)),
       expiryMs,
       tags,

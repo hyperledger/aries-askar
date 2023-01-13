@@ -50,8 +50,8 @@ android/keystores/debug.keystore
 .expo-shared/*
 
 # Native Libraries 
-react-native/ios/Frameworks
-react-native/android/libs
+aries-askar-react-native/ios/Frameworks
+aries-askar-react-native/android/libs
 
 # Example app
 react-native-example

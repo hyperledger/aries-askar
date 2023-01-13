@@ -15,7 +15,16 @@ const fnOnce = (fn: () => void) => {
 
 export const setup = () => {
   registerAriesAskar({ askar: new NodeJSAriesAskar() })
-  fnOnce(() => process.env.LOG && ariesAskar.setCustomLogger({ logLevel: LogLevel.Trace }))
+  fnOnce(
+    () =>
+      process.env.LOG &&
+      ariesAskar.setCustomLogger({
+        logger: () => {
+          /* TODO */
+        },
+        logLevel: LogLevel.Trace,
+      })
+  )
 }
 
 export const setupWallet = async () => {

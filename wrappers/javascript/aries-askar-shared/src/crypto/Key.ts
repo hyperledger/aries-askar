@@ -1,3 +1,4 @@
+/* eslint-disable import/no-cycle */
 import type { KeyAlgs, SigAlgs } from '../enums'
 import type { LocalKeyHandle } from './handles'
 

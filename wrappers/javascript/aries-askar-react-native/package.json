@@ -5,12 +5,12 @@
   "description": "React Native wrapper for Aries Askar",
   "main": "build/index",
   "source": "src/index",
-  "homepage": "https://github.com/hyperledger/aries-askar/tree/main/wrappers/javascript/react-native",
+  "homepage": "https://github.com/hyperledger/aries-askar/tree/main/wrappers/javascript/aries-askar-react-native",
   "author": "Hyperledger (https://github.com/hyperledger)",
   "repository": {
     "type": "git",
     "url": "https://github.com/hyperledger/aries-askar",
-    "directory": "wrappers/javascript/react-native"
+    "directory": "wrappers/javascript/aries-askar-react-native"
   },
   "publishConfig": {
     "access": "public"
@@ -34,16 +34,9 @@
     "package.json"
   ],
   "scripts": {
-    "lint": "eslint .",
-    "check-types": "tsc --noEmit -p tsconfig.build.json",
-    "check-format": "yarn prettier --check",
-    "format": "yarn prettier --write",
-    "prettier": "prettier --ignore-path .gitignore '**/*+(.js|json|ts|md|yml|yaml)'",
     "build": "yarn clean && yarn compile",
-    "clean": "rimraf -rf ./lib",
-    "compile": "tsc -p tsconfig.build.json",
-    "example": "yarn --cwd example",
-    "release": "release-it"
+    "clean": "rimraf -rf ./build",
+    "compile": "tsc -p tsconfig.build.json"
   },
   "dependencies": {
     "aries-askar-shared": "*"
