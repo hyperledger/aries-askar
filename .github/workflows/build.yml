@@ -108,12 +108,12 @@ jobs:
     strategy:
       matrix:
         include:
-          - arch: linux-arm64
+          - arch: linux-aarch64
             os: ubuntu-latest
             lib: libaries_askar.so
             target: aarch64-unknown-linux-gnu
             use_cross: true
-          - arch: linux-x64
+          - arch: linux-x86_64
             os: ubuntu-latest
             lib: libaries_askar.so
             target: x86_64-unknown-linux-gnu
@@ -125,7 +125,7 @@ jobs:
             target: apple-darwin
             # beta or nightly required for aarch64-apple-darwin target
             toolchain: beta
-          - arch: windows-x64
+          - arch: windows-x86_64
             os: windows-latest
             lib: aries_askar.dll
             target: x86_64-pc-windows-msvc
@@ -202,12 +202,9 @@ jobs:
 
     strategy:
       matrix:
-        arch: [linux-aarch64, linux-x86_64, darwin-universal, windows-x86_64]
+        arch: [linux-x86_64, darwin-universal, windows-x86_64]
         python-version: ["3.8"]
         include:
-          - os: ubuntu-latest
-            arch: linux-aarch64
-            plat-name: manylinux2014_aarch64
           - os: ubuntu-latest
             arch: linux-x86_64
             plat-name: manylinux2014_x86_64
@@ -222,10 +219,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
 
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v2
+        uses: actions/setup-python@v4
         with:
           python-version: ${{ matrix.python-version }}
 
@@ -234,9 +231,9 @@ jobs:
           python -m pip install --upgrade pip
           pip install setuptools wheel twine auditwheel
       - name: Fetch library artifacts
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
-          name: library-linux-x64
+          name: library-${{ matrix.arch }}
           path: wrappers/python/aries_askar/
 
       - if: "runner.os == 'Linux'"
@@ -246,7 +243,8 @@ jobs:
           pg_isready
           sudo -u postgres psql -c "ALTER USER postgres WITH PASSWORD 'postgres'"
           echo "POSTGRES_URL=postgres://postgres:postgres@localhost:5432/test-db" >> $GITHUB_ENV
-      - name: Build package
+
+      - name: Build python package
         shell: sh
         run: |
           python setup.py bdist_wheel --python-tag=py3 --plat-name=${{ matrix.plat-name }}
@@ -273,12 +271,6 @@ jobs:
           no_proxy: "*" # python issue 30385
           RUST_BACKTRACE: full
           # RUST_LOG: debug
-
-      - name: Upload python package
-        uses: actions/upload-artifact@v2
-        with:
-          name: python-${{ runner.os }}
-          path: wrappers/python/dist/*
 
       - if: |
           github.event_name == 'release' ||
@@ -309,9 +301,9 @@ jobs:
           node-version: 16.x
 
       - name: Fetch library artifacts
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
-          name: library-linux-x64
+          name: library-linux-x86_64
 
       - name: Install dependencies
         run: yarn install

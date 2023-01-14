@@ -33,7 +33,7 @@
     "example": "yarn --cwd example",
     "release": "release-it",
     "test": "jest",
-    "install": "node-pre-gyp install --target_arch=$(node -e \"if (require('os').platform() === 'darwin') console.log('universal');\")"
+    "install": "node-pre-gyp install --target_arch=$(node build/util/arch.js)"
   },
   "devDependencies": {
     "@babel/core": "^7.18.5",
