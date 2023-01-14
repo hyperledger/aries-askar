@@ -65,7 +65,7 @@
   "binary": {
     "module_name": "aries_askar",
     "module_path": "native",
-    "remote_path": "v0.1.0-dev.1",
+    "remote_path": "v{version}",
     "host": "https://github.com/hyperledger/aries-askar/releases/download/",
     "package_name": "library-{platform}-{arch}.tar.gz"
   }
