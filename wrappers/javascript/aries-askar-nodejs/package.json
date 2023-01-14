@@ -32,7 +32,8 @@
     "compile": "tsc -p tsconfig.build.json",
     "example": "yarn --cwd example",
     "release": "release-it",
-    "test": "jest"
+    "test": "jest",
+    "install": "node-pre-gyp install --target_arch=$(node -e \"if (require('os').platform() === 'darwin') console.log('universal');\")"
   },
   "devDependencies": {
     "@babel/core": "^7.18.5",
@@ -54,10 +55,18 @@
   },
   "dependencies": {
     "aries-askar-shared": "*",
+    "@mapbox/node-pre-gyp": "^1.0.10",
     "ffi-napi": "^4.0.3",
     "node-cache": "^5.1.2",
     "ref-array-di": "^1.2.2",
     "ref-napi": "^3.0.3",
     "ref-struct-di": "^1.1.1"
+  },
+  "binary": {
+    "module_name": "aries_askar",
+    "module_path": "native",
+    "remote_path": "v0.1.0-dev.1",
+    "host": "https://github.com/hyperledger/aries-askar/releases/download/",
+    "package_name": "library-{platform}-{arch}.tar.gz"
   }
 }
