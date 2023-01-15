@@ -56,8 +56,8 @@ export class EcdhEs {
     aad?: Uint8Array
     nonce?: Uint8Array
   }) {
-    const eKey = ephemeralKey instanceof Jwk ? ephemeralKey.toKey() : ephemeralKey
-    const rKey = recipientKey instanceof Jwk ? recipientKey.toKey() : recipientKey
+    const eKey = ephemeralKey instanceof Jwk ? Key.fromJwk({ jwk: ephemeralKey }) : ephemeralKey
+    const rKey = recipientKey instanceof Jwk ? Key.fromJwk({ jwk: recipientKey }) : recipientKey
     const derived = this.deriveKey({ encAlg, ephemeralKey: eKey, recipientKey: rKey, receive: false })
     return derived.aeadEncrypt({ message, aad, nonce })
   }
@@ -79,8 +79,8 @@ export class EcdhEs {
     tag: Uint8Array
     aad?: Uint8Array
   }) {
-    const eKey = ephemeralKey instanceof Jwk ? ephemeralKey.toKey() : ephemeralKey
-    const rKey = recipientKey instanceof Jwk ? recipientKey.toKey() : recipientKey
+    const eKey = ephemeralKey instanceof Jwk ? Key.fromJwk({ jwk: ephemeralKey }) : ephemeralKey
+    const rKey = recipientKey instanceof Jwk ? Key.fromJwk({ jwk: recipientKey }) : recipientKey
     const derived = this.deriveKey({ encAlg, ephemeralKey: eKey, recipientKey: rKey, receive: true })
     return derived.aeadDecrypt({ tag, nonce, ciphertext, aad })
   }

@@ -1,6 +1,3 @@
-/* eslint-disable import/no-cycle */
-import { Key } from './Key'
-
 export type JwkProps = {
   kty: string
   crv: string
@@ -30,10 +27,6 @@ export class Jwk {
 
   public static fromString(str: string) {
     return new Jwk(JSON.parse(str) as JwkProps)
-  }
-
-  public toKey() {
-    return Key.fromJwk({ jwk: this })
   }
 
   public toUint8Array() {

@@ -2,8 +2,6 @@ import { Ecdh1PU, EcdhEs, Jwk, Key, KeyAlgs } from 'aries-askar-shared'
 
 import { base64url, setup } from './utils'
 
-import { uint8arrayToByteBufferStruct } from 'aries-askar-nodejs/src/ffi'
-
 describe('jose ecdh', () => {
   beforeAll(() => setup())
 
@@ -91,7 +89,7 @@ describe('jose ecdh', () => {
     }).senderWrapKey({
       wrapAlg: KeyAlgs.AesA128Kw,
       ephemeralKey,
-      recipientKey: bobJwk.toKey(),
+      recipientKey: Key.fromJwk({ jwk: bobJwk }),
       cek,
     }).ciphertext
 
@@ -102,7 +100,7 @@ describe('jose ecdh', () => {
     }).receiverUnwrapKey({
       wrapAlg: KeyAlgs.AesA128Kw,
       encAlg: KeyAlgs.AesA256Gcm,
-      ephemeralKey: ephemeralJwk.toKey(),
+      ephemeralKey: Key.fromJwk({ jwk: ephemeralJwk }),
       recipientKey: bobKey,
       ciphertext: encryptedKey,
     })
@@ -144,7 +142,7 @@ describe('jose ecdh', () => {
       ephemeralKey,
       message,
       senderKey: aliceKey,
-      recipientKey: bobJwk.toKey(),
+      recipientKey: Key.fromJwk({ jwk: bobJwk }),
       aad: protectedB64Bytes,
     })
 
@@ -157,7 +155,7 @@ describe('jose ecdh', () => {
     }).decryptDirect({
       encAlg: KeyAlgs.AesA256Gcm,
       ephemeralKey,
-      senderKey: aliceJwk.toKey(),
+      senderKey: Key.fromJwk({ jwk: aliceJwk }),
       recipientKey: bobKey,
       ciphertext,
       nonce,
@@ -175,26 +173,32 @@ describe('jose ecdh', () => {
    * https://www.ietf.org/archive/id/draft-madden-jose-ecdh-1pu-04.txt
    */
   test('ecdh 1pu wrapped expected', () => {
-    const ephemeral = Jwk.fromJson({
-      crv: 'X25519',
-      kty: 'OKP',
-      d: 'x8EVZH4Fwk673_mUujnliJoSrLz0zYzzCWp5GUX2fc8',
-      x: 'k9of_cpAajy0poW5gaixXGs9nHkwg1AFqUAFa39dyBc',
-    }).toKey()
+    const ephemeral = Key.fromJwk({
+      jwk: Jwk.fromJson({
+        crv: 'X25519',
+        kty: 'OKP',
+        d: 'x8EVZH4Fwk673_mUujnliJoSrLz0zYzzCWp5GUX2fc8',
+        x: 'k9of_cpAajy0poW5gaixXGs9nHkwg1AFqUAFa39dyBc',
+      }),
+    })
 
-    const alice = Jwk.fromJson({
-      crv: 'X25519',
-      kty: 'OKP',
-      d: 'i9KuFhSzEBsiv3PKVL5115OCdsqQai5nj_Flzfkw5jU',
-      x: 'Knbm_BcdQr7WIoz-uqit9M0wbcfEr6y-9UfIZ8QnBD4',
-    }).toKey()
+    const alice = Key.fromJwk({
+      jwk: Jwk.fromJson({
+        crv: 'X25519',
+        kty: 'OKP',
+        d: 'i9KuFhSzEBsiv3PKVL5115OCdsqQai5nj_Flzfkw5jU',
+        x: 'Knbm_BcdQr7WIoz-uqit9M0wbcfEr6y-9UfIZ8QnBD4',
+      }),
+    })
 
-    const bob = Jwk.fromJson({
-      crv: 'X25519',
-      kty: 'OKP',
-      d: '1gDirl_r_Y3-qUa3WXHgEXrrEHngWThU3c9zj9A2uBg',
-      x: 'BT7aR0ItXfeDAldeeOlXL_wXqp-j5FltT0vRSG16kRw',
-    }).toKey()
+    const bob = Key.fromJwk({
+      jwk: Jwk.fromJson({
+        crv: 'X25519',
+        kty: 'OKP',
+        d: '1gDirl_r_Y3-qUa3WXHgEXrrEHngWThU3c9zj9A2uBg',
+        x: 'BT7aR0ItXfeDAldeeOlXL_wXqp-j5FltT0vRSG16kRw',
+      }),
+    })
 
     const alg = 'ECDH-1PU+A128KW'
     const apu = 'Alice'
