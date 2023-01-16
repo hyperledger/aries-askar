@@ -15,9 +15,12 @@ pub use crate::crypto::kdf::argon2::SaltSize;
 pub const LEVEL_INTERACTIVE: &'static str = "13:int";
 pub const LEVEL_MODERATE: &'static str = "13:mod";
 
+/// Argon2i derivation methods
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Level {
+    /// Interactive method
     Interactive,
+    /// Stronger Moderate method
     Moderate,
 }
 
@@ -28,7 +31,7 @@ impl Default for Level {
 }
 
 impl Level {
-    pub fn from_str(level: &str) -> Option<Self> {
+    pub(crate) fn from_str(level: &str) -> Option<Self> {
         match level {
             "int" | LEVEL_INTERACTIVE => Some(Self::Interactive),
             "mod" | LEVEL_MODERATE => Some(Self::Moderate),
@@ -37,14 +40,14 @@ impl Level {
         }
     }
 
-    pub fn as_str(&self) -> &'static str {
+    pub(crate) fn as_str(&self) -> &'static str {
         match self {
             Self::Interactive => LEVEL_INTERACTIVE,
             Self::Moderate => LEVEL_MODERATE,
         }
     }
 
-    pub fn generate_salt(&self) -> ArrayKey<SaltSize> {
+    pub(crate) fn generate_salt(&self) -> ArrayKey<SaltSize> {
         ArrayKey::random()
     }
 
@@ -55,7 +58,7 @@ impl Level {
         }
     }
 
-    pub fn derive_key(&self, password: &[u8], salt: &[u8]) -> Result<StoreKey, Error> {
+    pub(crate) fn derive_key(&self, password: &[u8], salt: &[u8]) -> Result<StoreKey, Error> {
         ArrayKey::<<StoreKeyType as KeyMeta>::KeySize>::temp(|key| {
             Argon2::new(password, salt, *self.params())?.derive_key_bytes(key)?;
             Ok(StoreKey::from(StoreKeyType::from_secret_bytes(&*key)?))
