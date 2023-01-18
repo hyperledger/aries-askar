@@ -108,9 +108,13 @@ describe('Store and Session', () => {
     const session = await store.openSession()
 
     await session.insert(firstEntry)
-
-    const found = await store.scan(firstEntry).fetchAll()
-    expect(found[0]).toMatchObject(firstEntry)
+    await session.insert(secondEntry)
+    const found = await store.scan({ category: firstEntry.category }).fetchAll()
+    expect(found.length).toBe(2)
+    // value is converted to string, so we expect it as string at this level
+    expect(found).toEqual(
+      expect.arrayContaining([firstEntry, { ...secondEntry, value: JSON.stringify(secondEntry.value) }])
+    )
 
     await session.close()
   })

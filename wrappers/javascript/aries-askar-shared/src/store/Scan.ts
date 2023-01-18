@@ -55,21 +55,33 @@ export class Scan {
         profile: this.profile,
         category: this.category,
       })
-
-      this._listHandle = await ariesAskar.scanNext({ scanHandle: this._handle })
     }
-    // eslint-disable-next-line no-constant-condition
-    while (true) {
-      if (!this._listHandle) break
-      const list = new EntryList({ handle: this._listHandle })
-      const entry = list.find(Boolean)
-      if (entry) {
-        cb(entry)
-        break
-      }
+
+    // Allow max of 256 per fetch operation
+    const chunk = this.limit ? Math.min(256, this.limit) : 256
+    let recordCount = 0
+    // Loop while limit not reached (or no limit specified)
+    while (!this.limit || recordCount < this.limit) {
       // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       this._listHandle = await ariesAskar.scanNext({ scanHandle: this._handle! })
+
+      const list = new EntryList({ handle: this._listHandle })
+
+      recordCount = recordCount + list.length
+      for (let index = 0; index < list.length; index++) {
+        const entry = list.getEntryByIndex(index)
+        cb(entry)
+      }
+
+      // If the number of records returned is less than chunk
+      // It means we reached the end of the iterator (no more records)
+      if (list.length < chunk) {
+        break
+      }
     }
+
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+    ariesAskar.scanFree({ scanHandle: this._handle! })
   }
 
   public async fetchAll() {
