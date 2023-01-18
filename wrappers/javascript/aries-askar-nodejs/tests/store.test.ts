@@ -1,4 +1,4 @@
-import { Store, StoreKeyMethod, Key, KeyAlgs, AriesAskarError, KeyMethod } from 'aries-askar-shared'
+import { Store, StoreKeyMethod, Key, KeyAlgs, AriesAskarError } from 'aries-askar-shared'
 
 import { firstEntry, getRawKey, secondEntry, setup, setupWallet, testStoreUri } from './utils'
 
@@ -12,6 +12,41 @@ describe('Store and Session', () => {
 
   afterEach(async () => {
     await store.close(true)
+  })
+
+  test('Rekey', async () => {
+    const initialKey = Store.generateRawKey()
+
+    let newStore = await Store.provision({
+      recreate: true,
+      profile: 'rekey',
+      uri: 'sqlite://./rekey.db:',
+      keyMethod: StoreKeyMethod.Raw,
+      passKey: initialKey,
+    })
+
+    const newKey = Store.generateRawKey()
+    await newStore.rekey({ keyMethod: StoreKeyMethod.Raw, passKey: newKey })
+
+    await newStore.close()
+
+    await expect(
+      Store.open({
+        profile: 'rekey',
+        uri: 'sqlite://tmp/rekey.db:',
+        keyMethod: StoreKeyMethod.Raw,
+        passKey: initialKey,
+      })
+    ).rejects.toThrowError(AriesAskarError)
+
+    newStore = await Store.open({
+      profile: 'rekey',
+      uri: 'sqlite://./rekey.db:',
+      keyMethod: StoreKeyMethod.Raw,
+      passKey: newKey,
+    })
+
+    await newStore.close(true)
   })
 
   test('Insert', async () => {
