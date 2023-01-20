@@ -64,6 +64,7 @@ pub trait TagQueryEncoder {
         enc_name: Self::Arg,
         enc_value: Self::Arg,
         is_plaintext: bool,
+        negate: bool,
     ) -> Result<Option<Self::Clause>, Error>;
 
     fn encode_in_clause(
@@ -97,7 +98,6 @@ pub enum CompareOp {
     Lt,
     Lte,
     Like,
-    NotLike,
 }
 
 impl CompareOp {
@@ -110,7 +110,6 @@ impl CompareOp {
             Self::Lt => "<",
             Self::Lte => "<=",
             Self::Like => "LIKE",
-            Self::NotLike => "NOT LIKE",
         }
     }
 
@@ -121,19 +120,6 @@ impl CompareOp {
             Self::Gt | Self::Gte => Some(">="),
             Self::Lt | Self::Lte => Some("<="),
             _ => None,
-        }
-    }
-
-    pub fn negate(&self) -> Self {
-        match self {
-            Self::Eq => Self::Neq,
-            Self::Neq => Self::Eq,
-            Self::Gt => Self::Lte,
-            Self::Gte => Self::Lt,
-            Self::Lt => Self::Gte,
-            Self::Lte => Self::Gt,
-            Self::Like => Self::NotLike,
-            Self::NotLike => Self::Like,
         }
     }
 }
@@ -212,9 +198,8 @@ where
     };
     let enc_name = enc.encode_name(name)?;
     let enc_value = enc.encode_value(value, is_plaintext)?;
-    let op = if negate { op.negate() } else { op };
 
-    enc.encode_op_clause(op, enc_name, enc_value, is_plaintext)
+    enc.encode_op_clause(op, enc_name, enc_value, is_plaintext, negate)
 }
 
 fn encode_tag_in<V, E>(
@@ -309,8 +294,13 @@ mod tests {
             name: Self::Arg,
             value: Self::Arg,
             _is_plaintext: bool,
+            negate: bool,
         ) -> Result<Option<Self::Clause>, Error> {
-            Ok(Some(format!("{} {} {}", name, op.as_sql_str(), value)))
+            let mut s = format!("{} {} {}", name, op.as_sql_str(), value);
+            if negate {
+                s = format!("NOT ({})", s);
+            }
+            Ok(Some(s))
         }
 
         fn encode_exist_clause(
@@ -417,7 +407,7 @@ mod tests {
         ]);
         let query = TagQuery::Or(vec![condition_1, condition_2]);
         let query_str = TestEncoder {}.encode_query(&query).unwrap().unwrap();
-        assert_eq!(query_str, "((enctag = encval AND ~plaintag = plainval) OR (enctag = encval AND ~plaintag != eggs))")
+        assert_eq!(query_str, "((enctag = encval AND ~plaintag = plainval) OR (enctag = encval AND NOT (~plaintag = eggs)))")
     }
 
     #[test]
@@ -444,6 +434,6 @@ mod tests {
         ]);
         let query = TagQuery::Not(Box::new(TagQuery::Or(vec![condition_1, condition_2])));
         let query_str = TestEncoder {}.encode_query(&query).unwrap().unwrap();
-        assert_eq!(query_str, "((enctag != encval OR ~plaintag != plainval) AND (enctag != encval OR ~plaintag = eggs))")
+        assert_eq!(query_str, "((NOT (enctag = encval) OR NOT (~plaintag = plainval)) AND (NOT (enctag = encval) OR ~plaintag = eggs))")
     }
 }
