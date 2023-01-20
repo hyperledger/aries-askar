@@ -6,17 +6,20 @@ use crate::{
 };
 
 mod argon2;
-use self::argon2::{Level as Argon2Level, SaltSize as Argon2Salt};
+pub use self::argon2::Level as Argon2Level;
+use self::argon2::SaltSize as Argon2Salt;
 
 pub const METHOD_ARGON2I: &'static str = "argon2i";
 
+/// Supported KDF methods for generating or referencing a store key
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum KdfMethod {
+    /// Argon2i derivation method
     Argon2i(Argon2Level),
 }
 
 impl KdfMethod {
-    pub fn from_str(method: &str) -> Option<(Self, String)> {
+    pub(crate) fn from_str(method: &str) -> Option<(Self, String)> {
         let mut method_and_detail = method.splitn(3, ':');
         let prefix = method_and_detail.next();
         if prefix != Some(PREFIX_KDF) {
@@ -45,7 +48,7 @@ impl KdfMethod {
         }
     }
 
-    pub fn to_string(&self, detail: Option<&str>) -> String {
+    pub(crate) fn to_string(&self, detail: Option<&str>) -> String {
         match self {
             Self::Argon2i(level) => format!(
                 "{}:{}:{}{}",
@@ -57,7 +60,7 @@ impl KdfMethod {
         }
     }
 
-    pub fn derive_new_key(&self, password: &str) -> Result<(StoreKey, String), Error> {
+    pub(crate) fn derive_new_key(&self, password: &str) -> Result<(StoreKey, String), Error> {
         match self {
             Self::Argon2i(level) => {
                 let salt = level.generate_salt();
@@ -68,7 +71,7 @@ impl KdfMethod {
         }
     }
 
-    pub fn derive_key(&self, password: &str, detail: &str) -> Result<StoreKey, Error> {
+    pub(crate) fn derive_key(&self, password: &str, detail: &str) -> Result<StoreKey, Error> {
         match self {
             Self::Argon2i(level) => {
                 let salt = parse_salt::<Argon2Salt>(detail)?;
