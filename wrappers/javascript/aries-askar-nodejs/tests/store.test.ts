@@ -1,4 +1,5 @@
 import { Store, StoreKeyMethod, Key, KeyAlgs, AriesAskarError } from 'aries-askar-shared'
+import { promises } from 'fs'
 
 import { firstEntry, getRawKey, secondEntry, setup, setupWallet, testStoreUri } from './utils'
 
@@ -17,10 +18,18 @@ describe('Store and Session', () => {
   test('Rekey', async () => {
     const initialKey = Store.generateRawKey()
 
+    // Make sure db directory exists
+    const storagePath = './tmp'
+    try {
+      await promises.access(storagePath)
+    } catch {
+      await promises.mkdir(storagePath)
+    }
+
     let newStore = await Store.provision({
       recreate: true,
       profile: 'rekey',
-      uri: 'sqlite://./tmp/rekey.db',
+      uri: `sqlite://${storagePath}/rekey.db`,
       keyMethod: StoreKeyMethod.Raw,
       passKey: initialKey,
     })
@@ -33,7 +42,7 @@ describe('Store and Session', () => {
     await expect(
       Store.open({
         profile: 'rekey',
-        uri: 'sqlite://./tmp/rekey.db',
+        uri: `sqlite://${storagePath}/rekey.db`,
         keyMethod: StoreKeyMethod.Raw,
         passKey: initialKey,
       })
@@ -41,7 +50,7 @@ describe('Store and Session', () => {
 
     newStore = await Store.open({
       profile: 'rekey',
-      uri: 'sqlite://./tmp/rekey.db',
+      uri: `sqlite://${storagePath}/rekey.db`,
       keyMethod: StoreKeyMethod.Raw,
       passKey: newKey,
     })
