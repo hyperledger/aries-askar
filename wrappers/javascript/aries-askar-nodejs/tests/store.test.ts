@@ -20,7 +20,7 @@ describe('Store and Session', () => {
     let newStore = await Store.provision({
       recreate: true,
       profile: 'rekey',
-      uri: 'sqlite://./rekey.db',
+      uri: 'sqlite://./tmp/rekey.db',
       keyMethod: StoreKeyMethod.Raw,
       passKey: initialKey,
     })
@@ -33,7 +33,7 @@ describe('Store and Session', () => {
     await expect(
       Store.open({
         profile: 'rekey',
-        uri: 'sqlite://./rekey.db',
+        uri: 'sqlite://./tmp/rekey.db',
         keyMethod: StoreKeyMethod.Raw,
         passKey: initialKey,
       })
@@ -41,7 +41,7 @@ describe('Store and Session', () => {
 
     newStore = await Store.open({
       profile: 'rekey',
-      uri: 'sqlite://./rekey.db',
+      uri: 'sqlite://./tmp/rekey.db',
       keyMethod: StoreKeyMethod.Raw,
       passKey: newKey,
     })
