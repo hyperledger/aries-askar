@@ -1,6 +1,6 @@
 {
   "name": "@hyperledger/aries-askar-react-native",
-  "version": "0.0.0",
+  "version": "0.1.0-dev.1",
   "license": "Apache-2.0",
   "description": "React Native wrapper for Aries Askar",
   "main": "build/index",
@@ -39,7 +39,7 @@
     "compile": "tsc -p tsconfig.build.json"
   },
   "dependencies": {
-    "@hyperledger/aries-askar-shared": "*"
+    "@hyperledger/aries-askar-shared": "0.1.0-dev.1"
   },
   "devDependencies": {
     "@types/react": "^16.9.19",
