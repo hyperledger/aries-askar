@@ -10,15 +10,15 @@ name: "Aries-Askar"
   workflow_dispatch:
     inputs:
       publish-binaries:
-        description: 'Publish Binaries to Release (will create a release if no release exists for branch or tag)'
+        description: "Publish Binaries to Release (will create a release if no release exists for branch or tag)"
         required: true
         default: false
-        type: boolean    
+        type: boolean
       publish-wrappers:
-        description: 'Publish Wrappers to Registries'
+        description: "Publish Wrappers to Registries"
         required: true
         default: false
-        type: boolean        
+        type: boolean
 
 jobs:
   check:
@@ -89,18 +89,12 @@ jobs:
           command: test
           args: --manifest-path ./askar-crypto/Cargo.toml --no-default-features
 
-      - name: Test askar-wql
-        uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: --manifest-path ./askar-wql/Cargo.toml
-
       - name: Test askar-bbs no_std
         uses: actions-rs/cargo@v1
         with:
           command: test
           args: --manifest-path ./askar-bbs/Cargo.toml --no-default-features
-  
+
   build-release:
     name: Build Library
     needs: [check]
@@ -152,7 +146,7 @@ jobs:
         env:
           BUILD_TARGET: ${{ matrix.target }}
           BUILD_TOOLCHAIN: ${{ matrix.toolchain || 'stable' }}
-          # LIBSQLITE3_FLAGS: SQLITE_DEBUG SQLITE_MEMDEBUG          
+          # LIBSQLITE3_FLAGS: SQLITE_DEBUG SQLITE_MEMDEBUG
         shell: sh
         run: ./build.sh
 
@@ -185,7 +179,7 @@ jobs:
           command: c
           cwd: release-artifacts
           files: .
-          outPath: 'library-${{ matrix.arch }}.tar.gz'
+          outPath: "library-${{ matrix.arch }}.tar.gz"
 
       - name: Add library artifacts to release
         if: |
@@ -194,7 +188,7 @@ jobs:
         uses: svenstaro/upload-release-action@v2
         with:
           file: library-${{ matrix.arch }}.tar.gz
-          asset_name: 'library-${{ matrix.arch }}.tar.gz'
+          asset_name: "library-${{ matrix.arch }}.tar.gz"
 
   build-py:
     name: Build and Test Python Wrapper

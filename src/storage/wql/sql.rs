@@ -55,6 +55,7 @@ where
         enc_name: Self::Arg,
         enc_value: Self::Arg,
         is_plaintext: bool,
+        negate: bool,
     ) -> Result<Option<Self::Clause>, Error> {
         let idx = self.arguments.len();
         let (op_prefix, match_prefix) = match (is_plaintext, op.as_sql_str_for_prefix()) {
@@ -77,7 +78,8 @@ where
         }
 
         let query = format!(
-            "i.id IN (SELECT item_id FROM items_tags WHERE name = ${} AND value {} ${}{} AND plaintext = {})",
+            "i.id {} (SELECT item_id FROM items_tags WHERE name = ${} AND value {} ${}{} AND plaintext = {})",
+            if negate { "NOT IN" } else { "IN" },
             idx + 1,
             op.as_sql_str(),
             idx + 2,
@@ -97,7 +99,7 @@ where
         let args_in = Itertools::intersperse(std::iter::repeat("$$").take(enc_values.len()), ", ")
             .collect::<String>();
         let query = format!(
-            "i.id IN (SELECT item_id FROM items_tags WHERE name = $$ AND value {} ({}) AND plaintext = {})",
+            "i.id {} (SELECT item_id FROM items_tags WHERE name = $$ AND value IN ({}) AND plaintext = {})",
             if negate { "NOT IN" } else { "IN" },
             args_in,
             if is_plaintext { 1 } else { 0 }
@@ -185,7 +187,7 @@ mod tests {
             |value: &str| Ok(value.to_uppercase().into_bytes()),
         );
         let query_str = enc.encode_query(&query).unwrap().unwrap();
-        assert_eq!(query_str, "((i.id IN (SELECT item_id FROM items_tags WHERE name = $1 AND value = $2 AND SUBSTR(value, 1, 12) = $3 AND plaintext = 0) AND i.id IN (SELECT item_id FROM items_tags WHERE name = $4 AND value = $5 AND plaintext = 1)) OR (i.id IN (SELECT item_id FROM items_tags WHERE name = $6 AND value = $7 AND SUBSTR(value, 1, 12) = $8 AND plaintext = 0) AND i.id IN (SELECT item_id FROM items_tags WHERE name = $9 AND value != $10 AND plaintext = 1)))");
+        assert_eq!(query_str, "((i.id IN (SELECT item_id FROM items_tags WHERE name = $1 AND value = $2 AND SUBSTR(value, 1, 12) = $3 AND plaintext = 0) AND i.id IN (SELECT item_id FROM items_tags WHERE name = $4 AND value = $5 AND plaintext = 1)) OR (i.id IN (SELECT item_id FROM items_tags WHERE name = $6 AND value = $7 AND SUBSTR(value, 1, 12) = $8 AND plaintext = 0) AND i.id NOT IN (SELECT item_id FROM items_tags WHERE name = $9 AND value = $10 AND plaintext = 1)))");
         let args = enc.arguments;
         assert_eq!(
             args,
