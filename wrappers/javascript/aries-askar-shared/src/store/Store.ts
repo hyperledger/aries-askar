@@ -1,5 +1,4 @@
 import type { StoreHandle } from '../crypto'
-import type { KeyMethod } from '../enums'
 import type { StoreKeyMethod } from '../enums/StoreKeyMethod'
 
 import { ariesAskar } from '../ariesAskar'
@@ -35,6 +34,10 @@ export class Store {
 
   public async removeProfile(name: string) {
     return await ariesAskar.storeRemoveProfile({ profile: name, storeHandle: this.handle })
+  }
+
+  public async rekey({ keyMethod, passKey }: { keyMethod: StoreKeyMethod; passKey: string }) {
+    return await ariesAskar.storeRekey({ keyMethod, passKey, storeHandle: this.handle })
   }
 
   public static async provision({

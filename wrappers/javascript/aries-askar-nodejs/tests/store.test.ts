@@ -1,4 +1,5 @@
-import { Store, StoreKeyMethod, Key, KeyAlgs, AriesAskarError, KeyMethod } from 'aries-askar-shared'
+import { Store, StoreKeyMethod, Key, KeyAlgs, AriesAskarError } from 'aries-askar-shared'
+import { promises } from 'fs'
 
 import { firstEntry, getRawKey, secondEntry, setup, setupWallet, testStoreUri } from './utils'
 
@@ -12,6 +13,49 @@ describe('Store and Session', () => {
 
   afterEach(async () => {
     await store.close(true)
+  })
+
+  test('Rekey', async () => {
+    const initialKey = Store.generateRawKey()
+
+    // Make sure db directory exists
+    const storagePath = './tmp'
+    try {
+      await promises.access(storagePath)
+    } catch {
+      await promises.mkdir(storagePath)
+    }
+
+    let newStore = await Store.provision({
+      recreate: true,
+      profile: 'rekey',
+      uri: `sqlite://${storagePath}/rekey.db`,
+      keyMethod: StoreKeyMethod.Raw,
+      passKey: initialKey,
+    })
+
+    const newKey = Store.generateRawKey()
+    await newStore.rekey({ keyMethod: StoreKeyMethod.Raw, passKey: newKey })
+
+    await newStore.close()
+
+    await expect(
+      Store.open({
+        profile: 'rekey',
+        uri: `sqlite://${storagePath}/rekey.db`,
+        keyMethod: StoreKeyMethod.Raw,
+        passKey: initialKey,
+      })
+    ).rejects.toThrowError(AriesAskarError)
+
+    newStore = await Store.open({
+      profile: 'rekey',
+      uri: `sqlite://${storagePath}/rekey.db`,
+      keyMethod: StoreKeyMethod.Raw,
+      passKey: newKey,
+    })
+
+    await newStore.close(true)
   })
 
   test('Insert', async () => {
