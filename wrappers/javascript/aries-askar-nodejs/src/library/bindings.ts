@@ -21,7 +21,6 @@ import {
   SecretBufferStruct,
   SecretBufferStructPtr,
   ByteBufferStruct,
-  EncryptedBufferStruct,
   AeadParamsStructPtr,
   EncryptedBufferStructPtr,
 } from '../ffi'
