@@ -27,7 +27,7 @@ try {
   try {
     require('@hyperledger/aries-askar-react-native')
   } catch (error) {
-    throw new Error('Could not load Indy VDR bindings')
+    throw new Error('Could not load Aries Askar bindings')
   }
 }
 ```
