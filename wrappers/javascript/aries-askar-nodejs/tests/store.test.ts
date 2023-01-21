@@ -1,4 +1,4 @@
-import { Store, StoreKeyMethod, Key, KeyAlgs, AriesAskarError } from 'aries-askar-shared'
+import { Store, StoreKeyMethod, Key, KeyAlgs, AriesAskarError } from '@hyperledger/aries-askar-shared'
 import { promises } from 'fs'
 
 import { firstEntry, getRawKey, secondEntry, setup, setupWallet, testStoreUri } from './utils'

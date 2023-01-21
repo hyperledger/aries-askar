@@ -1,17 +1,17 @@
-# aries-askar-react-native
+# Aries Askar React Native
 
 React Native wrapper around Aries Askar
 
 ## Installation
 
 ```sh
-npm install aries-askar-react-native
+npm install @hyperledger/aries-askar-react-native
 ```
 
 ## Usage
 
 ```js
-import { multiply } from 'aries-askar-react-native'
+import { multiply } from '@hyperledger/aries-askar-react-native'
 
 // ...
 

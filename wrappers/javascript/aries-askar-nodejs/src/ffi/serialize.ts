@@ -1,6 +1,6 @@
 import type { ByteBufferStruct, SecretBufferStruct } from './structures'
 
-import { Key, ArcHandle, StoreHandle, SessionHandle, ScanHandle, Jwk } from 'aries-askar-shared'
+import { Key, ArcHandle, StoreHandle, SessionHandle, ScanHandle, Jwk } from '@hyperledger/aries-askar-shared'
 import { NULL } from 'ref-napi'
 
 import { uint8arrayToByteBufferStruct } from './conversion'

@@ -8,6 +8,6 @@ const module = NativeModules.AriesAskar as Module
 if (!module.install()) throw Error('Unable to install the turboModule: ariesAskar')
 
 // Reexport everything from shared
-export * from 'aries-askar-shared'
+export * from '@hyperledger/aries-askar-shared'
 
 export { ReactNativeAriesAskar } from './ReactNativeAriesAskar'

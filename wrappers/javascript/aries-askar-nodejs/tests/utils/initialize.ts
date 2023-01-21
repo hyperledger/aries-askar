@@ -1,4 +1,4 @@
-import { ariesAskar, LogLevel, registerAriesAskar, Store, StoreKeyMethod } from 'aries-askar-shared'
+import { ariesAskar, LogLevel, registerAriesAskar, Store, StoreKeyMethod } from '@hyperledger/aries-askar-shared'
 
 import { NodeJSAriesAskar } from '../../src'
 

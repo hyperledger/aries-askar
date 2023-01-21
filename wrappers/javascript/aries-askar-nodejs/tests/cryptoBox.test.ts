@@ -1,4 +1,4 @@
-import { CryptoBox, Key, KeyAlgs } from 'aries-askar-shared'
+import { CryptoBox, Key, KeyAlgs } from '@hyperledger/aries-askar-shared'
 
 import { setup } from './utils'
 
