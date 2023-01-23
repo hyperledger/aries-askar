@@ -687,7 +687,7 @@ export class NodeJSAriesAskar implements AriesAskar {
           profile,
           category,
           tagFilter,
-          +offset || -1,
+          +offset || 0,
           +limit || -1,
           cb,
           cbId
