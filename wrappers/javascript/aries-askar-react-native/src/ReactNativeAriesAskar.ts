@@ -420,8 +420,8 @@ export class ReactNativeAriesAskar implements AriesAskar {
         cb,
         category,
         storeHandle,
+        offset: offset || 0,
         limit: limit || -1,
-        offset: offset || -1,
         profile,
         tagFilter,
       })
