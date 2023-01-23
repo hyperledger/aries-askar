@@ -165,7 +165,6 @@ impl<K, V> Default for AbstractQuery<K, V> {
     }
 }
 
-#[cfg(feature = "serde_support")]
 mod serde_support {
     use std::string;
 
