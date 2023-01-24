@@ -1,6 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-call */
-/* eslint-disable @typescript-eslint/no-unsafe-assignment */
-/* eslint-disable @typescript-eslint/no-unsafe-member-access */
 import { registerAriesAskar } from '@hyperledger/aries-askar-shared'
 import { NativeModules } from 'react-native'
 
