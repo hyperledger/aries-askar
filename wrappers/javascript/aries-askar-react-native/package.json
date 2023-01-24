@@ -3,7 +3,6 @@
   "version": "0.1.0-dev.1",
   "license": "Apache-2.0",
   "description": "React Native wrapper for Aries Askar",
-  "private": true,
   "main": "build/index",
   "source": "src/index",
   "homepage": "https://github.com/hyperledger/aries-askar/tree/main/wrappers/javascript/aries-askar-react-native",
