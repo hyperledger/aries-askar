@@ -9,6 +9,7 @@ export enum KeyAlgs {
   AesA256Kw = 'a256kw',
   Bls12381G1 = 'bls12381g1',
   Bls12381G2 = 'bls12381g2',
+  Bls12381G1G2 = 'bls12381g1g2',
   Chacha20C20P = 'c20p',
   Chacha20XC20P = 'xc20p',
   Ed25519 = 'ed25519',

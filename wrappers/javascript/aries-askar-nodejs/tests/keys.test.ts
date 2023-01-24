@@ -1,4 +1,4 @@
-import { Key, KeyAlgs } from 'aries-askar-shared'
+import { Key, KeyAlgs, KeyMethod } from 'aries-askar-shared'
 
 import { setup } from './utils'
 
@@ -38,6 +38,17 @@ describe('keys', () => {
       crv: 'BLS12381_G1',
       kty: 'OKP',
       x: 'hsjb9FSBUJXuB1fCluEcUBLeAPgIbnZGfxPKyeN3LVjQaKFWzXfNtMFAY8VL-eu-',
+    })
+  })
+
+  test('Bls G1G2 Keygen', () => {
+    const seed = Uint8Array.from(Buffer.from('testseed000000000000000000000001'))
+    const key = Key.fromSeed({ algorithm: KeyAlgs.Bls12381G1G2, seed, method: KeyMethod.BlsKeygen })
+
+    expect(key.jwkPublic).toMatchObject({
+      crv: 'BLS12381_G1G2',
+      kty: 'OKP',
+      x: 'h56eYI8Qkq5hitICb-ik8wRTzcn6Fd4iY8aDNVc9q1xoPS3lh4DB_B4wNtar1HrViZIOsO6BgLV72zCrBE2ym3DEhDYcghnUMO4O8IVVD8yS-C_zu6OA3L-ny-AO4rbkAo-WuApZEjn83LY98UtoKpTufn4PCUFVQZzJNH_gXWHR3oDspJaCbOajBfm5qj6d',
     })
   })
 
