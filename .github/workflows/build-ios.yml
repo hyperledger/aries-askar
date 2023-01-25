@@ -23,7 +23,7 @@ jobs:
         uses: dtolnay/rust-toolchain@e
         with:
           targets: ${{ matrix.architecture }}
-      - run: cargo build --target ${{matrix.architecture}} --release
+      - run: cargo build --lib --target ${{matrix.architecture}} --release
       - name: Save static library
         uses: actions/upload-artifact@v3
         with:
