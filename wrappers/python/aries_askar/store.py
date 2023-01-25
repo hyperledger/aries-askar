@@ -3,13 +3,11 @@
 import json
 
 from typing import Optional, Sequence, Union
-from weakref import ref
 
 from cached_property import cached_property
 
 from . import bindings
 from .bindings import (
-    ByteBuffer,
     EntryListHandle,
     KeyEntryListHandle,
     ScanHandle,
