@@ -172,9 +172,12 @@ jobs:
 
     strategy:
       matrix:
-        arch: [linux-x86_64, darwin-universal, windows-x86_64]
+        arch: [linux-aarch64, linux-x86_64, darwin-universal, windows-x86_64]
         python-version: ["3.8"]
         include:
+          - os: ubuntu-latest
+            arch: linux-aarch64
+            plat-name: manylinux2014_aarch64
           - os: ubuntu-latest
             arch: linux-x86_64
             plat-name: manylinux2014_x86_64
@@ -194,12 +197,14 @@ jobs:
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v4
         with:
+          cache: pip
           python-version: ${{ matrix.python-version }}
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install setuptools wheel twine auditwheel
+
       - name: Fetch library artifacts
         uses: actions/download-artifact@v3
         with:
@@ -220,11 +225,10 @@ jobs:
           python setup.py bdist_wheel --python-tag=py3 --plat-name=${{ matrix.plat-name }}
         working-directory: wrappers/python
 
-      - if: "runner.os == 'Linux'"
-        name: Audit wheel
-        run: auditwheel show wrappers/python/dist/*
-
       - name: Test package
+        # FIXME cross platform test the python package
+        # maybe use the cross docker image?
+        if: "matrix.arch != 'linux-aarch64'"
         shell: sh
         run: |
           pip install pytest pytest-asyncio dist/*
@@ -241,6 +245,10 @@ jobs:
           no_proxy: "*" # python issue 30385
           RUST_BACKTRACE: full
           # RUST_LOG: debug
+
+      - if: "runner.os == 'Linux'"
+        name: Audit wheel
+        run: auditwheel show wrappers/python/dist/*
 
       - if: |
           github.event_name == 'release' ||
