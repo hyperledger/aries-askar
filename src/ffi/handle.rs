@@ -17,15 +17,13 @@ impl<T: Send> ArcHandle<T> {
 
     pub fn load(&self) -> Result<Arc<T>, Error> {
         self.validate()?;
-        unsafe {
-            let result = mem::ManuallyDrop::new(Arc::from_raw(self.0));
-            Ok((&*result).clone())
-        }
+        let result = unsafe { mem::ManuallyDrop::new(Arc::from_raw(self.0)) };
+        Ok((&*result).clone())
     }
 
     pub fn remove(&self) {
-        unsafe {
-            if !self.0.is_null() {
+        if !self.0.is_null() {
+            unsafe {
                 // Drop the initial reference. There could be others outstanding.
                 Arc::decrement_strong_count(self.0);
             }
