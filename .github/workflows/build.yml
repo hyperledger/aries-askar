@@ -385,7 +385,7 @@ jobs:
           xcodebuild -create-xcframework \
             -library aarch64-apple-ios/libaries_askar.a -headers ./include/libaries_askar.h \
             -library libaries_askar.a                   -headers ./include/libaries_askar.h \
-            -output output/libaries_askar.xcframework
+            -output output/aries_askar.xcframework
       - name: Save xcframework
         uses: actions/upload-artifact@v3
         with:
