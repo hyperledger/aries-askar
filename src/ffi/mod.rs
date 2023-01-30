@@ -23,6 +23,7 @@ mod log;
 mod result_list;
 mod secret;
 mod store;
+mod tags;
 
 #[cfg(all(feature = "migration", feature = "sqlite"))]
 mod migration;
@@ -66,7 +67,7 @@ impl<T, F: Fn(Result<T, Error>)> Drop for EnsureCallback<T, F> {
 
 #[no_mangle]
 pub extern "C" fn askar_terminate() {
-    crate::future::shutdown(Duration::from_secs(5));
+    crate::storage::future::shutdown(Duration::from_secs(5));
 }
 
 #[no_mangle]

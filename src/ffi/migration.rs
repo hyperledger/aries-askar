@@ -1,6 +1,7 @@
 use ffi_support::FfiStr;
 
-use crate::{future::spawn_ok, migration::IndySdkToAriesAskarMigration};
+use crate::storage::future::spawn_ok;
+use crate::storage::migration::IndySdkToAriesAskarMigration;
 
 use super::{
     error::{set_last_error, ErrorCode},
