@@ -28,7 +28,7 @@ pub mod backend;
 pub use self::backend::{Backend, BackendSession, ManageBackend};
 
 #[cfg(feature = "any")]
-pub use self::backend::any;
+pub mod any;
 
 #[cfg(feature = "postgres")]
 pub use self::backend::postgres;
