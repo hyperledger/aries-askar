@@ -1,4 +1,4 @@
-import { Ecdh1PU, EcdhEs, Jwk, Key, KeyAlgs } from 'aries-askar-shared'
+import { Ecdh1PU, EcdhEs, Jwk, Key, KeyAlgs } from '@hyperledger/aries-askar-shared'
 
 import { base64url, setup } from './utils'
 

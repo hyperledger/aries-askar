@@ -1,6 +1,6 @@
-import type { AriesAskarErrorObject } from 'aries-askar-shared'
+import type { AriesAskarErrorObject } from '@hyperledger/aries-askar-shared'
 
-import { AriesAskarError } from 'aries-askar-shared'
+import { AriesAskarError } from '@hyperledger/aries-askar-shared'
 
 import { allocateStringBuffer } from './ffi'
 import { nativeAriesAskar } from './library'

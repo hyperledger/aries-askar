@@ -2,7 +2,7 @@ import type { ByteBufferType, EncryptedBufferType } from './structures'
 import type { TypedArray } from 'ref-array-di'
 import type { Pointer } from 'ref-napi'
 
-import { EncryptedBuffer } from 'aries-askar-shared'
+import { EncryptedBuffer } from '@hyperledger/aries-askar-shared'
 import { reinterpret } from 'ref-napi'
 
 import { ByteBufferStruct } from './structures'

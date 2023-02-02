@@ -1,4 +1,4 @@
-import { Key, KeyAlgs, KeyMethod } from 'aries-askar-shared'
+import { Key, KeyAlgs, KeyMethod } from '@hyperledger/aries-askar-shared'
 
 import { setup } from './utils'
 

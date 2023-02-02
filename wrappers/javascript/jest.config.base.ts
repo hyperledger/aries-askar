@@ -6,7 +6,8 @@ const config: Config.InitialOptions = {
   verbose: true,
   testMatch: ['**/?(*.)+(spec|test).[tj]s?(x)'],
   moduleNameMapper: {
-    'aries-askar-shared': ['<rootDir>/../aries-askar-shared/src'],
+    '@hyperledger/aries-askar-shared': ['<rootDir>/../aries-askar-shared/src'],
+    '@hyperledger/aries-askar-nodejs': ['<rootDir>/src'],
   },
   globals: {
     'ts-jest': {

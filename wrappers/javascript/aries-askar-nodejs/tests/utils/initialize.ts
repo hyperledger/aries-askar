@@ -1,6 +1,5 @@
-import { ariesAskar, LogLevel, registerAriesAskar, Store, StoreKeyMethod } from 'aries-askar-shared'
-
-import { NodeJSAriesAskar } from '../../src'
+import '@hyperledger/aries-askar-nodejs'
+import { ariesAskar, LogLevel, Store, StoreKeyMethod } from '@hyperledger/aries-askar-shared'
 
 export const getRawKey = () => Store.generateRawKey(Buffer.from('00000000000000000000000000000My1'))
 export const testStoreUri = process.env.URI || 'sqlite://:memory:'
@@ -14,7 +13,6 @@ const fnOnce = (fn: () => void) => {
 }
 
 export const setup = () => {
-  registerAriesAskar({ askar: new NodeJSAriesAskar() })
   fnOnce(
     () =>
       process.env.LOG &&
