@@ -1,8 +1,8 @@
-name: "Aries-Askar"
+name: 'Aries-Askar'
 
-"on":
+on:
   push:
-    branches: "**"
+    branches: [main]
   pull_request:
     branches: [main]
   release:
@@ -10,12 +10,12 @@ name: "Aries-Askar"
   workflow_dispatch:
     inputs:
       publish-binaries:
-        description: "Publish Binaries to Release (will create a release if no release exists for branch or tag)"
+        description: 'Publish Binaries to Release (will create a release if no release exists for branch or tag)'
         required: true
         default: false
         type: boolean
       publish-wrappers:
-        description: "Publish Wrappers to Registries"
+        description: 'Publish Wrappers to Registries'
         required: true
         default: false
         type: boolean
@@ -36,7 +36,7 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: "1.58.0"
+          toolchain: '1.58.0'
           components: clippy, rustfmt
 
       - name: Cache cargo resources
@@ -69,10 +69,10 @@ jobs:
           RUST_BACKTRACE: full
           # RUST_LOG: debug
 
-      - name: Test askar-crypto no_std
+      - name: Test askar-crypto no default features
         run: cargo test --manifest-path ./askar-crypto/Cargo.toml --no-default-features
 
-      - name: Test askar-bbs no_std
+      - name: Test askar-bbs no default features
         run: cargo test --manifest-path ./askar-bbs/Cargo.toml --no-default-features
 
   build-release:
@@ -112,14 +112,14 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: "1.58.0"
+          toolchain: '1.58.0'
 
       - name: Cache cargo resources
         uses: Swatinem/rust-cache@v2
         with:
           sharedKey: check
 
-      - if: "!matrix.use_cross"
+      - if: '!matrix.use_cross'
         name: Build library
         env:
           BUILD_TARGET: ${{ matrix.target }}
@@ -155,7 +155,7 @@ jobs:
           command: c
           cwd: release-artifacts
           files: .
-          outPath: "library-${{ matrix.arch }}.tar.gz"
+          outPath: 'library-${{ matrix.arch }}.tar.gz'
 
       - name: Add library artifacts to release
         if: |
@@ -164,7 +164,7 @@ jobs:
         uses: svenstaro/upload-release-action@v2
         with:
           file: library-${{ matrix.arch }}.tar.gz
-          asset_name: "library-${{ matrix.arch }}.tar.gz"
+          asset_name: 'library-${{ matrix.arch }}.tar.gz'
 
   build-py:
     name: Build and Test Python Wrapper
@@ -173,7 +173,7 @@ jobs:
     strategy:
       matrix:
         arch: [linux-aarch64, linux-x86_64, darwin-universal, windows-x86_64]
-        python-version: ["3.8"]
+        python-version: ['3.8']
         include:
           - os: ubuntu-latest
             arch: linux-aarch64
@@ -241,7 +241,7 @@ jobs:
           fi
         working-directory: wrappers/python
         env:
-          no_proxy: "*" # python issue 30385
+          no_proxy: '*' # python issue 30385
           RUST_BACKTRACE: full
           # RUST_LOG: debug
 
@@ -342,7 +342,7 @@ jobs:
         uses: actions/upload-artifact@v3
         with:
           name: ${{ matrix.architecture}}
-          path: target/${{ matrix.architecture }}/release/libaries_askar.a
+          path: target/${{ matrix.architecture }}/release/libaries_askar.dylib
 
   build-android:
     name: Build library (Android)
@@ -375,22 +375,18 @@ jobs:
 
     steps:
       - uses: actions/checkout@v3
-      - name: Fetch static libraries
+      - name: Fetch dynamic libraries
         uses: actions/download-artifact@v3
       - run: >
-          lipo -create aarch64-apple-ios-sim/libaries_askar.a \
-                       x86_64-apple-ios/libaries_askar.a \
-               -output libaries_askar.a
-      - run: >
-          xcodebuild -create-xcframework \
-            -library aarch64-apple-ios/libaries_askar.a -headers ./include/libaries_askar.h \
-            -library libaries_askar.a                   -headers ./include/libaries_askar.h \
-            -output output/aries_askar.xcframework
+          ./build-xcframework.sh aarch64-apple-ios \
+                                 aarch64-apple-ios-sim \
+                                 x86_64-apple-ios \
+                                 include
       - name: Save xcframework
         uses: actions/upload-artifact@v3
         with:
           name: aries_askar.xcframework
-          path: output/
+          path: out
       - uses: geekyeggo/delete-artifact@v2
         with:
           name: |
@@ -454,10 +450,10 @@ jobs:
         with:
           command: c
           files: ./mobile
-          outPath: "library-ios-android.tar.gz"
+          outPath: 'library-ios-android.tar.gz'
 
       - name: Add library artifacts to release
         uses: svenstaro/upload-release-action@v2
         with:
           file: library-ios-android.tar.gz
-          asset_name: "library-ios-android.tar.gz"
+          asset_name: 'library-ios-android.tar.gz'
