@@ -19,7 +19,7 @@ Pod::Spec.new do |s|
     :USE_HEADERMAP => "No"
   }
 
-  s.ios.vendored_frameworks = "ios/Frameworks/aries_askar.xcframework"
+  s.ios.vendored_frameworks = "native/mobile/ios/aries_askar.xcframework"
 
   s.source_files = "ios/**/*.{h,m,mm}", "cpp/**/*.{h,cpp}"
   

@@ -107,7 +107,7 @@ android {
 
   sourceSets {
     main {
-      jniLibs.srcDirs = ['libs']
+      jniLibs.srcDirs = ['../native/mobile/android']
     }
   }
 }
