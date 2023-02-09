@@ -1,9 +1,8 @@
 {
   "name": "@hyperledger/aries-askar-react-native",
-  "version": "0.1.0-dev.1",
+  "version": "0.1.0-dev.2",
   "license": "Apache-2.0",
   "description": "React Native wrapper for Aries Askar",
-  "private": true,
   "main": "build/index",
   "source": "src/index",
   "homepage": "https://github.com/hyperledger/aries-askar/tree/main/wrappers/javascript/aries-askar-react-native",
@@ -19,28 +18,25 @@
   "files": [
     "build",
     "android/src",
-    "android/libs",
     "android/build.gradle",
     "android/CMakeLists.txt",
     "android/cpp-adapter.cpp",
     "ios/**/*.h",
     "ios/**/*.mm",
-    "ios/Frameworks",
     "ios/AriesAskar.xcodeproj/project.pbxproj",
     "cpp/**/*.cpp",
     "cpp/**/*.h",
-    "aries-askar.podspec",
-    "README.md",
-    "LICENSE",
-    "package.json"
+    "aries-askar.podspec"
   ],
   "scripts": {
     "build": "yarn clean && yarn compile",
     "clean": "rimraf -rf ./build",
-    "compile": "tsc -p tsconfig.build.json"
+    "compile": "tsc -p tsconfig.build.json",
+    "install": "node-pre-gyp install"
   },
   "dependencies": {
-    "@hyperledger/aries-askar-shared": "0.1.0-dev.1"
+    "@hyperledger/aries-askar-shared": "0.1.0-dev.2",
+    "@mapbox/node-pre-gyp": "^1.0.10"
   },
   "devDependencies": {
     "@types/react": "^16.9.19",
@@ -55,5 +51,12 @@
   "peerDependencies": {
     "react": ">= 16",
     "react-native": ">= 0.66.0"
+  },
+  "binary": {
+    "module_name": "aries_askar",
+    "module_path": "native",
+    "remote_path": "v0.2.8-dev.2",
+    "host": "https://github.com/hyperledger/aries-askar/releases/download/",
+    "package_name": "library-ios-android.tar.gz"
   }
 }
