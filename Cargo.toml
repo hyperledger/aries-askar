@@ -33,6 +33,7 @@ logger = ["env_logger", "log"]
 postgres = ["sqlx", "sqlx/postgres", "sqlx/tls"]
 sqlite = ["num_cpus", "sqlx", "sqlx/sqlite"]
 pg_test = ["postgres"]
+mobile = ["sqlite", "ffi", "logger"]
 
 [dev-dependencies]
 hex-literal = "0.3"

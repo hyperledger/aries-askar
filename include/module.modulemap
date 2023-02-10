@@ -1,0 +1,4 @@
+module AskarFramework {
+    header "libaries_askar.h"
+    export *
+}

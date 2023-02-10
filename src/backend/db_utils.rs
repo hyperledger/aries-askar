@@ -252,6 +252,7 @@ impl<'q, DB: ExtDatabase> DbSessionActive<'q, DB> {
         self.inner.connection_mut().unwrap()
     }
 
+    #[allow(unused)]
     pub fn in_transaction(&self) -> bool {
         self.inner.in_transaction()
     }
