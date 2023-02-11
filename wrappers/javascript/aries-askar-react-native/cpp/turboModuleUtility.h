@@ -8,7 +8,7 @@
 
 using namespace facebook;
 
-namespace turboModuleUtility {
+namespace ariesAskarTurboModuleUtility {
 
 static const std::string errorPrefix = "Value `";
 static const std::string errorInfix = "` is not of type ";
@@ -47,4 +47,4 @@ void callbackWithResponse(CallbackId result, ErrorCode code, T response);
 jsi::ArrayBuffer byteBufferToArrayBuffer(jsi::Runtime &rt, ByteBuffer bb);
 jsi::ArrayBuffer secretBufferToArrayBuffer(jsi::Runtime &rt, SecretBuffer sb);
 
-} // namespace turboModuleUtility
+} // namespace ariesAskarTurboModuleUtility
