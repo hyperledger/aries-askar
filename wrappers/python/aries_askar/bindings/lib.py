@@ -210,7 +210,9 @@ class LibLoad:
         if result:
             raise self.get_current_error(True)
 
-    def invoke_async(self, name: str, argtypes, *args, return_type=None):
+    def invoke_async(
+        self, name: str, argtypes, *args, return_type=None
+    ) -> asyncio.Future:
         """Perform an asynchronous library function call."""
         method = self.method(name, (*argtypes, c_void_p, c_int64), restype=c_int64)
         loop = asyncio.get_event_loop()
@@ -315,6 +317,8 @@ class LibLoad:
                     "%s: Timed out waiting for callbacks to complete",
                     self._lib_name,
                 )
+
+        self.method("askar_terminate", None, restype=None)()
 
 
 class Lib:

@@ -5,3 +5,6 @@ target
 Cargo.lock
 .DS_Store
 *.tgz
+*.so
+.npmrc
+out
