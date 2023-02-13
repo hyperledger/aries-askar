@@ -2,7 +2,7 @@
 
 #include <include/libaries_askar.h>
 
-using namespace turboModuleUtility;
+using namespace ariesAskarTurboModuleUtility;
 
 namespace ariesAskar {
 
