@@ -15,6 +15,7 @@ BUNDLE_IDENTIFIER="org.hyperledger.$NAME"
 LIBRARY_NAME="lib$NAME.dylib"
 XC_FRAMEWORK_NAME="$NAME.xcframework"
 FRAMEWORK_LIBRARY_NAME=$NAME
+FRAMEWORK_MODULE_NAME="AskarFramework"
 FRAMEWORK_NAME="$FRAMEWORK_LIBRARY_NAME.framework"
 HEADER_NAME="lib$NAME.h"
 OUT_PATH="out"
@@ -106,6 +107,7 @@ Library name:           $LIBRARY_NAME
 Framework name:         $FRAMEWORK_NAME
 XCFramework name:       $XC_FRAMEWORK_NAME
 Framework library name: $FRAMEWORK_LIBRARY_NAME
+Framework module name:  $FRAMEWORK_MODULE_NAME
 
 EOF
 
@@ -125,7 +127,7 @@ cp ../../$HEADER_PATH/$HEADER_NAME Headers/$FRAMEWORK_LIBRARY_NAME.h
 mkdir Modules
 touch Modules/module.modulemap
 cat <<EOT >> Modules/module.modulemap
-framework module $FRAMEWORK_LIBRARY_NAME {
+framework module $FRAMEWORK_MODULE_NAME {
   umbrella header "$FRAMEWORK_LIBRARY_NAME.h"
 
   export *
