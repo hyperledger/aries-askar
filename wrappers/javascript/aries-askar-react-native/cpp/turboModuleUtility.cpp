@@ -2,7 +2,7 @@
 
 #include <turboModuleUtility.h>
 
-namespace turboModuleUtility {
+namespace ariesAskarTurboModuleUtility {
 
 using byteVector = std::vector<uint8_t>;
 
@@ -13,7 +13,7 @@ void registerTurboModule(jsi::Runtime &rt,
   // Setting the callInvoker for async code
   invoker = jsCallInvoker;
   // Create a TurboModuleRustHostObject
-  auto instance = std::make_shared<TurboModuleHostObject>(rt);
+  auto instance = std::make_shared<AriesAskarTurboModuleHostObject>(rt);
   // Create a JS equivalent object of the instance
   jsi::Object jsInstance = jsi::Object::createFromHostObject(rt, instance);
   // Register the object on global
@@ -325,4 +325,4 @@ jsi::ArrayBuffer secretBufferToArrayBuffer(jsi::Runtime &rt, SecretBuffer sb) {
   return arrayBuffer;
 }
 
-} // namespace turboModuleUtility
+} // namespace ariesAskarTurboModuleUtility
