@@ -125,7 +125,7 @@ extra_bindings = []
 
 
 [parse.expand]
-crates = []
+crates = ["aries-askar"]
 all_features = false
 default_features = true
 features = []
