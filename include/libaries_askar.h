@@ -211,7 +211,19 @@ typedef struct ArcHandle_FfiKeyEntryList {
 
 typedef struct ArcHandle_FfiKeyEntryList KeyEntryListHandle;
 
+typedef struct ScanHandle {
+  size_t _0;
+} ScanHandle;
+
 typedef int64_t CallbackId;
+
+typedef struct StoreHandle {
+  size_t _0;
+} StoreHandle;
+
+typedef struct SessionHandle {
+  size_t _0;
+} SessionHandle;
 
 typedef void (*LogCallback)(const void *context, int32_t level, const char *target, const char *message, const char *module_path, const char *file, int32_t line);
 
@@ -385,40 +397,40 @@ ErrorCode askar_key_wrap_key(LocalKeyHandle handle,
                              struct ByteBuffer nonce,
                              struct EncryptedBuffer *out);
 
-ErrorCode askar_scan_free(ScanHandle handle);
+ErrorCode askar_scan_free(struct ScanHandle handle);
 
-ErrorCode askar_scan_next(ScanHandle handle,
+ErrorCode askar_scan_next(struct ScanHandle handle,
                           void (*cb)(CallbackId cb_id, ErrorCode err, EntryListHandle results),
                           CallbackId cb_id);
 
-ErrorCode askar_scan_start(StoreHandle handle,
+ErrorCode askar_scan_start(struct StoreHandle handle,
                            FfiStr profile,
                            FfiStr category,
                            FfiStr tag_filter,
                            int64_t offset,
                            int64_t limit,
-                           void (*cb)(CallbackId cb_id, ErrorCode err, ScanHandle handle),
+                           void (*cb)(CallbackId cb_id, ErrorCode err, struct ScanHandle handle),
                            CallbackId cb_id);
 
-ErrorCode askar_session_close(SessionHandle handle,
+ErrorCode askar_session_close(struct SessionHandle handle,
                               int8_t commit,
                               void (*cb)(CallbackId cb_id, ErrorCode err),
                               CallbackId cb_id);
 
-ErrorCode askar_session_count(SessionHandle handle,
+ErrorCode askar_session_count(struct SessionHandle handle,
                               FfiStr category,
                               FfiStr tag_filter,
                               void (*cb)(CallbackId cb_id, ErrorCode err, int64_t count),
                               CallbackId cb_id);
 
-ErrorCode askar_session_fetch(SessionHandle handle,
+ErrorCode askar_session_fetch(struct SessionHandle handle,
                               FfiStr category,
                               FfiStr name,
                               int8_t for_update,
                               void (*cb)(CallbackId cb_id, ErrorCode err, EntryListHandle results),
                               CallbackId cb_id);
 
-ErrorCode askar_session_fetch_all(SessionHandle handle,
+ErrorCode askar_session_fetch_all(struct SessionHandle handle,
                                   FfiStr category,
                                   FfiStr tag_filter,
                                   int64_t limit,
@@ -426,7 +438,7 @@ ErrorCode askar_session_fetch_all(SessionHandle handle,
                                   void (*cb)(CallbackId cb_id, ErrorCode err, EntryListHandle results),
                                   CallbackId cb_id);
 
-ErrorCode askar_session_fetch_all_keys(SessionHandle handle,
+ErrorCode askar_session_fetch_all_keys(struct SessionHandle handle,
                                        FfiStr alg,
                                        FfiStr thumbprint,
                                        FfiStr tag_filter,
@@ -435,13 +447,13 @@ ErrorCode askar_session_fetch_all_keys(SessionHandle handle,
                                        void (*cb)(CallbackId cb_id, ErrorCode err, KeyEntryListHandle results),
                                        CallbackId cb_id);
 
-ErrorCode askar_session_fetch_key(SessionHandle handle,
+ErrorCode askar_session_fetch_key(struct SessionHandle handle,
                                   FfiStr name,
                                   int8_t for_update,
                                   void (*cb)(CallbackId cb_id, ErrorCode err, KeyEntryListHandle results),
                                   CallbackId cb_id);
 
-ErrorCode askar_session_insert_key(SessionHandle handle,
+ErrorCode askar_session_insert_key(struct SessionHandle handle,
                                    LocalKeyHandle key_handle,
                                    FfiStr name,
                                    FfiStr metadata,
@@ -450,24 +462,24 @@ ErrorCode askar_session_insert_key(SessionHandle handle,
                                    void (*cb)(CallbackId cb_id, ErrorCode err),
                                    CallbackId cb_id);
 
-ErrorCode askar_session_remove_all(SessionHandle handle,
+ErrorCode askar_session_remove_all(struct SessionHandle handle,
                                    FfiStr category,
                                    FfiStr tag_filter,
                                    void (*cb)(CallbackId cb_id, ErrorCode err, int64_t removed),
                                    CallbackId cb_id);
 
-ErrorCode askar_session_remove_key(SessionHandle handle,
+ErrorCode askar_session_remove_key(struct SessionHandle handle,
                                    FfiStr name,
                                    void (*cb)(CallbackId cb_id, ErrorCode err),
                                    CallbackId cb_id);
 
-ErrorCode askar_session_start(StoreHandle handle,
+ErrorCode askar_session_start(struct StoreHandle handle,
                               FfiStr profile,
                               int8_t as_transaction,
-                              void (*cb)(CallbackId cb_id, ErrorCode err, SessionHandle handle),
+                              void (*cb)(CallbackId cb_id, ErrorCode err, struct SessionHandle handle),
                               CallbackId cb_id);
 
-ErrorCode askar_session_update(SessionHandle handle,
+ErrorCode askar_session_update(struct SessionHandle handle,
                                int8_t operation,
                                FfiStr category,
                                FfiStr name,
@@ -477,7 +489,7 @@ ErrorCode askar_session_update(SessionHandle handle,
                                void (*cb)(CallbackId cb_id, ErrorCode err),
                                CallbackId cb_id);
 
-ErrorCode askar_session_update_key(SessionHandle handle,
+ErrorCode askar_session_update_key(struct SessionHandle handle,
                                    FfiStr name,
                                    FfiStr metadata,
                                    FfiStr tags,
@@ -495,18 +507,18 @@ ErrorCode askar_set_default_logger(void);
 
 ErrorCode askar_set_max_log_level(int32_t max_level);
 
-ErrorCode askar_store_close(StoreHandle handle,
+ErrorCode askar_store_close(struct StoreHandle handle,
                             void (*cb)(CallbackId cb_id, ErrorCode err),
                             CallbackId cb_id);
 
-ErrorCode askar_store_create_profile(StoreHandle handle,
+ErrorCode askar_store_create_profile(struct StoreHandle handle,
                                      FfiStr profile,
                                      void (*cb)(CallbackId cb_id, ErrorCode err, const char *result_p),
                                      CallbackId cb_id);
 
 ErrorCode askar_store_generate_raw_key(struct ByteBuffer seed, const char **out);
 
-ErrorCode askar_store_get_profile_name(StoreHandle handle,
+ErrorCode askar_store_get_profile_name(struct StoreHandle handle,
                                        void (*cb)(CallbackId cb_id, ErrorCode err, const char *name),
                                        CallbackId cb_id);
 
@@ -514,7 +526,7 @@ ErrorCode askar_store_open(FfiStr spec_uri,
                            FfiStr key_method,
                            FfiStr pass_key,
                            FfiStr profile,
-                           void (*cb)(CallbackId cb_id, ErrorCode err, StoreHandle handle),
+                           void (*cb)(CallbackId cb_id, ErrorCode err, struct StoreHandle handle),
                            CallbackId cb_id);
 
 ErrorCode askar_store_provision(FfiStr spec_uri,
@@ -522,10 +534,10 @@ ErrorCode askar_store_provision(FfiStr spec_uri,
                                 FfiStr pass_key,
                                 FfiStr profile,
                                 int8_t recreate,
-                                void (*cb)(CallbackId cb_id, ErrorCode err, StoreHandle handle),
+                                void (*cb)(CallbackId cb_id, ErrorCode err, struct StoreHandle handle),
                                 CallbackId cb_id);
 
-ErrorCode askar_store_rekey(StoreHandle handle,
+ErrorCode askar_store_rekey(struct StoreHandle handle,
                             FfiStr key_method,
                             FfiStr pass_key,
                             void (*cb)(CallbackId cb_id, ErrorCode err),
@@ -535,10 +547,25 @@ ErrorCode askar_store_remove(FfiStr spec_uri,
                              void (*cb)(CallbackId cb_id, ErrorCode err, int8_t),
                              CallbackId cb_id);
 
-ErrorCode askar_store_remove_profile(StoreHandle handle,
+ErrorCode askar_store_remove_profile(struct StoreHandle handle,
                                      FfiStr profile,
                                      void (*cb)(CallbackId cb_id, ErrorCode err, int8_t removed),
                                      CallbackId cb_id);
+
+/**
+ * Public destructor for strings managed by the other side of the FFI.
+ *
+ * # Safety
+ *
+ * This will free the string pointer it gets passed in as an argument,
+ * and thus can be wildly unsafe if misused.
+ *
+ * See the documentation of `ffi_support::destroy_c_string` and
+ * `ffi_support::define_string_destructor!` for further info.
+ */
+void askar_string_free(char *s);
+
+void askar_terminate(void);
 
 char *askar_version(void);
 
