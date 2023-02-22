@@ -1,4 +1,7 @@
-name: 'Aries-Askar'
+name: "Aries-Askar"
+
+env:
+  RUST_VERSION: "1.58.0"
 
 on:
   push:
@@ -10,12 +13,12 @@ on:
   workflow_dispatch:
     inputs:
       publish-binaries:
-        description: 'Publish Binaries to Release (will create a release if no release exists for branch or tag)'
+        description: "Publish Binaries to Release (will create a release if no release exists for branch or tag)"
         required: true
         default: false
         type: boolean
       publish-wrappers:
-        description: 'Publish Wrappers to Registries'
+        description: "Publish Wrappers to Registries"
         required: true
         default: false
         type: boolean
@@ -36,7 +39,7 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: '1.58.0'
+          toolchain: ${{ env.RUST_VERSION }}
           components: clippy, rustfmt
 
       - name: Cache cargo resources
@@ -112,18 +115,18 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: '1.58.0'
+          toolchain: ${{ matrix.toolchain || env.RUST_VERSION }}
 
       - name: Cache cargo resources
         uses: Swatinem/rust-cache@v2
         with:
           sharedKey: check
 
-      - if: '!matrix.use_cross'
+      - if: "!matrix.use_cross"
         name: Build library
         env:
           BUILD_TARGET: ${{ matrix.target }}
-          BUILD_TOOLCHAIN: ${{ matrix.toolchain || 'stable' }}
+          BUILD_TOOLCHAIN: ${{ matrix.toolchain || env.RUST_VERSION }}
           # LIBSQLITE3_FLAGS: SQLITE_DEBUG SQLITE_MEMDEBUG
         shell: sh
         run: ./build.sh
@@ -155,7 +158,7 @@ jobs:
           command: c
           cwd: release-artifacts
           files: .
-          outPath: 'library-${{ matrix.arch }}.tar.gz'
+          outPath: "library-${{ matrix.arch }}.tar.gz"
 
       - name: Add library artifacts to release
         if: |
@@ -164,7 +167,7 @@ jobs:
         uses: svenstaro/upload-release-action@v2
         with:
           file: library-${{ matrix.arch }}.tar.gz
-          asset_name: 'library-${{ matrix.arch }}.tar.gz'
+          asset_name: "library-${{ matrix.arch }}.tar.gz"
 
   build-py:
     name: Build and Test Python Wrapper
@@ -173,7 +176,7 @@ jobs:
     strategy:
       matrix:
         arch: [linux-aarch64, linux-x86_64, darwin-universal, windows-x86_64]
-        python-version: ['3.8']
+        python-version: ["3.8"]
         include:
           - os: ubuntu-latest
             arch: linux-aarch64
@@ -241,7 +244,7 @@ jobs:
           fi
         working-directory: wrappers/python
         env:
-          no_proxy: '*' # python issue 30385
+          no_proxy: "*" # python issue 30385
           RUST_BACKTRACE: full
           # RUST_LOG: debug
 
@@ -335,7 +338,7 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: stable
+          toolchain: ${{ env.RUST_VERSION }}
           targets: ${{ matrix.architecture }}
       - run: cargo build --target ${{matrix.architecture}} --release
       - name: Save library
@@ -450,10 +453,10 @@ jobs:
         with:
           command: c
           files: ./mobile
-          outPath: 'library-ios-android.tar.gz'
+          outPath: "library-ios-android.tar.gz"
 
       - name: Add library artifacts to release
         uses: svenstaro/upload-release-action@v2
         with:
           file: library-ios-android.tar.gz
-          asset_name: 'library-ios-android.tar.gz'
+          asset_name: "library-ios-android.tar.gz"
