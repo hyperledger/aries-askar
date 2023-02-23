@@ -32,6 +32,8 @@ std_rng = ["getrandom", "rand/std", "rand/std_rng"]
 [dev-dependencies]
 base64 = { version = "0.13", default-features = false, features = ["alloc"] }
 criterion = "0.3"
+# override transitive dependency from criterion to support rust versions older than 1.60
+csv = "=1.1"
 hex-literal = "0.3"
 serde_cbor = "0.11"
 serde-json-core = { version = "0.4", default-features = false, features = ["std"] }
