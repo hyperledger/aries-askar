@@ -3,14 +3,14 @@
 set -eo pipefail
 
 # Check if lipo and xcodebuild exist
-if [ -z `command -v lipo` ] || [ -z `command -v xcodebuild` ] || [ -z `command -v jq` ]
+if [ -z `command -v lipo` ] || [ -z `command -v xcodebuild` ] || [ -z `command -v sed` ]
 then
-    echo "!!! lipo, xcodebuild or jq could not be found !!!"
+    echo "!!! lipo, xcodebuild or sed could not be found !!!"
     help
 fi
 
 NAME="aries_askar"
-VERSION=$(cargo metadata --no-deps --format-version=1 | jq -r '.packages[]  | select(.name == "aries-askar") | .version')
+VERSION=$(cargo generate-lockfile && cargo pkgid | sed -e "s/^.*#//")
 BUNDLE_IDENTIFIER="org.hyperledger.$NAME"
 LIBRARY_NAME="lib$NAME.dylib"
 XC_FRAMEWORK_NAME="$NAME.xcframework"
@@ -29,17 +29,17 @@ HEADER_PATH="./include"
 Help() {
   echo "required dependencies:"
   echo "  - lipo"
-  echo "  - jq"
+  echo "  - sed"
   echo "  - xcodebuild"
   echo "To build an xcframework with underlying Frameworks"
   echo "the following can be passed in as positional arguments"
-  echo "  1. Path to the aarch64-apple-ios where the dylib is stored"
-  echo "  2. Path to the aarch64-apple-ios-sim where the dylib is stored"
-  echo "  3. Path to the x86_64-apple-ios where the dylib is stored"
+  echo "  1. Path to the aarch64-apple-ios directory where $LIBRARY_NAME is stored"
+  echo "  2. Path to the aarch64-apple-ios-sim directory where $LIBRARY_NAME is stored"
+  echo "  3. Path to the x86_64-apple-ios directory where $LIBRARY_NAME is stored"
   echo "  4. Path to the header file, excluding the header"
   echo "Make sure to add the 'release' section of the path for a"
   echo "release build."
-  exit
+  exit 1
 }
 
 # override if its provided
@@ -69,25 +69,25 @@ fi
 if [ ! -f $AARCH64_APPLE_IOS_SIM_PATH/$LIBRARY_NAME ]
 then
     echo "$AARCH64_APPLE_IOS_SIM_PATH/$LIBRARY_NAME does not exist!"
-    exit
+    exit 1
 fi
 
 if [ ! -f $AARCH64_APPLE_IOS_PATH/$LIBRARY_NAME ]
 then
     echo "$AARCH64_APPLE_IOS_PATH/$LIBRARY_NAME does not exist!"
-    exit
+    exit 1
 fi
 
 if [ ! -f $X86_64_APPLE_IOS_PATH/$LIBRARY_NAME ]
 then
     echo "$X86_64_APPLE_IOS_PATH/$LIBRARY_NAME does not exist!"
-    exit
+    exit 1
 fi
 
 if [ ! -f $HEADER_PATH/$HEADER_NAME ]
 then
     echo "$HEADER_PATH/$HEADER_NAME does not exist!"
-    exit
+    exit 1
 fi
 
 # Displaying the supplied paths to the user 
@@ -179,7 +179,7 @@ xcodebuild -create-xcframework \
 echo "cleaning up..."
 rm -rf $FRAMEWORK_NAME real sim
 
-echo "Fixing the identifiers of the dylib..."
+echo "Fixing the identifiers of the library..."
 install_name_tool -id  @rpath/$NAME.framework/$FRAMEWORK_LIBRARY_NAME $XC_FRAMEWORK_NAME/ios-arm64/$FRAMEWORK_NAME/$FRAMEWORK_LIBRARY_NAME
 install_name_tool -id  @rpath/$NAME.framework/$FRAMEWORK_LIBRARY_NAME $XC_FRAMEWORK_NAME/ios-arm64_x86_64-simulator/$FRAMEWORK_NAME/$FRAMEWORK_LIBRARY_NAME
 
