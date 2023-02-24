@@ -250,7 +250,9 @@ jobs:
 
       - if: "runner.os == 'Linux'"
         name: Audit wheel
-        run: auditwheel show wrappers/python/dist/*
+        run: |
+          auditwheel show wrappers/python/dist/* | tee auditwheel.log
+          grep -q manylinux_2_17_ auditwheel.log
 
       - if: |
           github.event_name == 'release' ||
