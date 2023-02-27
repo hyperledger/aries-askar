@@ -1016,7 +1016,7 @@ jsi::Value keyEntryListGetMetadata(jsi::Runtime &rt, jsi::Object options) {
       askar_key_entry_list_get_metadata(keyEntryListHandle, index, &out);
   handleError(rt, code);
 
-  return jsi::String::createFromAscii(rt, out);
+  return jsi::String::createFromAscii(rt, out ? out : "{}");
 }
 
 jsi::Value keyEntryListGetName(jsi::Runtime &rt, jsi::Object options) {
