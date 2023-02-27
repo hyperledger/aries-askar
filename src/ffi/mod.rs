@@ -24,6 +24,9 @@ mod result_list;
 mod secret;
 mod store;
 
+#[cfg(all(feature = "migration", feature = "sqlite"))]
+mod migration;
+
 use self::error::ErrorCode;
 use crate::error::Error;
 
