@@ -31,6 +31,8 @@ subtle = "2.4"
 
 [dev-dependencies]
 criterion = "0.3"
+# override transitive dependency from criterion to support rust versions older than 1.60
+csv = "=1.1"
 hex-literal = "0.3"
 serde-json-core = { version = "0.4", default-features = false, features = ["std"] }
 
