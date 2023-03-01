@@ -2,6 +2,7 @@ name: "Aries-Askar"
 
 env:
   RUST_VERSION: "1.58.0"
+  CROSS_VERSION: "0.2.4"
 
 on:
   push:
@@ -24,12 +25,12 @@ on:
         type: boolean
 
 jobs:
-  check:
+  checks:
     name: Run checks
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-11, windows-latest]
+        os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -45,7 +46,7 @@ jobs:
       - name: Cache cargo resources
         uses: Swatinem/rust-cache@v2
         with:
-          sharedKey: check
+          shared-key: deps
           cache-on-failure: true
 
       - name: Cargo fmt
@@ -53,6 +54,35 @@ jobs:
 
       - name: Cargo check
         run: cargo check --workspace
+
+      - if: "runner.os == 'Linux'"
+        name: Pre-install cross
+        run: |
+          cargo install --bins --git https://github.com/rust-embedded/cross --tag v${{ env.CROSS_VERSION }} cross
+
+  tests:
+    name: Run tests
+    needs: [checks]
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+
+      - name: Cache cargo resources
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: deps
+          save-if: false
 
       - name: Debug build
         run: cargo build --all-targets
@@ -79,30 +109,29 @@ jobs:
         run: cargo test --manifest-path ./askar-bbs/Cargo.toml --no-default-features
 
   build-release:
-    name: Build Library
-    needs: [check]
+    name: Build library
+    needs: [checks]
 
     strategy:
       matrix:
         include:
-          - arch: linux-aarch64
+          - architecture: linux-aarch64
             os: ubuntu-latest
             lib: libaries_askar.so
             target: aarch64-unknown-linux-gnu
             use_cross: true
-          - arch: linux-x86_64
+          - architecture: linux-x86_64
             os: ubuntu-latest
             lib: libaries_askar.so
             target: x86_64-unknown-linux-gnu
-            # using cross here to build against an older glibc for compatibility
             use_cross: true
-          - arch: darwin-universal
-            os: macos-11
+          - architecture: darwin-universal
+            os: macos-latest
             lib: libaries_askar.dylib
-            target: apple-darwin
+            target: darwin-universal
             # beta or nightly required for aarch64-apple-darwin target
             toolchain: beta
-          - arch: windows-x86_64
+          - architecture: windows-x86_64
             os: windows-latest
             lib: aries_askar.dll
             target: x86_64-pc-windows-msvc
@@ -120,36 +149,35 @@ jobs:
       - name: Cache cargo resources
         uses: Swatinem/rust-cache@v2
         with:
-          sharedKey: check
+          shared-key: deps
+          save-if: false
 
-      - if: "!matrix.use_cross"
-        name: Build library
-        env:
-          BUILD_TARGET: ${{ matrix.target }}
-          BUILD_TOOLCHAIN: ${{ matrix.toolchain || env.RUST_VERSION }}
-          # LIBSQLITE3_FLAGS: SQLITE_DEBUG SQLITE_MEMDEBUG
+      - name: Build
         shell: sh
-        run: ./build.sh
-
-      - if: matrix.use_cross
-        name: Build library (cross)
         run: |
-          cargo install --bins --git https://github.com/rust-embedded/cross --tag v0.2.4 cross
-          cross build --lib --release --target ${{ matrix.target }}
+          if [ -n "${{ matrix.use_cross }}" ]; then
+            cargo install --bins --git https://github.com/rust-embedded/cross --tag v${{ env.CROSS_VERSION }} cross
+            cross build --lib --release --target ${{ matrix.target }}
+          elif [ "${{ matrix.architecture }}" == "darwin-universal" ]; then
+            ./build-universal.sh
+          else
+            cargo build --lib --release --target ${{ matrix.target }}
+          fi
 
-      - name: Upload library artifacts
+      - name: Upload artifacts
         uses: actions/upload-artifact@v3
         with:
-          name: library-${{ matrix.arch }}
+          name: library-${{ matrix.architecture }}
           path: target/${{ matrix.target }}/release/${{ matrix.lib }}
 
-      - name: Create library artifacts directory
+      - name: Create artifacts directory
         if: |
           github.event_name == 'release' ||
           (github.event_name == 'workflow_dispatch' && github.event.inputs.publish-binaries == 'true')
         run: |
           mkdir release-artifacts
           cp target/${{ matrix.target }}/release/${{ matrix.lib }} release-artifacts/
+
       - uses: a7ul/tar-action@v1.1.2
         if: |
           github.event_name == 'release' ||
@@ -158,37 +186,38 @@ jobs:
           command: c
           cwd: release-artifacts
           files: .
-          outPath: "library-${{ matrix.arch }}.tar.gz"
+          outPath: "library-${{ matrix.architecture }}.tar.gz"
 
-      - name: Add library artifacts to release
+      - name: Add artifacts to release
         if: |
           github.event_name == 'release' ||
           (github.event_name == 'workflow_dispatch' && github.event.inputs.publish-binaries == 'true')
         uses: svenstaro/upload-release-action@v2
         with:
-          file: library-${{ matrix.arch }}.tar.gz
-          asset_name: "library-${{ matrix.arch }}.tar.gz"
+          file: library-${{ matrix.architecture }}.tar.gz
+          asset_name: "library-${{ matrix.architecture }}.tar.gz"
 
   build-py:
-    name: Build and Test Python Wrapper
+    name: Build and test Python wrapper
     needs: [build-release]
 
     strategy:
       matrix:
-        arch: [linux-aarch64, linux-x86_64, darwin-universal, windows-x86_64]
+        architecture:
+          [linux-aarch64, linux-x86_64, darwin-universal, windows-x86_64]
         python-version: ["3.8"]
         include:
           - os: ubuntu-latest
-            arch: linux-aarch64
+            architecture: linux-aarch64
             plat-name: manylinux2014_aarch64
           - os: ubuntu-latest
-            arch: linux-x86_64
+            architecture: linux-x86_64
             plat-name: manylinux2014_x86_64
-          - os: macos-11
-            arch: darwin-universal
+          - os: macos-latest
+            architecture: darwin-universal
             plat-name: macosx_10_9_universal2 # macosx_10_9_x86_64
           - os: windows-latest
-            arch: windows-x86_64
+            architecture: windows-x86_64
             plat-name: win_amd64
 
     runs-on: ${{ matrix.os }}
@@ -210,7 +239,7 @@ jobs:
       - name: Fetch library artifacts
         uses: actions/download-artifact@v3
         with:
-          name: library-${{ matrix.arch }}
+          name: library-${{ matrix.architecture }}
           path: wrappers/python/aries_askar/
 
       - if: "runner.os == 'Linux'"
@@ -221,16 +250,16 @@ jobs:
           sudo -u postgres psql -c "ALTER USER postgres WITH PASSWORD 'postgres'"
           echo "POSTGRES_URL=postgres://postgres:postgres@localhost:5432/test-db" >> $GITHUB_ENV
 
-      - name: Build python package
+      - name: Build wheel package
         shell: sh
         run: |
           python setup.py bdist_wheel --python-tag=py3 --plat-name=${{ matrix.plat-name }}
         working-directory: wrappers/python
 
-      - name: Test package
+      - name: Run tests
         # FIXME cross platform test the python package
         # maybe use the cross docker image?
-        if: "matrix.arch != 'linux-aarch64'"
+        if: "matrix.architecture != 'linux-aarch64'"
         shell: sh
         run: |
           pip install pytest pytest-asyncio dist/*
@@ -250,12 +279,14 @@ jobs:
 
       - if: "runner.os == 'Linux'"
         name: Audit wheel
-        run: auditwheel show wrappers/python/dist/*
+        run: |
+          auditwheel show wrappers/python/dist/* | tee auditwheel.log
+          grep -q manylinux_2_17_ auditwheel.log
 
       - if: |
           github.event_name == 'release' ||
           (github.event_name == 'workflow_dispatch' && github.event.inputs.publish-wrappers == 'true')
-        name: Publish python package
+        name: Publish
         env:
           TWINE_USERNAME: ${{ secrets.PYPI_USERNAME }}
           TWINE_PASSWORD: ${{ secrets.PYPI_PASSWORD }}
@@ -264,7 +295,7 @@ jobs:
         working-directory: wrappers/python
 
   build-javascript:
-    name: Build and Test JavaScript wrapper
+    name: Build and test JavaScript wrapper
     needs: [build-release]
     runs-on: ubuntu-latest
     defaults:
@@ -288,19 +319,19 @@ jobs:
       - name: Install dependencies
         run: yarn install
 
-      - name: Build JavaScript Wrapper
+      - name: Build
         run: yarn build
 
-      - name: Lint JavaScript Wrapper
+      - name: Lint
         run: yarn lint
 
-      - name: Format Check JavaScript Wrapper
+      - name: Check format
         run: yarn check-format
 
-      - name: Type Check JavaScript Wrapper
+      - name: Check types
         run: yarn check-types
 
-      - name: Test JavaScript Wrapper
+      - name: Run tests
         env:
           # binary is downloaded to root of repository
           LIB_ARIES_ASKAR_PATH: ../../../
@@ -314,45 +345,60 @@ jobs:
           echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" >> .npmrc
           echo "registry=https://registry.npmjs.org/" >> .npmrc
           echo "always-auth=true" >> .npmrc
+
       # TODO: this will currently publish the version as defined in the package.json. If the version already
       # exists on NPM it will skip the publishing. This means if a new version is released, but the version hasn't been
       # updated in the package.json files yet, it won't publish to NPM (which is kinda nice). We should however add a check
       # to see if the JS version matches the release version (do we want to keep the js and rust version in sync?)
-      - name: Publish JavaScript Wrapper
+      - name: Publish
         if: |
           github.event_name == 'release' ||
           (github.event_name == 'workflow_dispatch' && github.event.inputs.publish-wrappers == 'true')
         run: npx lerna publish from-package --no-push --no-private --yes --no-git-tag-version
 
   build-ios:
-    name: Build Library (iOS)
+    name: Build library (iOS)
+    needs: [checks]
     runs-on: macos-latest
-
     strategy:
       matrix:
-        architecture:
-          [aarch64-apple-ios, aarch64-apple-ios-sim, x86_64-apple-ios]
+        target: [aarch64-apple-ios, aarch64-apple-ios-sim, x86_64-apple-ios]
 
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout
+        uses: actions/checkout@v3
+
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: ${{ env.RUST_VERSION }}
-          targets: ${{ matrix.architecture }}
-      - run: cargo build --target ${{matrix.architecture}} --release
-      - name: Save library
+          # First version with support for cdylib: https://github.com/rust-lang/rust/pull/100636
+          toolchain: "1.65.0"
+          targets: ${{ matrix.target }}
+
+      # Not useful unless the toolchain version matches the default
+      # - name: Cache cargo resources
+      #   uses: Swatinem/rust-cache@v2
+      #   with:
+      #     shared-key: deps
+      #     save-if: false
+
+      - name: Build
+        run: |
+          cargo build --lib --release --target ${{matrix.target}}
+
+      - name: Upload artifacts
         uses: actions/upload-artifact@v3
         with:
-          name: ${{ matrix.architecture}}
-          path: target/${{ matrix.architecture }}/release/libaries_askar.dylib
+          name: library-${{ matrix.target }}
+          path: target/${{ matrix.target }}/release/libaries_askar.dylib
 
   build-android:
     name: Build library (Android)
+    needs: [checks]
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        architecture:
+        target:
           [
             aarch64-linux-android,
             armv7-linux-androideabi,
@@ -361,72 +407,90 @@ jobs:
           ]
 
     steps:
-      - uses: actions/checkout@v3
-      - run: |
-          cargo install --bins --git https://github.com/rust-embedded/cross --tag v0.2.4 cross
-          cross build --release --target ${{matrix.architecture}}
-      - name: Save library
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Cache cargo resources
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: deps
+          save-if: false
+
+      - name: Build
+        run: |
+          cargo install --bins --git https://github.com/rust-embedded/cross --tag v${{ env.CROSS_VERSION }} cross
+          cross build --lib --release --target ${{matrix.target}}
+
+      - name: Upload artifacts
         uses: actions/upload-artifact@v3
         with:
-          name: ${{matrix.architecture}}
-          path: target/${{ matrix.architecture }}/release/libaries_askar.so
+          name: library-${{ matrix.target }}
+          path: target/${{ matrix.target }}/release/libaries_askar.so
 
   create-ios-xcframework:
     name: Create iOS xcframework
     runs-on: macos-latest
-    needs: build-ios
+    needs: [build-ios]
 
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout
+        uses: actions/checkout@v3
+
       - name: Fetch dynamic libraries
         uses: actions/download-artifact@v3
+
       - run: >
-          ./build-xcframework.sh aarch64-apple-ios \
-                                 aarch64-apple-ios-sim \
-                                 x86_64-apple-ios \
+          ./build-xcframework.sh library-aarch64-apple-ios \
+                                 library-aarch64-apple-ios-sim \
+                                 library-x86_64-apple-ios \
                                  include
+
       - name: Save xcframework
         uses: actions/upload-artifact@v3
         with:
           name: aries_askar.xcframework
-          path: out
+          path: ./out
+
       - uses: geekyeggo/delete-artifact@v2
         with:
           name: |
-            aarch64-apple-ios
-            aarch64-apple-ios-sim
-            x86_64-apple-ios
+            library-aarch64-apple-ios
+            library-aarch64-apple-ios-sim
+            library-x86_64-apple-ios
           failOnError: false
 
   create-android-library:
     name: Create library (Android)
     runs-on: ubuntu-latest
-    needs: build-android
+    needs: [build-android]
     steps:
       - name: Fetch libraries
         uses: actions/download-artifact@v3
+
       - run: |
           sudo mkdir ./libs
-          sudo mv aarch64-linux-android   ./libs/arm64-v8a
-          sudo mv armv7-linux-androideabi ./libs/armeabi-v7a
-          sudo mv i686-linux-android      ./libs/x86
-          sudo mv x86_64-linux-android    ./libs/x86_64
+          sudo mv library-aarch64-linux-android   ./libs/arm64-v8a
+          sudo mv library-armv7-linux-androideabi ./libs/armeabi-v7a
+          sudo mv library-i686-linux-android      ./libs/x86
+          sudo mv library-x86_64-linux-android    ./libs/x86_64
+
       - name: Save Android library
         uses: actions/upload-artifact@v3
         with:
           name: android-libraries
           path: ./libs
+
       - uses: geekyeggo/delete-artifact@v2
         with:
           name: |
-            aarch64-linux-android
-            armv7-linux-androideabi
-            i686-linux-android
-            x86_64-linux-android
+            library-aarch64-linux-android
+            library-armv7-linux-androideabi
+            library-i686-linux-android
+            library-x86_64-linux-android
           failOnError: false
 
   create-ios-android-release-asset:
-    name: Create iOS and Android Release Assets
+    name: Create iOS and Android release assets
     runs-on: ubuntu-latest
     needs:
       - create-ios-xcframework
