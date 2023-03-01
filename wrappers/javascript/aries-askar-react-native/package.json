@@ -55,7 +55,7 @@
   "binary": {
     "module_name": "aries_askar",
     "module_path": "native",
-    "remote_path": "v0.2.8-dev.4",
+    "remote_path": "v0.2.8",
     "host": "https://github.com/hyperledger/aries-askar/releases/download/",
     "package_name": "library-ios-android.tar.gz"
   }
