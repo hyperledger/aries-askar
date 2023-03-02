@@ -19,7 +19,8 @@ const CHACHAPOLY_NONCE_LEN: u8 = 12;
 #[derive(Serialize, Deserialize, Debug, Default)]
 pub(crate) struct IndyKeyMetadata {
     keys: Vec<u8>,
-    master_key_salt: Vec<u8>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    master_key_salt: Option<Vec<u8>>,
 }
 
 /// Copies: https://github.com/hyperledger/indy-sdk/blob/83547c4c01162f6323cf138f8b071da2e15f0c90/libindy/indy-wallet/src/wallet.rs#L18
@@ -37,7 +38,7 @@ pub(crate) struct IndyKey {
 pub(crate) struct IndyKeyWithMasterAndSalt {
     indy_key: IndyKey,
     master: Chacha20Key<C20P>,
-    salt: Vec<u8>,
+    salt: Option<Vec<u8>>,
 }
 
 pub(crate) struct IndySdkToAriesAskarMigration {
@@ -63,27 +64,34 @@ impl KdfMethod {
         }
     }
 
-    fn derive(&self, key: &[u8], salt: Option<&[u8]>) -> Result<Chacha20Key<C20P>, Error> {
+    fn derive(&self, key: &[u8], salt: &Option<Vec<u8>>) -> Result<Chacha20Key<C20P>, Error> {
         match self {
             Self::Argon2i(method) => {
                 let params = match method {
                     Argon2Level::Interactive => PARAMS_INTERACTIVE,
                     Argon2Level::Moderate => PARAMS_MODERATE,
                 };
-                let salt = salt.ok_or(err_msg!("Deriving key with argon2i requires salt"))?;
-                let mut kdf = Argon2::new(key, salt, params)?;
+                let salt = salt
+                    .clone()
+                    .ok_or(err_msg!("Deriving key with argon2i requires salt"))?;
+                let mut kdf = Argon2::new(key, &salt, params)?;
                 let mut key = [0u8; CHACHAPOLY_KEY_LEN as usize];
                 kdf.derive_key_bytes(&mut key)?;
                 Ok(Chacha20Key::<C20P>::from_secret_bytes(&key)?)
             }
-            Self::Raw => Ok(Chacha20Key::<C20P>::from_secret_bytes(&key)?),
+            Self::Raw => {
+                let key = bs58::decode(String::from_utf8(key.to_vec()).unwrap())
+                    .into_vec()
+                    .unwrap();
+                Ok(Chacha20Key::<C20P>::from_secret_bytes(&key)?)
+            }
         }
     }
 
     fn to_storable_pass_key(
         &self,
         key: Option<&[u8]>,
-        salt: Option<&[u8]>,
+        salt: &Option<Vec<u8>>,
     ) -> Result<String, Error> {
         let prefix = self.to_prefix();
         match self {
@@ -94,7 +102,9 @@ impl KdfMethod {
                 Ok(key)
             }
             Self::Argon2i(_) => {
-                let salt = salt.ok_or(err_msg!("Salt must be provided for argon2i kdf method"))?;
+                let salt = salt
+                    .clone()
+                    .ok_or(err_msg!("Salt must be provided for argon2i kdf method"))?;
                 let salt_hex = hex::encode(salt);
                 Ok(format!("{prefix}?salt={salt_hex}"))
             }
@@ -219,11 +229,9 @@ impl IndySdkToAriesAskarMigration {
             "Could not convert value from metadata to IndyKey",
         ))?;
         let keys_enc = metadata.keys;
-        let salt = &metadata.master_key_salt[..16];
+        let salt = metadata.master_key_salt.map(|s| s[..16].to_vec());
 
-        let key = self
-            .kdf_method
-            .derive(self.wallet_key.as_bytes(), Some(salt))?;
+        let key = self.kdf_method.derive(self.wallet_key.as_bytes(), &salt)?;
 
         let keys_mpk = Strategy::decrypt_merged(keys_enc.as_slice(), &key)?;
         let keys_lst: IndyKey = rmp_serde::from_slice(&keys_mpk)
@@ -232,7 +240,7 @@ impl IndySdkToAriesAskarMigration {
         let indy_key_with_master_and_salt = IndyKeyWithMasterAndSalt {
             indy_key: keys_lst,
             master: key,
-            salt: salt.to_vec(),
+            salt,
         };
 
         Ok(indy_key_with_master_and_salt)
@@ -339,7 +347,7 @@ impl IndySdkToAriesAskarMigration {
     async fn create_config(&mut self, indy_key: &IndyKeyWithMasterAndSalt) -> Result<(), Error> {
         let pass_key = self
             .kdf_method
-            .to_storable_pass_key(Some(self.wallet_key.as_bytes()), Some(&indy_key.salt))?;
+            .to_storable_pass_key(Some(self.wallet_key.as_bytes()), &indy_key.salt)?;
 
         sqlx::query("INSERT INTO config (name, value) VALUES (?1, ?2)")
             .bind("default_profile")
@@ -415,10 +423,9 @@ mod test_migration {
         backup_db();
         let res = block_on::<Result<(), Error>>(async {
             let wallet_name = "walletwallet.0";
-            let wallet_key = "keykey0";
+            let wallet_key = "GfwU1DC7gEZNs3w41tjBiZYj7BNToDoFEqKY6wZXqs1A";
             let mut migrator =
-                IndySdkToAriesAskarMigration::new(DB_PATH, wallet_name, wallet_key, "ARGON2I_MOD")
-                    .await?;
+                IndySdkToAriesAskarMigration::new(DB_PATH, wallet_name, wallet_key, "RAW").await?;
             migrator.migrate().await?;
             Ok(())
         });
