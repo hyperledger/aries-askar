@@ -2,9 +2,9 @@ use self::strategy::{Strategy, UpdatedIndyItem};
 use crate::crypto::generic_array::typenum::U32;
 use crate::protect::hmac_key::HmacKey;
 use crate::protect::ProfileKey;
-use crate::Error;
+use crate::{Argon2Level, Error};
 use askar_crypto::alg::chacha20::{Chacha20Key, C20P};
-use askar_crypto::kdf::argon2::{Argon2, PARAMS_MODERATE};
+use askar_crypto::kdf::argon2::{Argon2, PARAMS_INTERACTIVE, PARAMS_MODERATE};
 use askar_crypto::kdf::KeyDerivation;
 use askar_crypto::repr::KeySecretBytes;
 use sha2::Sha256;
@@ -41,18 +41,91 @@ pub(crate) struct IndyKeyWithMasterAndSalt {
 }
 
 pub(crate) struct IndySdkToAriesAskarMigration {
+    conn: SqliteConnection,
     wallet_key: String,
     wallet_name: String,
-    conn: SqliteConnection,
+    kdf_method: KdfMethod,
+}
+
+pub enum KdfMethod {
+    Argon2i(Argon2Level),
+    Raw,
+}
+
+impl KdfMethod {
+    fn to_prefix(&self) -> String {
+        match self {
+            Self::Raw => "raw:".to_owned(),
+            Self::Argon2i(method) => match method {
+                Argon2Level::Interactive => "kdf:argon2i:13:int".to_owned(),
+                Argon2Level::Moderate => "kdf:argon2i:13:mod".to_owned(),
+            },
+        }
+    }
+
+    fn derive(&self, key: &[u8], salt: Option<&[u8]>) -> Result<Chacha20Key<C20P>, Error> {
+        match self {
+            Self::Argon2i(method) => {
+                let params = match method {
+                    Argon2Level::Interactive => PARAMS_INTERACTIVE,
+                    Argon2Level::Moderate => PARAMS_MODERATE,
+                };
+                let salt = salt.ok_or(err_msg!("Deriving key with argon2i requires salt"))?;
+                let mut kdf = Argon2::new(key, salt, params)?;
+                let mut key = [0u8; CHACHAPOLY_KEY_LEN as usize];
+                kdf.derive_key_bytes(&mut key)?;
+                Ok(Chacha20Key::<C20P>::from_secret_bytes(&key)?)
+            }
+            Self::Raw => Ok(Chacha20Key::<C20P>::from_secret_bytes(&key)?),
+        }
+    }
+
+    fn to_storable_pass_key(
+        &self,
+        key: Option<&[u8]>,
+        salt: Option<&[u8]>,
+    ) -> Result<String, Error> {
+        let prefix = self.to_prefix();
+        match self {
+            Self::Raw => {
+                let key = key.ok_or(err_msg!("raw kdf method needs a key"))?;
+                let key = bs58::encode(key).into_string();
+                let key = format!("{prefix}{key}");
+                Ok(key)
+            }
+            Self::Argon2i(_) => {
+                let salt = salt.ok_or(err_msg!("Salt must be provided for argon2i kdf method"))?;
+                let salt_hex = hex::encode(salt);
+                Ok(format!("{prefix}?salt={salt_hex}"))
+            }
+        }
+    }
+}
+
+impl From<&str> for KdfMethod {
+    fn from(s: &str) -> Self {
+        match s {
+            "ARGON2I_MOD" => Self::Argon2i(Argon2Level::Moderate),
+            "ARGON2I_INT" => Self::Argon2i(Argon2Level::Interactive),
+            "RAW" => Self::Raw,
+            _ => Self::Argon2i(Argon2Level::Moderate),
+        }
+    }
 }
 
 impl IndySdkToAriesAskarMigration {
-    pub async fn new(spec_uri: &str, wallet_name: &str, wallet_key: &str) -> Result<Self, Error> {
+    pub async fn new(
+        spec_uri: &str,
+        wallet_name: &str,
+        wallet_key: &str,
+        kdf_method: &str,
+    ) -> Result<Self, Error> {
         let conn = SqliteConnection::connect(spec_uri).await?;
         Ok(Self {
             conn,
             wallet_key: wallet_key.to_owned(),
             wallet_name: wallet_name.to_owned(),
+            kdf_method: kdf_method.into(),
         })
     }
 
@@ -148,10 +221,9 @@ impl IndySdkToAriesAskarMigration {
         let keys_enc = metadata.keys;
         let salt = &metadata.master_key_salt[..16];
 
-        let mut kdf = Argon2::new(self.wallet_key.as_bytes(), salt, PARAMS_MODERATE)?;
-        let mut key = [0u8; CHACHAPOLY_KEY_LEN as usize];
-        kdf.derive_key_bytes(&mut key)?;
-        let key = Chacha20Key::<C20P>::from_secret_bytes(&key)?;
+        let key = self
+            .kdf_method
+            .derive(self.wallet_key.as_bytes(), Some(salt))?;
 
         let keys_mpk = Strategy::decrypt_merged(keys_enc.as_slice(), &key)?;
         let keys_lst: IndyKey = rmp_serde::from_slice(&keys_mpk)
@@ -265,8 +337,9 @@ impl IndySdkToAriesAskarMigration {
     }
 
     async fn create_config(&mut self, indy_key: &IndyKeyWithMasterAndSalt) -> Result<(), Error> {
-        let salt_hex = hex::encode(&indy_key.salt);
-        let pass_key = format!("kdf:argon2i:13:mod?salt={salt_hex}");
+        let pass_key = self
+            .kdf_method
+            .to_storable_pass_key(Some(self.wallet_key.as_bytes()), Some(&indy_key.salt))?;
 
         sqlx::query("INSERT INTO config (name, value) VALUES (?1, ?2)")
             .bind("default_profile")
@@ -320,22 +393,39 @@ impl IndySdkToAriesAskarMigration {
 
 #[cfg(test)]
 mod test_migration {
-    use crate::future::block_on;
+    use crate::{future::block_on, Error};
 
     use super::IndySdkToAriesAskarMigration;
 
+    const DB_PATH: &str = "./tests/indy_wallet_sqlite.db";
+    const DB_BACKUP_PATH: &str = "./tests/indy_wallet_sqlite.bak.db";
+
+
+    /// Backup the database by creating a copy
+    fn backup_db() {
+        std::fs::copy(DB_PATH, DB_BACKUP_PATH).unwrap();
+    }
+
+    /// Reverting the database by overwriting the transformed db
+    fn revert_db() {
+        std::fs::rename(DB_BACKUP_PATH, DB_PATH).unwrap();
+    }
+
     #[test]
     fn test_migration() {
-        block_on(async {
+        backup_db();
+        let res = block_on::<Result<(), Error>>(async {
             let wallet_name = "walletwallet.0";
             let wallet_key = "keykey0";
-            let home = env!("HOME");
-            let spec_uri = format!("{home}/.indy_client/wallet/{wallet_name}/sqlite.db");
             let mut migrator =
-                IndySdkToAriesAskarMigration::new(&spec_uri, wallet_name, wallet_key)
-                    .await
-                    .unwrap();
-            migrator.migrate().await.unwrap();
-        })
+                IndySdkToAriesAskarMigration::new(DB_PATH, wallet_name, wallet_key, "ARGON2I_MOD")
+                    .await?;
+            migrator.migrate().await?;
+            Ok(())
+        });
+        revert_db();
+
+        // We still need some indication if something returned with an error
+        res.unwrap();
     }
 }

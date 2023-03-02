@@ -22,6 +22,7 @@ pub extern "C" fn aries_askar_migrate_indy_sdk_sqlite(
     spec_uri: FfiStr<'_>,
     wallet_name: FfiStr<'_>,
     wallet_key: FfiStr<'_>,
+    kdf_level: FfiStr<'_>,
     cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode)>,
     cb_id: CallbackId,
 ) -> ErrorCode {
@@ -31,6 +32,7 @@ pub extern "C" fn aries_askar_migrate_indy_sdk_sqlite(
         let spec_uri = spec_uri.into_opt_string().ok_or_else(|| err_msg!("No provision spec URI provided"))?;
         let wallet_name = wallet_name.into_opt_string().ok_or_else(|| err_msg!("No wallet name provided"))?;
         let wallet_key = wallet_key.into_opt_string().ok_or_else(|| err_msg!("No wallet key provided"))?;
+        let kdf_level = kdf_level.into_opt_string().ok_or_else(|| err_msg!("No KDF level provided"))?;
 
         let cb = EnsureCallback::new(move |result|
             match result {
@@ -40,7 +42,7 @@ pub extern "C" fn aries_askar_migrate_indy_sdk_sqlite(
 
         spawn_ok(async move {
             let result = async {
-                let mut migrator = IndySdkToAriesAskarMigration::new(&spec_uri, &wallet_name, &wallet_key).await?;
+                let mut migrator = IndySdkToAriesAskarMigration::new(&spec_uri, &wallet_name, &wallet_key, &*kdf_level).await?;
                 migrator.migrate().await?;
                 Ok(())
             }.await;
