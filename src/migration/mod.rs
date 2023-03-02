@@ -400,7 +400,6 @@ mod test_migration {
     const DB_PATH: &str = "./tests/indy_wallet_sqlite.db";
     const DB_BACKUP_PATH: &str = "./tests/indy_wallet_sqlite.bak.db";
 
-
     /// Backup the database by creating a copy
     fn backup_db() {
         std::fs::copy(DB_PATH, DB_BACKUP_PATH).unwrap();
