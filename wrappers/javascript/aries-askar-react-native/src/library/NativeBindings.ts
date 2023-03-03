@@ -14,7 +14,7 @@ export interface NativeBindings {
   entryListFree(options: { entryListHandle: string }): void
   entryListGetCategory(options: { entryListHandle: string; index: number }): string
   entryListGetName(options: { entryListHandle: string; index: number }): string
-  entryListGetTags(options: { entryListHandle: string; index: number }): string
+  entryListGetTags(options: { entryListHandle: string; index: number }): string | null
   entryListGetValue(options: { entryListHandle: string; index: number }): ArrayBuffer
 
   keyAeadDecrypt(options: {
@@ -59,11 +59,11 @@ export interface NativeBindings {
 
   keyEntryListGetAlgorithm(options: any): string
 
-  keyEntryListGetMetadata(options: any): string
+  keyEntryListGetMetadata(options: any): string | null
 
   keyEntryListGetName(options: any): string
 
-  keyEntryListGetTags(options: any): string
+  keyEntryListGetTags(options: any): string | null
 
   keyEntryListLoadLocal(options: any): LocalKeyHandle
 

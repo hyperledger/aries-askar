@@ -234,7 +234,7 @@ export type AriesAskar = {
   entryListFree(options: EntryListFreeOptions): void
   entryListGetCategory(options: EntryListGetCategoryOptions): string
   entryListGetName(options: EntryListGetNameOptions): string
-  entryListGetTags(options: EntryListGetTagsOptions): string
+  entryListGetTags(options: EntryListGetTagsOptions): string | null
   entryListGetValue(options: EntryListGetValueOptions): Uint8Array
 
   keyAeadDecrypt(options: KeyAeadDecryptOptions): Uint8Array
@@ -253,9 +253,9 @@ export type AriesAskar = {
   keyEntryListCount(options: KeyEntryListCountOptions): number
   keyEntryListFree(options: KeyEntryListFreeOptions): void
   keyEntryListGetAlgorithm(options: KeyEntryListGetAlgorithmOptions): string
-  keyEntryListGetMetadata(options: KeyEntryListGetMetadataOptions): string
+  keyEntryListGetMetadata(options: KeyEntryListGetMetadataOptions): string | null
   keyEntryListGetName(options: KeyEntryListGetNameOptions): string
-  keyEntryListGetTags(options: KeyEntryListGetTagsOptions): string
+  keyEntryListGetTags(options: KeyEntryListGetTagsOptions): string | null
   keyEntryListLoadLocal(options: KeyEntryListLoadLocalOptions): LocalKeyHandle
   keyFree(options: KeyFreeOptions): void
   keyFromJwk(options: KeyFromJwkOptions): LocalKeyHandle

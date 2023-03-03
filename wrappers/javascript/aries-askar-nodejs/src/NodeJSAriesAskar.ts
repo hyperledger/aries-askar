@@ -120,6 +120,19 @@ import {
 } from './ffi'
 import { nativeAriesAskar } from './library'
 
+function handleNullableReturnPointer<Return>(returnValue: Buffer): Return | null {
+  if (returnValue.address() === 0) return null
+  return returnValue.deref() as Return
+}
+
+function handleReturnPointer<Return>(returnValue: Buffer): Return {
+  if (returnValue.address() === 0) {
+    throw AriesAskarError.customError({ message: 'Unexpected null pointer' })
+  }
+
+  return returnValue.deref() as Return
+}
+
 export class NodeJSAriesAskar implements AriesAskar {
   private promisify = async (method: (nativeCallbackPtr: Buffer, id: number) => void): Promise<void> => {
     return new Promise((resolve, reject) => {
@@ -183,7 +196,7 @@ export class NodeJSAriesAskar implements AriesAskar {
     const error = allocateStringBuffer()
     nativeAriesAskar.askar_get_current_error(error)
     handleError()
-    return error.deref() as string
+    return handleReturnPointer<string>(error)
   }
 
   public clearCustomLogger(): void {
@@ -220,7 +233,7 @@ export class NodeJSAriesAskar implements AriesAskar {
     nativeAriesAskar.askar_entry_list_count(entryListHandle, ret)
     handleError()
 
-    return ret.deref() as number
+    return handleReturnPointer<number>(ret)
   }
 
   public entryListFree(options: EntryListFreeOptions): void {
@@ -237,7 +250,7 @@ export class NodeJSAriesAskar implements AriesAskar {
     nativeAriesAskar.askar_entry_list_get_category(entryListHandle, index, ret)
     handleError()
 
-    return ret.deref() as string
+    return handleReturnPointer<string>(ret)
   }
 
   public entryListGetName(options: EntryListGetNameOptions): string {
@@ -247,17 +260,17 @@ export class NodeJSAriesAskar implements AriesAskar {
     nativeAriesAskar.askar_entry_list_get_name(entryListHandle, index, ret)
     handleError()
 
-    return ret.deref() as string
+    return handleReturnPointer<string>(ret)
   }
 
-  public entryListGetTags(options: EntryListGetTagsOptions): string {
+  public entryListGetTags(options: EntryListGetTagsOptions): string | null {
     const { entryListHandle, index } = serializeArguments(options)
     const ret = allocateStringBuffer()
 
     nativeAriesAskar.askar_entry_list_get_tags(entryListHandle, index, ret)
     handleError()
 
-    return ret.deref() as string
+    return handleNullableReturnPointer<string>(ret)
   }
 
   public entryListGetValue(options: EntryListGetValueOptions): Uint8Array {
@@ -268,7 +281,8 @@ export class NodeJSAriesAskar implements AriesAskar {
     nativeAriesAskar.askar_entry_list_get_value(entryListHandle, index, ret)
     handleError()
 
-    return new Uint8Array(secretBufferToBuffer(ret.deref() as ByteBufferType))
+    const byteBuffer = handleReturnPointer<ByteBufferType>(ret)
+    return new Uint8Array(secretBufferToBuffer(byteBuffer))
   }
 
   public keyAeadDecrypt(options: KeyAeadDecryptOptions): Uint8Array {
@@ -278,7 +292,8 @@ export class NodeJSAriesAskar implements AriesAskar {
     nativeAriesAskar.askar_key_aead_decrypt(localKeyHandle, ciphertext, nonce, tag, aad, ret)
     handleError()
 
-    return new Uint8Array(secretBufferToBuffer(ret.deref() as ByteBufferType))
+    const byteBuffer = handleReturnPointer<ByteBufferType>(ret)
+    return new Uint8Array(secretBufferToBuffer(byteBuffer))
   }
 
   public keyAeadEncrypt(options: KeyAeadEncryptOptions): EncryptedBuffer {
@@ -288,7 +303,8 @@ export class NodeJSAriesAskar implements AriesAskar {
     nativeAriesAskar.askar_key_aead_encrypt(localKeyHandle, message, nonce, aad, ret)
     handleError()
 
-    return encryptedBufferStructToClass(ret.deref() as EncryptedBufferType)
+    const encryptedBuffer = handleReturnPointer<EncryptedBufferType>(ret)
+    return encryptedBufferStructToClass(encryptedBuffer)
   }
 
   public keyAeadGetPadding(options: KeyAeadGetPaddingOptions): number {
@@ -298,7 +314,7 @@ export class NodeJSAriesAskar implements AriesAskar {
     nativeAriesAskar.askar_key_aead_get_padding(localKeyHandle, msgLen, ret)
     handleError()
 
-    return ret.deref() as number
+    return handleReturnPointer<number>(ret)
   }
 
   public keyAeadGetParams(options: KeyAeadGetParamsOptions): AeadParams {
@@ -308,7 +324,7 @@ export class NodeJSAriesAskar implements AriesAskar {
     nativeAriesAskar.askar_key_aead_get_params(localKeyHandle, ret)
     handleError()
 
-    return new AeadParams(ret.deref() as AeadParamsOptions)
+    return new AeadParams(handleReturnPointer<AeadParamsOptions>(ret))
   }
 
   public keyAeadRandomNonce(options: KeyAeadRandomNonceOptions): Uint8Array {
@@ -318,7 +334,8 @@ export class NodeJSAriesAskar implements AriesAskar {
     nativeAriesAskar.askar_key_aead_random_nonce(localKeyHandle, ret)
     handleError()
 
-    return new Uint8Array(secretBufferToBuffer(ret.deref() as SecretBufferType))
+    const secretBuffer = handleReturnPointer<SecretBufferType>(ret)
+    return new Uint8Array(secretBufferToBuffer(secretBuffer))
   }
 
   public keyConvert(options: KeyConvertOptions): LocalKeyHandle {
@@ -328,7 +345,8 @@ export class NodeJSAriesAskar implements AriesAskar {
     nativeAriesAskar.askar_key_convert(localKeyHandle, algorithm, ret)
     handleError()
 
-    return new LocalKeyHandle(ret.deref() as Uint8Array)
+    const handle = handleReturnPointer<Uint8Array>(ret)
+    return new LocalKeyHandle(handle)
   }
 
   public keyCryptoBox(options: KeyCryptoBoxOptions): Uint8Array {
@@ -338,7 +356,8 @@ export class NodeJSAriesAskar implements AriesAskar {
     nativeAriesAskar.askar_key_crypto_box(recipientKey, senderKey, message, nonce, ret)
     handleError()
 
-    return new Uint8Array(secretBufferToBuffer(ret.deref() as SecretBufferType))
+    const secretBuffer = handleReturnPointer<SecretBufferType>(ret)
+    return new Uint8Array(secretBufferToBuffer(secretBuffer))
   }
 
   public keyCryptoBoxOpen(options: KeyCryptoBoxOpenOptions): Uint8Array {
@@ -348,7 +367,8 @@ export class NodeJSAriesAskar implements AriesAskar {
     nativeAriesAskar.askar_key_crypto_box_open(recipientKey, senderKey, message, nonce, ret)
     handleError()
 
-    return new Uint8Array(secretBufferToBuffer(ret.deref() as SecretBufferType))
+    const secretBuffer = handleReturnPointer<SecretBufferType>(ret)
+    return new Uint8Array(secretBufferToBuffer(secretBuffer))
   }
 
   public keyCryptoBoxRandomNonce(): Uint8Array {
@@ -357,7 +377,8 @@ export class NodeJSAriesAskar implements AriesAskar {
     nativeAriesAskar.askar_key_crypto_box_random_nonce(ret)
     handleError()
 
-    return new Uint8Array(secretBufferToBuffer(ret.deref() as SecretBufferType))
+    const secretBuffer = handleReturnPointer<SecretBufferType>(ret)
+    return new Uint8Array(secretBufferToBuffer(secretBuffer))
   }
 
   public keyCryptoBoxSeal(options: KeyCryptoBoxSealOptions): Uint8Array {
@@ -367,7 +388,8 @@ export class NodeJSAriesAskar implements AriesAskar {
     nativeAriesAskar.askar_key_crypto_box_seal(localKeyHandle, message, ret)
     handleError()
 
-    return new Uint8Array(secretBufferToBuffer(ret.deref() as SecretBufferType))
+    const secretBuffer = handleReturnPointer<SecretBufferType>(ret)
+    return new Uint8Array(secretBufferToBuffer(secretBuffer))
   }
 
   public keyCryptoBoxSealOpen(options: KeyCryptoBoxSealOpenOptions): Uint8Array {
@@ -377,7 +399,8 @@ export class NodeJSAriesAskar implements AriesAskar {
     nativeAriesAskar.askar_key_crypto_box_seal_open(localKeyHandle, ciphertext, ret)
     handleError()
 
-    return new Uint8Array(secretBufferToBuffer(ret.deref() as SecretBufferType))
+    const secretBuffer = handleReturnPointer<SecretBufferType>(ret)
+    return new Uint8Array(secretBufferToBuffer(secretBuffer))
   }
 
   public keyDeriveEcdh1pu(options: KeyDeriveEcdh1puOptions): LocalKeyHandle {
@@ -400,7 +423,8 @@ export class NodeJSAriesAskar implements AriesAskar {
     )
     handleError()
 
-    return new LocalKeyHandle(ret.deref() as Uint8Array)
+    const handle = handleReturnPointer<Uint8Array>(ret)
+    return new LocalKeyHandle(handle)
   }
 
   public keyDeriveEcdhEs(options: KeyDeriveEcdhEsOptions): LocalKeyHandle {
@@ -410,7 +434,8 @@ export class NodeJSAriesAskar implements AriesAskar {
     nativeAriesAskar.askar_key_derive_ecdh_es(algorithm, ephemeralKey, recipientKey, algId, apu, apv, receive, ret)
     handleError()
 
-    return new LocalKeyHandle(ret.deref() as Uint8Array)
+    const handle = handleReturnPointer<Uint8Array>(ret)
+    return new LocalKeyHandle(handle)
   }
 
   public keyEntryListCount(options: KeyEntryListCountOptions): number {
@@ -420,7 +445,7 @@ export class NodeJSAriesAskar implements AriesAskar {
     nativeAriesAskar.askar_key_entry_list_count(keyEntryListHandle, ret)
     handleError()
 
-    return ret.deref() as number
+    return handleReturnPointer<number>(ret)
   }
 
   public keyEntryListFree(options: KeyEntryListFreeOptions): void {
@@ -437,17 +462,17 @@ export class NodeJSAriesAskar implements AriesAskar {
     nativeAriesAskar.askar_key_entry_list_get_algorithm(keyEntryListHandle, index, ret)
     handleError()
 
-    return ret.deref() as string
+    return handleReturnPointer<string>(ret)
   }
 
-  public keyEntryListGetMetadata(options: KeyEntryListGetMetadataOptions): string {
+  public keyEntryListGetMetadata(options: KeyEntryListGetMetadataOptions): string | null {
     const { keyEntryListHandle, index } = serializeArguments(options)
     const ret = allocateStringBuffer()
 
     nativeAriesAskar.askar_key_entry_list_get_metadata(keyEntryListHandle, index, ret)
     handleError()
 
-    return ret.deref() as string
+    return handleNullableReturnPointer<string>(ret)
   }
 
   public keyEntryListGetName(options: KeyEntryListGetNameOptions): string {
@@ -457,16 +482,16 @@ export class NodeJSAriesAskar implements AriesAskar {
     nativeAriesAskar.askar_key_entry_list_get_name(keyEntryListHandle, index, ret)
     handleError()
 
-    return ret.deref() as string
+    return handleReturnPointer<string>(ret)
   }
 
-  public keyEntryListGetTags(options: KeyEntryListGetTagsOptions): string {
+  public keyEntryListGetTags(options: KeyEntryListGetTagsOptions): string | null {
     const { keyEntryListHandle, index } = serializeArguments(options)
     const ret = allocateStringBuffer()
 
     nativeAriesAskar.askar_key_entry_list_get_tags(keyEntryListHandle, index, ret)
 
-    return ret.deref() as string
+    return handleNullableReturnPointer<string>(ret)
   }
 
   public keyEntryListLoadLocal(options: KeyEntryListLoadLocalOptions): LocalKeyHandle {
@@ -476,7 +501,8 @@ export class NodeJSAriesAskar implements AriesAskar {
     nativeAriesAskar.askar_key_entry_list_load_local(keyEntryListHandle, index, ret)
     handleError()
 
-    return new LocalKeyHandle(ret.deref() as Uint8Array)
+    const handle = handleReturnPointer<Uint8Array>(ret)
+    return new LocalKeyHandle(handle)
   }
 
   public keyFree(options: KeyFreeOptions): void {
@@ -493,7 +519,8 @@ export class NodeJSAriesAskar implements AriesAskar {
     nativeAriesAskar.askar_key_from_jwk(jwk, ret)
     handleError()
 
-    return new LocalKeyHandle(ret.deref() as Uint8Array)
+    const handle = handleReturnPointer<Uint8Array>(ret)
+    return new LocalKeyHandle(handle)
   }
 
   public keyFromKeyExchange(options: KeyFromKeyExchangeOptions): LocalKeyHandle {
@@ -503,7 +530,8 @@ export class NodeJSAriesAskar implements AriesAskar {
     nativeAriesAskar.askar_key_from_key_exchange(algorithm, skHandle, pkHandle, ret)
     handleError()
 
-    return new LocalKeyHandle(ret.deref() as Uint8Array)
+    const handle = handleReturnPointer<Uint8Array>(ret)
+    return new LocalKeyHandle(handle)
   }
 
   public keyFromPublicBytes(options: KeyFromPublicBytesOptions): LocalKeyHandle {
@@ -513,7 +541,8 @@ export class NodeJSAriesAskar implements AriesAskar {
     nativeAriesAskar.askar_key_from_public_bytes(algorithm, publicKey, ret)
     handleError()
 
-    return new LocalKeyHandle(ret.deref() as Uint8Array)
+    const handle = handleReturnPointer<Uint8Array>(ret)
+    return new LocalKeyHandle(handle)
   }
 
   public keyFromSecretBytes(options: KeyFromSecretBytesOptions): LocalKeyHandle {
@@ -523,7 +552,8 @@ export class NodeJSAriesAskar implements AriesAskar {
     nativeAriesAskar.askar_key_from_secret_bytes(algorithm, secretKey, ret)
     handleError()
 
-    return new LocalKeyHandle(ret.deref() as Uint8Array)
+    const handle = handleReturnPointer<Uint8Array>(ret)
+    return new LocalKeyHandle(handle)
   }
 
   public keyFromSeed(options: KeyFromSeedOptions): LocalKeyHandle {
@@ -533,7 +563,8 @@ export class NodeJSAriesAskar implements AriesAskar {
     nativeAriesAskar.askar_key_from_seed(algorithm, seed, method, ret)
     handleError()
 
-    return new LocalKeyHandle(ret.deref() as Uint8Array)
+    const handle = handleReturnPointer<Uint8Array>(ret)
+    return new LocalKeyHandle(handle)
   }
 
   public keyGenerate(options: KeyGenerateOptions): LocalKeyHandle {
@@ -543,7 +574,8 @@ export class NodeJSAriesAskar implements AriesAskar {
     nativeAriesAskar.askar_key_generate(algorithm, ephemeral, ret)
     handleError()
 
-    return new LocalKeyHandle(ret.deref() as Uint8Array)
+    const handle = handleReturnPointer<Uint8Array>(ret)
+    return new LocalKeyHandle(handle)
   }
 
   public keyGetAlgorithm(options: KeyGetAlgorithmOptions): string {
@@ -553,7 +585,7 @@ export class NodeJSAriesAskar implements AriesAskar {
     nativeAriesAskar.askar_key_get_algorithm(localKeyHandle, ret)
     handleError()
 
-    return ret.deref() as string
+    return handleReturnPointer<string>(ret)
   }
 
   public keyGetEphemeral(options: KeyGetEphemeralOptions): number {
@@ -563,7 +595,7 @@ export class NodeJSAriesAskar implements AriesAskar {
     nativeAriesAskar.askar_key_get_ephemeral(localKeyHandle, ret)
     handleError()
 
-    return ret.deref() as number
+    return handleReturnPointer<number>(ret)
   }
 
   public keyGetJwkPublic(options: KeyGetJwkPublicOptions): string {
@@ -573,7 +605,7 @@ export class NodeJSAriesAskar implements AriesAskar {
     nativeAriesAskar.askar_key_get_jwk_public(localKeyHandle, algorithm, ret)
     handleError()
 
-    return ret.deref() as string
+    return handleReturnPointer<string>(ret)
   }
 
   public keyGetJwkSecret(options: KeyGetJwkSecretOptions): Uint8Array {
@@ -583,7 +615,8 @@ export class NodeJSAriesAskar implements AriesAskar {
     nativeAriesAskar.askar_key_get_jwk_secret(localKeyHandle, ret)
     handleError()
 
-    return new Uint8Array(secretBufferToBuffer(ret.deref() as SecretBufferType))
+    const secretBuffer = handleReturnPointer<SecretBufferType>(ret)
+    return new Uint8Array(secretBufferToBuffer(secretBuffer))
   }
 
   public keyGetJwkThumbprint(options: KeyGetJwkThumbprintOptions): string {
@@ -593,7 +626,7 @@ export class NodeJSAriesAskar implements AriesAskar {
     nativeAriesAskar.askar_key_get_jwk_thumbprint(localKeyHandle, algorithm, ret)
     handleError()
 
-    return ret.deref() as string
+    return handleReturnPointer<string>(ret)
   }
 
   public keyGetPublicBytes(options: KeyGetPublicBytesOptions): Uint8Array {
@@ -603,7 +636,8 @@ export class NodeJSAriesAskar implements AriesAskar {
     nativeAriesAskar.askar_key_get_public_bytes(localKeyHandle, ret)
     handleError()
 
-    return new Uint8Array(secretBufferToBuffer(ret.deref() as SecretBufferType))
+    const secretBuffer = handleReturnPointer<SecretBufferType>(ret)
+    return new Uint8Array(secretBufferToBuffer(secretBuffer))
   }
 
   public keyGetSecretBytes(options: KeyGetSecretBytesOptions): Uint8Array {
@@ -613,7 +647,8 @@ export class NodeJSAriesAskar implements AriesAskar {
     nativeAriesAskar.askar_key_get_secret_bytes(localKeyHandle, ret)
     handleError()
 
-    return new Uint8Array(secretBufferToBuffer(ret.deref() as SecretBufferType))
+    const secretBuffer = handleReturnPointer<SecretBufferType>(ret)
+    return new Uint8Array(secretBufferToBuffer(secretBuffer))
   }
 
   public keySignMessage(options: KeySignMessageOptions): Uint8Array {
@@ -623,7 +658,8 @@ export class NodeJSAriesAskar implements AriesAskar {
     nativeAriesAskar.askar_key_sign_message(localKeyHandle, message, sigType, ret)
     handleError()
 
-    return new Uint8Array(secretBufferToBuffer(ret.deref() as SecretBufferType))
+    const secretBuffer = handleReturnPointer<SecretBufferType>(ret)
+    return new Uint8Array(secretBufferToBuffer(secretBuffer))
   }
 
   public keyUnwrapKey(options: KeyUnwrapKeyOptions): LocalKeyHandle {
@@ -633,7 +669,8 @@ export class NodeJSAriesAskar implements AriesAskar {
     nativeAriesAskar.askar_key_unwrap_key(localKeyHandle, algorithm, ciphertext, nonce, tag, ret)
     handleError()
 
-    return new LocalKeyHandle(ret.deref() as Uint8Array)
+    const handle = handleReturnPointer<Uint8Array>(ret)
+    return new LocalKeyHandle(handle)
   }
 
   public keyVerifySignature(options: KeyVerifySignatureOptions): boolean {
@@ -643,7 +680,7 @@ export class NodeJSAriesAskar implements AriesAskar {
     nativeAriesAskar.askar_key_verify_signature(localKeyHandle, message, signature, sigType, ret)
     handleError()
 
-    return Boolean(ret.deref())
+    return Boolean(handleReturnPointer<number>(ret))
   }
 
   public keyWrapKey(options: KeyWrapKeyOptions): EncryptedBuffer {
@@ -653,7 +690,8 @@ export class NodeJSAriesAskar implements AriesAskar {
     nativeAriesAskar.askar_key_wrap_key(localKeyHandle, other, nonce, ret)
     handleError()
 
-    return encryptedBufferStructToClass(ret.deref() as EncryptedBufferType)
+    const encryptedBuffer = handleReturnPointer<EncryptedBufferType>(ret)
+    return encryptedBufferStructToClass(encryptedBuffer)
   }
 
   public scanFree(options: ScanFreeOptions): void {

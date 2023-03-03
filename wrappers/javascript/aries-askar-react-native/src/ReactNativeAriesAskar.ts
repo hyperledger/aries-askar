@@ -155,7 +155,7 @@ export class ReactNativeAriesAskar implements AriesAskar {
     return ariesAskarReactNative.entryListGetName(serializedOptions)
   }
 
-  public entryListGetTags(options: EntryListGetTagsOptions): string {
+  public entryListGetTags(options: EntryListGetTagsOptions): string | null {
     const serializedOptions = serializeArguments(options)
     return ariesAskarReactNative.entryListGetTags(serializedOptions)
   }
@@ -260,7 +260,7 @@ export class ReactNativeAriesAskar implements AriesAskar {
     return ariesAskarReactNative.keyEntryListGetAlgorithm(serializedOptions)
   }
 
-  public keyEntryListGetMetadata(options: KeyEntryListGetMetadataOptions): string {
+  public keyEntryListGetMetadata(options: KeyEntryListGetMetadataOptions): string | null {
     const serializedOptions = serializeArguments(options)
     return ariesAskarReactNative.keyEntryListGetMetadata(serializedOptions)
   }
@@ -270,7 +270,7 @@ export class ReactNativeAriesAskar implements AriesAskar {
     return ariesAskarReactNative.keyEntryListGetName(serializedOptions)
   }
 
-  public keyEntryListGetTags(options: KeyEntryListGetTagsOptions): string {
+  public keyEntryListGetTags(options: KeyEntryListGetTagsOptions): string | null {
     const serializedOptions = serializeArguments(options)
     return ariesAskarReactNative.keyEntryListGetTags(serializedOptions)
   }
