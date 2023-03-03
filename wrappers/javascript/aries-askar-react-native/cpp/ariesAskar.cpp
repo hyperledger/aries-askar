@@ -59,7 +59,11 @@ jsi::Value entryListGetTags(jsi::Runtime &rt, jsi::Object options) {
   ErrorCode code = askar_entry_list_get_tags(entryListHandle, index, &out);
   handleError(rt, code);
 
-  return jsi::String::createFromAscii(rt, out ? out : "{}");
+  if (out == nullptr) {
+    return jsi::Value::null();
+  } else {
+    return jsi::String::createFromAscii(rt, out);
+  }
 }
 
 jsi::Value entryListGetValue(jsi::Runtime &rt, jsi::Object options) {
@@ -1016,7 +1020,11 @@ jsi::Value keyEntryListGetMetadata(jsi::Runtime &rt, jsi::Object options) {
       askar_key_entry_list_get_metadata(keyEntryListHandle, index, &out);
   handleError(rt, code);
 
-  return jsi::String::createFromAscii(rt, out ? out : "{}");
+  if (out == nullptr) {
+    return jsi::Value::null();
+  } else {
+    return jsi::String::createFromAscii(rt, out);
+  }
 }
 
 jsi::Value keyEntryListGetName(jsi::Runtime &rt, jsi::Object options) {
@@ -1044,7 +1052,11 @@ jsi::Value keyEntryListGetTags(jsi::Runtime &rt, jsi::Object options) {
       askar_key_entry_list_get_tags(keyEntryListHandle, index, &out);
   handleError(rt, code);
 
-  return jsi::String::createFromAscii(rt, out ? out : "{}");
+  if (out == nullptr) {
+    return jsi::Value::null();
+  } else {
+    return jsi::String::createFromAscii(rt, out);
+  }
 }
 
 jsi::Value keyEntryListLoadLocal(jsi::Runtime &rt, jsi::Object options) {
