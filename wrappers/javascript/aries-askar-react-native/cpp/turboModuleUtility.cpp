@@ -72,9 +72,11 @@ void callbackWithResponse(CallbackId result, ErrorCode code,
     State *state = static_cast<State *>(_state);
     jsi::Function *cb = &state->cb;
     jsi::Runtime *rt = reinterpret_cast<jsi::Runtime *>(state->rt);
-    jsi::String serializedResponse =
-        jsi::String::createFromAscii(*rt, response ? response : "PANIC");
-    cb->call(*rt, int(code), serializedResponse);
+
+    jsi::Value ret = response ? jsi::String::createFromAscii(*rt, response)
+                              : jsi::Value::null();
+
+    cb->call(*rt, int(code), ret);
   });
 }
 
@@ -90,7 +92,12 @@ void callbackWithResponse(CallbackId result, ErrorCode code,
     std::string serializedPointer = std::to_string(intptr_t(response._0));
     jsi::String pointer = jsi::String::createFromAscii(*rt, serializedPointer);
 
-    cb->call(*rt, int(code), serializedPointer);
+    jsi::Value ret = response._0
+                         ? jsi::String::createFromAscii(
+                               *rt, std::to_string(intptr_t(response._0)))
+                         : jsi::Value::null();
+
+    cb->call(*rt, int(code), ret);
   });
 }
 
@@ -103,10 +110,13 @@ void callbackWithResponse(CallbackId result, ErrorCode code,
     jsi::Function *cb = &state->cb;
     jsi::Runtime *rt = reinterpret_cast<jsi::Runtime *>(state->rt);
 
-    std::string serializedPointer = std::to_string(intptr_t(response._0));
-    jsi::String pointer = jsi::String::createFromAscii(*rt, serializedPointer);
 
-    cb->call(*rt, int(code), serializedPointer);
+    jsi::Value ret = response._0
+                         ? jsi::String::createFromAscii(
+                               *rt, std::to_string(intptr_t(response._0)))
+                         : jsi::Value::null();
+
+    cb->call(*rt, int(code), ret);
   });
 }
 
