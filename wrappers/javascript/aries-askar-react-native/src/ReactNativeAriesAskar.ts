@@ -72,6 +72,7 @@ import type {
 } from '@hyperledger/aries-askar-shared'
 
 import {
+  handleInvalidNullResponse,
   AeadParams,
   EncryptedBuffer,
   LocalKeyHandle,
@@ -97,20 +98,14 @@ export class ReactNativeAriesAskar implements AriesAskar {
     })
   }
 
-  private promisifyWithResponse = <Return, Response = string>(
-    method: (cb: (err: number, response: Response) => void) => void
-  ): Promise<Return> => {
+  private promisifyWithResponse = <Return>(
+    method: (cb: (err: number, response: Return) => void) => void
+  ): Promise<Return | null> => {
     return new Promise((resolve, reject) => {
-      const _cb = (err: number, response: Response) => {
+      const _cb = (err: number, response: Return) => {
         if (err !== 0) reject(this.getCurrentError())
 
-        switch (typeof response) {
-          case 'string':
-            resolve(response as unknown as Return)
-            break
-          default:
-            resolve(response as unknown as Return)
-        }
+        resolve(response)
       }
       method(_cb)
     })
@@ -404,18 +399,18 @@ export class ReactNativeAriesAskar implements AriesAskar {
     ariesAskarReactNative.scanFree(serializedOptions)
   }
 
-  public async scanNext(options: ScanNextOptions): Promise<EntryListHandle> {
+  public async scanNext(options: ScanNextOptions) {
     const serializedOptions = serializeArguments(options)
     const handle = await this.promisifyWithResponse<string>((cb) =>
       ariesAskarReactNative.scanNext({ cb, ...serializedOptions })
     )
 
-    return new EntryListHandle(handle)
+    return EntryListHandle.fromHandle(handle)
   }
 
   public async scanStart(options: ScanStartOptions): Promise<ScanHandle> {
     const { category, storeHandle, limit, offset, profile, tagFilter } = serializeArguments(options)
-    const handle = await this.promisifyWithResponse<number, number>((cb) =>
+    const handle = await this.promisifyWithResponse<number>((cb) =>
       ariesAskarReactNative.scanStart({
         cb,
         category,
@@ -427,7 +422,7 @@ export class ReactNativeAriesAskar implements AriesAskar {
       })
     )
 
-    return new ScanHandle(handle)
+    return ScanHandle.fromHandle(handle)
   }
 
   public sessionClose(options: SessionCloseOptions): Promise<void> {
@@ -435,32 +430,34 @@ export class ReactNativeAriesAskar implements AriesAskar {
     return this.promisify((cb) => ariesAskarReactNative.sessionClose({ cb, ...serializedOptions }))
   }
 
-  public sessionCount(options: SessionCountOptions): Promise<number> {
+  public async sessionCount(options: SessionCountOptions): Promise<number> {
     const serializedOptions = serializeArguments(options)
-    return this.promisifyWithResponse<number, number>((cb) =>
+    const response = await this.promisifyWithResponse<number>((cb) =>
       ariesAskarReactNative.sessionCount({ cb, ...serializedOptions })
     )
+
+    return handleInvalidNullResponse(response)
   }
 
-  public async sessionFetch(options: SessionFetchOptions): Promise<EntryListHandle> {
+  public async sessionFetch(options: SessionFetchOptions) {
     const serializedOptions = serializeArguments(options)
     const handle = await this.promisifyWithResponse<string>((cb) =>
       ariesAskarReactNative.sessionFetch({ cb, ...serializedOptions })
     )
 
-    return new EntryListHandle(handle)
+    return EntryListHandle.fromHandle(handle)
   }
 
-  public async sessionFetchAll(options: SessionFetchAllOptions): Promise<EntryListHandle> {
+  public async sessionFetchAll(options: SessionFetchAllOptions) {
     const { category, sessionHandle, forUpdate, limit, tagFilter } = serializeArguments(options)
     const handle = await this.promisifyWithResponse<string>((cb) =>
       ariesAskarReactNative.sessionFetchAll({ cb, category, sessionHandle, forUpdate, limit: limit || -1, tagFilter })
     )
 
-    return new EntryListHandle(handle)
+    return EntryListHandle.fromHandle(handle)
   }
 
-  public async sessionFetchAllKeys(options: SessionFetchAllKeysOptions): Promise<KeyEntryListHandle> {
+  public async sessionFetchAllKeys(options: SessionFetchAllKeysOptions) {
     const { sessionHandle, algorithm, forUpdate, limit, thumbprint, tagFilter } = serializeArguments(options)
     const handle = await this.promisifyWithResponse<string>((cb) =>
       ariesAskarReactNative.sessionFetchAllKeys({
@@ -474,15 +471,15 @@ export class ReactNativeAriesAskar implements AriesAskar {
       })
     )
 
-    return new KeyEntryListHandle(handle)
+    return KeyEntryListHandle.fromHandle(handle)
   }
-  public async sessionFetchKey(options: SessionFetchKeyOptions): Promise<KeyEntryListHandle> {
+  public async sessionFetchKey(options: SessionFetchKeyOptions) {
     const serializedOptions = serializeArguments(options)
     const handle = await this.promisifyWithResponse<string>((cb) =>
       ariesAskarReactNative.sessionFetchKey({ cb, ...serializedOptions })
     )
 
-    return new KeyEntryListHandle(handle)
+    return KeyEntryListHandle.fromHandle(handle)
   }
 
   public sessionInsertKey(options: SessionInsertKeyOptions): Promise<void> {
@@ -500,11 +497,13 @@ export class ReactNativeAriesAskar implements AriesAskar {
     )
   }
 
-  public sessionRemoveAll(options: SessionRemoveAllOptions): Promise<number> {
+  public async sessionRemoveAll(options: SessionRemoveAllOptions): Promise<number> {
     const serializedOptions = serializeArguments(options)
-    return this.promisifyWithResponse<number, number>((cb) =>
+    const response = await this.promisifyWithResponse<number>((cb) =>
       ariesAskarReactNative.sessionRemoveAll({ cb, ...serializedOptions })
     )
+
+    return handleInvalidNullResponse(response)
   }
 
   public sessionRemoveKey(options: SessionRemoveKeyOptions): Promise<void> {
@@ -514,11 +513,11 @@ export class ReactNativeAriesAskar implements AriesAskar {
 
   public async sessionStart(options: SessionStartOptions): Promise<SessionHandle> {
     const serializedOptions = serializeArguments(options)
-    const handle = await this.promisifyWithResponse<number, number>((cb) =>
+    const handle = await this.promisifyWithResponse<number>((cb) =>
       ariesAskarReactNative.sessionStart({ cb, ...serializedOptions })
     )
 
-    return new SessionHandle(handle)
+    return SessionHandle.fromHandle(handle)
   }
 
   public sessionUpdate(options: SessionUpdateOptions): Promise<void> {
@@ -539,7 +538,7 @@ export class ReactNativeAriesAskar implements AriesAskar {
 
   public sessionUpdateKey(options: SessionUpdateKeyOptions): Promise<void> {
     const serializedOptions = serializeArguments(options)
-    return this.promisifyWithResponse((cb) => ariesAskarReactNative.sessionUpdateKey({ cb, ...serializedOptions }))
+    return this.promisify((cb) => ariesAskarReactNative.sessionUpdateKey({ cb, ...serializedOptions }))
   }
 
   public storeClose(options: StoreCloseOptions): Promise<void> {
@@ -547,11 +546,13 @@ export class ReactNativeAriesAskar implements AriesAskar {
     return this.promisify((cb) => ariesAskarReactNative.storeClose({ cb, ...serializedOptions }))
   }
 
-  public storeCreateProfile(options: StoreCreateProfileOptions): Promise<string> {
+  public async storeCreateProfile(options: StoreCreateProfileOptions): Promise<string> {
     const serializedOptions = serializeArguments(options)
-    return this.promisifyWithResponse<string>((cb) =>
+    const response = await this.promisifyWithResponse<string>((cb) =>
       ariesAskarReactNative.storeCreateProfile({ cb, ...serializedOptions })
     )
+
+    return handleInvalidNullResponse(response)
   }
 
   public storeGenerateRawKey(options: StoreGenerateRawKeyOptions): string {
@@ -559,27 +560,31 @@ export class ReactNativeAriesAskar implements AriesAskar {
     return ariesAskarReactNative.storeGenerateRawKey(serializedOptions)
   }
 
-  public storeGetProfileName(options: StoreGetProfileNameOptions): Promise<string> {
+  public async storeGetProfileName(options: StoreGetProfileNameOptions): Promise<string> {
     const serializedOptions = serializeArguments(options)
-    return this.promisifyWithResponse<string>((cb) =>
+    const response = await this.promisifyWithResponse<string>((cb) =>
       ariesAskarReactNative.storeGetProfileName({ cb, ...serializedOptions })
     )
+
+    return handleInvalidNullResponse(response)
   }
 
-  public storeOpen(options: StoreOpenOptions): Promise<StoreHandle> {
+  public async storeOpen(options: StoreOpenOptions): Promise<StoreHandle> {
     const serializedOptions = serializeArguments(options)
-    return this.promisifyWithResponse<StoreHandle, number>((cb) =>
+    const handle = await this.promisifyWithResponse<number>((cb) =>
       ariesAskarReactNative.storeOpen({ cb, ...serializedOptions })
     )
+
+    return StoreHandle.fromHandle(handle)
   }
 
   public async storeProvision(options: StoreProvisionOptions): Promise<StoreHandle> {
     const serializedOptions = serializeArguments(options)
-    const handle = await this.promisifyWithResponse<number, number>((cb) =>
+    const handle = await this.promisifyWithResponse<number>((cb) =>
       ariesAskarReactNative.storeProvision({ cb, ...serializedOptions })
     )
 
-    return new StoreHandle(handle)
+    return StoreHandle.fromHandle(handle)
   }
 
   public storeRekey(options: StoreRekeyOptions): Promise<void> {
@@ -587,15 +592,21 @@ export class ReactNativeAriesAskar implements AriesAskar {
     return this.promisify((cb) => ariesAskarReactNative.storeRekey({ cb, ...serializedOptions }))
   }
 
-  public storeRemove(options: StoreRemoveOptions): Promise<number> {
+  public async storeRemove(options: StoreRemoveOptions): Promise<number> {
     const serializedOptions = serializeArguments(options)
-    return this.promisifyWithResponse<number>((cb) => ariesAskarReactNative.storeRemove({ cb, ...serializedOptions }))
+    const response = await this.promisifyWithResponse<number>((cb) =>
+      ariesAskarReactNative.storeRemove({ cb, ...serializedOptions })
+    )
+
+    return handleInvalidNullResponse(response)
   }
 
-  public storeRemoveProfile(options: StoreRemoveProfileOptions): Promise<number> {
+  public async storeRemoveProfile(options: StoreRemoveProfileOptions): Promise<number> {
     const serializedOptions = serializeArguments(options)
-    return this.promisifyWithResponse<number>((cb) =>
+    const response = await this.promisifyWithResponse<number>((cb) =>
       ariesAskarReactNative.storeRemoveProfile({ cb, ...serializedOptions })
     )
+
+    return handleInvalidNullResponse(response)
   }
 }

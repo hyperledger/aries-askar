@@ -277,15 +277,15 @@ export type AriesAskar = {
   keyWrapKey(options: KeyWrapKeyOptions): EncryptedBuffer
 
   scanFree(options: ScanFreeOptions): void
-  scanNext(options: ScanNextOptions): Promise<EntryListHandle>
+  scanNext(options: ScanNextOptions): Promise<EntryListHandle | null>
   scanStart(options: ScanStartOptions): Promise<ScanHandle>
 
   sessionClose(options: SessionCloseOptions): Promise<void>
   sessionCount(options: SessionCountOptions): Promise<number>
-  sessionFetch(options: SessionFetchOptions): Promise<EntryListHandle>
-  sessionFetchAll(options: SessionFetchAllOptions): Promise<EntryListHandle>
-  sessionFetchAllKeys(options: SessionFetchAllKeysOptions): Promise<KeyEntryListHandle>
-  sessionFetchKey(options: SessionFetchKeyOptions): Promise<KeyEntryListHandle>
+  sessionFetch(options: SessionFetchOptions): Promise<EntryListHandle | null>
+  sessionFetchAll(options: SessionFetchAllOptions): Promise<EntryListHandle | null>
+  sessionFetchAllKeys(options: SessionFetchAllKeysOptions): Promise<KeyEntryListHandle | null>
+  sessionFetchKey(options: SessionFetchKeyOptions): Promise<KeyEntryListHandle | null>
   sessionInsertKey(options: SessionInsertKeyOptions): Promise<void>
   sessionRemoveAll(options: SessionRemoveAllOptions): Promise<number>
   sessionRemoveKey(options: SessionRemoveKeyOptions): Promise<void>

@@ -82,6 +82,7 @@ import type {
 } from '@hyperledger/aries-askar-shared'
 
 import {
+  handleInvalidNullResponse,
   AriesAskarError,
   ScanHandle,
   EntryListHandle,
@@ -141,7 +142,7 @@ export class NodeJSAriesAskar implements AriesAskar {
   private promisifyWithResponse = async <Return, Response = string>(
     method: (nativeCallbackWithResponsePtr: Buffer, id: number) => void,
     responseFfiType = FFI_STRING
-  ): Promise<Return> => {
+  ): Promise<Return | null> => {
     return new Promise((resolve, reject) => {
       const cb: NativeCallbackWithResponse<Response> = (id, errorCode, response) => {
         deallocateCallbackBuffer(id)
@@ -162,12 +163,7 @@ export class NodeJSAriesAskar implements AriesAskar {
         } else if (typeof response === 'number') {
           resolve(response as unknown as Return)
         } else if (response instanceof Buffer) {
-          if (response.address() === 0)
-            return reject(
-              AriesAskarError.customError({
-                message: 'Received null pointer. The native library could not find the value.',
-              })
-            )
+          if (response.address() === 0) return resolve(null)
 
           resolve(response as unknown as Return)
         }
@@ -667,7 +663,7 @@ export class NodeJSAriesAskar implements AriesAskar {
     handleError()
   }
 
-  public async scanNext(options: ScanNextOptions): Promise<EntryListHandle> {
+  public async scanNext(options: ScanNextOptions): Promise<EntryListHandle | null> {
     const { scanHandle } = serializeArguments(options)
 
     const handle = await this.promisifyWithResponse<Uint8Array>(
@@ -675,7 +671,7 @@ export class NodeJSAriesAskar implements AriesAskar {
       FFI_ENTRY_LIST_HANDLE
     )
 
-    return new EntryListHandle(handle)
+    return EntryListHandle.fromHandle(handle)
   }
 
   public async scanStart(options: ScanStartOptions): Promise<ScanHandle> {
@@ -695,7 +691,7 @@ export class NodeJSAriesAskar implements AriesAskar {
       FFI_SCAN_HANDLE
     )
 
-    return new ScanHandle(handle)
+    return ScanHandle.fromHandle(handle)
   }
 
   public async sessionClose(options: SessionCloseOptions): Promise<void> {
@@ -706,23 +702,25 @@ export class NodeJSAriesAskar implements AriesAskar {
 
   public async sessionCount(options: SessionCountOptions): Promise<number> {
     const { sessionHandle, tagFilter, category } = serializeArguments(options)
-    return this.promisifyWithResponse<number, number>(
+    const response = await this.promisifyWithResponse<number, number>(
       (cb, cbId) => nativeAriesAskar.askar_session_count(sessionHandle, category, tagFilter, cb, cbId),
       FFI_INT64
     )
+
+    return handleInvalidNullResponse(response)
   }
 
-  public async sessionFetch(options: SessionFetchOptions): Promise<EntryListHandle> {
+  public async sessionFetch(options: SessionFetchOptions): Promise<EntryListHandle | null> {
     const { name, category, sessionHandle, forUpdate } = serializeArguments(options)
     const handle = await this.promisifyWithResponse<Uint8Array>(
       (cb, cbId) => nativeAriesAskar.askar_session_fetch(sessionHandle, category, name, forUpdate, cb, cbId),
       FFI_ENTRY_LIST_HANDLE
     )
 
-    return new EntryListHandle(handle)
+    return EntryListHandle.fromHandle(handle)
   }
 
-  public async sessionFetchAll(options: SessionFetchAllOptions): Promise<EntryListHandle> {
+  public async sessionFetchAll(options: SessionFetchAllOptions): Promise<EntryListHandle | null> {
     const { forUpdate, sessionHandle, tagFilter, limit, category } = serializeArguments(options)
 
     const handle = await this.promisifyWithResponse<Uint8Array>(
@@ -731,10 +729,10 @@ export class NodeJSAriesAskar implements AriesAskar {
       FFI_ENTRY_LIST_HANDLE
     )
 
-    return new EntryListHandle(handle)
+    return EntryListHandle.fromHandle(handle)
   }
 
-  public async sessionFetchAllKeys(options: SessionFetchAllKeysOptions): Promise<KeyEntryListHandle> {
+  public async sessionFetchAllKeys(options: SessionFetchAllKeysOptions): Promise<KeyEntryListHandle | null> {
     const { forUpdate, limit, tagFilter, sessionHandle, algorithm, thumbprint } = serializeArguments(options)
 
     const handle = await this.promisifyWithResponse<Uint8Array>(
@@ -752,10 +750,10 @@ export class NodeJSAriesAskar implements AriesAskar {
       FFI_KEY_ENTRY_LIST_HANDLE
     )
 
-    return new KeyEntryListHandle(handle)
+    return KeyEntryListHandle.fromHandle(handle)
   }
 
-  public async sessionFetchKey(options: SessionFetchKeyOptions): Promise<KeyEntryListHandle> {
+  public async sessionFetchKey(options: SessionFetchKeyOptions): Promise<KeyEntryListHandle | null> {
     const { forUpdate, sessionHandle, name } = serializeArguments(options)
 
     const handle = await this.promisifyWithResponse<Uint8Array>(
@@ -763,7 +761,7 @@ export class NodeJSAriesAskar implements AriesAskar {
       FFI_KEY_ENTRY_LIST_HANDLE
     )
 
-    return new KeyEntryListHandle(handle)
+    return KeyEntryListHandle.fromHandle(handle)
   }
 
   public async sessionInsertKey(options: SessionInsertKeyOptions): Promise<void> {
@@ -785,11 +783,12 @@ export class NodeJSAriesAskar implements AriesAskar {
 
   public async sessionRemoveAll(options: SessionRemoveAllOptions): Promise<number> {
     const { sessionHandle, tagFilter, category } = serializeArguments(options)
-
-    return this.promisifyWithResponse(
+    const response = await this.promisifyWithResponse<number>(
       (cb, cbId) => nativeAriesAskar.askar_session_remove_all(sessionHandle, category, tagFilter, cb, cbId),
       FFI_INT64
     )
+
+    return handleInvalidNullResponse(response)
   }
 
   public async sessionRemoveKey(options: SessionRemoveKeyOptions): Promise<void> {
@@ -805,7 +804,7 @@ export class NodeJSAriesAskar implements AriesAskar {
       nativeAriesAskar.askar_session_start(storeHandle, profile, asTransaction, cb, cbId)
     }, FFI_SESSION_HANDLE)
 
-    return new SessionHandle(handle)
+    return SessionHandle.fromHandle(handle)
   }
 
   public async sessionUpdate(options: SessionUpdateOptions): Promise<void> {
@@ -840,13 +839,14 @@ export class NodeJSAriesAskar implements AriesAskar {
     return this.promisify((cb, cbId) => nativeAriesAskar.askar_store_close(storeHandle, cb, cbId))
   }
 
-  public storeCreateProfile(options: StoreCreateProfileOptions): Promise<string> {
+  public async storeCreateProfile(options: StoreCreateProfileOptions): Promise<string> {
     const { storeHandle, profile } = serializeArguments(options)
-
-    return this.promisifyWithResponse(
+    const response = await this.promisifyWithResponse<string>(
       (cb, cbId) => nativeAriesAskar.askar_store_create_profile(storeHandle, profile, cb, cbId),
       FFI_STRING
     )
+
+    return handleInvalidNullResponse(response)
   }
 
   public storeGenerateRawKey(options: StoreGenerateRawKeyOptions): string {
@@ -861,10 +861,11 @@ export class NodeJSAriesAskar implements AriesAskar {
 
   public async storeGetProfileName(options: StoreGetProfileNameOptions): Promise<string> {
     const { storeHandle } = serializeArguments(options)
-
-    return this.promisifyWithResponse((cb, cbId) =>
+    const response = await this.promisifyWithResponse<string>((cb, cbId) =>
       nativeAriesAskar.askar_store_get_profile_name(storeHandle, cb, cbId)
     )
+
+    return handleInvalidNullResponse(response)
   }
 
   public async storeOpen(options: StoreOpenOptions): Promise<StoreHandle> {
@@ -875,7 +876,7 @@ export class NodeJSAriesAskar implements AriesAskar {
       FFI_STORE_HANDLE
     )
 
-    return new StoreHandle(handle)
+    return StoreHandle.fromHandle(handle)
   }
 
   public async storeProvision(options: StoreProvisionOptions): Promise<StoreHandle> {
@@ -886,7 +887,7 @@ export class NodeJSAriesAskar implements AriesAskar {
       FFI_STORE_HANDLE
     )
 
-    return new StoreHandle(handle)
+    return StoreHandle.fromHandle(handle)
   }
 
   public async storeRekey(options: StoreRekeyOptions): Promise<void> {
@@ -897,16 +898,22 @@ export class NodeJSAriesAskar implements AriesAskar {
 
   public async storeRemove(options: StoreRemoveOptions): Promise<number> {
     const { specUri } = serializeArguments(options)
+    const response = await this.promisifyWithResponse<number>(
+      (cb, cbId) => nativeAriesAskar.askar_store_remove(specUri, cb, cbId),
+      FFI_INT8
+    )
 
-    return this.promisifyWithResponse((cb, cbId) => nativeAriesAskar.askar_store_remove(specUri, cb, cbId), FFI_INT8)
+    return handleInvalidNullResponse(response)
   }
 
   public async storeRemoveProfile(options: StoreRemoveProfileOptions): Promise<number> {
     const { storeHandle, profile } = serializeArguments(options)
 
-    return this.promisifyWithResponse(
+    const response = await this.promisifyWithResponse<number>(
       (cb, cbId) => nativeAriesAskar.askar_store_remove_profile(storeHandle, profile, cb, cbId),
       FFI_INT8
     )
+
+    return handleInvalidNullResponse(response)
   }
 }

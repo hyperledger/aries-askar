@@ -74,6 +74,8 @@ export class Session {
       sessionHandle: this.handle,
       category,
     })
+    if (!handle) return []
+
     const entryList = new EntryList({ handle })
     const entryObjects = entryList.toArray()
 
@@ -196,10 +198,12 @@ export class Session {
 
   public async fetchKey({ name, forUpdate = false }: { name: string; forUpdate?: boolean }) {
     if (!this.handle) throw AriesAskarError.customError({ message: 'Cannot fetch a key with a closed session' })
+
     const handle = await ariesAskar.sessionFetchKey({ forUpdate, name, sessionHandle: this.handle })
+    if (!handle) return null
+
     const keyEntryList = new KeyEntryList({ handle })
     const keyEntryObject = keyEntryList.getEntryByIndex(0).toJson()
-
     keyEntryList.handle.free()
 
     return keyEntryObject
@@ -227,6 +231,7 @@ export class Session {
       algorithm,
       sessionHandle: this.handle,
     })
+    if (!handle) return []
 
     const keyEntryList = new KeyEntryList({ handle })
     const keyEntryObjects = keyEntryList.toArray()

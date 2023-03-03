@@ -63,8 +63,10 @@ export class Scan {
     // Loop while limit not reached (or no limit specified)
     while (!this.limit || recordCount < this.limit) {
       // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-      this._listHandle = await ariesAskar.scanNext({ scanHandle: this._handle! })
+      const listHandle = await ariesAskar.scanNext({ scanHandle: this._handle! })
+      if (!listHandle) break
 
+      this._listHandle = listHandle
       const list = new EntryList({ handle: this._listHandle })
 
       recordCount = recordCount + list.length
