@@ -13,5 +13,6 @@ describe('CryptoBox', () => {
 
     const opened = CryptoBox.sealOpen({ recipientKey: x25519Key, ciphertext: sealed })
     expect(opened).toStrictEqual(message)
+    x25519Key.handle.free()
   })
 })

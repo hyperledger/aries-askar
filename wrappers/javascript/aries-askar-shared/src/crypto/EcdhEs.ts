@@ -59,7 +59,9 @@ export class EcdhEs {
     const eKey = ephemeralKey instanceof Jwk ? Key.fromJwk({ jwk: ephemeralKey }) : ephemeralKey
     const rKey = recipientKey instanceof Jwk ? Key.fromJwk({ jwk: recipientKey }) : recipientKey
     const derived = this.deriveKey({ encAlg, ephemeralKey: eKey, recipientKey: rKey, receive: false })
-    return derived.aeadEncrypt({ message, aad, nonce })
+    const encryptedBuffer = derived.aeadEncrypt({ message, aad, nonce })
+    derived.handle.free()
+    return encryptedBuffer
   }
 
   public decryptDirect({
@@ -82,7 +84,9 @@ export class EcdhEs {
     const eKey = ephemeralKey instanceof Jwk ? Key.fromJwk({ jwk: ephemeralKey }) : ephemeralKey
     const rKey = recipientKey instanceof Jwk ? Key.fromJwk({ jwk: recipientKey }) : recipientKey
     const derived = this.deriveKey({ encAlg, ephemeralKey: eKey, recipientKey: rKey, receive: true })
-    return derived.aeadDecrypt({ tag, nonce, ciphertext, aad })
+    const encryptedBuffer = derived.aeadDecrypt({ tag, nonce, ciphertext, aad })
+    derived.handle.free()
+    return encryptedBuffer
   }
 
   public senderWrapKey({
@@ -97,7 +101,9 @@ export class EcdhEs {
     cek: Key
   }) {
     const derived = this.deriveKey({ encAlg: wrapAlg, ephemeralKey, recipientKey, receive: false })
-    return derived.wrapKey({ other: cek })
+    const encryptedBuffer = derived.wrapKey({ other: cek })
+    derived.handle.free()
+    return encryptedBuffer
   }
 
   public receiverUnwrapKey({
@@ -118,6 +124,8 @@ export class EcdhEs {
     tag?: Uint8Array
   }) {
     const derived = this.deriveKey({ encAlg: wrapAlg, ephemeralKey, recipientKey, receive: true })
-    return derived.unwrapKey({ tag, nonce, ciphertext, algorithm: encAlg })
+    const encryptedBuffer = derived.unwrapKey({ tag, nonce, ciphertext, algorithm: encAlg })
+    derived.handle.free()
+    return encryptedBuffer
   }
 }
