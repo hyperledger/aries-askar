@@ -133,7 +133,7 @@ export class ReactNativeAriesAskar implements AriesAskar {
   }
 
   public setDefaultLogger(): void {
-    throw new Error('Method not implemented. setDefaultLogger')
+    ariesAskarReactNative.setDefaultLogger({})
   }
 
   public setMaxLogLevel(options: SetMaxLogLevelOptions): void {

@@ -16,6 +16,13 @@ jsi::Value getCurrentError(jsi::Runtime &rt, jsi::Object options) {
   return jsi::String::createFromAscii(rt, error);
 };
 
+jsi::Value setDefaultLogger(jsi::Runtime &rt, jsi::Object options) {
+  ErrorCode code = askar_set_default_logger();
+  handleError(rt, code);
+
+  return jsi::Value::null();
+};
+
 jsi::Value entryListCount(jsi::Runtime &rt, jsi::Object options) {
   auto entryListHandle =
       jsiToValue<EntryListHandle>(rt, options, "entryListHandle");

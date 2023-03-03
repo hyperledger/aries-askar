@@ -11,11 +11,10 @@ namespace ariesAskar {
 
 jsi::Value version(jsi::Runtime &rt, jsi::Object options);
 jsi::Value getCurrentError(jsi::Runtime &rt, jsi::Object options);
-
+jsi::Value setDefaultLogger(jsi::Runtime &rt, jsi::Object options);
 
 // TODO: not implemented yet
 // jsi::Value setCustomLogger(jsi::Runtime &rt, jsi::Object options);
-// jsi::Value setDefaultLogger(jsi::Runtime &rt, jsi::Object options);
 // jsi::Value setMaxLogLevel(jsi::Runtime &rt, jsi::Object options);
 // jsi::Value clearCustomLogger(jsi::Runtime &rt, jsi::Object options);
 

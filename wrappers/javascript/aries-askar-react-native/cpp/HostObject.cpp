@@ -9,6 +9,7 @@ FunctionMap AriesAskarTurboModuleHostObject::functionMapping(jsi::Runtime &rt) {
 
   fMap.insert(std::make_tuple("version", &ariesAskar::version));
   fMap.insert(std::make_tuple("getCurrentError", &ariesAskar::getCurrentError));
+  fMap.insert(std::make_tuple("setDefaultLogger", &ariesAskar::setDefaultLogger));
 
   fMap.insert(std::make_tuple("storeOpen", &ariesAskar::storeOpen));
   fMap.insert(
