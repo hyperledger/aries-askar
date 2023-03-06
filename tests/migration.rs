@@ -19,13 +19,10 @@ fn prepare_db() {
         PathBuf::from(format!("{}-wal", DB_UPGRADE_PATH)),
     ];
     for (tpl, upd) in tpl_paths.iter().zip(upd_paths) {
-        match tpl.try_exists() {
-            Ok(true) => {
-                std::fs::copy(tpl, upd).expect("Error copying wallet database");
-            }
-            _ => {
-                std::fs::remove_file(upd).ok();
-            }
+        if tpl.exists() {
+            std::fs::copy(tpl, upd).expect("Error copying wallet database");
+        } else {
+            std::fs::remove_file(upd).ok();
         }
     }
 }
@@ -34,14 +31,14 @@ fn prepare_db() {
 fn test_migration() {
     prepare_db();
 
-    let res = block_on::<Result<(), Error>>(async {
+    let res = block_on(async {
         let wallet_name = "walletwallet.0";
         let wallet_key = "GfwU1DC7gEZNs3w41tjBiZYj7BNToDoFEqKY6wZXqs1A";
         let migrator =
             IndySdkToAriesAskarMigration::connect(DB_UPGRADE_PATH, wallet_name, &wallet_key, "RAW")
                 .await?;
         migrator.migrate().await?;
-        Ok(())
+        Result::<_, Error>::Ok(())
     });
 
     // We still need some indication if something returned with an error
