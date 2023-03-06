@@ -26,7 +26,7 @@ void assertValueIsObject(jsi::Runtime &rt, const jsi::Value *val) {
 
 template <>
 jsi::Value createReturnValue(jsi::Runtime &rt, ErrorCode code,
-                             const char ** value) {
+                             const char **value) {
   auto object = jsi::Object(rt);
 
   if (code == ErrorCode::Success) {
@@ -44,7 +44,7 @@ jsi::Value createReturnValue(jsi::Runtime &rt, ErrorCode code,
 
 template <>
 jsi::Value createReturnValue(jsi::Runtime &rt, ErrorCode code,
-                             const char * const* value) {
+                             const char *const *value) {
   auto object = jsi::Object(rt);
 
   if (code == ErrorCode::Success) {
@@ -75,116 +75,13 @@ jsi::Value createReturnValue(jsi::Runtime &rt, ErrorCode code,
 }
 
 template <>
-jsi::Value createReturnValue(jsi::Runtime &rt, ErrorCode code, int8_t* out) {
+jsi::Value createReturnValue(jsi::Runtime &rt, ErrorCode code, int8_t *value) {
   auto object = jsi::Object(rt);
 
   if (code == ErrorCode::Success) {
     auto valueWithoutNullptr =
-        out == nullptr ? jsi::Value::null() : jsi::Value(rt, int(*out));
+        value == nullptr ? jsi::Value::null() : jsi::Value(rt, int(*value));
     object.setProperty(rt, "value", valueWithoutNullptr);
-  }
-
-  object.setProperty(rt, "errorCode", int(code));
-
-  return object;
-}
-
-template <>
-jsi::Value createReturnValue(jsi::Runtime &rt, ErrorCode code, int8_t const* out) {
-  auto object = jsi::Object(rt);
-
-  if (code == ErrorCode::Success) {
-    auto valueWithoutNullptr =
-        out == nullptr ? jsi::Value::null() : jsi::Value(rt, int(*out));
-    object.setProperty(rt, "value", valueWithoutNullptr);
-  }
-
-  object.setProperty(rt, "errorCode", int(code));
-
-  return object;
-}
-
-template <>
-jsi::Value createReturnValue(jsi::Runtime &rt, ErrorCode code, int32_t* out) {
-  auto object = jsi::Object(rt);
-
-  if (code == ErrorCode::Success) {
-    auto valueWithoutNullptr =
-        out == nullptr ? jsi::Value::null() : jsi::Value(rt, int(*out));
-    object.setProperty(rt, "value", valueWithoutNullptr);
-  }
-
-  object.setProperty(rt, "errorCode", int(code));
-
-  return object;
-}
-
-
-template <>
-jsi::Value createReturnValue(jsi::Runtime &rt, ErrorCode code, int64_t* out) {
-  auto object = jsi::Object(rt);
-
-  if (code == ErrorCode::Success) {
-    auto valueWithoutNullptr =
-        out == nullptr ? jsi::Value::null() : jsi::Value(rt, int(*out));
-    object.setProperty(rt, "value", valueWithoutNullptr);
-  }
-
-  object.setProperty(rt, "errorCode", int(code));
-
-  return object;
-}
-
-template <>
-jsi::Value createReturnValue(jsi::Runtime &rt, ErrorCode code, int64_t const* out) {
-  auto object = jsi::Object(rt);
-
-  if (code == ErrorCode::Success) {
-    auto valueWithoutNullptr =
-        out == nullptr ? jsi::Value::null() : jsi::Value(rt, int(*out));
-    object.setProperty(rt, "value", valueWithoutNullptr);
-  }
-
-  object.setProperty(rt, "errorCode", int(code));
-
-  return object;
-}
-
-template <>
-jsi::Value createReturnValue(jsi::Runtime &rt, ErrorCode code, size_t const* out) {
-  auto object = jsi::Object(rt);
-
-  if (code == ErrorCode::Success) {
-    auto valueWithoutNullptr =
-        out == nullptr ? jsi::Value::null() : jsi::Value(rt, int(*out));
-    object.setProperty(rt, "value", valueWithoutNullptr);
-  }
-
-  object.setProperty(rt, "errorCode", int(code));
-
-  return object;
-}
-
-template <>
-jsi::Value createReturnValue(jsi::Runtime &rt, ErrorCode code, intptr_t* out) {
-  auto object = jsi::Object(rt);
-
-  if (code == ErrorCode::Success) {
-    auto valueWithoutNullptr = out == nullptr ? jsi::Value::null() : jsi::Value(int(*out));
-    object.setProperty(rt, "value", valueWithoutNullptr);
-  }
-
-  object.setProperty(rt, "errorCode", int(code));
-
-  return object;
-}
-
-template <>
-jsi::Value createReturnValue(jsi::Runtime &rt, ErrorCode code, std::string out) {
-  auto object = jsi::Object(rt);
-
-  if (code == ErrorCode::Success) {
-    object.setProperty(rt, "value", jsi::String::createFromAscii(rt, out));
   }
 
   object.setProperty(rt, "errorCode", int(code));
@@ -194,13 +91,121 @@ jsi::Value createReturnValue(jsi::Runtime &rt, ErrorCode code, std::string out) 
 
 template <>
 jsi::Value createReturnValue(jsi::Runtime &rt, ErrorCode code,
-                             SecretBuffer* out) {
+                             int8_t const *value) {
   auto object = jsi::Object(rt);
 
   if (code == ErrorCode::Success) {
-    auto valueWithoutNullptr = out == nullptr
+    auto valueWithoutNullptr =
+        value == nullptr ? jsi::Value::null() : jsi::Value(rt, int(*value));
+    object.setProperty(rt, "value", valueWithoutNullptr);
+  }
+
+  object.setProperty(rt, "errorCode", int(code));
+
+  return object;
+}
+
+template <>
+jsi::Value createReturnValue(jsi::Runtime &rt, ErrorCode code, int32_t *value) {
+  auto object = jsi::Object(rt);
+
+  if (code == ErrorCode::Success) {
+    auto valueWithoutNullptr =
+        value == nullptr ? jsi::Value::null() : jsi::Value(rt, int(*value));
+    object.setProperty(rt, "value", valueWithoutNullptr);
+  }
+
+  object.setProperty(rt, "errorCode", int(code));
+
+  return object;
+}
+
+template <>
+jsi::Value createReturnValue(jsi::Runtime &rt, ErrorCode code, int64_t *value) {
+  auto object = jsi::Object(rt);
+
+  if (code == ErrorCode::Success) {
+    auto valueWithoutNullptr =
+        value == nullptr ? jsi::Value::null() : jsi::Value(rt, int(*value));
+    object.setProperty(rt, "value", valueWithoutNullptr);
+  }
+
+  object.setProperty(rt, "errorCode", int(code));
+
+  return object;
+}
+
+template <>
+jsi::Value createReturnValue(jsi::Runtime &rt, ErrorCode code,
+                             int64_t const *value) {
+  auto object = jsi::Object(rt);
+
+  if (code == ErrorCode::Success) {
+    auto valueWithoutNullptr =
+        value == nullptr ? jsi::Value::null() : jsi::Value(rt, int(*value));
+    object.setProperty(rt, "value", valueWithoutNullptr);
+  }
+
+  object.setProperty(rt, "errorCode", int(code));
+
+  return object;
+}
+
+template <>
+jsi::Value createReturnValue(jsi::Runtime &rt, ErrorCode code,
+                             size_t const *value) {
+  auto object = jsi::Object(rt);
+
+  if (code == ErrorCode::Success) {
+    auto valueWithoutNullptr =
+        value == nullptr ? jsi::Value::null() : jsi::Value(rt, int(*value));
+    object.setProperty(rt, "value", valueWithoutNullptr);
+  }
+
+  object.setProperty(rt, "errorCode", int(code));
+
+  return object;
+}
+
+template <>
+jsi::Value createReturnValue(jsi::Runtime &rt, ErrorCode code,
+                             intptr_t *value) {
+  auto object = jsi::Object(rt);
+
+  if (code == ErrorCode::Success) {
+    auto valueWithoutNullptr =
+        value == nullptr ? jsi::Value::null() : jsi::Value(int(*value));
+    object.setProperty(rt, "value", valueWithoutNullptr);
+  }
+
+  object.setProperty(rt, "errorCode", int(code));
+
+  return object;
+}
+
+template <>
+jsi::Value createReturnValue(jsi::Runtime &rt, ErrorCode code,
+                             std::string value) {
+  auto object = jsi::Object(rt);
+
+  if (code == ErrorCode::Success) {
+    object.setProperty(rt, "value", jsi::String::createFromAscii(rt, value));
+  }
+
+  object.setProperty(rt, "errorCode", int(code));
+
+  return object;
+}
+
+template <>
+jsi::Value createReturnValue(jsi::Runtime &rt, ErrorCode code,
+                             SecretBuffer *value) {
+  auto object = jsi::Object(rt);
+
+  if (code == ErrorCode::Success) {
+    auto valueWithoutNullptr = value == nullptr
                                    ? jsi::Value::null()
-                                   : secretBufferToArrayBuffer(rt, *out);
+                                   : secretBufferToArrayBuffer(rt, *value);
     object.setProperty(rt, "value", valueWithoutNullptr);
   }
 
@@ -211,40 +216,46 @@ jsi::Value createReturnValue(jsi::Runtime &rt, ErrorCode code,
 
 template <>
 jsi::Value createReturnValue(jsi::Runtime &rt, ErrorCode code,
-                             LocalKeyHandle* out) {
-    auto isNullptr = out == nullptr || out->_0 == nullptr;
-    return isNullptr ? createReturnValue(rt, code, nullptr) : createReturnValue(rt, code, std::to_string(intptr_t(out->_0)));
+                             LocalKeyHandle *value) {
+  auto isNullptr = value == nullptr || value->_0 == nullptr;
+  return isNullptr
+             ? createReturnValue(rt, code, nullptr)
+             : createReturnValue(rt, code, std::to_string(intptr_t(value->_0)));
 }
 
 template <>
 jsi::Value createReturnValue(jsi::Runtime &rt, ErrorCode code,
-                             EntryListHandle const* out) {
-    auto isNullptr = out == nullptr || out->_0 == nullptr;
-    return isNullptr ? createReturnValue(rt, code, nullptr) : createReturnValue(rt, code, std::to_string(intptr_t(out->_0)));
+                             EntryListHandle const *value) {
+  auto isNullptr = value == nullptr || value->_0 == nullptr;
+  return isNullptr
+             ? createReturnValue(rt, code, nullptr)
+             : createReturnValue(rt, code, std::to_string(intptr_t(value->_0)));
 }
 
 template <>
 jsi::Value createReturnValue(jsi::Runtime &rt, ErrorCode code,
-                             KeyEntryListHandle const* out) {
-    auto isNullptr = out == nullptr || out->_0 == nullptr;
-    return isNullptr ? createReturnValue(rt, code, nullptr) : createReturnValue(rt, code, std::to_string(intptr_t(out->_0)));
+                             KeyEntryListHandle const *value) {
+  auto isNullptr = value == nullptr || value->_0 == nullptr;
+  return isNullptr
+             ? createReturnValue(rt, code, nullptr)
+             : createReturnValue(rt, code, std::to_string(intptr_t(value->_0)));
 }
 
 template <>
 jsi::Value createReturnValue(jsi::Runtime &rt, ErrorCode code,
-                             EncryptedBuffer* out) {
+                             EncryptedBuffer *value) {
   auto object = jsi::Object(rt);
 
   if (code == ErrorCode::Success) {
-    if (out == nullptr) {
+    if (value == nullptr) {
       object.setProperty(rt, "value", jsi::Value::null());
     } else {
       auto object = jsi::Object(rt);
 
       object.setProperty(rt, "buffer",
-                         secretBufferToArrayBuffer(rt, out->buffer));
-      object.setProperty(rt, "tagPos", int(out->tag_pos));
-      object.setProperty(rt, "noncePos", int(out->nonce_pos));
+                         secretBufferToArrayBuffer(rt, value->buffer));
+      object.setProperty(rt, "tagPos", int(value->tag_pos));
+      object.setProperty(rt, "noncePos", int(value->nonce_pos));
 
       object.setProperty(rt, "value", object);
     }
@@ -256,17 +267,18 @@ jsi::Value createReturnValue(jsi::Runtime &rt, ErrorCode code,
 }
 
 template <>
-jsi::Value createReturnValue(jsi::Runtime &rt, ErrorCode code, AeadParams* out) {
+jsi::Value createReturnValue(jsi::Runtime &rt, ErrorCode code,
+                             AeadParams *value) {
   auto object = jsi::Object(rt);
 
   if (code == ErrorCode::Success) {
-    if (out == nullptr) {
+    if (value == nullptr) {
       object.setProperty(rt, "value", jsi::Value::null());
     } else {
       auto object = jsi::Object(rt);
 
-      object.setProperty(rt, "nonceLength", int(out->nonce_length));
-      object.setProperty(rt, "tagLength", int(out->tag_length));
+      object.setProperty(rt, "nonceLength", int(value->nonce_length));
+      object.setProperty(rt, "tagLength", int(value->tag_length));
 
       object.setProperty(rt, "value", object);
     }
