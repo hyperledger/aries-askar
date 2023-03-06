@@ -66,6 +66,10 @@ export class EntryListHandle extends ArcHandle {
   public getTags(index: number) {
     return ariesAskar.entryListGetTags({ index, entryListHandle: this })
   }
+
+  public free() {
+    ariesAskar.entryListFree({ entryListHandle: this })
+  }
 }
 
 export class KeyEntryListHandle extends ArcHandle {
@@ -88,6 +92,14 @@ export class KeyEntryListHandle extends ArcHandle {
   public loadKey(index: number) {
     return ariesAskar.keyEntryListLoadLocal({ index, keyEntryListHandle: this })
   }
+
+  public free() {
+    ariesAskar.keyEntryListFree({ keyEntryListHandle: this })
+  }
 }
 
-export class LocalKeyHandle extends ArcHandle {}
+export class LocalKeyHandle extends ArcHandle {
+  public free() {
+    ariesAskar.keyFree({ keyHandle: this })
+  }
+}
