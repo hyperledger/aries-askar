@@ -524,3 +524,15 @@ jobs:
         with:
           file: library-ios-android.tar.gz
           asset_name: "library-ios-android.tar.gz"
+
+      - name: Package for Swift
+        run: |
+          mv mobile/ios/aries_askar.xcframework AskarFramework.xcframework
+          zip -r AskarFramework.xcframework.zip AskarFramework.xcframework
+          shasum -a 256 AskarFramework.xcframework.zip
+
+      - name: Add xcframework to release
+        uses: svenstaro/upload-release-action@v2
+        with:
+          file: AskarFramework.xcframework.zip
+          asset_name: "AskarFramework.xcframework.zip"
