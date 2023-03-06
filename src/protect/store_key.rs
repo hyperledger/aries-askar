@@ -164,6 +164,16 @@ impl Default for StoreKeyMethod {
     }
 }
 
+impl From<StoreKeyReference> for StoreKeyMethod {
+    fn from(key_ref: StoreKeyReference) -> Self {
+        match key_ref {
+            StoreKeyReference::DeriveKey(method, _) => Self::DeriveKey(method),
+            StoreKeyReference::RawKey => Self::RawKey,
+            StoreKeyReference::Unprotected => Self::Unprotected,
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum StoreKeyReference {
     // ManagedKey(String),

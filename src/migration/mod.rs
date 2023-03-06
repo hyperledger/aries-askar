@@ -1,19 +1,22 @@
-use self::strategy::{Strategy, UpdatedIndyItem};
-use crate::crypto::generic_array::typenum::U32;
-use crate::protect::hmac_key::HmacKey;
-use crate::protect::ProfileKey;
-use crate::{Argon2Level, Error};
-use askar_crypto::alg::chacha20::{Chacha20Key, C20P};
-use askar_crypto::kdf::argon2::{Argon2, PARAMS_INTERACTIVE, PARAMS_MODERATE};
-use askar_crypto::kdf::KeyDerivation;
-use askar_crypto::repr::KeySecretBytes;
+//! Support for migration from Indy-SDK wallets.
+
 use sha2::Sha256;
 use sqlx::sqlite::SqliteRow;
 use sqlx::{Connection, Row, SqliteConnection};
+use std::fmt::{Display, Formatter};
+use std::str::FromStr;
+
+use self::strategy::Strategy;
+use crate::backend::sqlite::SqliteStoreOptions;
+use crate::crypto::alg::chacha20::{Chacha20Key, C20P};
+use crate::crypto::generic_array::typenum::U32;
+use crate::error::Error;
+use crate::protect::kdf::Argon2Level;
+use crate::protect::{ProfileKey, StoreKey, StoreKeyReference};
+use crate::storage::EncEntryTag;
 
 mod strategy;
 
-const CHACHAPOLY_KEY_LEN: u8 = 32;
 const CHACHAPOLY_NONCE_LEN: u8 = 12;
 
 #[derive(Serialize, Deserialize, Debug, Default)]
@@ -23,141 +26,144 @@ pub(crate) struct IndyKeyMetadata {
     master_key_salt: Option<Vec<u8>>,
 }
 
+pub(crate) type EncryptionKey = Chacha20Key<C20P>;
+pub(crate) type MacKey = crate::protect::hmac_key::HmacKey<Sha256, U32>;
+
 /// Copies: https://github.com/hyperledger/indy-sdk/blob/83547c4c01162f6323cf138f8b071da2e15f0c90/libindy/indy-wallet/src/wallet.rs#L18
 #[derive(Serialize, Deserialize)]
 pub(crate) struct IndyKey {
-    type_key: Chacha20Key<C20P>,
-    name_key: Chacha20Key<C20P>,
-    value_key: Chacha20Key<C20P>,
-    item_hmac_key: HmacKey<Sha256, U32>,
-    tag_name_key: Chacha20Key<C20P>,
-    tag_value_key: Chacha20Key<C20P>,
-    tag_hmac_key: HmacKey<Sha256, U32>,
+    type_key: EncryptionKey,
+    name_key: EncryptionKey,
+    value_key: EncryptionKey,
+    item_hmac_key: MacKey,
+    tag_name_key: EncryptionKey,
+    tag_value_key: EncryptionKey,
+    tag_hmac_key: MacKey,
 }
 
-pub(crate) struct IndyKeyWithMasterAndSalt {
-    indy_key: IndyKey,
-    master: Chacha20Key<C20P>,
-    salt: Option<Vec<u8>>,
+#[derive(Default)]
+pub(crate) struct UpdatedIndyItem {
+    pub id: u32,
+    pub category: Vec<u8>,
+    pub name: Vec<u8>,
+    pub value: Vec<u8>,
+    pub tags: Vec<EncEntryTag>,
 }
 
-pub(crate) struct IndySdkToAriesAskarMigration {
-    conn: SqliteConnection,
-    wallet_key: String,
-    wallet_name: String,
-    kdf_method: KdfMethod,
+pub(crate) struct UpdatedKey {
+    master: StoreKey,
+    key_ref: StoreKeyReference,
 }
 
-pub enum KdfMethod {
+#[derive(Debug)]
+pub(crate) enum KdfMethod {
     Argon2i(Argon2Level),
     Raw,
 }
 
 impl KdfMethod {
-    fn to_prefix(&self) -> String {
-        match self {
-            Self::Raw => "raw:".to_owned(),
-            Self::Argon2i(method) => match method {
-                Argon2Level::Interactive => "kdf:argon2i:13:int".to_owned(),
-                Argon2Level::Moderate => "kdf:argon2i:13:mod".to_owned(),
-            },
-        }
-    }
-
-    fn derive(&self, key: &[u8], salt: &Option<Vec<u8>>) -> Result<Chacha20Key<C20P>, Error> {
-        match self {
-            Self::Argon2i(method) => {
-                let params = match method {
-                    Argon2Level::Interactive => PARAMS_INTERACTIVE,
-                    Argon2Level::Moderate => PARAMS_MODERATE,
-                };
-                let salt = salt
-                    .clone()
-                    .ok_or(err_msg!("Deriving key with argon2i requires salt"))?;
-                let mut kdf = Argon2::new(key, &salt, params)?;
-                let mut key = [0u8; CHACHAPOLY_KEY_LEN as usize];
-                kdf.derive_key_bytes(&mut key)?;
-                Ok(Chacha20Key::<C20P>::from_secret_bytes(&key)?)
-            }
-            Self::Raw => {
-                let key = bs58::decode(String::from_utf8(key.to_vec()).unwrap())
-                    .into_vec()
-                    .unwrap();
-                Ok(Chacha20Key::<C20P>::from_secret_bytes(&key)?)
-            }
-        }
-    }
-
-    fn to_storable_pass_key(
+    pub(crate) fn to_store_key_reference(
         &self,
-        key: Option<&[u8]>,
-        salt: &Option<Vec<u8>>,
-    ) -> Result<String, Error> {
-        let prefix = self.to_prefix();
+        salt: Option<&[u8]>,
+    ) -> Result<StoreKeyReference, Error> {
         match self {
-            Self::Raw => {
-                let key = key.ok_or(err_msg!("raw kdf method needs a key"))?;
-                let key = bs58::encode(key).into_string();
-                let key = format!("{prefix}{key}");
-                Ok(key)
-            }
-            Self::Argon2i(_) => {
-                let salt = salt
-                    .clone()
-                    .ok_or(err_msg!("Salt must be provided for argon2i kdf method"))?;
-                let salt_hex = hex::encode(salt);
-                Ok(format!("{prefix}?salt={salt_hex}"))
+            KdfMethod::Raw => Ok(StoreKeyReference::RawKey),
+            KdfMethod::Argon2i(level) => {
+                let detail = salt
+                    .map(|s| format!("?salt={}", hex::encode(s)))
+                    .ok_or_else(|| err_msg!("Salt must be provided for argon2i kdf method"))?;
+                Ok(StoreKeyReference::DeriveKey(
+                    crate::protect::kdf::KdfMethod::Argon2i(*level),
+                    detail,
+                ))
             }
         }
     }
 }
 
-impl From<&str> for KdfMethod {
-    fn from(s: &str) -> Self {
+impl FromStr for KdfMethod {
+    type Err = Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            "ARGON2I_MOD" => Self::Argon2i(Argon2Level::Moderate),
-            "ARGON2I_INT" => Self::Argon2i(Argon2Level::Interactive),
-            "RAW" => Self::Raw,
-            _ => Self::Argon2i(Argon2Level::Moderate),
+            "ARGON2I_MOD" => Ok(Self::Argon2i(Argon2Level::Moderate)),
+            "ARGON2I_INT" => Ok(Self::Argon2i(Argon2Level::Interactive)),
+            "RAW" => Ok(Self::Raw),
+            _ => Err(err_msg!("Invalid key derivation method")),
         }
     }
+}
+
+/// Indy-SDK migrator implementation
+#[derive(Debug)]
+pub struct IndySdkToAriesAskarMigration {
+    conn: SqliteConnection,
+    spec_uri: String,
+    wallet_key: String,
+    wallet_name: String,
+    kdf_method: KdfMethod,
 }
 
 impl IndySdkToAriesAskarMigration {
-    pub async fn new(
+    /// Create a new migrator connected to a database
+    pub async fn connect(
         spec_uri: &str,
         wallet_name: &str,
         wallet_key: &str,
         kdf_method: &str,
     ) -> Result<Self, Error> {
+        let kdf_method = KdfMethod::from_str(kdf_method)?;
         let conn = SqliteConnection::connect(spec_uri).await?;
         Ok(Self {
             conn,
+            spec_uri: spec_uri.into(),
             wallet_key: wallet_key.to_owned(),
             wallet_name: wallet_name.to_owned(),
-            kdf_method: kdf_method.into(),
+            kdf_method,
         })
     }
 
-    pub async fn migrate(&mut self) -> Result<(), Error> {
+    /// Close the instance without migrating
+    pub async fn close(self) -> Result<(), Error> {
+        Ok(self.conn.close().await?)
+    }
+
+    /// Perform the migration
+    pub async fn migrate(mut self) -> Result<(), Error> {
         if self.is_migrated().await? {
-            return Err(err_msg!(Backend, "Database is already migrated",));
+            self.close().await?;
+            return Err(err_msg!(Backend, "Database is already migrated"));
         }
 
         self.pre_upgrade().await?;
-        let indy_key = self.fetch_indy_key().await?;
-        self.create_config(&indy_key).await?;
-        let profile_key = self.init_profile(&indy_key).await?;
+        debug!("Completed wallet pre-upgrade");
+
+        let (indy_key, upd_key) = self.fetch_indy_key().await?;
+        self.create_config(&upd_key).await?;
+        let profile_key = self.init_profile(&upd_key).await?;
+        debug!("Created wallet profile");
+
         self.update_items(&indy_key, &profile_key).await?;
         self.finish_upgrade().await?;
+        self.conn.close().await?;
+        debug!("Completed wallet upgrade");
+
+        debug!("Re-opening wallet");
+        let db_opts = SqliteStoreOptions::new(self.spec_uri.as_str())?;
+        let key_method = upd_key.key_ref.into();
+        let db = db_opts
+            .open(Some(key_method), self.wallet_key.as_str().into(), None)
+            .await?;
+        db.close().await?;
+        debug!("Verified wallet upgrade");
+
         Ok(())
     }
 
     #[inline]
     async fn is_migrated(&mut self) -> Result<bool, Error> {
         let res: Option<SqliteRow> =
-            sqlx::query("SELECT name FROM sqlite_master WHERE type='table' AND name=?1")
-                .bind("metadata")
+            sqlx::query("SELECT name FROM sqlite_master WHERE type='table' AND name='metadata'")
                 .fetch_optional(&mut self.conn)
                 .await?;
         Ok(res.is_none())
@@ -218,7 +224,7 @@ impl IndySdkToAriesAskarMigration {
         Ok(())
     }
 
-    async fn fetch_indy_key(&mut self) -> Result<IndyKeyWithMasterAndSalt, Error> {
+    async fn fetch_indy_key(&mut self) -> Result<(IndyKey, UpdatedKey), Error> {
         let metadata_row: Vec<u8> = sqlx::query("SELECT value FROM metadata")
             .fetch_one(&mut self.conn)
             .await?
@@ -231,30 +237,19 @@ impl IndySdkToAriesAskarMigration {
         let keys_enc = metadata.keys;
         let salt = metadata.master_key_salt.map(|s| s[..16].to_vec());
 
-        let key = self.kdf_method.derive(self.wallet_key.as_bytes(), &salt)?;
+        let key_ref = self.kdf_method.to_store_key_reference(salt.as_deref())?;
+        let master = key_ref.resolve(self.wallet_key.as_str().into())?;
 
-        let keys_mpk = Strategy::decrypt_merged(keys_enc.as_slice(), &key)?;
-        let keys_lst: IndyKey = rmp_serde::from_slice(&keys_mpk)
-            .map_err(err_map!(Input, "indy key not valid msgpack",))?;
+        let keys_mpk = master
+            .unwrap_data(keys_enc)
+            .map_err(err_map!(Input, "Error decrypting wallet key"))?;
+        let indy_key = rmp_serde::from_slice(&keys_mpk)
+            .map_err(err_map!(Input, "indy key not valid msgpack"))?;
 
-        let indy_key_with_master_and_salt = IndyKeyWithMasterAndSalt {
-            indy_key: keys_lst,
-            master: key,
-            salt,
-        };
-
-        Ok(indy_key_with_master_and_salt)
+        Ok((indy_key, UpdatedKey { master, key_ref }))
     }
 
-    async fn init_profile(
-        &mut self,
-        indy_key: &IndyKeyWithMasterAndSalt,
-    ) -> Result<ProfileKey, Error> {
-        let IndyKeyWithMasterAndSalt {
-            indy_key,
-            master,
-            salt: _salt,
-        } = indy_key;
+    async fn init_profile(&mut self, key: &UpdatedKey) -> Result<ProfileKey, Error> {
         let profile_row: Option<SqliteRow> = sqlx::query("SELECT profile_key FROM profiles")
             .fetch_optional(&mut self.conn)
             .await?;
@@ -266,27 +261,23 @@ impl IndySdkToAriesAskarMigration {
         let profile_key = match profile_row {
             Some(profile_row) => serde_cbor::from_slice(&profile_row)
                 .map_err(err_map!(Input, "Invalid cbor encoding for profile_key"))?,
-            None => ProfileKey {
-                category_key: indy_key.type_key.clone(),
-                name_key: indy_key.name_key.clone(),
-                item_hmac_key: indy_key.item_hmac_key.clone(),
-                tag_name_key: indy_key.tag_name_key.clone(),
-                tag_value_key: indy_key.tag_value_key.clone(),
-                tags_hmac_key: indy_key.tag_hmac_key.clone(),
-            },
+            None => {
+                let pk = ProfileKey::new()?;
+                let enc_pk = key.master.wrap_data(pk.to_bytes()?)?;
+                self.insert_profile(enc_pk.as_slice()).await?;
+                pk
+            }
         };
 
-        let enc_pk = Strategy::encrypt_merged(&profile_key.to_bytes()?, master, None)?;
-        self.insert_profile(enc_pk.as_slice()).await?;
         Ok(profile_key)
     }
 
     async fn update_items(
         &mut self,
-        indy_key: &IndyKeyWithMasterAndSalt,
+        indy_key: &IndyKey,
         profile_key: &ProfileKey,
     ) -> Result<(), Error> {
-        Strategy::update_items(self, &indy_key.indy_key, profile_key).await?;
+        Strategy::update_items(self, indy_key, profile_key).await?;
         Ok(())
     }
 
@@ -321,10 +312,15 @@ impl IndySdkToAriesAskarMigration {
             .execute(&mut self.conn)
             .await?;
             let item_id = ins.last_insert_rowid();
-            for (plain, name, value) in item.tags {
+            for EncEntryTag {
+                name,
+                value,
+                plaintext,
+            } in item.tags
+            {
                 sqlx::query("INSERT INTO items_tags (item_id, plaintext, name, value) VALUES (?1, ?2, ?3, ?4)")
                 .bind(item_id)
-                .bind(plain)
+                .bind(plaintext)
                 .bind(name)
                 .bind(value)
                 .execute(&mut self.conn)
@@ -332,22 +328,14 @@ impl IndySdkToAriesAskarMigration {
             }
         }
         sqlx::query("DELETE FROM items_old WHERE id IN (?1)")
-            .bind(
-                del_ids
-                    .iter()
-                    .map(u32::to_string)
-                    .collect::<Vec<String>>()
-                    .join(","),
-            )
+            .bind(Separated(&del_ids, ",").to_string())
             .execute(&mut self.conn)
             .await?;
         Ok(())
     }
 
-    async fn create_config(&mut self, indy_key: &IndyKeyWithMasterAndSalt) -> Result<(), Error> {
-        let pass_key = self
-            .kdf_method
-            .to_storable_pass_key(Some(self.wallet_key.as_bytes()), &indy_key.salt)?;
+    async fn create_config(&mut self, key: &UpdatedKey) -> Result<(), Error> {
+        let pass_key = key.key_ref.clone().into_uri();
 
         sqlx::query("INSERT INTO config (name, value) VALUES (?1, ?2)")
             .bind("default_profile")
@@ -399,39 +387,18 @@ impl IndySdkToAriesAskarMigration {
     }
 }
 
-#[cfg(test)]
-mod test_migration {
-    use crate::{future::block_on, Error};
+struct Separated<'a, T>(&'a [T], &'static str);
 
-    use super::IndySdkToAriesAskarMigration;
-
-    const DB_PATH: &str = "./tests/indy_wallet_sqlite.db";
-    const DB_BACKUP_PATH: &str = "./tests/indy_wallet_sqlite.bak.db";
-
-    /// Backup the database by creating a copy
-    fn backup_db() {
-        std::fs::copy(DB_PATH, DB_BACKUP_PATH).unwrap();
-    }
-
-    /// Reverting the database by overwriting the transformed db
-    fn revert_db() {
-        std::fs::rename(DB_BACKUP_PATH, DB_PATH).unwrap();
-    }
-
-    #[test]
-    fn test_migration() {
-        backup_db();
-        let res = block_on::<Result<(), Error>>(async {
-            let wallet_name = "walletwallet.0";
-            let wallet_key = "GfwU1DC7gEZNs3w41tjBiZYj7BNToDoFEqKY6wZXqs1A";
-            let mut migrator =
-                IndySdkToAriesAskarMigration::new(DB_PATH, wallet_name, wallet_key, "RAW").await?;
-            migrator.migrate().await?;
-            Ok(())
-        });
-        revert_db();
-
-        // We still need some indication if something returned with an error
-        res.unwrap();
+impl<T: Display> Display for Separated<'_, T> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let mut first = true;
+        for item in self.0 {
+            if !first {
+                f.write_str(self.1)?;
+            }
+            item.fmt(f)?;
+            first = false;
+        }
+        Ok(())
     }
 }

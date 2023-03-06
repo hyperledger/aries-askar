@@ -18,7 +18,7 @@ use super::{
 /// 5. Update the items from the indy-sdk
 /// 6. Clean up (drop tables and add a version of "1")
 #[no_mangle]
-pub extern "C" fn aries_askar_migrate_indy_sdk_sqlite(
+pub extern "C" fn askar_migrate_indy_sdk(
     spec_uri: FfiStr<'_>,
     wallet_name: FfiStr<'_>,
     wallet_key: FfiStr<'_>,
@@ -27,7 +27,7 @@ pub extern "C" fn aries_askar_migrate_indy_sdk_sqlite(
     cb_id: CallbackId,
 ) -> ErrorCode {
     catch_err!(
-        trace!("Migration sqlite wallet from indy-sdk structure to aries-askar");
+        trace!("Migrate sqlite wallet from indy-sdk structure to aries-askar");
         let cb = cb.ok_or_else(|| err_msg!("No callback provided"))?;
         let spec_uri = spec_uri.into_opt_string().ok_or_else(|| err_msg!("No provision spec URI provided"))?;
         let wallet_name = wallet_name.into_opt_string().ok_or_else(|| err_msg!("No wallet name provided"))?;
@@ -42,7 +42,7 @@ pub extern "C" fn aries_askar_migrate_indy_sdk_sqlite(
 
         spawn_ok(async move {
             let result = async {
-                let mut migrator = IndySdkToAriesAskarMigration::new(&spec_uri, &wallet_name, &wallet_key, &*kdf_level).await?;
+                let migrator = IndySdkToAriesAskarMigration::connect(&spec_uri, &wallet_name, &wallet_key, &kdf_level).await?;
                 migrator.migrate().await?;
                 Ok(())
             }.await;

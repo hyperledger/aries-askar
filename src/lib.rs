@@ -46,7 +46,7 @@ extern crate serde_json;
 mod ffi;
 
 #[cfg(all(feature = "migration", feature = "sqlite"))]
-mod migration;
+pub mod migration;
 
 pub mod kms;
 
