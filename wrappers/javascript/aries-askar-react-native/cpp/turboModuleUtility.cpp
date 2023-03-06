@@ -178,11 +178,11 @@ jsi::Value createReturnValue(jsi::Runtime &rt, ErrorCode code, intptr_t* out) {
 }
 
 template <>
-jsi::Value createReturnValue(jsi::Runtime &rt, ErrorCode code, intptr_t out) {
+jsi::Value createReturnValue(jsi::Runtime &rt, ErrorCode code, std::string out) {
   auto object = jsi::Object(rt);
 
   if (code == ErrorCode::Success) {
-    object.setProperty(rt, "value", jsi::Value(int(out)));
+    object.setProperty(rt, "value", jsi::String::createFromAscii(rt, out));
   }
 
   object.setProperty(rt, "errorCode", int(code));
@@ -210,19 +210,19 @@ jsi::Value createReturnValue(jsi::Runtime &rt, ErrorCode code,
 template <>
 jsi::Value createReturnValue(jsi::Runtime &rt, ErrorCode code,
                              LocalKeyHandle* out) {
-    return out == nullptr ? createReturnValue(rt, code, nullptr) : createReturnValue(rt, code, intptr_t(out->_0));
+    return out == nullptr ? createReturnValue(rt, code, nullptr) : createReturnValue(rt, code, std::to_string(intptr_t(out->_0)));
 }
 
 template <>
 jsi::Value createReturnValue(jsi::Runtime &rt, ErrorCode code,
                              EntryListHandle const* out) {
-    return out == nullptr ? createReturnValue(rt, code, nullptr) : createReturnValue(rt, code, intptr_t(out->_0));
+    return out == nullptr ? createReturnValue(rt, code, nullptr) : createReturnValue(rt, code, std::to_string(intptr_t(out->_0)));
 }
 
 template <>
 jsi::Value createReturnValue(jsi::Runtime &rt, ErrorCode code,
                              KeyEntryListHandle const* out) {
-  return out == nullptr ? createReturnValue(rt, code, nullptr) : createReturnValue(rt, code, intptr_t(out->_0));
+  return out == nullptr ? createReturnValue(rt, code, nullptr) : createReturnValue(rt, code, std::to_string(intptr_t(out->_0)));
 }
 
 template <>
