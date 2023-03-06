@@ -210,19 +210,22 @@ jsi::Value createReturnValue(jsi::Runtime &rt, ErrorCode code,
 template <>
 jsi::Value createReturnValue(jsi::Runtime &rt, ErrorCode code,
                              LocalKeyHandle* out) {
-    return out == nullptr ? createReturnValue(rt, code, nullptr) : createReturnValue(rt, code, std::to_string(intptr_t(out->_0)));
+    auto isNullptr = out == nullptr || out->_0 == nullptr;
+    return out == isNullptr ? createReturnValue(rt, code, nullptr) : createReturnValue(rt, code, std::to_string(intptr_t(out->_0)));
 }
 
 template <>
 jsi::Value createReturnValue(jsi::Runtime &rt, ErrorCode code,
                              EntryListHandle const* out) {
-    return out == nullptr ? createReturnValue(rt, code, nullptr) : createReturnValue(rt, code, std::to_string(intptr_t(out->_0)));
+    auto isNullptr = out == nullptr || out->_0 == nullptr;
+    return out == isNullptr ? createReturnValue(rt, code, nullptr) : createReturnValue(rt, code, std::to_string(intptr_t(out->_0)));
 }
 
 template <>
 jsi::Value createReturnValue(jsi::Runtime &rt, ErrorCode code,
                              KeyEntryListHandle const* out) {
-  return out == nullptr ? createReturnValue(rt, code, nullptr) : createReturnValue(rt, code, std::to_string(intptr_t(out->_0)));
+    auto isNullptr = out == nullptr || out->_0 == nullptr;
+    return out == isNullptr ? createReturnValue(rt, code, nullptr) : createReturnValue(rt, code, std::to_string(intptr_t(out->_0)));
 }
 
 template <>
