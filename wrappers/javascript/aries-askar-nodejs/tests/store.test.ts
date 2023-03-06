@@ -157,21 +157,22 @@ describe('Store and Session', () => {
 
     await session.insertKey({ key, name: keyName, metadata: 'metadata', tags: { a: 'b' } })
 
-    await expect(session.fetchKey({ name: keyName })).resolves.toMatchObject({
+    const fetchedKey1 = await session.fetchKey({ name: keyName })
+    expect(fetchedKey1).toMatchObject({
       name: keyName,
       tags: { a: 'b' },
       metadata: 'metadata',
     })
 
     await session.updateKey({ name: keyName, metadata: 'updated metadata', tags: { a: 'c' } })
-    const fetchedKey = await session.fetchKey({ name: keyName })
-    expect(fetchedKey).toMatchObject({
+    const fetchedKey2 = await session.fetchKey({ name: keyName })
+    expect(fetchedKey2).toMatchObject({
       name: keyName,
       tags: { a: 'c' },
       metadata: 'updated metadata',
     })
 
-    expect(key.jwkThumbprint === fetchedKey.key.jwkThumbprint).toBeTruthy()
+    expect(key.jwkThumbprint === fetchedKey1.key.jwkThumbprint).toBeTruthy()
 
     const found = await session.fetchAllKeys({
       algorithm: KeyAlgs.Ed25519,
@@ -186,6 +187,12 @@ describe('Store and Session', () => {
     await expect(session.fetchKey({ name: keyName })).rejects.toThrowError(AriesAskarError)
 
     await session.close()
+
+    // Clear objects
+    fetchedKey1.key.handle.free()
+    fetchedKey2.key.handle.free()
+    key.handle.free()
+    found.forEach((entry) => entry.key.handle.free())
   })
 
   test('profile', async () => {

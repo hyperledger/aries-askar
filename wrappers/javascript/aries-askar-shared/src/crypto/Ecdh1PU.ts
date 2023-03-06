@@ -64,7 +64,9 @@ export class Ecdh1PU {
     nonce?: Uint8Array
   }) {
     const derived = this.deriveKey({ encAlg, ephemeralKey, recipientKey, senderKey, receive: false })
-    return derived.aeadEncrypt({ message, aad, nonce })
+    const encryptedBuffer = derived.aeadEncrypt({ message, aad, nonce })
+    derived.handle.free()
+    return encryptedBuffer
   }
 
   public decryptDirect({
@@ -87,7 +89,9 @@ export class Ecdh1PU {
     aad?: Uint8Array
   }) {
     const derived = this.deriveKey({ encAlg, ephemeralKey, recipientKey, senderKey, receive: true })
-    return derived.aeadDecrypt({ tag, nonce, ciphertext, aad })
+    const encryptedBuffer = derived.aeadDecrypt({ tag, nonce, ciphertext, aad })
+    derived.handle.free()
+    return encryptedBuffer
   }
 
   public senderWrapKey({
@@ -113,7 +117,9 @@ export class Ecdh1PU {
       receive: false,
       ccTag,
     })
-    return derived.wrapKey({ other: cek })
+    const encryptedBuffer = derived.wrapKey({ other: cek })
+    derived.handle.free()
+    return encryptedBuffer
   }
 
   public receiverUnwrapKey({
@@ -145,6 +151,8 @@ export class Ecdh1PU {
       senderKey,
       ccTag,
     })
-    return derived.unwrapKey({ tag, nonce, ciphertext, algorithm: encAlg })
+    const encryptedBuffer = derived.unwrapKey({ tag, nonce, ciphertext, algorithm: encAlg })
+    derived.handle.free()
+    return encryptedBuffer
   }
 }

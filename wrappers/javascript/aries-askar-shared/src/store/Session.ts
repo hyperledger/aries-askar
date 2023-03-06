@@ -48,8 +48,11 @@ export class Session {
     if (!handle) return undefined
 
     const entry = new Entry({ list: handle, position: 0 })
+    const entryObject = entry.toJson(isJson)
 
-    return entry.toJson(isJson)
+    handle.free()
+
+    return entryObject
   }
 
   public async fetchAll({
@@ -72,8 +75,11 @@ export class Session {
       category,
     })
     const entryList = new EntryList({ handle })
+    const entryObjects = entryList.toArray()
 
-    return entryList.toArray()
+    entryList.handle.free()
+
+    return entryObjects
   }
 
   public async insert({
@@ -192,7 +198,11 @@ export class Session {
     if (!this.handle) throw AriesAskarError.customError({ message: 'Cannot fetch a key with a closed session' })
     const handle = await ariesAskar.sessionFetchKey({ forUpdate, name, sessionHandle: this.handle })
     const keyEntryList = new KeyEntryList({ handle })
-    return keyEntryList.getEntryByIndex(0).toJson()
+    const keyEntryObject = keyEntryList.getEntryByIndex(0).toJson()
+
+    keyEntryList.handle.free()
+
+    return keyEntryObject
   }
 
   public async fetchAllKeys({
@@ -219,7 +229,10 @@ export class Session {
     })
 
     const keyEntryList = new KeyEntryList({ handle })
-    return keyEntryList.toArray()
+    const keyEntryObjects = keyEntryList.toArray()
+    keyEntryList.handle.free()
+
+    return keyEntryObjects
   }
 
   public async updateKey({
