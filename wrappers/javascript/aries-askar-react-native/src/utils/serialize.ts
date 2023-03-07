@@ -1,7 +1,12 @@
 import { ArcHandle, Jwk, ScanHandle, SessionHandle, StoreHandle, Key } from '@hyperledger/aries-askar-shared'
 
-export type Callback = (err: number) => void
-export type CallbackWithResponse = (err: number, response: string) => void
+export type ReturnObject<T = unknown> = {
+  errorCode: number
+  value?: null | T
+}
+
+export type Callback = (o: ReturnObject<never>) => void
+export type CallbackWithResponse<T = unknown> = (o: ReturnObject<T>) => void
 
 type Argument =
   | Record<string, unknown>

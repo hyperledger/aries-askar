@@ -39,9 +39,9 @@ export class EntryList {
     }
   }
 
-  public toArray(): Array<EntryObject> {
+  public toArray(valuesAreJson?: boolean): Array<EntryObject> {
     const list: Array<EntryObject> = []
-    this.forEach((entry) => list.push(entry.toJson()))
+    this.forEach((entry) => list.push(entry.toJson(valuesAreJson)))
     return list
   }
 }
