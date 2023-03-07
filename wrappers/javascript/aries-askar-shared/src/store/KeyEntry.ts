@@ -5,7 +5,7 @@ import { Key } from '../crypto'
 export type KeyEntryObject = {
   algorithm: string
   name: string
-  metadata: string
+  metadata: string | null
   tags: Record<string, unknown>
   key: Key
 }
@@ -28,11 +28,16 @@ export class KeyEntry {
   }
 
   public get metadata() {
-    return this._list.getMetadata(this._pos)
+    const metadata = this._list.getMetadata(this._pos)
+
+    return metadata
   }
 
   public get tags() {
-    return JSON.parse(this._list.getTags(this._pos)) as Record<string, unknown>
+    const tags = this._list.getTags(this._pos)
+
+    if (!tags) return {}
+    return JSON.parse(tags) as Record<string, unknown>
   }
 
   public get key() {

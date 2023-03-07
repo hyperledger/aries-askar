@@ -18,3 +18,11 @@ export class AriesAskarError extends Error {
     return new AriesAskarError({ message, code: 100 })
   }
 }
+
+export function handleInvalidNullResponse<T extends null | unknown>(response: T): Exclude<T, null> {
+  if (response === null) {
+    throw AriesAskarError.customError({ message: 'Invalid response. Expected value but received null pointer' })
+  }
+
+  return response as Exclude<T, null>
+}

@@ -2,13 +2,17 @@
 #include <algorithm>
 #include <vector>
 
-
-AriesAskarTurboModuleHostObject::AriesAskarTurboModuleHostObject(jsi::Runtime &rt) { return; }
+AriesAskarTurboModuleHostObject::AriesAskarTurboModuleHostObject(
+    jsi::Runtime &rt) {
+  return;
+}
 FunctionMap AriesAskarTurboModuleHostObject::functionMapping(jsi::Runtime &rt) {
   FunctionMap fMap;
 
   fMap.insert(std::make_tuple("version", &ariesAskar::version));
   fMap.insert(std::make_tuple("getCurrentError", &ariesAskar::getCurrentError));
+  fMap.insert(
+      std::make_tuple("setDefaultLogger", &ariesAskar::setDefaultLogger));
 
   fMap.insert(std::make_tuple("storeOpen", &ariesAskar::storeOpen));
   fMap.insert(
@@ -130,8 +134,8 @@ FunctionMap AriesAskarTurboModuleHostObject::functionMapping(jsi::Runtime &rt) {
   return fMap;
 }
 
-jsi::Function AriesAskarTurboModuleHostObject::call(jsi::Runtime &rt, const char *name,
-                                          Cb cb) {
+jsi::Function AriesAskarTurboModuleHostObject::call(jsi::Runtime &rt,
+                                                    const char *name, Cb cb) {
   return jsi::Function::createFromHostFunction(
       rt, jsi::PropNameID::forAscii(rt, name), 1,
       [this, cb](jsi::Runtime &rt, const jsi::Value &thisValue,
@@ -153,8 +157,9 @@ AriesAskarTurboModuleHostObject::getPropertyNames(jsi::Runtime &rt) {
   return result;
 }
 
-jsi::Value AriesAskarTurboModuleHostObject::get(jsi::Runtime &rt,
-                                      const jsi::PropNameID &propNameId) {
+jsi::Value
+AriesAskarTurboModuleHostObject::get(jsi::Runtime &rt,
+                                     const jsi::PropNameID &propNameId) {
   auto propName = propNameId.utf8(rt);
   auto fMap = AriesAskarTurboModuleHostObject::functionMapping(rt);
   for (FunctionMap::iterator it = fMap.begin(); it != fMap.end(); ++it) {
