@@ -250,14 +250,14 @@ jsi::Value createReturnValue(jsi::Runtime &rt, ErrorCode code,
     if (value == nullptr) {
       object.setProperty(rt, "value", jsi::Value::null());
     } else {
-      auto object = jsi::Object(rt);
+      auto valueObject = jsi::Object(rt);
 
-      object.setProperty(rt, "buffer",
+      valueObject.setProperty(rt, "buffer",
                          secretBufferToArrayBuffer(rt, value->buffer));
-      object.setProperty(rt, "tagPos", int(value->tag_pos));
-      object.setProperty(rt, "noncePos", int(value->nonce_pos));
+      valueObject.setProperty(rt, "tagPos", int(value->tag_pos));
+      valueObject.setProperty(rt, "noncePos", int(value->nonce_pos));
 
-      object.setProperty(rt, "value", object);
+      object.setProperty(rt, "value", valueObject);
     }
   }
 
@@ -275,10 +275,10 @@ jsi::Value createReturnValue(jsi::Runtime &rt, ErrorCode code,
     if (value == nullptr) {
       object.setProperty(rt, "value", jsi::Value::null());
     } else {
-      auto object = jsi::Object(rt);
+      auto valueObject = jsi::Object(rt);
 
-      object.setProperty(rt, "nonceLength", int(value->nonce_length));
-      object.setProperty(rt, "tagLength", int(value->tag_length));
+      valueObject.setProperty(rt, "nonceLength", int(value->nonce_length));
+      valueObject.setProperty(rt, "tagLength", int(value->tag_length));
 
       object.setProperty(rt, "value", object);
     }

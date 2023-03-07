@@ -158,7 +158,9 @@ export class ReactNativeAriesAskar implements AriesAskar {
 
   public entryListFree(options: EntryListFreeOptions): void {
     const serializedOptions = serializeArguments(options)
-    return handleInvalidNullResponse(handleError(ariesAskarReactNative.entryListFree(serializedOptions)))
+
+    // null resopnse is expected as we're freeing the object
+    handleError(ariesAskarReactNative.entryListFree(serializedOptions))
   }
 
   public entryListGetCategory(options: EntryListGetCategoryOptions): string {
@@ -272,6 +274,8 @@ export class ReactNativeAriesAskar implements AriesAskar {
 
   public keyEntryListFree(options: KeyEntryListFreeOptions): void {
     const serializedOptions = serializeArguments(options)
+
+    // null resopnse is expected as we're freeing the object
     handleError(ariesAskarReactNative.keyEntryListFree(serializedOptions))
   }
 
@@ -306,6 +310,8 @@ export class ReactNativeAriesAskar implements AriesAskar {
 
   public keyFree(options: KeyFreeOptions): void {
     const serializedOptions = serializeArguments(options)
+
+    // null resopnse is expected as we're freeing the object
     handleError(ariesAskarReactNative.keyFree(serializedOptions))
   }
 
@@ -420,6 +426,8 @@ export class ReactNativeAriesAskar implements AriesAskar {
 
   public scanFree(options: ScanFreeOptions): void {
     const serializedOptions = serializeArguments(options)
+
+    // null resopnse is expected as we're freeing the object
     handleError(ariesAskarReactNative.scanFree(serializedOptions))
   }
 
