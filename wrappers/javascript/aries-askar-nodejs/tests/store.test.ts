@@ -172,7 +172,7 @@ describe('Store and Session', () => {
       metadata: 'updated metadata',
     })
 
-    expect(key.jwkThumbprint === fetchedKey1.key.jwkThumbprint).toBeTruthy()
+    expect(key.jwkThumbprint === fetchedKey1?.key.jwkThumbprint).toBeTruthy()
 
     const found = await session.fetchAllKeys({
       algorithm: KeyAlgs.Ed25519,
@@ -184,13 +184,13 @@ describe('Store and Session', () => {
 
     await session.removeKey({ name: keyName })
 
-    await expect(session.fetchKey({ name: keyName })).rejects.toThrowError(AriesAskarError)
+    await expect(session.fetchKey({ name: keyName })).resolves.toBeNull()
 
     await session.close()
 
     // Clear objects
-    fetchedKey1.key.handle.free()
-    fetchedKey2.key.handle.free()
+    fetchedKey1?.key.handle.free()
+    fetchedKey2?.key.handle.free()
     key.handle.free()
     found.forEach((entry) => entry.key.handle.free())
   })

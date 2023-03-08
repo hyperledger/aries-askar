@@ -9,19 +9,19 @@ export type EntryObject = {
 
 export class Entry {
   private _list: EntryListHandle
-  private _position: number
+  private _pos: number
 
   public constructor({ list, position }: { list: EntryListHandle; position: number }) {
     this._list = list
-    this._position = position
+    this._pos = position
   }
 
   public get category() {
-    return this._list.getCategory(this._position)
+    return this._list.getCategory(this._pos)
   }
 
   public get name() {
-    return this._list.getName(this._position)
+    return this._list.getName(this._pos)
   }
 
   public get value(): string {
@@ -34,12 +34,14 @@ export class Entry {
   }
 
   private get rawValue() {
-    // why does this not work return
-    return this._list.getValue(this._position)
+    return this._list.getValue(this._pos)
   }
 
   public get tags() {
-    return JSON.parse(this._list.getTags(this._position)) as Record<string, unknown>
+    const tags = this._list.getTags(this._pos)
+
+    if (!tags) return {}
+    return JSON.parse(tags) as Record<string, unknown>
   }
 
   public toJson(shouldParseValueToJson = false): EntryObject {
