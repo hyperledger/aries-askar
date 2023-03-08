@@ -17,7 +17,7 @@ no-default-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [features]
-default = ["all_backends", "log", "migration"]
+default = ["all_backends", "log"]
 all_backends = ["any", "postgres", "sqlite"]
 any = []
 migration = ["rmp-serde", "sqlx/macros"]

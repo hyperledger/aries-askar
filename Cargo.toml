@@ -32,7 +32,7 @@ jemalloc = ["jemallocator"]
 logger = ["env_logger", "log", "askar-storage/log"]
 postgres = ["askar-storage/postgres"]
 sqlite = ["askar-storage/sqlite"]
-pg_test = ["postgres"]
+pg_test = ["askar-storage/pg_test"]
 migration = ["askar-storage/migration"]
 
 [dependencies]
