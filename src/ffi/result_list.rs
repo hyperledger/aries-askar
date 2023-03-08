@@ -26,7 +26,7 @@ impl<R> FfiResultList<R> {
                 }
             }
         }
-        return Err(err_msg!(Input, "Invalid index for result set"));
+        Err(err_msg!(Input, "Invalid index for result set"))
     }
 
     pub fn len(&self) -> i32 {

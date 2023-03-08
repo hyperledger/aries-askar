@@ -162,7 +162,7 @@ impl PostgresStoreOptions {
                 admin_conn.close().await?;
                 Ok(self.pool().await?)
             }
-            Err(err) => return Err(err_msg!(Backend, "Error opening database").with_cause(err)),
+            Err(err) => Err(err_msg!(Backend, "Error opening database").with_cause(err)),
         }
     }
 

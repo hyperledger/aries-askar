@@ -41,7 +41,7 @@ impl PassKey<'_> {
 impl Debug for PassKey<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         if cfg!(test) {
-            f.debug_tuple("PassKey").field(&*self).finish()
+            f.debug_tuple("PassKey").field(&self.0).finish()
         } else {
             f.debug_tuple("PassKey").field(&"<secret>").finish()
         }

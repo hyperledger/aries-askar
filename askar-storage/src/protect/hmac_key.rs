@@ -54,7 +54,7 @@ impl<H, L: ArrayLength<u8>> AsRef<GenericArray<u8, L>> for HmacKey<H, L> {
 impl<H, L: ArrayLength<u8>> Debug for HmacKey<H, L> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         if cfg!(test) {
-            f.debug_tuple("HmacKey").field(&*self).finish()
+            f.debug_tuple("HmacKey").field(&self.0).finish()
         } else {
             f.debug_tuple("HmacKey").field(&"<secret>").finish()
         }

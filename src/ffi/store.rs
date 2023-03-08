@@ -557,8 +557,7 @@ pub extern "C" fn askar_session_count(
         spawn_ok(async move {
             let result = async {
                 let mut session = FFI_SESSIONS.borrow(handle).await?;
-                let count = session.count(category.as_deref(), tag_filter).await;
-                count
+                session.count(category.as_deref(), tag_filter).await
             }.await;
             cb.resolve(result);
         });
@@ -593,8 +592,7 @@ pub extern "C" fn askar_session_fetch(
         spawn_ok(async move {
             let result = async {
                 let mut session = FFI_SESSIONS.borrow(handle).await?;
-                let found = session.fetch(&category, &name, for_update != 0).await;
-                found
+                session.fetch(&category, &name, for_update != 0).await
             }.await;
             cb.resolve(result);
         });
@@ -630,8 +628,7 @@ pub extern "C" fn askar_session_fetch_all(
         spawn_ok(async move {
             let result = async {
                 let mut session = FFI_SESSIONS.borrow(handle).await?;
-                let found = session.fetch_all(category.as_deref(), tag_filter, limit, for_update != 0).await;
-                found
+                session.fetch_all(category.as_deref(), tag_filter, limit, for_update != 0).await
             }.await;
             cb.resolve(result);
         });
@@ -663,8 +660,7 @@ pub extern "C" fn askar_session_remove_all(
         spawn_ok(async move {
             let result = async {
                 let mut session = FFI_SESSIONS.borrow(handle).await?;
-                let removed = session.remove_all(category.as_deref(), tag_filter).await;
-                removed
+                session.remove_all(category.as_deref(), tag_filter).await
             }.await;
             cb.resolve(result);
         });
@@ -719,8 +715,7 @@ pub extern "C" fn askar_session_update(
         spawn_ok(async move {
             let result = async {
                 let mut session = FFI_SESSIONS.borrow(handle).await?;
-                let result = session.update(operation, &category, &name, Some(value.as_slice()), tags.as_deref(), expiry_ms).await;
-                result
+                session.update(operation, &category, &name, Some(value.as_slice()), tags.as_deref(), expiry_ms).await
             }.await;
             cb.resolve(result);
         });
@@ -771,14 +766,13 @@ pub extern "C" fn askar_session_insert_key(
         spawn_ok(async move {
             let result = async {
                 let mut session = FFI_SESSIONS.borrow(handle).await?;
-                let result = session.insert_key(
+                session.insert_key(
                     name.as_str(),
                     &key,
                     metadata.as_deref(),
                     tags.as_deref(),
                     expiry_ms,
-                ).await;
-                result
+                ).await
             }.await;
             cb.resolve(result);
         });
@@ -815,11 +809,10 @@ pub extern "C" fn askar_session_fetch_key(
         spawn_ok(async move {
             let result = async {
                 let mut session = FFI_SESSIONS.borrow(handle).await?;
-                let result = session.fetch_key(
+                session.fetch_key(
                     name.as_str(),
                     for_update != 0
-                ).await;
-                result
+                ).await
             }.await;
             cb.resolve(result);
         });
@@ -859,14 +852,13 @@ pub extern "C" fn askar_session_fetch_all_keys(
         spawn_ok(async move {
             let result = async {
                 let mut session = FFI_SESSIONS.borrow(handle).await?;
-                let result = session.fetch_all_keys(
+                session.fetch_all_keys(
                     alg.as_deref(),
                     thumbprint.as_deref(),
                     tag_filter,
                     limit,
                     for_update != 0
-                ).await;
-                result
+                ).await
             }.await;
             cb.resolve(result);
         });
@@ -915,14 +907,13 @@ pub extern "C" fn askar_session_update_key(
         spawn_ok(async move {
             let result = async {
                 let mut session = FFI_SESSIONS.borrow(handle).await?;
-                let result = session.update_key(
+                session.update_key(
                     &name,
                     metadata.as_deref(),
                     tags.as_deref(),
                     expiry_ms,
 
-                ).await;
-                result
+                ).await
             }.await;
             cb.resolve(result);
         });
@@ -953,10 +944,9 @@ pub extern "C" fn askar_session_remove_key(
         spawn_ok(async move {
             let result = async {
                 let mut session = FFI_SESSIONS.borrow(handle).await?;
-                let result = session.remove_key(
+                session.remove_key(
                     &name,
-                ).await;
-                result
+                ).await
             }.await;
             cb.resolve(result);
         });
