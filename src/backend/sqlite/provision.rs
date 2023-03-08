@@ -23,6 +23,8 @@ use crate::{
 };
 
 const DEFAULT_MIN_CONNECTIONS: u32 = 1;
+const DEFAULT_LOWER_MAX_CONNECTIONS: u32 = 2;
+const DEFAULT_UPPER_MAX_CONNECTIONS: u32 = 8;
 const DEFAULT_BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 const DEFAULT_JOURNAL_MODE: SqliteJournalMode = SqliteJournalMode::Wal;
 const DEFAULT_LOCKING_MODE: SqliteLockingMode = SqliteLockingMode::Normal;
@@ -67,7 +69,9 @@ impl SqliteStoreOptions {
                 .parse()
                 .map_err(err_map!(Input, "Error parsing 'max_connections' parameter"))?
         } else {
-            num_cpus::get() as u32
+            (num_cpus::get() as u32)
+                .max(DEFAULT_LOWER_MAX_CONNECTIONS)
+                .min(DEFAULT_UPPER_MAX_CONNECTIONS)
         };
         let min_connections = if let Some(min_conn) = opts.query.remove("min_connections") {
             min_conn
