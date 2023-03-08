@@ -4,7 +4,7 @@ use async_lock::RwLock;
 
 pub mod kdf;
 
-mod hmac_key;
+pub mod hmac_key;
 
 mod pass_key;
 pub use self::pass_key::PassKey;
