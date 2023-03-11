@@ -506,9 +506,9 @@ export class NodeJSAriesAskar implements AriesAskar {
   }
 
   public keyFree(options: KeyFreeOptions): void {
-    const { keyHandle } = serializeArguments(options)
+    const { localKeyHandle } = serializeArguments(options)
 
-    nativeAriesAskar.askar_key_free(keyHandle)
+    nativeAriesAskar.askar_key_free(localKeyHandle)
     handleError()
   }
 
