@@ -45,6 +45,7 @@ import type {
   KeyUnwrapKeyOptions,
   KeyVerifySignatureOptions,
   KeyWrapKeyOptions,
+  MigrateIndySdkOptions,
   ScanFreeOptions,
   ScanNextOptions,
   ScanStartOptions,
@@ -650,5 +651,10 @@ export class ReactNativeAriesAskar implements AriesAskar {
     )
 
     return handleInvalidNullResponse(response)
+  }
+
+  public async migrateIndySdk(options: MigrateIndySdkOptions): Promise<void> {
+    const serializedOptions = serializeArguments(options)
+    return this.promisify((cb) => handleError(ariesAskarReactNative.migrateIndySdk({ cb, ...serializedOptions })))
   }
 }

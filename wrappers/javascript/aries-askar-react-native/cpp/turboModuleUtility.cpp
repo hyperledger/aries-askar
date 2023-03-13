@@ -253,7 +253,7 @@ jsi::Value createReturnValue(jsi::Runtime &rt, ErrorCode code,
       auto valueObject = jsi::Object(rt);
 
       valueObject.setProperty(rt, "buffer",
-                         secretBufferToArrayBuffer(rt, value->buffer));
+                              secretBufferToArrayBuffer(rt, value->buffer));
       valueObject.setProperty(rt, "tagPos", int(value->tag_pos));
       valueObject.setProperty(rt, "noncePos", int(value->nonce_pos));
 
