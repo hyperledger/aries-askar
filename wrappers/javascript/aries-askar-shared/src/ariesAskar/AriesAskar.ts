@@ -96,7 +96,7 @@ export type KeyEntryListGetMetadataOptions = { keyEntryListHandle: KeyEntryListH
 export type KeyEntryListGetNameOptions = { keyEntryListHandle: KeyEntryListHandle; index: number }
 export type KeyEntryListGetTagsOptions = { keyEntryListHandle: KeyEntryListHandle; index: number }
 export type KeyEntryListLoadLocalOptions = { keyEntryListHandle: KeyEntryListHandle; index: number }
-export type KeyFreeOptions = { keyHandle: LocalKeyHandle }
+export type KeyFreeOptions = { localKeyHandle: LocalKeyHandle }
 export type KeyFromJwkOptions = { jwk: Jwk }
 export type KeyFromKeyExchangeOptions = {
   algorithm: KeyAlgs
