@@ -1,9 +1,9 @@
 import { CryptoBox, Key, KeyAlgs } from '@hyperledger/aries-askar-shared'
 
-import { setup } from './utils'
-
 describe('CryptoBox', () => {
-  beforeAll(() => setup())
+  beforeAll(() => {
+    require('@hyperledger/aries-askar-nodejs')
+  })
 
   test('seal', () => {
     const x25519Key = Key.generate(KeyAlgs.X25519)
