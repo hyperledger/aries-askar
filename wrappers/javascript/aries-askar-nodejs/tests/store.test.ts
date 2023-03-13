@@ -1,13 +1,16 @@
 import { Store, StoreKeyMethod, Key, KeyAlgs, AriesAskarError } from '@hyperledger/aries-askar-shared'
 import { promises } from 'fs'
 
-import { firstEntry, getRawKey, secondEntry, setup, setupWallet, testStoreUri } from './utils'
+import { firstEntry, getRawKey, secondEntry, setupWallet, testStoreUri } from './utils'
 
 describe('Store and Session', () => {
   let store: Store
 
+  beforeAll(() => {
+    require('@hyperledger/aries-askar-nodejs')
+  })
+
   beforeEach(async () => {
-    setup()
     store = await setupWallet()
   })
 

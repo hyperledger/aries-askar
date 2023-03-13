@@ -1,9 +1,11 @@
 import { Ecdh1PU, EcdhEs, Jwk, Key, KeyAlgs } from '@hyperledger/aries-askar-shared'
 
-import { base64url, setup } from './utils'
+import { base64url } from './utils'
 
 describe('jose ecdh', () => {
-  beforeAll(() => setup())
+  beforeAll(() => {
+    require('@hyperledger/aries-askar-nodejs')
+  })
 
   test('ecdh es direct', () => {
     const bobKey = Key.generate(KeyAlgs.EcSecp256r1)

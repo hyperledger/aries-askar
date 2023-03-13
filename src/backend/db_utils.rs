@@ -20,6 +20,7 @@ use crate::{
     },
 };
 
+/// cbindgen:ignore
 pub const PAGE_SIZE: usize = 32;
 
 pub type Expiry = chrono::DateTime<chrono::Utc>;

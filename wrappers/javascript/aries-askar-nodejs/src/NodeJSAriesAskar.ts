@@ -79,6 +79,7 @@ import type {
   EncryptedBuffer,
   AriesAskarErrorObject,
   AeadParamsOptions,
+  MigrateIndySdkOptions,
 } from '@hyperledger/aries-askar-shared'
 
 import {
@@ -953,5 +954,12 @@ export class NodeJSAriesAskar implements AriesAskar {
     )
 
     return handleInvalidNullResponse(response)
+  }
+
+  public async migrateIndySdk(options: MigrateIndySdkOptions): Promise<void> {
+    const { specUri, kdfLevel, walletKey, walletName } = serializeArguments(options)
+    await this.promisify((cb, cbId) =>
+      nativeAriesAskar.askar_migrate_indy_sdk(specUri, walletName, walletKey, kdfLevel, cb, cbId)
+    )
   }
 }

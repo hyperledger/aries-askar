@@ -1,9 +1,10 @@
 import { Key, KeyAlgs, KeyMethod } from '@hyperledger/aries-askar-shared'
 
-import { setup } from './utils'
-
 describe('keys', () => {
-  beforeAll(() => setup())
+  beforeAll(() => {
+    require('@hyperledger/aries-askar-nodejs')
+  })
+
   test('aes cbc hmac', () => {
     const key = Key.generate(KeyAlgs.AesA128CbcHs256)
     expect(key.algorithm).toStrictEqual(KeyAlgs.AesA128CbcHs256)

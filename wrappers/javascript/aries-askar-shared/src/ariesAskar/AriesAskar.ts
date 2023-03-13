@@ -221,6 +221,8 @@ export type StoreRekeyOptions = { storeHandle: StoreHandle; keyMethod: string; p
 export type StoreRemoveOptions = { specUri: string }
 export type StoreRemoveProfileOptions = { storeHandle: StoreHandle; profile: string }
 
+export type MigrateIndySdkOptions = { specUri: string; walletName: string; walletKey: string; kdfLevel: string }
+
 export type AriesAskar = {
   version(): string
   getCurrentError(): string
@@ -302,4 +304,6 @@ export type AriesAskar = {
   storeRekey(options: StoreRekeyOptions): Promise<void>
   storeRemove(options: StoreRemoveOptions): Promise<number>
   storeRemoveProfile(options: StoreRemoveProfileOptions): Promise<number>
+
+  migrateIndySdk(options: MigrateIndySdkOptions): Promise<void>
 }

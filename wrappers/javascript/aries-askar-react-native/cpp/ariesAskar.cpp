@@ -960,4 +960,21 @@ jsi::Value keyEntryListLoadLocal(jsi::Runtime &rt, jsi::Object options) {
   return createReturnValue(rt, code, &out);
 }
 
+jsi::Value migrateIndySdk(jsi::Runtime &rt, jsi::Object options) {
+  auto specUri = jsiToValue<std::string>(rt, options, "specUri");
+  auto walletName = jsiToValue<std::string>(rt, options, "walletName");
+  auto walletKey = jsiToValue<std::string>(rt, options, "walletKey");
+  auto kdfLevel = jsiToValue<std::string>(rt, options, "kdfLevel");
+
+  jsi::Function cb = options.getPropertyAsFunction(rt, "cb");
+  State *state = new State(&cb);
+  state->rt = &rt;
+
+  ErrorCode code = askar_migrate_indy_sdk(specUri.c_str(), walletName.c_str(),
+                                          walletKey.c_str(), kdfLevel.c_str(),
+                                          callback, CallbackId(state));
+
+  return createReturnValue(rt, code, nullptr);
+}
+
 } // namespace ariesAskar

@@ -164,4 +164,6 @@ export interface NativeBindings {
   storeRemove(options: any): ReturnObject<never>
 
   storeRemoveProfile(options: any): ReturnObject<never>
+
+  migrateIndySdk(options: any): ReturnObject<never>
 }

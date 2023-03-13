@@ -53,6 +53,9 @@ android/keystores/debug.keystore
 aries-askar-react-native/ios/Frameworks
 aries-askar-react-native/android/libs
 
+# Test wallet
+aries-askar-nodejs/tests/indy_wallet_sqlite_upgraded.db
+
 # Example app
 react-native-example
 
