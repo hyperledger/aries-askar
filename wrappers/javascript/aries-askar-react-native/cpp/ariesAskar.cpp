@@ -960,7 +960,7 @@ jsi::Value keyEntryListLoadLocal(jsi::Runtime &rt, jsi::Object options) {
   return createReturnValue(rt, code, &out);
 }
 
-jsi::Value storeOpen(jsi::Runtime &rt, jsi::Object options) {
+jsi::Value migrateIndySdk(jsi::Runtime &rt, jsi::Object options) {
   auto specUri = jsiToValue<std::string>(rt, options, "specUri");
   auto walletName = jsiToValue<std::string>(rt, options, "walletName");
   auto walletKey = jsiToValue<std::string>(rt, options, "walletKey");
