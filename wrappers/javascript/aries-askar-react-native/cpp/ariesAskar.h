@@ -96,4 +96,6 @@ jsi::Value storeRekey(jsi::Runtime &rt, jsi::Object options);
 jsi::Value storeRemove(jsi::Runtime &rt, jsi::Object options);
 jsi::Value storeRemoveProfile(jsi::Runtime &rt, jsi::Object options);
 
+jsi::Value migrateIndySdk(jsi::Runtime &rt, jsi::Object options);
+
 } // namespace ariesAskar
