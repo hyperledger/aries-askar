@@ -126,7 +126,7 @@ export class KeyEntryListHandle extends ArcHandle {
 
 export class LocalKeyHandle extends ArcHandle {
   public free() {
-    ariesAskar.keyFree({ keyHandle: this })
+    ariesAskar.keyFree({ localKeyHandle: this })
   }
 
   public static fromHandle(handle: ArcHandleType) {
