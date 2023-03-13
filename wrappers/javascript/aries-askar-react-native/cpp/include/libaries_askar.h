@@ -13,8 +13,6 @@ typedef size_t StoreHandle;
 typedef size_t SessionHandle;
 
 
-#define PAGE_SIZE 32
-
 enum ErrorCode
 #ifdef __cplusplus
   : int64_t
