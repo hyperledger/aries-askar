@@ -131,6 +131,8 @@ FunctionMap AriesAskarTurboModuleHostObject::functionMapping(jsi::Runtime &rt) {
   fMap.insert(std::make_tuple("keyEntryListLoadLocal",
                               &ariesAskar::keyEntryListLoadLocal));
 
+  fMap.insert(std::make_tuple("migrateIndySdk", &ariesAskar::migrateIndySdk));
+
   return fMap;
 }
 
