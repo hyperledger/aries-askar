@@ -28,7 +28,6 @@ describe('migration', () => {
   })
 
   test('migrate', async () => {
-    ariesAskar.setDefaultLogger()
     await expect(
       Migration.migrate({
         specUri: DB_UPGRADE_PATH,
