@@ -1,6 +1,6 @@
 {
   "name": "@hyperledger/aries-askar-react-native",
-  "version": "0.1.0-dev.4",
+  "version": "0.1.0-dev.5",
   "license": "Apache-2.0",
   "description": "React Native wrapper for Aries Askar",
   "main": "build/index",
@@ -35,7 +35,7 @@
     "install": "node-pre-gyp install"
   },
   "dependencies": {
-    "@hyperledger/aries-askar-shared": "0.1.0-dev.4",
+    "@hyperledger/aries-askar-shared": "0.1.0-dev.5",
     "@mapbox/node-pre-gyp": "^1.0.10"
   },
   "devDependencies": {
