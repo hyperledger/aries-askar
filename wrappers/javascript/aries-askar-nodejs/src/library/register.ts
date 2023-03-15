@@ -69,4 +69,8 @@ const getLibrary = () => {
   return Library(validLibraryPath, nativeBindings)
 }
 
-export const nativeAriesAskar = getLibrary() as unknown as NativeMethods
+let nativeAriesAskar: NativeMethods | undefined = undefined
+export const getNativeAriesAskar = () => {
+  if (!nativeAriesAskar) nativeAriesAskar = getLibrary() as unknown as NativeMethods
+  return nativeAriesAskar
+}

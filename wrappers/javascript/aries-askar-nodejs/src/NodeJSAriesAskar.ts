@@ -94,7 +94,6 @@ import {
   KeyEntryListHandle,
 } from '@hyperledger/aries-askar-shared'
 
-import { handleError } from './error'
 import {
   serializeArguments,
   encryptedBufferStructToClass,
@@ -119,7 +118,7 @@ import {
   FFI_STORE_HANDLE,
   FFI_INT8,
 } from './ffi'
-import { nativeAriesAskar } from './library'
+import { getNativeAriesAskar } from './library'
 
 function handleNullableReturnPointer<Return>(returnValue: Buffer): Return | null {
   if (returnValue.address() === 0) return null
@@ -141,7 +140,7 @@ export class NodeJSAriesAskar implements AriesAskar {
         deallocateCallbackBuffer(id)
 
         try {
-          handleError()
+          this.handleError()
         } catch (e) {
           reject(e)
         }
@@ -163,7 +162,7 @@ export class NodeJSAriesAskar implements AriesAskar {
 
         if (errorCode) {
           const nativeError = allocateStringBuffer()
-          nativeAriesAskar.askar_get_current_error(nativeError)
+          this.nativeAriesAskar.askar_get_current_error(nativeError)
           return reject(new AriesAskarError(JSON.parse(nativeError.deref() as string) as AriesAskarErrorObject))
         }
 
@@ -189,20 +188,34 @@ export class NodeJSAriesAskar implements AriesAskar {
     })
   }
 
+  private handleError() {
+    const nativeError = allocateStringBuffer()
+    this.nativeAriesAskar.askar_get_current_error(nativeError)
+
+    const ariesAskarErrorObject = JSON.parse(nativeError.deref() as string) as AriesAskarErrorObject
+
+    if (ariesAskarErrorObject.code === 0) return
+
+    throw new AriesAskarError(ariesAskarErrorObject)
+  }
+  public get nativeAriesAskar() {
+    return getNativeAriesAskar()
+  }
+
   public version(): string {
-    return nativeAriesAskar.askar_version()
+    return this.nativeAriesAskar.askar_version()
   }
 
   public getCurrentError(): string {
     const error = allocateStringBuffer()
-    nativeAriesAskar.askar_get_current_error(error)
-    handleError()
+    this.nativeAriesAskar.askar_get_current_error(error)
+    this.handleError()
     return handleReturnPointer<string>(error)
   }
 
   public clearCustomLogger(): void {
-    nativeAriesAskar.askar_clear_custom_logger()
-    handleError()
+    this.nativeAriesAskar.askar_clear_custom_logger()
+    this.handleError()
   }
 
   // TODO: the id has to be deallocated when its done, but how?
@@ -210,29 +223,29 @@ export class NodeJSAriesAskar implements AriesAskar {
     const { id, nativeCallback } = toNativeLogCallback(logger)
 
     // TODO: flush and enabled are just guessed
-    nativeAriesAskar.askar_set_custom_logger(0, nativeCallback, +enabled, +flush, logLevel)
-    handleError()
+    this.nativeAriesAskar.askar_set_custom_logger(0, nativeCallback, +enabled, +flush, logLevel)
+    this.handleError()
     deallocateCallbackBuffer(+id)
   }
 
   public setDefaultLogger(): void {
-    nativeAriesAskar.askar_set_default_logger()
-    handleError()
+    this.nativeAriesAskar.askar_set_default_logger()
+    this.handleError()
   }
 
   public setMaxLogLevel(options: SetMaxLogLevelOptions): void {
     const { logLevel } = serializeArguments(options)
 
-    nativeAriesAskar.askar_set_max_log_level(logLevel)
-    handleError()
+    this.nativeAriesAskar.askar_set_max_log_level(logLevel)
+    this.handleError()
   }
 
   public entryListCount(options: EntryListCountOptions): number {
     const { entryListHandle } = serializeArguments(options)
     const ret = allocateInt32Buffer()
 
-    nativeAriesAskar.askar_entry_list_count(entryListHandle, ret)
-    handleError()
+    this.nativeAriesAskar.askar_entry_list_count(entryListHandle, ret)
+    this.handleError()
 
     return handleReturnPointer<number>(ret)
   }
@@ -240,16 +253,16 @@ export class NodeJSAriesAskar implements AriesAskar {
   public entryListFree(options: EntryListFreeOptions): void {
     const { entryListHandle } = serializeArguments(options)
 
-    nativeAriesAskar.askar_entry_list_free(entryListHandle)
-    handleError()
+    this.nativeAriesAskar.askar_entry_list_free(entryListHandle)
+    this.handleError()
   }
 
   public entryListGetCategory(options: EntryListGetCategoryOptions): string {
     const { entryListHandle, index } = serializeArguments(options)
     const ret = allocateStringBuffer()
 
-    nativeAriesAskar.askar_entry_list_get_category(entryListHandle, index, ret)
-    handleError()
+    this.nativeAriesAskar.askar_entry_list_get_category(entryListHandle, index, ret)
+    this.handleError()
 
     return handleReturnPointer<string>(ret)
   }
@@ -258,8 +271,8 @@ export class NodeJSAriesAskar implements AriesAskar {
     const { entryListHandle, index } = serializeArguments(options)
     const ret = allocateStringBuffer()
 
-    nativeAriesAskar.askar_entry_list_get_name(entryListHandle, index, ret)
-    handleError()
+    this.nativeAriesAskar.askar_entry_list_get_name(entryListHandle, index, ret)
+    this.handleError()
 
     return handleReturnPointer<string>(ret)
   }
@@ -268,8 +281,8 @@ export class NodeJSAriesAskar implements AriesAskar {
     const { entryListHandle, index } = serializeArguments(options)
     const ret = allocateStringBuffer()
 
-    nativeAriesAskar.askar_entry_list_get_tags(entryListHandle, index, ret)
-    handleError()
+    this.nativeAriesAskar.askar_entry_list_get_tags(entryListHandle, index, ret)
+    this.handleError()
 
     return handleNullableReturnPointer<string>(ret)
   }
@@ -279,8 +292,8 @@ export class NodeJSAriesAskar implements AriesAskar {
 
     const ret = allocateSecretBuffer()
 
-    nativeAriesAskar.askar_entry_list_get_value(entryListHandle, index, ret)
-    handleError()
+    this.nativeAriesAskar.askar_entry_list_get_value(entryListHandle, index, ret)
+    this.handleError()
 
     const byteBuffer = handleReturnPointer<ByteBufferType>(ret)
     return new Uint8Array(secretBufferToBuffer(byteBuffer))
@@ -290,8 +303,8 @@ export class NodeJSAriesAskar implements AriesAskar {
     const { aad, ciphertext, localKeyHandle, nonce, tag } = serializeArguments(options)
     const ret = allocateSecretBuffer()
 
-    nativeAriesAskar.askar_key_aead_decrypt(localKeyHandle, ciphertext, nonce, tag, aad, ret)
-    handleError()
+    this.nativeAriesAskar.askar_key_aead_decrypt(localKeyHandle, ciphertext, nonce, tag, aad, ret)
+    this.handleError()
 
     const byteBuffer = handleReturnPointer<ByteBufferType>(ret)
     return new Uint8Array(secretBufferToBuffer(byteBuffer))
@@ -301,8 +314,8 @@ export class NodeJSAriesAskar implements AriesAskar {
     const { localKeyHandle, aad, nonce, message } = serializeArguments(options)
     const ret = allocateEncryptedBuffer()
 
-    nativeAriesAskar.askar_key_aead_encrypt(localKeyHandle, message, nonce, aad, ret)
-    handleError()
+    this.nativeAriesAskar.askar_key_aead_encrypt(localKeyHandle, message, nonce, aad, ret)
+    this.handleError()
 
     const encryptedBuffer = handleReturnPointer<EncryptedBufferType>(ret)
     return encryptedBufferStructToClass(encryptedBuffer)
@@ -312,8 +325,8 @@ export class NodeJSAriesAskar implements AriesAskar {
     const { localKeyHandle, msgLen } = serializeArguments(options)
     const ret = allocateInt32Buffer()
 
-    nativeAriesAskar.askar_key_aead_get_padding(localKeyHandle, msgLen, ret)
-    handleError()
+    this.nativeAriesAskar.askar_key_aead_get_padding(localKeyHandle, msgLen, ret)
+    this.handleError()
 
     return handleReturnPointer<number>(ret)
   }
@@ -322,8 +335,8 @@ export class NodeJSAriesAskar implements AriesAskar {
     const { localKeyHandle } = serializeArguments(options)
     const ret = allocateAeadParams()
 
-    nativeAriesAskar.askar_key_aead_get_params(localKeyHandle, ret)
-    handleError()
+    this.nativeAriesAskar.askar_key_aead_get_params(localKeyHandle, ret)
+    this.handleError()
 
     return new AeadParams(handleReturnPointer<AeadParamsOptions>(ret))
   }
@@ -332,8 +345,8 @@ export class NodeJSAriesAskar implements AriesAskar {
     const { localKeyHandle } = serializeArguments(options)
     const ret = allocateSecretBuffer()
 
-    nativeAriesAskar.askar_key_aead_random_nonce(localKeyHandle, ret)
-    handleError()
+    this.nativeAriesAskar.askar_key_aead_random_nonce(localKeyHandle, ret)
+    this.handleError()
 
     const secretBuffer = handleReturnPointer<SecretBufferType>(ret)
     return new Uint8Array(secretBufferToBuffer(secretBuffer))
@@ -343,8 +356,8 @@ export class NodeJSAriesAskar implements AriesAskar {
     const { localKeyHandle, algorithm } = serializeArguments(options)
     const ret = allocatePointer()
 
-    nativeAriesAskar.askar_key_convert(localKeyHandle, algorithm, ret)
-    handleError()
+    this.nativeAriesAskar.askar_key_convert(localKeyHandle, algorithm, ret)
+    this.handleError()
 
     const handle = handleReturnPointer<Uint8Array>(ret)
     return new LocalKeyHandle(handle)
@@ -354,8 +367,8 @@ export class NodeJSAriesAskar implements AriesAskar {
     const { nonce, message, recipientKey, senderKey } = serializeArguments(options)
     const ret = allocateSecretBuffer()
 
-    nativeAriesAskar.askar_key_crypto_box(recipientKey, senderKey, message, nonce, ret)
-    handleError()
+    this.nativeAriesAskar.askar_key_crypto_box(recipientKey, senderKey, message, nonce, ret)
+    this.handleError()
 
     const secretBuffer = handleReturnPointer<SecretBufferType>(ret)
     return new Uint8Array(secretBufferToBuffer(secretBuffer))
@@ -365,8 +378,8 @@ export class NodeJSAriesAskar implements AriesAskar {
     const { nonce, message, senderKey, recipientKey } = serializeArguments(options)
     const ret = allocateSecretBuffer()
 
-    nativeAriesAskar.askar_key_crypto_box_open(recipientKey, senderKey, message, nonce, ret)
-    handleError()
+    this.nativeAriesAskar.askar_key_crypto_box_open(recipientKey, senderKey, message, nonce, ret)
+    this.handleError()
 
     const secretBuffer = handleReturnPointer<SecretBufferType>(ret)
     return new Uint8Array(secretBufferToBuffer(secretBuffer))
@@ -375,8 +388,8 @@ export class NodeJSAriesAskar implements AriesAskar {
   public keyCryptoBoxRandomNonce(): Uint8Array {
     const ret = allocateSecretBuffer()
 
-    nativeAriesAskar.askar_key_crypto_box_random_nonce(ret)
-    handleError()
+    this.nativeAriesAskar.askar_key_crypto_box_random_nonce(ret)
+    this.handleError()
 
     const secretBuffer = handleReturnPointer<SecretBufferType>(ret)
     return new Uint8Array(secretBufferToBuffer(secretBuffer))
@@ -386,8 +399,8 @@ export class NodeJSAriesAskar implements AriesAskar {
     const { message, localKeyHandle } = serializeArguments(options)
     const ret = allocateSecretBuffer()
 
-    nativeAriesAskar.askar_key_crypto_box_seal(localKeyHandle, message, ret)
-    handleError()
+    this.nativeAriesAskar.askar_key_crypto_box_seal(localKeyHandle, message, ret)
+    this.handleError()
 
     const secretBuffer = handleReturnPointer<SecretBufferType>(ret)
     return new Uint8Array(secretBufferToBuffer(secretBuffer))
@@ -397,8 +410,8 @@ export class NodeJSAriesAskar implements AriesAskar {
     const { ciphertext, localKeyHandle } = serializeArguments(options)
     const ret = allocateSecretBuffer()
 
-    nativeAriesAskar.askar_key_crypto_box_seal_open(localKeyHandle, ciphertext, ret)
-    handleError()
+    this.nativeAriesAskar.askar_key_crypto_box_seal_open(localKeyHandle, ciphertext, ret)
+    this.handleError()
 
     const secretBuffer = handleReturnPointer<SecretBufferType>(ret)
     return new Uint8Array(secretBufferToBuffer(secretBuffer))
@@ -410,7 +423,7 @@ export class NodeJSAriesAskar implements AriesAskar {
 
     const ret = allocatePointer()
 
-    nativeAriesAskar.askar_key_derive_ecdh_1pu(
+    this.nativeAriesAskar.askar_key_derive_ecdh_1pu(
       algorithm,
       ephemeralKey,
       senderKey,
@@ -422,7 +435,7 @@ export class NodeJSAriesAskar implements AriesAskar {
       receive,
       ret
     )
-    handleError()
+    this.handleError()
 
     const handle = handleReturnPointer<Uint8Array>(ret)
     return new LocalKeyHandle(handle)
@@ -432,8 +445,8 @@ export class NodeJSAriesAskar implements AriesAskar {
     const { receive, apv, apu, algId, recipientKey, ephemeralKey, algorithm } = serializeArguments(options)
     const ret = allocatePointer()
 
-    nativeAriesAskar.askar_key_derive_ecdh_es(algorithm, ephemeralKey, recipientKey, algId, apu, apv, receive, ret)
-    handleError()
+    this.nativeAriesAskar.askar_key_derive_ecdh_es(algorithm, ephemeralKey, recipientKey, algId, apu, apv, receive, ret)
+    this.handleError()
 
     const handle = handleReturnPointer<Uint8Array>(ret)
     return new LocalKeyHandle(handle)
@@ -443,8 +456,8 @@ export class NodeJSAriesAskar implements AriesAskar {
     const { keyEntryListHandle } = serializeArguments(options)
     const ret = allocateInt32Buffer()
 
-    nativeAriesAskar.askar_key_entry_list_count(keyEntryListHandle, ret)
-    handleError()
+    this.nativeAriesAskar.askar_key_entry_list_count(keyEntryListHandle, ret)
+    this.handleError()
 
     return handleReturnPointer<number>(ret)
   }
@@ -452,16 +465,16 @@ export class NodeJSAriesAskar implements AriesAskar {
   public keyEntryListFree(options: KeyEntryListFreeOptions): void {
     const { keyEntryListHandle } = serializeArguments(options)
 
-    nativeAriesAskar.askar_key_entry_list_free(keyEntryListHandle)
-    handleError()
+    this.nativeAriesAskar.askar_key_entry_list_free(keyEntryListHandle)
+    this.handleError()
   }
 
   public keyEntryListGetAlgorithm(options: KeyEntryListGetAlgorithmOptions): string {
     const { keyEntryListHandle, index } = serializeArguments(options)
     const ret = allocateStringBuffer()
 
-    nativeAriesAskar.askar_key_entry_list_get_algorithm(keyEntryListHandle, index, ret)
-    handleError()
+    this.nativeAriesAskar.askar_key_entry_list_get_algorithm(keyEntryListHandle, index, ret)
+    this.handleError()
 
     return handleReturnPointer<string>(ret)
   }
@@ -470,8 +483,8 @@ export class NodeJSAriesAskar implements AriesAskar {
     const { keyEntryListHandle, index } = serializeArguments(options)
     const ret = allocateStringBuffer()
 
-    nativeAriesAskar.askar_key_entry_list_get_metadata(keyEntryListHandle, index, ret)
-    handleError()
+    this.nativeAriesAskar.askar_key_entry_list_get_metadata(keyEntryListHandle, index, ret)
+    this.handleError()
 
     return handleNullableReturnPointer<string>(ret)
   }
@@ -480,8 +493,8 @@ export class NodeJSAriesAskar implements AriesAskar {
     const { keyEntryListHandle, index } = serializeArguments(options)
     const ret = allocateStringBuffer()
 
-    nativeAriesAskar.askar_key_entry_list_get_name(keyEntryListHandle, index, ret)
-    handleError()
+    this.nativeAriesAskar.askar_key_entry_list_get_name(keyEntryListHandle, index, ret)
+    this.handleError()
 
     return handleReturnPointer<string>(ret)
   }
@@ -490,7 +503,7 @@ export class NodeJSAriesAskar implements AriesAskar {
     const { keyEntryListHandle, index } = serializeArguments(options)
     const ret = allocateStringBuffer()
 
-    nativeAriesAskar.askar_key_entry_list_get_tags(keyEntryListHandle, index, ret)
+    this.nativeAriesAskar.askar_key_entry_list_get_tags(keyEntryListHandle, index, ret)
 
     return handleNullableReturnPointer<string>(ret)
   }
@@ -499,8 +512,8 @@ export class NodeJSAriesAskar implements AriesAskar {
     const { index, keyEntryListHandle } = serializeArguments(options)
     const ret = allocatePointer()
 
-    nativeAriesAskar.askar_key_entry_list_load_local(keyEntryListHandle, index, ret)
-    handleError()
+    this.nativeAriesAskar.askar_key_entry_list_load_local(keyEntryListHandle, index, ret)
+    this.handleError()
 
     const handle = handleReturnPointer<Uint8Array>(ret)
     return new LocalKeyHandle(handle)
@@ -509,16 +522,16 @@ export class NodeJSAriesAskar implements AriesAskar {
   public keyFree(options: KeyFreeOptions): void {
     const { localKeyHandle } = serializeArguments(options)
 
-    nativeAriesAskar.askar_key_free(localKeyHandle)
-    handleError()
+    this.nativeAriesAskar.askar_key_free(localKeyHandle)
+    this.handleError()
   }
 
   public keyFromJwk(options: KeyFromJwkOptions): LocalKeyHandle {
     const { jwk } = serializeArguments(options)
     const ret = allocatePointer()
 
-    nativeAriesAskar.askar_key_from_jwk(jwk, ret)
-    handleError()
+    this.nativeAriesAskar.askar_key_from_jwk(jwk, ret)
+    this.handleError()
 
     const handle = handleReturnPointer<Uint8Array>(ret)
     return new LocalKeyHandle(handle)
@@ -528,8 +541,8 @@ export class NodeJSAriesAskar implements AriesAskar {
     const { algorithm, pkHandle, skHandle } = serializeArguments(options)
     const ret = allocatePointer()
 
-    nativeAriesAskar.askar_key_from_key_exchange(algorithm, skHandle, pkHandle, ret)
-    handleError()
+    this.nativeAriesAskar.askar_key_from_key_exchange(algorithm, skHandle, pkHandle, ret)
+    this.handleError()
 
     const handle = handleReturnPointer<Uint8Array>(ret)
     return new LocalKeyHandle(handle)
@@ -539,8 +552,8 @@ export class NodeJSAriesAskar implements AriesAskar {
     const { publicKey, algorithm } = serializeArguments(options)
     const ret = allocatePointer()
 
-    nativeAriesAskar.askar_key_from_public_bytes(algorithm, publicKey, ret)
-    handleError()
+    this.nativeAriesAskar.askar_key_from_public_bytes(algorithm, publicKey, ret)
+    this.handleError()
 
     const handle = handleReturnPointer<Uint8Array>(ret)
     return new LocalKeyHandle(handle)
@@ -550,8 +563,8 @@ export class NodeJSAriesAskar implements AriesAskar {
     const { secretKey, algorithm } = serializeArguments(options)
     const ret = allocatePointer()
 
-    nativeAriesAskar.askar_key_from_secret_bytes(algorithm, secretKey, ret)
-    handleError()
+    this.nativeAriesAskar.askar_key_from_secret_bytes(algorithm, secretKey, ret)
+    this.handleError()
 
     const handle = handleReturnPointer<Uint8Array>(ret)
     return new LocalKeyHandle(handle)
@@ -561,8 +574,8 @@ export class NodeJSAriesAskar implements AriesAskar {
     const { algorithm, method, seed } = serializeArguments(options)
     const ret = allocatePointer()
 
-    nativeAriesAskar.askar_key_from_seed(algorithm, seed, method, ret)
-    handleError()
+    this.nativeAriesAskar.askar_key_from_seed(algorithm, seed, method, ret)
+    this.handleError()
 
     const handle = handleReturnPointer<Uint8Array>(ret)
     return new LocalKeyHandle(handle)
@@ -572,8 +585,8 @@ export class NodeJSAriesAskar implements AriesAskar {
     const { algorithm, ephemeral } = serializeArguments(options)
     const ret = allocatePointer()
 
-    nativeAriesAskar.askar_key_generate(algorithm, ephemeral, ret)
-    handleError()
+    this.nativeAriesAskar.askar_key_generate(algorithm, ephemeral, ret)
+    this.handleError()
 
     const handle = handleReturnPointer<Uint8Array>(ret)
     return new LocalKeyHandle(handle)
@@ -583,8 +596,8 @@ export class NodeJSAriesAskar implements AriesAskar {
     const { localKeyHandle } = serializeArguments(options)
     const ret = allocateStringBuffer()
 
-    nativeAriesAskar.askar_key_get_algorithm(localKeyHandle, ret)
-    handleError()
+    this.nativeAriesAskar.askar_key_get_algorithm(localKeyHandle, ret)
+    this.handleError()
 
     return handleReturnPointer<string>(ret)
   }
@@ -593,8 +606,8 @@ export class NodeJSAriesAskar implements AriesAskar {
     const { localKeyHandle } = serializeArguments(options)
     const ret = allocateInt32Buffer()
 
-    nativeAriesAskar.askar_key_get_ephemeral(localKeyHandle, ret)
-    handleError()
+    this.nativeAriesAskar.askar_key_get_ephemeral(localKeyHandle, ret)
+    this.handleError()
 
     return handleReturnPointer<number>(ret)
   }
@@ -603,8 +616,8 @@ export class NodeJSAriesAskar implements AriesAskar {
     const { localKeyHandle, algorithm } = serializeArguments(options)
     const ret = allocateStringBuffer()
 
-    nativeAriesAskar.askar_key_get_jwk_public(localKeyHandle, algorithm, ret)
-    handleError()
+    this.nativeAriesAskar.askar_key_get_jwk_public(localKeyHandle, algorithm, ret)
+    this.handleError()
 
     return handleReturnPointer<string>(ret)
   }
@@ -613,8 +626,8 @@ export class NodeJSAriesAskar implements AriesAskar {
     const { localKeyHandle } = serializeArguments(options)
     const ret = allocateSecretBuffer()
 
-    nativeAriesAskar.askar_key_get_jwk_secret(localKeyHandle, ret)
-    handleError()
+    this.nativeAriesAskar.askar_key_get_jwk_secret(localKeyHandle, ret)
+    this.handleError()
 
     const secretBuffer = handleReturnPointer<SecretBufferType>(ret)
     return new Uint8Array(secretBufferToBuffer(secretBuffer))
@@ -624,8 +637,8 @@ export class NodeJSAriesAskar implements AriesAskar {
     const { localKeyHandle, algorithm } = serializeArguments(options)
     const ret = allocateStringBuffer()
 
-    nativeAriesAskar.askar_key_get_jwk_thumbprint(localKeyHandle, algorithm, ret)
-    handleError()
+    this.nativeAriesAskar.askar_key_get_jwk_thumbprint(localKeyHandle, algorithm, ret)
+    this.handleError()
 
     return handleReturnPointer<string>(ret)
   }
@@ -634,8 +647,8 @@ export class NodeJSAriesAskar implements AriesAskar {
     const { localKeyHandle } = serializeArguments(options)
     const ret = allocateSecretBuffer()
 
-    nativeAriesAskar.askar_key_get_public_bytes(localKeyHandle, ret)
-    handleError()
+    this.nativeAriesAskar.askar_key_get_public_bytes(localKeyHandle, ret)
+    this.handleError()
 
     const secretBuffer = handleReturnPointer<SecretBufferType>(ret)
     return new Uint8Array(secretBufferToBuffer(secretBuffer))
@@ -645,8 +658,8 @@ export class NodeJSAriesAskar implements AriesAskar {
     const { localKeyHandle } = serializeArguments(options)
     const ret = allocateSecretBuffer()
 
-    nativeAriesAskar.askar_key_get_secret_bytes(localKeyHandle, ret)
-    handleError()
+    this.nativeAriesAskar.askar_key_get_secret_bytes(localKeyHandle, ret)
+    this.handleError()
 
     const secretBuffer = handleReturnPointer<SecretBufferType>(ret)
     return new Uint8Array(secretBufferToBuffer(secretBuffer))
@@ -656,8 +669,8 @@ export class NodeJSAriesAskar implements AriesAskar {
     const { localKeyHandle, message, sigType } = serializeArguments(options)
     const ret = allocateSecretBuffer()
 
-    nativeAriesAskar.askar_key_sign_message(localKeyHandle, message, sigType, ret)
-    handleError()
+    this.nativeAriesAskar.askar_key_sign_message(localKeyHandle, message, sigType, ret)
+    this.handleError()
 
     const secretBuffer = handleReturnPointer<SecretBufferType>(ret)
     return new Uint8Array(secretBufferToBuffer(secretBuffer))
@@ -667,8 +680,8 @@ export class NodeJSAriesAskar implements AriesAskar {
     const { localKeyHandle, algorithm, ciphertext, nonce, tag } = serializeArguments(options)
     const ret = allocatePointer()
 
-    nativeAriesAskar.askar_key_unwrap_key(localKeyHandle, algorithm, ciphertext, nonce, tag, ret)
-    handleError()
+    this.nativeAriesAskar.askar_key_unwrap_key(localKeyHandle, algorithm, ciphertext, nonce, tag, ret)
+    this.handleError()
 
     const handle = handleReturnPointer<Uint8Array>(ret)
     return new LocalKeyHandle(handle)
@@ -678,8 +691,8 @@ export class NodeJSAriesAskar implements AriesAskar {
     const { localKeyHandle, sigType, message, signature } = serializeArguments(options)
     const ret = allocateInt8Buffer()
 
-    nativeAriesAskar.askar_key_verify_signature(localKeyHandle, message, signature, sigType, ret)
-    handleError()
+    this.nativeAriesAskar.askar_key_verify_signature(localKeyHandle, message, signature, sigType, ret)
+    this.handleError()
 
     return Boolean(handleReturnPointer<number>(ret))
   }
@@ -688,8 +701,8 @@ export class NodeJSAriesAskar implements AriesAskar {
     const { localKeyHandle, nonce, other } = serializeArguments(options)
     const ret = allocateEncryptedBuffer()
 
-    nativeAriesAskar.askar_key_wrap_key(localKeyHandle, other, nonce, ret)
-    handleError()
+    this.nativeAriesAskar.askar_key_wrap_key(localKeyHandle, other, nonce, ret)
+    this.handleError()
 
     const encryptedBuffer = handleReturnPointer<EncryptedBufferType>(ret)
     return encryptedBufferStructToClass(encryptedBuffer)
@@ -698,15 +711,15 @@ export class NodeJSAriesAskar implements AriesAskar {
   public scanFree(options: ScanFreeOptions): void {
     const { scanHandle } = serializeArguments(options)
 
-    nativeAriesAskar.askar_scan_free(scanHandle)
-    handleError()
+    this.nativeAriesAskar.askar_scan_free(scanHandle)
+    this.handleError()
   }
 
   public async scanNext(options: ScanNextOptions): Promise<EntryListHandle | null> {
     const { scanHandle } = serializeArguments(options)
 
     const handle = await this.promisifyWithResponse<Uint8Array>(
-      (cb, cbId) => nativeAriesAskar.askar_scan_next(scanHandle, cb, cbId),
+      (cb, cbId) => this.nativeAriesAskar.askar_scan_next(scanHandle, cb, cbId),
       FFI_ENTRY_LIST_HANDLE
     )
 
@@ -717,7 +730,7 @@ export class NodeJSAriesAskar implements AriesAskar {
     const { category, limit, offset, profile, storeHandle, tagFilter } = serializeArguments(options)
     const handle = await this.promisifyWithResponse<number>(
       (cb, cbId) =>
-        nativeAriesAskar.askar_scan_start(
+        this.nativeAriesAskar.askar_scan_start(
           storeHandle,
           profile,
           category,
@@ -736,13 +749,15 @@ export class NodeJSAriesAskar implements AriesAskar {
   public async sessionClose(options: SessionCloseOptions): Promise<void> {
     const { commit, sessionHandle } = serializeArguments(options)
 
-    return await this.promisify((cb, cbId) => nativeAriesAskar.askar_session_close(sessionHandle, commit, cb, cbId))
+    return await this.promisify((cb, cbId) =>
+      this.nativeAriesAskar.askar_session_close(sessionHandle, commit, cb, cbId)
+    )
   }
 
   public async sessionCount(options: SessionCountOptions): Promise<number> {
     const { sessionHandle, tagFilter, category } = serializeArguments(options)
     const response = await this.promisifyWithResponse<number, number>(
-      (cb, cbId) => nativeAriesAskar.askar_session_count(sessionHandle, category, tagFilter, cb, cbId),
+      (cb, cbId) => this.nativeAriesAskar.askar_session_count(sessionHandle, category, tagFilter, cb, cbId),
       FFI_INT64
     )
 
@@ -752,7 +767,7 @@ export class NodeJSAriesAskar implements AriesAskar {
   public async sessionFetch(options: SessionFetchOptions): Promise<EntryListHandle | null> {
     const { name, category, sessionHandle, forUpdate } = serializeArguments(options)
     const handle = await this.promisifyWithResponse<Uint8Array>(
-      (cb, cbId) => nativeAriesAskar.askar_session_fetch(sessionHandle, category, name, forUpdate, cb, cbId),
+      (cb, cbId) => this.nativeAriesAskar.askar_session_fetch(sessionHandle, category, name, forUpdate, cb, cbId),
       FFI_ENTRY_LIST_HANDLE
     )
 
@@ -764,7 +779,15 @@ export class NodeJSAriesAskar implements AriesAskar {
 
     const handle = await this.promisifyWithResponse<Uint8Array>(
       (cb, cbId) =>
-        nativeAriesAskar.askar_session_fetch_all(sessionHandle, category, tagFilter, +limit || -1, forUpdate, cb, cbId),
+        this.nativeAriesAskar.askar_session_fetch_all(
+          sessionHandle,
+          category,
+          tagFilter,
+          +limit || -1,
+          forUpdate,
+          cb,
+          cbId
+        ),
       FFI_ENTRY_LIST_HANDLE
     )
 
@@ -776,7 +799,7 @@ export class NodeJSAriesAskar implements AriesAskar {
 
     const handle = await this.promisifyWithResponse<Uint8Array>(
       (cb, cbId) =>
-        nativeAriesAskar.askar_session_fetch_all_keys(
+        this.nativeAriesAskar.askar_session_fetch_all_keys(
           sessionHandle,
           algorithm,
           thumbprint,
@@ -796,7 +819,7 @@ export class NodeJSAriesAskar implements AriesAskar {
     const { forUpdate, sessionHandle, name } = serializeArguments(options)
 
     const handle = await this.promisifyWithResponse<Uint8Array>(
-      (cb, cbId) => nativeAriesAskar.askar_session_fetch_key(sessionHandle, name, forUpdate, cb, cbId),
+      (cb, cbId) => this.nativeAriesAskar.askar_session_fetch_key(sessionHandle, name, forUpdate, cb, cbId),
       FFI_KEY_ENTRY_LIST_HANDLE
     )
 
@@ -807,7 +830,7 @@ export class NodeJSAriesAskar implements AriesAskar {
     const { name, sessionHandle, expiryMs, localKeyHandle, metadata, tags } = serializeArguments(options)
 
     return this.promisify((cb, cbId) =>
-      nativeAriesAskar.askar_session_insert_key(
+      this.nativeAriesAskar.askar_session_insert_key(
         sessionHandle,
         localKeyHandle,
         name,
@@ -823,7 +846,7 @@ export class NodeJSAriesAskar implements AriesAskar {
   public async sessionRemoveAll(options: SessionRemoveAllOptions): Promise<number> {
     const { sessionHandle, tagFilter, category } = serializeArguments(options)
     const response = await this.promisifyWithResponse<number>(
-      (cb, cbId) => nativeAriesAskar.askar_session_remove_all(sessionHandle, category, tagFilter, cb, cbId),
+      (cb, cbId) => this.nativeAriesAskar.askar_session_remove_all(sessionHandle, category, tagFilter, cb, cbId),
       FFI_INT64
     )
 
@@ -833,14 +856,14 @@ export class NodeJSAriesAskar implements AriesAskar {
   public async sessionRemoveKey(options: SessionRemoveKeyOptions): Promise<void> {
     const { sessionHandle, name } = serializeArguments(options)
 
-    return this.promisify((cb, cbId) => nativeAriesAskar.askar_session_remove_key(sessionHandle, name, cb, cbId))
+    return this.promisify((cb, cbId) => this.nativeAriesAskar.askar_session_remove_key(sessionHandle, name, cb, cbId))
   }
 
   public async sessionStart(options: SessionStartOptions): Promise<SessionHandle> {
     const { storeHandle, profile, asTransaction } = serializeArguments(options)
 
     const handle = await this.promisifyWithResponse<number, number>((cb, cbId) => {
-      nativeAriesAskar.askar_session_start(storeHandle, profile, asTransaction, cb, cbId)
+      this.nativeAriesAskar.askar_session_start(storeHandle, profile, asTransaction, cb, cbId)
     }, FFI_SESSION_HANDLE)
 
     return SessionHandle.fromHandle(handle)
@@ -850,7 +873,7 @@ export class NodeJSAriesAskar implements AriesAskar {
     const { name, sessionHandle, category, expiryMs, tags, operation, value } = serializeArguments(options)
 
     return this.promisify((cb, cbId) =>
-      nativeAriesAskar.askar_session_update(
+      this.nativeAriesAskar.askar_session_update(
         sessionHandle,
         operation,
         category,
@@ -868,20 +891,20 @@ export class NodeJSAriesAskar implements AriesAskar {
     const { expiryMs, tags, name, sessionHandle, metadata } = serializeArguments(options)
 
     return this.promisify((cb, cbId) =>
-      nativeAriesAskar.askar_session_update_key(sessionHandle, name, metadata, tags, +expiryMs || -1, cb, cbId)
+      this.nativeAriesAskar.askar_session_update_key(sessionHandle, name, metadata, tags, +expiryMs || -1, cb, cbId)
     )
   }
 
   public storeClose(options: StoreCloseOptions): Promise<void> {
     const { storeHandle } = serializeArguments(options)
 
-    return this.promisify((cb, cbId) => nativeAriesAskar.askar_store_close(storeHandle, cb, cbId))
+    return this.promisify((cb, cbId) => this.nativeAriesAskar.askar_store_close(storeHandle, cb, cbId))
   }
 
   public async storeCreateProfile(options: StoreCreateProfileOptions): Promise<string> {
     const { storeHandle, profile } = serializeArguments(options)
     const response = await this.promisifyWithResponse<string>(
-      (cb, cbId) => nativeAriesAskar.askar_store_create_profile(storeHandle, profile, cb, cbId),
+      (cb, cbId) => this.nativeAriesAskar.askar_store_create_profile(storeHandle, profile, cb, cbId),
       FFI_STRING
     )
 
@@ -892,8 +915,8 @@ export class NodeJSAriesAskar implements AriesAskar {
     const { seed } = serializeArguments(options)
     const ret = allocateStringBuffer()
 
-    nativeAriesAskar.askar_store_generate_raw_key(seed, ret)
-    handleError()
+    this.nativeAriesAskar.askar_store_generate_raw_key(seed, ret)
+    this.handleError()
 
     return ret.deref() as string
   }
@@ -901,7 +924,7 @@ export class NodeJSAriesAskar implements AriesAskar {
   public async storeGetProfileName(options: StoreGetProfileNameOptions): Promise<string> {
     const { storeHandle } = serializeArguments(options)
     const response = await this.promisifyWithResponse<string>((cb, cbId) =>
-      nativeAriesAskar.askar_store_get_profile_name(storeHandle, cb, cbId)
+      this.nativeAriesAskar.askar_store_get_profile_name(storeHandle, cb, cbId)
     )
 
     return handleInvalidNullResponse(response)
@@ -911,7 +934,7 @@ export class NodeJSAriesAskar implements AriesAskar {
     const { profile, keyMethod, passKey, specUri } = serializeArguments(options)
 
     const handle = await this.promisifyWithResponse<number>(
-      (cb, cbId) => nativeAriesAskar.askar_store_open(specUri, keyMethod, passKey, profile, cb, cbId),
+      (cb, cbId) => this.nativeAriesAskar.askar_store_open(specUri, keyMethod, passKey, profile, cb, cbId),
       FFI_STORE_HANDLE
     )
 
@@ -922,7 +945,8 @@ export class NodeJSAriesAskar implements AriesAskar {
     const { profile, passKey, keyMethod, specUri, recreate } = serializeArguments(options)
 
     const handle = await this.promisifyWithResponse<number, number>(
-      (cb, cbId) => nativeAriesAskar.askar_store_provision(specUri, keyMethod, passKey, profile, recreate, cb, cbId),
+      (cb, cbId) =>
+        this.nativeAriesAskar.askar_store_provision(specUri, keyMethod, passKey, profile, recreate, cb, cbId),
       FFI_STORE_HANDLE
     )
 
@@ -932,13 +956,15 @@ export class NodeJSAriesAskar implements AriesAskar {
   public async storeRekey(options: StoreRekeyOptions): Promise<void> {
     const { passKey, keyMethod, storeHandle } = serializeArguments(options)
 
-    return this.promisify((cb, cbId) => nativeAriesAskar.askar_store_rekey(storeHandle, keyMethod, passKey, cb, cbId))
+    return this.promisify((cb, cbId) =>
+      this.nativeAriesAskar.askar_store_rekey(storeHandle, keyMethod, passKey, cb, cbId)
+    )
   }
 
   public async storeRemove(options: StoreRemoveOptions): Promise<number> {
     const { specUri } = serializeArguments(options)
     const response = await this.promisifyWithResponse<number>(
-      (cb, cbId) => nativeAriesAskar.askar_store_remove(specUri, cb, cbId),
+      (cb, cbId) => this.nativeAriesAskar.askar_store_remove(specUri, cb, cbId),
       FFI_INT8
     )
 
@@ -949,7 +975,7 @@ export class NodeJSAriesAskar implements AriesAskar {
     const { storeHandle, profile } = serializeArguments(options)
 
     const response = await this.promisifyWithResponse<number>(
-      (cb, cbId) => nativeAriesAskar.askar_store_remove_profile(storeHandle, profile, cb, cbId),
+      (cb, cbId) => this.nativeAriesAskar.askar_store_remove_profile(storeHandle, profile, cb, cbId),
       FFI_INT8
     )
 
@@ -959,7 +985,7 @@ export class NodeJSAriesAskar implements AriesAskar {
   public async migrateIndySdk(options: MigrateIndySdkOptions): Promise<void> {
     const { specUri, kdfLevel, walletKey, walletName } = serializeArguments(options)
     await this.promisify((cb, cbId) =>
-      nativeAriesAskar.askar_migrate_indy_sdk(specUri, walletName, walletKey, kdfLevel, cb, cbId)
+      this.nativeAriesAskar.askar_migrate_indy_sdk(specUri, walletName, walletKey, kdfLevel, cb, cbId)
     )
   }
 }
