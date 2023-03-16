@@ -204,7 +204,7 @@ jsi::Value createReturnValue(jsi::Runtime &rt, ErrorCode code,
   auto isNullptr = value == nullptr || value->_0 == nullptr;
   return isNullptr
              ? createReturnValue(rt, code, nullptr)
-             : createReturnValue(rt, code, std::to_string(int32_t(value->_0)));
+             : createReturnValue(rt, code, std::to_string(int64_t(intptr_t(value->_0))));
 }
 
 template <>
@@ -213,7 +213,7 @@ jsi::Value createReturnValue(jsi::Runtime &rt, ErrorCode code,
   auto isNullptr = value == nullptr || value->_0 == nullptr;
   return isNullptr
              ? createReturnValue(rt, code, nullptr)
-             : createReturnValue(rt, code, std::to_string(int32_t(value->_0)));
+             : createReturnValue(rt, code, std::to_string(int64_t(intptr_t(value->_0))));
 }
 
 template <>
@@ -222,7 +222,7 @@ jsi::Value createReturnValue(jsi::Runtime &rt, ErrorCode code,
   auto isNullptr = value == nullptr || value->_0 == nullptr;
   return isNullptr
              ? createReturnValue(rt, code, nullptr)
-             : createReturnValue(rt, code, std::to_string(int32_t(value->_0)));
+             : createReturnValue(rt, code, std::to_string(int64_t(intptr_t(value->_0))));
 }
 
 template <>
