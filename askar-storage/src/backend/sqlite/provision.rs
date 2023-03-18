@@ -1,5 +1,6 @@
 use std::{
-    borrow::Cow, fs::remove_file, io::ErrorKind as IoErrorKind, str::FromStr, time::Duration,
+    borrow::Cow, fs::remove_file, io::ErrorKind as IoErrorKind, str::FromStr,
+    thread::available_parallelism, time::Duration,
 };
 
 use sqlx::{
@@ -22,9 +23,9 @@ use crate::{
     protect::{KeyCache, PassKey, StoreKeyMethod, StoreKeyReference},
 };
 
-const DEFAULT_MIN_CONNECTIONS: u32 = 1;
-const DEFAULT_LOWER_MAX_CONNECTIONS: u32 = 2;
-const DEFAULT_UPPER_MAX_CONNECTIONS: u32 = 8;
+const DEFAULT_MIN_CONNECTIONS: usize = 1;
+const DEFAULT_LOWER_MAX_CONNECTIONS: usize = 2;
+const DEFAULT_UPPER_MAX_CONNECTIONS: usize = 8;
 const DEFAULT_BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 const DEFAULT_JOURNAL_MODE: SqliteJournalMode = SqliteJournalMode::Wal;
 const DEFAULT_LOCKING_MODE: SqliteLockingMode = SqliteLockingMode::Normal;
@@ -69,16 +70,21 @@ impl SqliteStoreOptions {
                 .parse()
                 .map_err(err_map!(Input, "Error parsing 'max_connections' parameter"))?
         } else {
-            (num_cpus::get() as u32)
+            available_parallelism()
+                .map_err(err_map!(
+                    Unexpected,
+                    "Error determining available parallelism"
+                ))?
+                .get()
                 .max(DEFAULT_LOWER_MAX_CONNECTIONS)
-                .min(DEFAULT_UPPER_MAX_CONNECTIONS)
+                .min(DEFAULT_UPPER_MAX_CONNECTIONS) as u32
         };
         let min_connections = if let Some(min_conn) = opts.query.remove("min_connections") {
             min_conn
                 .parse()
                 .map_err(err_map!(Input, "Error parsing 'min_connections' parameter"))?
         } else {
-            DEFAULT_MIN_CONNECTIONS
+            DEFAULT_MIN_CONNECTIONS as u32
         };
         let journal_mode = if let Some(mode) = opts.query.remove("journal_mode") {
             SqliteJournalMode::from_str(&mode)

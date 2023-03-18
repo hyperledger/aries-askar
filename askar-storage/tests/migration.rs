@@ -1,3 +1,5 @@
+#![cfg(all(feature = "sqlite", feature = "migration"))]
+
 use std::path::PathBuf;
 
 use askar_storage::future::block_on;
@@ -29,7 +31,7 @@ fn prepare_db() {
 }
 
 #[test]
-fn test_migration() {
+fn test_sqlite_migration() {
     prepare_db();
 
     let res = block_on(async {
