@@ -1,12 +1,4 @@
-import {
-  Store,
-  StoreKeyMethod,
-  Key,
-  KeyAlgs,
-  AriesAskarError,
-  KdfMethod,
-  Argon2Level,
-} from '@hyperledger/aries-askar-shared'
+import { Store, StoreKeyMethod, Key, KeyAlgs, AriesAskarError, KdfMethod } from '@hyperledger/aries-askar-shared'
 import { promises } from 'fs'
 
 import { firstEntry, getRawKey, secondEntry, setupWallet, testStoreUri } from './utils'
@@ -31,7 +23,7 @@ describe('Store and Session', () => {
       recreate: true,
       passKey: 'abc',
       uri: testStoreUri,
-      keyMethod: new StoreKeyMethod(KdfMethod.Kdf, Argon2Level.Moderate),
+      keyMethod: new StoreKeyMethod(KdfMethod.Argon2IMod),
     })
 
     const session = await argon2iModStore.openSession()
@@ -45,7 +37,7 @@ describe('Store and Session', () => {
       recreate: true,
       passKey: 'abc',
       uri: testStoreUri,
-      keyMethod: new StoreKeyMethod(KdfMethod.Kdf, Argon2Level.Interactive),
+      keyMethod: new StoreKeyMethod(KdfMethod.Argon2IInt),
     })
 
     const session = await argon2iIntStore.openSession()
