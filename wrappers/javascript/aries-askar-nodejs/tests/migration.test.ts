@@ -1,4 +1,4 @@
-import { ariesAskar, Migration } from '@hyperledger/aries-askar-shared'
+import { Migration } from '@hyperledger/aries-askar-shared'
 import fs from 'fs'
 import path from 'path'
 
