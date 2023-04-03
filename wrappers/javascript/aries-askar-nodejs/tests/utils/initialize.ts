@@ -1,5 +1,5 @@
 import '@hyperledger/aries-askar-nodejs'
-import { Store, StoreKeyMethod } from '@hyperledger/aries-askar-shared'
+import { Store, StoreKeyMethod, KdfMethod } from '@hyperledger/aries-askar-shared'
 
 export const getRawKey = () => Store.generateRawKey(Buffer.from('00000000000000000000000000000My1'))
 export const testStoreUri = process.env.URI || 'sqlite://:memory:'
@@ -10,7 +10,7 @@ export const setupWallet = async () => {
   return await Store.provision({
     recreate: true,
     uri: testStoreUri,
-    keyMethod: StoreKeyMethod.Raw,
+    keyMethod: new StoreKeyMethod(KdfMethod.Raw),
     passKey: key,
   })
 }

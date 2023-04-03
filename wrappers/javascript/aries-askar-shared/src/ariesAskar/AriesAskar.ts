@@ -217,7 +217,7 @@ export type StoreProvisionOptions = {
   profile?: string
   recreate: boolean
 }
-export type StoreRekeyOptions = { storeHandle: StoreHandle; keyMethod: string; passKey: string }
+export type StoreRekeyOptions = { storeHandle: StoreHandle; keyMethod?: string; passKey: string }
 export type StoreRemoveOptions = { specUri: string }
 export type StoreRemoveProfileOptions = { storeHandle: StoreHandle; profile: string }
 
