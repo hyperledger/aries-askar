@@ -136,6 +136,7 @@ function handleReturnPointer<Return>(returnValue: Buffer): Return {
 export class NodeJSAriesAskar implements AriesAskar {
   private promisify = async (method: (nativeCallbackPtr: Buffer, id: number) => void): Promise<void> => {
     return new Promise((resolve, reject) => {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const cb: NativeCallback = (id, _) => {
         deallocateCallbackBuffer(id)
 

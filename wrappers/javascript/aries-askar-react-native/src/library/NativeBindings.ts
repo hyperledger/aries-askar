@@ -2,7 +2,7 @@ import type { CallbackWithResponse, ReturnObject } from '../utils'
 
 type LocalKeyHandle = string
 
-// TODO: convert all any types
+// TODO: convert all unknown types
 export interface NativeBindings {
   version(options: Record<string, never>): string
   getCurrentError(options: Record<string, never>): string
@@ -37,117 +37,117 @@ export interface NativeBindings {
 
   keyAeadGetParams(options: { localKeyHandle: string }): ReturnObject<{ nonceLength: number; tagLength: number }>
 
-  keyAeadRandomNonce(options: any): ReturnObject<ArrayBuffer>
+  keyAeadRandomNonce(options: unknown): ReturnObject<ArrayBuffer>
 
-  keyConvert(options: any): ReturnObject<LocalKeyHandle>
+  keyConvert(options: unknown): ReturnObject<LocalKeyHandle>
 
-  keyCryptoBox(options: any): ReturnObject<ArrayBuffer>
+  keyCryptoBox(options: unknown): ReturnObject<ArrayBuffer>
 
-  keyCryptoBoxOpen(options: any): ReturnObject<ArrayBuffer>
+  keyCryptoBoxOpen(options: unknown): ReturnObject<ArrayBuffer>
 
   keyCryptoBoxRandomNonce(options: Record<string, never>): ReturnObject<ArrayBuffer>
 
-  keyCryptoBoxSeal(options: any): ReturnObject<ArrayBuffer>
+  keyCryptoBoxSeal(options: unknown): ReturnObject<ArrayBuffer>
 
-  keyCryptoBoxSealOpen(options: any): ReturnObject<ArrayBuffer>
+  keyCryptoBoxSealOpen(options: unknown): ReturnObject<ArrayBuffer>
 
-  keyDeriveEcdh1pu(options: any): ReturnObject<LocalKeyHandle>
+  keyDeriveEcdh1pu(options: unknown): ReturnObject<LocalKeyHandle>
 
-  keyDeriveEcdhEs(options: any): ReturnObject<LocalKeyHandle>
+  keyDeriveEcdhEs(options: unknown): ReturnObject<LocalKeyHandle>
 
-  keyEntryListCount(options: any): ReturnObject<number>
+  keyEntryListCount(options: unknown): ReturnObject<number>
 
-  keyEntryListFree(options: any): ReturnObject<never>
+  keyEntryListFree(options: unknown): ReturnObject<never>
 
-  keyEntryListGetAlgorithm(options: any): ReturnObject<string>
+  keyEntryListGetAlgorithm(options: unknown): ReturnObject<string>
 
-  keyEntryListGetMetadata(options: any): ReturnObject<string>
+  keyEntryListGetMetadata(options: unknown): ReturnObject<string>
 
-  keyEntryListGetName(options: any): ReturnObject<string>
+  keyEntryListGetName(options: unknown): ReturnObject<string>
 
-  keyEntryListGetTags(options: any): ReturnObject<string>
+  keyEntryListGetTags(options: unknown): ReturnObject<string>
 
-  keyEntryListLoadLocal(options: any): ReturnObject<LocalKeyHandle>
+  keyEntryListLoadLocal(options: unknown): ReturnObject<LocalKeyHandle>
 
-  keyFree(options: any): ReturnObject<never>
+  keyFree(options: unknown): ReturnObject<never>
 
-  keyFromJwk(options: any): ReturnObject<LocalKeyHandle>
+  keyFromJwk(options: unknown): ReturnObject<LocalKeyHandle>
 
-  keyFromKeyExchange(options: any): ReturnObject<LocalKeyHandle>
+  keyFromKeyExchange(options: unknown): ReturnObject<LocalKeyHandle>
 
-  keyFromPublicBytes(options: any): ReturnObject<LocalKeyHandle>
+  keyFromPublicBytes(options: unknown): ReturnObject<LocalKeyHandle>
 
-  keyFromSecretBytes(options: any): ReturnObject<LocalKeyHandle>
+  keyFromSecretBytes(options: unknown): ReturnObject<LocalKeyHandle>
 
-  keyFromSeed(options: any): ReturnObject<LocalKeyHandle>
+  keyFromSeed(options: unknown): ReturnObject<LocalKeyHandle>
 
-  keyGenerate(options: any): ReturnObject<LocalKeyHandle>
+  keyGenerate(options: unknown): ReturnObject<LocalKeyHandle>
 
-  keyGetAlgorithm(options: any): ReturnObject<string>
+  keyGetAlgorithm(options: unknown): ReturnObject<string>
 
-  keyGetEphemeral(options: any): ReturnObject<number>
+  keyGetEphemeral(options: unknown): ReturnObject<number>
 
-  keyGetJwkPublic(options: any): ReturnObject<string>
+  keyGetJwkPublic(options: unknown): ReturnObject<string>
 
-  keyGetJwkSecret(options: any): ReturnObject<ArrayBuffer>
+  keyGetJwkSecret(options: unknown): ReturnObject<ArrayBuffer>
 
-  keyGetJwkThumbprint(options: any): ReturnObject<string>
+  keyGetJwkThumbprint(options: unknown): ReturnObject<string>
 
-  keyGetPublicBytes(options: any): ReturnObject<ArrayBuffer>
+  keyGetPublicBytes(options: unknown): ReturnObject<ArrayBuffer>
 
-  keyGetSecretBytes(options: any): ReturnObject<ArrayBuffer>
+  keyGetSecretBytes(options: unknown): ReturnObject<ArrayBuffer>
 
-  keySignMessage(options: any): ReturnObject<ArrayBuffer>
+  keySignMessage(options: unknown): ReturnObject<ArrayBuffer>
 
-  keyUnwrapKey(options: any): ReturnObject<LocalKeyHandle>
+  keyUnwrapKey(options: unknown): ReturnObject<LocalKeyHandle>
 
-  keyVerifySignature(options: any): ReturnObject<number>
+  keyVerifySignature(options: unknown): ReturnObject<number>
 
-  keyWrapKey(options: any): ReturnObject<{ buffer: ArrayBuffer; tagPos: number; noncePos: number }>
+  keyWrapKey(options: unknown): ReturnObject<{ buffer: ArrayBuffer; tagPos: number; noncePos: number }>
 
-  scanFree(options: any): ReturnObject<never>
+  scanFree(options: unknown): ReturnObject<never>
 
-  scanNext(options: any): ReturnObject<never>
+  scanNext(options: unknown): ReturnObject<never>
 
-  scanStart(options: any): ReturnObject<number>
+  scanStart(options: unknown): ReturnObject<number>
 
-  sessionClose(options: any): ReturnObject<never>
+  sessionClose(options: unknown): ReturnObject<never>
 
-  sessionCount(options: any): ReturnObject<never>
+  sessionCount(options: unknown): ReturnObject<never>
 
-  sessionFetch(options: any): ReturnObject<never>
+  sessionFetch(options: unknown): ReturnObject<never>
 
-  sessionFetchAll(options: any): ReturnObject<never>
+  sessionFetchAll(options: unknown): ReturnObject<never>
 
-  sessionFetchAllKeys(options: any): ReturnObject<never>
+  sessionFetchAllKeys(options: unknown): ReturnObject<never>
 
-  sessionFetchKey(options: any): ReturnObject<never>
+  sessionFetchKey(options: unknown): ReturnObject<never>
 
-  sessionInsertKey(options: any): ReturnObject<never>
+  sessionInsertKey(options: unknown): ReturnObject<never>
 
-  sessionRemoveAll(options: any): ReturnObject<never>
+  sessionRemoveAll(options: unknown): ReturnObject<never>
 
-  sessionRemoveKey(options: any): ReturnObject<never>
+  sessionRemoveKey(options: unknown): ReturnObject<never>
 
-  sessionStart(options: any): ReturnObject<never>
+  sessionStart(options: unknown): ReturnObject<never>
 
-  sessionUpdate(options: any): ReturnObject<never>
+  sessionUpdate(options: unknown): ReturnObject<never>
 
-  sessionUpdateKey(options: any): ReturnObject<never>
+  sessionUpdateKey(options: unknown): ReturnObject<never>
 
-  setCustomLogger(options: any): ReturnObject<never>
+  setCustomLogger(options: unknown): ReturnObject<never>
 
-  setDefaultLogger(options: any): ReturnObject<never>
+  setDefaultLogger(options: unknown): ReturnObject<never>
 
-  setMaxLogLevel(options: any): ReturnObject<never>
+  setMaxLogLevel(options: unknown): ReturnObject<never>
 
-  storeClose(options: any): ReturnObject<never>
+  storeClose(options: unknown): ReturnObject<never>
 
-  storeCreateProfile(options: any): ReturnObject<never>
+  storeCreateProfile(options: unknown): ReturnObject<never>
 
   storeGenerateRawKey(options: { seed?: ArrayBuffer }): ReturnObject<string>
 
-  storeGetProfileName(options: any): ReturnObject<never>
+  storeGetProfileName(options: unknown): ReturnObject<never>
 
   storeOpen(options: {
     specUri: string
@@ -157,13 +157,13 @@ export interface NativeBindings {
     cb: CallbackWithResponse<number>
   }): ReturnObject<never>
 
-  storeProvision(options: any): ReturnObject<never>
+  storeProvision(options: unknown): ReturnObject<never>
 
-  storeRekey(options: any): ReturnObject<never>
+  storeRekey(options: unknown): ReturnObject<never>
 
-  storeRemove(options: any): ReturnObject<never>
+  storeRemove(options: unknown): ReturnObject<never>
 
-  storeRemoveProfile(options: any): ReturnObject<never>
+  storeRemoveProfile(options: unknown): ReturnObject<never>
 
-  migrateIndySdk(options: any): ReturnObject<never>
+  migrateIndySdk(options: unknown): ReturnObject<never>
 }

@@ -13,6 +13,6 @@ export class StoreKeyMethod {
   }
 
   public toUri() {
-    this.method.toString()
+    return this.method.toString()
   }
 }
