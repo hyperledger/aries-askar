@@ -17,9 +17,7 @@
   },
   "files": [
     "build",
-    "README.md",
-    "LICENSE",
-    "package.json"
+    "scripts"
   ],
   "scripts": {
     "lint": "eslint .",
@@ -33,7 +31,7 @@
     "example": "yarn --cwd example",
     "release": "release-it",
     "test": "jest",
-    "install": "node-pre-gyp install --target_arch=$(node build/util/arch.js)"
+    "install": "node-pre-gyp install --target_arch=$(node scripts/arch.js) --target_platform=$(node scripts/platform.js)"
   },
   "devDependencies": {
     "@types/ffi-napi": "^4.0.5",
