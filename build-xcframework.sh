@@ -10,14 +10,15 @@ then
 fi
 
 NAME="aries_askar"
+FRAMEWORK_LIBRARY_NAME="ariesaskar"
 VERSION=$(cargo generate-lockfile && cargo pkgid | sed -e "s/^.*#//")
 BUNDLE_IDENTIFIER="org.hyperledger.$NAME"
 LIBRARY_NAME="lib$NAME.dylib"
 XC_FRAMEWORK_NAME="$NAME.xcframework"
-FRAMEWORK_LIBRARY_NAME=$NAME
 FRAMEWORK_NAME="$FRAMEWORK_LIBRARY_NAME.framework"
 HEADER_NAME="lib$NAME.h"
 OUT_PATH="out"
+IOS_VERSION="14.0"
 
 # Setting some default paths
 AARCH64_APPLE_IOS_PATH="./target/aarch64-apple-ios/release"
@@ -156,6 +157,8 @@ cat <<EOT >> Info.plist
 	<string>$VERSION</string>
 	<key>NSPrincipalClass</key>
 	<string></string>
+  <key>MinimumOSVersion</key>
+  <string>$IOS_VERSION</string>
 </dict>
 </plist>
 EOT

@@ -10,7 +10,7 @@ Pod::Spec.new do |s|
   s.license      = package["license"]
   s.authors      = package["author"]
 
-  s.platforms    = { :ios => "12.0" }
+  s.platforms    = { :ios => "14.0" }
   s.source       = { :git => "https://github.com/hyperledger/aries-askar", :tag => "#{s.version}" }
 
   s.header_mappings_dir = "cpp"

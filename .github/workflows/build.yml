@@ -371,16 +371,9 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@master
         with:
-          # First version with support for cdylib: https://github.com/rust-lang/rust/pull/100636
-          toolchain: "1.65.0"
+          # Adds support for iOS version 13 and up
+          toolchain: "1.69.0"
           targets: ${{ matrix.target }}
-
-      # Not useful unless the toolchain version matches the default
-      # - name: Cache cargo resources
-      #   uses: Swatinem/rust-cache@v2
-      #   with:
-      #     shared-key: deps
-      #     save-if: false
 
       - name: Build
         run: |
