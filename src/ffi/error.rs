@@ -69,8 +69,7 @@ pub fn get_current_error_json() -> String {
     if let Some(err) = Option::take(&mut *LAST_ERROR.write().unwrap()) {
         let message = err.to_string();
         let code = ErrorCode::from(err.kind()) as usize;
-        // let extra = err.extra();
-        serde_json::to_string(&ErrorJson { code, message }).unwrap()
+        serde_json::json!(&ErrorJson { code, message }).to_string()
     } else {
         r#"{"code":0,"message":null}"#.to_owned()
     }
