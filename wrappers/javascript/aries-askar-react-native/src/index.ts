@@ -1,18 +1,22 @@
+import type { NativeBindings } from './NativeBindings'
+
 import { registerAriesAskar } from '@hyperledger/aries-askar-shared'
 import { NativeModules } from 'react-native'
 
 import { ReactNativeAriesAskar } from './ReactNativeAriesAskar'
 
-type Module = {
-  install: () => boolean
-}
-
-const module = NativeModules.AriesAskar as Module
-if (!module.install()) throw Error('Unable to install the turboModule: ariesAskar')
-
 // Reexport everything from shared
 export * from '@hyperledger/aries-askar-shared'
 
-export const ariesAskarReactNative = new ReactNativeAriesAskar()
+const module = NativeModules.AriesAskar as { install: () => boolean }
+if (!module.install()) throw Error('Unable to install the turboModule: ariesAskar')
 
-registerAriesAskar({ askar: ariesAskarReactNative })
+// This can already check whether `_aries_askar` exists on global
+// eslint-disable-next-line @typescript-eslint/no-use-before-define
+if (!_aries_askar) {
+  throw Error('_aries_askar has not been exposed on global. Something went wrong while installing the turboModule')
+}
+
+declare let _aries_askar: NativeBindings
+
+registerAriesAskar({ askar: new ReactNativeAriesAskar(_aries_askar) })

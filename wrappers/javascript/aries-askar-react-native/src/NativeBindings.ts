@@ -1,4 +1,4 @@
-import type { CallbackWithResponse, ReturnObject } from '../utils'
+import type { CallbackWithResponse, ReturnObject } from './utils'
 
 type LocalKeyHandle = string
 
