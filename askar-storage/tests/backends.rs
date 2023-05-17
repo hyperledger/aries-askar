@@ -106,7 +106,7 @@ macro_rules! backend_tests {
 }
 
 fn log_init() {
-    // env_logger::builder().is_test(true).try_init().unwrap_or(());
+    env_logger::builder().is_test(true).try_init().unwrap_or(());
 }
 
 #[cfg(feature = "sqlite")]
