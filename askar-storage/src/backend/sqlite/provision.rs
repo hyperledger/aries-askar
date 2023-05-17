@@ -111,7 +111,7 @@ impl SqliteStoreOptions {
         };
 
         let mut path = opts.host.to_string();
-        path.push_str(&*opts.path);
+        path.push_str(&opts.path);
         Ok(Self {
             in_memory: path == ":memory:",
             path,

@@ -60,7 +60,7 @@ impl TestDB {
 
         let mut init_txn = conn_pool.begin().await?;
         // delete existing tables
-        reset_db(&mut *init_txn).await?;
+        reset_db(&mut init_txn).await?;
 
         // create tables and add default profile
         let profile_id =

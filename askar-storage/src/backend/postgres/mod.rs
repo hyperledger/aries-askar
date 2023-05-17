@@ -223,7 +223,7 @@ impl Backend for PostgresBackend {
         Box::pin(async move {
             let session = self.session(profile, false)?;
             let mut active = session.owned_ref();
-            let (profile_id, key) = acquire_key(&mut *active).await?;
+            let (profile_id, key) = acquire_key(&mut active).await?;
             let scan = perform_scan(
                 active,
                 profile_id,
@@ -379,7 +379,7 @@ impl BackendSession for DbSession<Postgres> {
         Box::pin(async move {
             let for_update = for_update && self.in_transaction();
             let mut active = self.borrow_mut();
-            let (profile_id, key) = acquire_key(&mut *active).await?;
+            let (profile_id, key) = acquire_key(&mut active).await?;
             let scan = perform_scan(
                 active,
                 profile_id,
@@ -693,7 +693,7 @@ fn perform_scan(
         }
         let mut batch = Vec::with_capacity(PAGE_SIZE);
 
-        let mut acquired = acquire_session(&mut *active).await?;
+        let mut acquired = acquire_session(&mut active).await?;
         let mut rows = sqlx::query_with(query.as_str(), params).fetch(acquired.connection_mut());
         while let Some(row) = rows.try_next().await? {
             let tags = row.try_get::<Option<String>, _>(4)?.map(String::into_bytes).unwrap_or_default();

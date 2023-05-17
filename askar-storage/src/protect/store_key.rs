@@ -139,7 +139,7 @@ impl StoreKeyMethod {
             // Self::ExistingManagedKey(String) => unimplemented!(),
             Self::DeriveKey(method) => {
                 if !pass_key.is_none() {
-                    let (key, detail) = method.derive_new_key(&*pass_key)?;
+                    let (key, detail) = method.derive_new_key(&pass_key)?;
                     let key_ref = StoreKeyReference::DeriveKey(*method, detail);
                     Ok((key, key_ref))
                 } else {
@@ -148,7 +148,7 @@ impl StoreKeyMethod {
             }
             Self::RawKey => {
                 let key = if !pass_key.is_empty() {
-                    parse_raw_store_key(&*pass_key)?
+                    parse_raw_store_key(&pass_key)?
                 } else {
                     StoreKey::random()?
                 };
@@ -226,14 +226,14 @@ impl StoreKeyReference {
             // Self::ManagedKey(_key_ref) => unimplemented!(),
             Self::DeriveKey(method, detail) => {
                 if !pass_key.is_none() {
-                    method.derive_key(&*pass_key, detail)
+                    method.derive_key(&pass_key, detail)
                 } else {
                     Err(err_msg!(Input, "Key derivation password not provided"))
                 }
             }
             Self::RawKey => {
                 if !pass_key.is_empty() {
-                    parse_raw_store_key(&*pass_key)
+                    parse_raw_store_key(&pass_key)
                 } else {
                     Err(err_msg!(Input, "Encoded raw key not provided"))
                 }

@@ -84,7 +84,7 @@ where
             op.as_sql_str(),
             idx + 2,
             op_prefix.as_str(),
-            if is_plaintext { 1 } else { 0 }
+            i32::from(is_plaintext)
         );
         Ok(Some(query))
     }
@@ -102,7 +102,7 @@ where
             "i.id {} (SELECT item_id FROM items_tags WHERE name = $$ AND value IN ({}) AND plaintext = {})",
             if negate { "NOT IN" } else { "IN" },
             args_in,
-            if is_plaintext { 1 } else { 0 }
+            i32::from(is_plaintext)
         );
         self.arguments.push(enc_name);
         self.arguments.extend(enc_values);
@@ -118,7 +118,7 @@ where
         let query = format!(
             "i.id {} (SELECT item_id FROM items_tags WHERE name = $$ AND plaintext = {})",
             if negate { "NOT IN" } else { "IN" },
-            if is_plaintext { 1 } else { 0 }
+            i32::from(is_plaintext)
         );
         self.arguments.push(enc_name);
         Ok(Some(query))

@@ -89,7 +89,7 @@ impl PostgresStoreOptions {
         if path.len() < 2 {
             return Err(err_msg!(Input, "Missing database name"));
         }
-        let name = (&path[1..]).to_string();
+        let name = path[1..].to_string();
         if name.find(|c| c == '"' || c == '\0').is_some() {
             return Err(err_msg!(
                 Input,
@@ -179,7 +179,7 @@ impl PostgresStoreOptions {
 
         if recreate {
             // remove expected tables
-            reset_db(&mut *txn).await?;
+            reset_db(&mut txn).await?;
         } else if sqlx::query_scalar::<_, i64>(
             "SELECT COUNT(*) FROM information_schema.tables
                 WHERE table_schema='public' AND table_name='config'",
