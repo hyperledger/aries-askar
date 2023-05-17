@@ -1,7 +1,7 @@
 name: "Aries-Askar"
 
 env:
-  RUST_VERSION: "1.60.0"
+  RUST_VERSION: "1.61.0"
   CROSS_VERSION: "0.2.4"
 
 on:
@@ -371,16 +371,8 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@master
         with:
-          # First version with support for cdylib: https://github.com/rust-lang/rust/pull/100636
-          toolchain: "1.65.0"
+          toolchain: ${{ env.RUST_VERSION }}
           targets: ${{ matrix.target }}
-
-      # Not useful unless the toolchain version matches the default
-      # - name: Cache cargo resources
-      #   uses: Swatinem/rust-cache@v2
-      #   with:
-      #     shared-key: deps
-      #     save-if: false
 
       - name: Build
         run: |
@@ -390,7 +382,7 @@ jobs:
         uses: actions/upload-artifact@v3
         with:
           name: library-${{ matrix.target }}
-          path: target/${{ matrix.target }}/release/libaries_askar.dylib
+          path: target/${{ matrix.target }}/release/libaries_askar.a
 
   build-android:
     name: Build library (Android)
@@ -436,7 +428,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v3
 
-      - name: Fetch dynamic libraries
+      - name: Fetch static libraries
         uses: actions/download-artifact@v3
 
       - run: >
