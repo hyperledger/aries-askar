@@ -387,7 +387,11 @@ jobs:
   build-android:
     name: Build library (Android)
     needs: [checks]
+    env:
+      RUST_VERSION: "1.64.0" # Overriding the rust version here for lower NDK support
+
     runs-on: ubuntu-latest
+
     strategy:
       matrix:
         target:
@@ -401,6 +405,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v3
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
 
       - name: Cache cargo resources
         uses: Swatinem/rust-cache@v2
