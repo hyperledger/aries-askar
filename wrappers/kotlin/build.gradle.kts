@@ -15,7 +15,7 @@ repositories {
 ext["githubUsername"] = null
 ext["githubToken"] = null
 ext["askarVersion"] = "0.2.9-dev.3"
-ext["wrapperVersion"] = "1.3"
+ext["wrapperVersion"] = "1.4"
 
 val secretPropsFile = project.rootProject.file("local.properties")
 if(secretPropsFile.exists()) {
@@ -94,12 +94,12 @@ kotlin {
     }
 
     iosX64 {
-        val libDirectory = "${projectDir}/../../target/universal-ios-sim"
+        val libDirectory = "${projectDir}/../../target/x86_64-apple-ios/release"
         addLibs(libDirectory, this)
     }
 
     iosSimulatorArm64 {
-        val libDirectory = "${projectDir}/../../target/universal-ios-sim"
+        val libDirectory = "${projectDir}/../../target/aarch64-apple-ios-sim/release"
         addLibs(libDirectory, this)
     }
 

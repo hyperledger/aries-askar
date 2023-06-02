@@ -6,12 +6,6 @@ cargo  build --release --target aarch64-apple-ios-sim &
 rustup toolchain install 1.64.0 --target x86_64-apple-ios  --profile minimal --no-self-update
 cargo  build --release --target x86_64-apple-ios &
 
-# COMBINE IOS SIMULATORS
-mkdir ../../target/universal-ios-sim/
-lipo -create ../../target/aarch64-apple-ios-sim/release/libaries_askar.a \
- ../../target/x86_64-apple-ios/release/libaries_askar.a \
- -output ../../target/universal-ios-sim/libaries_askar.a
-
 # BUILD ANDROID TARGETS
 
 #cargo install --bins --git https://github.com/rust-embedded/cross --tag v0.2.4 cross
