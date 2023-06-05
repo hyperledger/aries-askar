@@ -18,7 +18,6 @@ class AskarTest {
     private lateinit var store: Store
 
 
-
     @BeforeTest
     fun beforeEach() {
         runBlocking {
@@ -251,50 +250,47 @@ class AskarTest {
     @Test
     fun keyStore() {
         runBlocking {
-            memScoped {
-                val session = store.openSession()
+            val session = store.openSession()
 
-                val key = Key.generate(KeyAlgs.Ed25519)
+            val key = Key.generate(KeyAlgs.Ed25519)
 
-                val keyName = "testKey"
+            val keyName = "testKey"
 
-                session.insertKey(keyName, key, metadata = "metadata", tags = buildJsonObject { put("a", "b") })
+            session.insertKey(keyName, key, metadata = "metadata", tags = buildJsonObject { put("a", "b") })
 
-                val fetchedKey = session.fetchKey(keyName, memScope = this)
+            val fetchedKey = session.fetchKey(keyName)
 
-                assertEquals(
-                    fetchedKey,
-                    KeyEntryObject(KeyAlgs.Ed25519.alg, keyName, "metadata", buildJsonObject { put("a", "b") })
-                )
+            assertEquals(
+                fetchedKey,
+                KeyEntryObject(KeyAlgs.Ed25519.alg, keyName, "metadata", buildJsonObject { put("a", "b") })
+            )
 
-                session.updateKey(keyName, "updated metadata", tags = buildJsonObject { put("a", "c") })
+            session.updateKey(keyName, "updated metadata", tags = buildJsonObject { put("a", "c") })
 
-                val updatedFetch = session.fetchKey(keyName, memScope = this)
+            val updatedFetch = session.fetchKey(keyName)
 
-                assertNotEquals(fetchedKey, updatedFetch)
+            assertNotEquals(fetchedKey, updatedFetch)
 
-                assertEquals(key.jwkThumbprint(), fetchedKey?.key?.jwkThumbprint())
+            assertEquals(key.jwkThumbprint(), fetchedKey?.key?.jwkThumbprint())
 
-                val found = session.fetchAllKeys(
-                    KeyAlgs.Ed25519,
-                    key.jwkThumbprint(),
-                    buildJsonObject { put("a", "c") }.toString(),
-                    memScope = this
-                )
+            val found = session.fetchAllKeys(
+                KeyAlgs.Ed25519,
+                key.jwkThumbprint(),
+                buildJsonObject { put("a", "c") }.toString(),
+            )
 
-                assertEquals(found[0], updatedFetch)
+            assertEquals(found[0], updatedFetch)
 
-                session.removeKey(keyName)
+            session.removeKey(keyName)
 
-                assertNull(session.fetchKey(keyName, memScope = this))
+            assertNull(session.fetchKey(keyName))
 
-                session.close()
+            session.close()
 
-                key.handle().free()
-                fetchedKey?.key!!.handle().free()
-                updatedFetch?.key!!.handle().free()
-                found.forEach { entry -> entry.key!!.handle().free() }
-            }
+            key.handle().free()
+            fetchedKey?.key!!.handle().free()
+            updatedFetch?.key!!.handle().free()
+            found.forEach { entry -> entry.key!!.handle().free() }
         }
     }
 
@@ -337,10 +333,10 @@ class AskarTest {
             session5.close()
 
             val session6 = store.session("unknown profile").open()
-            assertFails { session6.count(firstEntry.category, firstEntry.tags.toString())}
+            assertFails { session6.count(firstEntry.category, firstEntry.tags.toString()) }
             session6.close()
 
-            val session7 =  store.session(profile).open()
+            val session7 = store.session(profile).open()
             assertEquals(0, session7.count(firstEntry.category, firstEntry.tags.toString()))
             session7.close()
         }

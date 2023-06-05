@@ -1,9 +1,9 @@
 package askar.wrappers
 
 import aries_askar.*
+
 import aries_askar.LocalKeyHandle
 import askar.Askar
-import askar.Askar.Companion.getErrorCode
 import askar.crypto.EntryListHandle
 import askar.crypto.Key
 import askar.crypto.KeyEntryListHandle
@@ -56,17 +56,14 @@ class SessionWrapper {
             Askar.assertNoError(errorCode, continuation)
         }
 
-    class SessionFetchProps(val memScope: MemScope, val continuation: Continuation<EntryListHandle?>)
-
     suspend fun sessionFetch(
         handle: SessionHandle,
         category: String,
         name: String,
         forUpdate: Boolean,
-        memScope: MemScope
     ) =
-        suspendCoroutine { continuation ->
-            val stableRef = StableRef.create(SessionFetchProps(memScope, continuation))
+        suspendCoroutine<EntryListHandle?> { continuation ->
+            val stableRef = StableRef.create(continuation)
             val contPtr = stableRef.asCPointer()
             val bool = if (forUpdate) 1 else 0
             val errorCode = askar_session_fetch(
@@ -75,13 +72,12 @@ class SessionWrapper {
                 name,
                 bool.toByte(),
                 staticCFunction { callBackId, errorCode, entryListHandle ->
-                    val contRef = callBackId.toCPointer<CPointed>()?.asStableRef<SessionFetchProps>()
-                    val props = contRef?.get()
-                    val cont = props?.continuation
-                    val scope = props?.memScope
+                    val contRef = callBackId.toCPointer<CPointed>()?.asStableRef<Continuation<EntryListHandle?>>()
+                    val cont = contRef?.get()
                     contRef?.dispose()
                     if(Askar.assertNoError(errorCode, cont!!)) {
-                        val h = entryListHandle.getPointer(scope!!).pointed
+                        val temp = nativeHeap.alloc<aries_askar.EntryListHandle>()
+                        val h = entryListHandle.place(temp.ptr).pointed
                         if (h._0 == null)
                             cont.resumeWith(Result.success(null))
                         else {
@@ -101,23 +97,21 @@ class SessionWrapper {
         tagFilter: String,
         limit: Long,
         forUpdate: Boolean,
-        memScope: MemScope
     ) =
-        suspendCoroutine { continuation ->
-            val stableRef = StableRef.create(SessionFetchProps(memScope, continuation))
+        suspendCoroutine<EntryListHandle?> { continuation ->
+            val stableRef = StableRef.create( continuation)
             val contPtr = stableRef.asCPointer()
             val bool = if (forUpdate) 1 else 0
 
             val errorCode = askar_session_fetch_all(
                 handle, category, tagFilter, limit, bool.toByte(),
                 staticCFunction { callBackId, errorCode, entryListHandle ->
-                    val contRef = callBackId.toCPointer<CPointed>()?.asStableRef<SessionFetchProps>()
-                    val props = contRef?.get()
-                    val cont = props?.continuation
-                    val scope = props?.memScope
+                    val contRef = callBackId.toCPointer<CPointed>()?.asStableRef<Continuation<EntryListHandle?>>()
+                    val cont = contRef?.get()
                     contRef?.dispose()
                     if(Askar.assertNoError(errorCode, cont!!)) {
-                        val h = entryListHandle.getPointer(scope!!).pointed
+                        val temp = nativeHeap.alloc<aries_askar.EntryListHandle>()
+                        val h = entryListHandle.place(temp.ptr).pointed
                         if (h._0 == null)
                             cont.resumeWith(Result.success(null))
                         else {
@@ -215,23 +209,20 @@ class SessionWrapper {
         Askar.assertNoError(errorCode, continuation)
     }
 
-    class SessionFetchKeyProps(val memScope: MemScope, val continuation: Continuation<KeyEntryListHandle?>)
-
-    suspend fun sessionFetchKey(handle: SessionHandle, name: String, forUpdate: Boolean, memScope: MemScope) =
-        suspendCoroutine { continuation ->
-            val stableRef = StableRef.create(SessionFetchKeyProps(memScope, continuation))
+    suspend fun sessionFetchKey(handle: SessionHandle, name: String, forUpdate: Boolean) =
+        suspendCoroutine<KeyEntryListHandle?> { continuation ->
+            val stableRef = StableRef.create( continuation)
             val contPtr = stableRef.asCPointer()
             val bool = if (forUpdate) 1 else 0
             val errorCode = askar_session_fetch_key(
                 handle, name, bool.toByte(),
                 staticCFunction { callBackId, errorCode, key ->
-                    val contRef = callBackId.toCPointer<CPointed>()?.asStableRef<SessionFetchKeyProps>()
-                    val props = contRef?.get()
-                    val cont = props?.continuation
-                    val scope = props?.memScope
+                    val contRef = callBackId.toCPointer<CPointed>()?.asStableRef<Continuation<KeyEntryListHandle?>>()
+                    val cont = contRef?.get()
                     contRef?.dispose()
                     if(Askar.assertNoError(errorCode, cont!!)) {
-                        val h = key.getPointer(scope!!).pointed
+                        val temp = nativeHeap.alloc<aries_askar.KeyEntryListHandle>()
+                        val h = key.place(temp.ptr).pointed
                         if (h._0 == null)
                             cont.resumeWith(Result.success(null))
                         else
@@ -249,9 +240,8 @@ class SessionWrapper {
         tagFilter: String?,
         limit: Long,
         forUpdate: Boolean,
-        memScope: MemScope
-    ) = suspendCoroutine { continuation ->
-        val stableRef = StableRef.create(SessionFetchKeyProps(memScope, continuation))
+    ) = suspendCoroutine<KeyEntryListHandle?> { continuation ->
+        val stableRef = StableRef.create( continuation)
         val contPtr = stableRef.asCPointer()
         val bool = if (forUpdate) 1 else 0
         val errorCode =
@@ -259,13 +249,12 @@ class SessionWrapper {
                 handle, algorithm?.alg, thumbprint, tagFilter, limit, bool.toByte(),
                 staticCFunction { callBackId, errorCode, key ->
                     val contRef =
-                        callBackId.toCPointer<CPointed>()?.asStableRef<SessionFetchKeyProps>()
-                    val props = contRef?.get()
-                    val cont = props?.continuation
-                    val scope = props?.memScope
+                        callBackId.toCPointer<CPointed>()?.asStableRef<Continuation<KeyEntryListHandle?>>()
+                    val cont = contRef?.get()
                     contRef?.dispose()
                     if(Askar.assertNoError(errorCode, cont!!)) {
-                        val h = key.getPointer(scope!!).pointed
+                        val temp = nativeHeap.alloc<aries_askar.KeyEntryListHandle>()
+                        val h = key.place(temp.ptr).pointed
                         if (h._0 == null)
                             cont.resumeWith(Result.success(null))
                         else

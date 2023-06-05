@@ -36,11 +36,9 @@ class Session(private var handle: SessionHandle?, private val isTxn: Boolean) {
         forUpdate: Boolean = false,
     ): EntryObject? {
         if (this.handle == null) throw Error("Cannot fetch from a close session")
-        memScoped {
-            val h = Askar.session.sessionFetch(handle!!.handle, category, name, forUpdate, this) ?: return null
-            val entry = Entry(h, 0)
-            return entry.toJson()
-        }
+        val h = Askar.session.sessionFetch(handle!!.handle, category, name, forUpdate) ?: return null
+        val entry = Entry(h, 0)
+        return entry.toJson()
     }
 
     suspend fun fetchAll(
@@ -50,13 +48,11 @@ class Session(private var handle: SessionHandle?, private val isTxn: Boolean) {
         limit: Long = -1L,
     ): ArrayList<EntryObject> {
         if (this.handle == null) throw Error("Cannot fetch from a closed session")
-        memScoped {
-            val handle =
-                Askar.session.fetchAll(handle!!.handle, category, tagFilter, limit, forUpdate, this)
-                    ?: return arrayListOf()
-            val entryList = EntryList(handle)
-            return entryList.toArray()
-        }
+        val handle =
+            Askar.session.fetchAll(handle!!.handle, category, tagFilter, limit, forUpdate)
+                ?: return arrayListOf()
+        val entryList = EntryList(handle)
+        return entryList.toArray()
     }
 
     suspend fun insert(
@@ -134,9 +130,9 @@ class Session(private var handle: SessionHandle?, private val isTxn: Boolean) {
     }
 
 
-    suspend fun fetchKey(name: String, forUpdate: Boolean = false, memScope: MemScope): KeyEntryObject? {
+    suspend fun fetchKey(name: String, forUpdate: Boolean = false): KeyEntryObject? {
         if (this.handle == null) throw Error("Cannot fetch key from closed session")
-        val handle = Askar.session.sessionFetchKey(handle!!.handle, name, forUpdate, memScope) ?: return null
+        val handle = Askar.session.sessionFetchKey(handle!!.handle, name, forUpdate) ?: return null
         val keyEntryList = KeyEntryList(handle)
 
         return keyEntryList.getEntryByIndex(0).toJson()
@@ -148,7 +144,6 @@ class Session(private var handle: SessionHandle?, private val isTxn: Boolean) {
         tagFilter: String? = null,
         limit: Long = -1,
         forUpdate: Boolean = false,
-        memScope: MemScope
     ): ArrayList<KeyEntryObject> {
         if (this.handle == null) throw Error("Cannot fetch keys from a closed session")
         val handle = Askar.session.sessionFetchAllKeys(
@@ -158,7 +153,6 @@ class Session(private var handle: SessionHandle?, private val isTxn: Boolean) {
             tagFilter,
             limit,
             forUpdate,
-            memScope
         ) ?: return ArrayList()
         val keyEntryList = KeyEntryList(handle)
         return keyEntryList.toArray()
