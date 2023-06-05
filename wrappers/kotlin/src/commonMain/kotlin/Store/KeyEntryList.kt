@@ -2,7 +2,6 @@ package askar.Store
 
 import askar.Askar
 import askar.crypto.KeyEntryListHandle
-import kotlinx.serialization.json.JsonObject
 
 class KeyEntryList(private val handle: KeyEntryListHandle) {
     private val length: Int = Askar.keyEntryList.count(handle.handle)

@@ -9,6 +9,7 @@ import kotlinx.cinterop.MemScope
 import kotlinx.cinterop.UnsafeNumber
 import kotlinx.cinterop.memScoped
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.buildJsonObject
 
 @OptIn(UnsafeNumber::class)
@@ -62,7 +63,7 @@ class Session(private var handle: SessionHandle?, private val isTxn: Boolean) {
         category: String,
         name: String,
         expiryMs: Long = -1,
-        tags: JsonObject? = null,
+        tags: JsonObject = buildJsonObject {},
         value: String
     ): Boolean {
         if (this.handle == null) throw Error("Cannot insert into a closed session")
@@ -82,7 +83,7 @@ class Session(private var handle: SessionHandle?, private val isTxn: Boolean) {
         category: String,
         name: String,
         expiryMs: Long = -1,
-        tags: JsonObject? = null,
+        tags: JsonObject = buildJsonObject {},
         value: String
     ): Boolean {
         if (this.handle == null) throw Error("Cannot replace in a closed session")
@@ -125,7 +126,7 @@ class Session(private var handle: SessionHandle?, private val isTxn: Boolean) {
         key: Key,
         expiryMs: Long = -1,
         metadata: String? = null,
-        tags: JsonObject? = null
+        tags: JsonObject = buildJsonObject { }
     ): Boolean {
         if (this.handle == null) throw Error("Cannot insert a key with a closed session")
         val code = Askar.session.sessionInsertKey(handle!!.handle, name, key, metadata, tags, expiryMs)
@@ -166,7 +167,7 @@ class Session(private var handle: SessionHandle?, private val isTxn: Boolean) {
     suspend fun updateKey(
         name: String,
         metadata: String? = null,
-        tags: JsonObject? = null,
+        tags: JsonObject = buildJsonObject {},
         expiryMs: Long = -1
     ): Boolean {
         if (this.handle == null) throw Error("Cannot update key from a closed session")

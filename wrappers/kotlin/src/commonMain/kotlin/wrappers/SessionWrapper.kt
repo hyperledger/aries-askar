@@ -11,6 +11,7 @@ import askar.enums.EntryOperation
 import askar.enums.KeyAlgs
 import kotlinx.cinterop.*
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonObject
 import platform.posix.uint8_tVar
 import kotlin.coroutines.Continuation
 
@@ -134,7 +135,7 @@ class SessionWrapper {
         category: String,
         name: String,
         expiryMs: Long,
-        tags: JsonObject? = null,
+        tags: JsonObject = buildJsonObject {  },
         value: String = "",
         operation: EntryOperation
     ) = suspendCoroutine<ErrorCode> { continuation ->
@@ -192,7 +193,7 @@ class SessionWrapper {
         name: String,
         key: Key,
         metadata: String? = null,
-        tags: JsonObject? = null,
+        tags: JsonObject = buildJsonObject {  },
         expiryMs: Long
     ) = suspendCoroutine<ErrorCode> { continuation ->
         val stableRef = StableRef.create(continuation)
