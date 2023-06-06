@@ -13,7 +13,7 @@ class CryptoBox {
             return Askar.cryptoBox.keyCryptoBox(recipientKey.handle(), senderKey.handle(), message, nonce)
         }
 
-        fun cryptoBox(recipientKey: Key, senderKey: Key, message: ByteArray, nonce: String): String {
+        fun cryptoBox(recipientKey: Key, senderKey: Key, message: ByteArray, nonce: ByteArray): ByteArray {
             return Askar.cryptoBox.keyCryptoBox(recipientKey.handle(), senderKey.handle(), message, nonce)
         }
 

@@ -95,7 +95,7 @@ class Key(private val localKeyHandle: LocalKeyHandleKot) {
     fun aeadEncrypt(
         message: ByteArray,
         nonce: ByteArray = ByteArray(0),
-        aad: String = ""
+        aad: ByteArray = byteArrayOf(0)
     ): askar.EncryptedBuffer {
         return Askar.key.keyAeadEncrypt(localKeyHandle.handle, message, nonce, aad)
     }

@@ -219,13 +219,13 @@ class KeyWrapper {
         }
     }
 
-    fun keyAeadEncrypt(handle: LocalKeyHandle, message: ByteArray, nonce: ByteArray, aad: String): askar.EncryptedBuffer {
+    fun keyAeadEncrypt(handle: LocalKeyHandle, message: ByteArray, nonce: ByteArray, aad: ByteArray): askar.EncryptedBuffer {
         memScoped {
             val cHandle = cValue<LocalKeyHandle> {
                 _0 = handle._0
             }
             val messageBuf = byteArrayToByteBuffer(message, this)
-            val aadBuf = stringToByteBuffer(aad, this)
+            val aadBuf = byteArrayToByteBuffer(aad, this)
             val nonceBuf = byteArrayToByteBuffer(nonce, this)
             val out = alloc<EncryptedBuffer>()
             val errorCode = askar_key_aead_encrypt(cHandle, messageBuf, nonceBuf, aadBuf, out.ptr)
