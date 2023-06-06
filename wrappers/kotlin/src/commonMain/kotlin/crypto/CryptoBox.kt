@@ -5,11 +5,15 @@ import askar.Askar
 class CryptoBox {
 
     companion object {
-        fun randomNonce(): String {
+        fun randomNonce(): ByteArray {
             return Askar.cryptoBox.keyCryptoBoxRandomNonce()
         }
 
         fun cryptoBox(recipientKey: Key, senderKey: Key, message: String, nonce: String): String {
+            return Askar.cryptoBox.keyCryptoBox(recipientKey.handle(), senderKey.handle(), message, nonce)
+        }
+
+        fun cryptoBox(recipientKey: Key, senderKey: Key, message: ByteArray, nonce: String): String {
             return Askar.cryptoBox.keyCryptoBox(recipientKey.handle(), senderKey.handle(), message, nonce)
         }
 
