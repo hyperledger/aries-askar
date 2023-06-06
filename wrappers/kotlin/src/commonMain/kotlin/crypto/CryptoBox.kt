@@ -9,7 +9,7 @@ class CryptoBox {
             return Askar.cryptoBox.keyCryptoBoxRandomNonce()
         }
 
-        fun cryptoBox(recipientKey: Key, senderKey: Key, message: String, nonce: String): String {
+        fun cryptoBox(recipientKey: Key, senderKey: Key, message: String, nonce: String): ByteArray {
             return Askar.cryptoBox.keyCryptoBox(recipientKey.handle(), senderKey.handle(), message, nonce)
         }
 

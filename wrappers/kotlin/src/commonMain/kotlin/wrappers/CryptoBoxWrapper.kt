@@ -26,7 +26,7 @@ class CryptoBoxWrapper {
         senderKey: askar.crypto.LocalKeyHandleKot,
         message: String,
         nonce: String
-    ): String {
+    ): ByteArray {
         memScoped {
             val rk = cValue<LocalKeyHandle> {
                 _0 = recipientKey.handle._0
@@ -38,7 +38,7 @@ class CryptoBoxWrapper {
             val errorCode =
                 askar_key_crypto_box(rk, sk, stringToByteBuffer(message, this), stringToByteBuffer(nonce, this), out.ptr)
             Askar.assertNoError(errorCode)
-            return secretBufferToString(out)
+            return secretBufferToByteArray(out)
         }
     }
 
