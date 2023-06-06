@@ -120,7 +120,7 @@ class KeyEntryListHandle(val handle: KeyEntryListHandle) {
         return Askar.keyEntryList.getTags(index, this.handle)
     }
 
-    fun getMetadata(index: Int): String {
+    fun getMetadata(index: Int): String? {
         return Askar.keyEntryList.getMetadata(index, this.handle)
     }
 

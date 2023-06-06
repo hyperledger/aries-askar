@@ -13,7 +13,7 @@ import kotlinx.serialization.json.*
 class KeyEntryObject(
     val algorithm: String,
     val name: String,
-    val metadata: String,
+    val metadata: String?,
     val tags: JsonObject,
     @Transient
     val key: Key? = null
@@ -45,7 +45,7 @@ class KeyEntry(
         return list.getName(pos)
     }
 
-    fun metadata(): String {
+    fun metadata(): String? {
         return list.getMetadata(pos)
     }
 

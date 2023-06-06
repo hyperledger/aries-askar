@@ -40,7 +40,7 @@ class KeyEntryListWrapper {
         }
     }
 
-    fun getMetadata(index: Int, handle: KeyEntryListHandle): String {
+    fun getMetadata(index: Int, handle: KeyEntryListHandle): String? {
         memScoped {
             val cHandle = cValue<KeyEntryListHandle> {
                 _0 = handle._0
@@ -48,7 +48,7 @@ class KeyEntryListWrapper {
             val out = alloc<CPointerVar<ByteVar>>()
             val errorCode = askar_key_entry_list_get_metadata(cHandle, index, out.ptr)
             Askar.assertNoError(errorCode)
-            return out.value!!.toKString()
+            return out.value?.toKString()
         }
     }
 

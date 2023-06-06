@@ -211,7 +211,7 @@ class SessionWrapper {
 
     suspend fun sessionFetchKey(handle: SessionHandle, name: String, forUpdate: Boolean) =
         suspendCoroutine<KeyEntryListHandle?> { continuation ->
-            val stableRef = StableRef.create( continuation)
+            val stableRef = StableRef.create(continuation)
             val contPtr = stableRef.asCPointer()
             val bool = if (forUpdate) 1 else 0
             val errorCode = askar_session_fetch_key(
