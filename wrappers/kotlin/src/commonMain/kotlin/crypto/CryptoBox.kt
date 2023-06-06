@@ -9,7 +9,7 @@ class CryptoBox {
             return Askar.cryptoBox.keyCryptoBoxRandomNonce()
         }
 
-        fun cryptoBox(recipientKey: Key, senderKey: Key, message: String, nonce: String): ByteArray {
+        fun cryptoBox(recipientKey: Key, senderKey: Key, message: String, nonce: ByteArray): ByteArray {
             return Askar.cryptoBox.keyCryptoBox(recipientKey.handle(), senderKey.handle(), message, nonce)
         }
 
@@ -17,7 +17,7 @@ class CryptoBox {
             return Askar.cryptoBox.keyCryptoBox(recipientKey.handle(), senderKey.handle(), message, nonce)
         }
 
-        fun open(recipientKey: Key, senderKey: Key, message: String, nonce: String): String {
+        fun open(recipientKey: Key, senderKey: Key, message: String, nonce: ByteArray): String {
             return Askar.cryptoBox.cryptoBoxOpen(recipientKey.handle(), senderKey.handle(), message, nonce)
         }
 
