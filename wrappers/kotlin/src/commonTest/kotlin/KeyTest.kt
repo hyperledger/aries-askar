@@ -93,6 +93,10 @@ class KeyTest {
         val signature = key.signMessage(message)
         assertTrue(key.verifySignature(message, signature))
 
+        val messageBuffer = message.encodeToByteArray()
+        val byteSignature = key.signMessage(messageBuffer)
+        assertTrue(key.verifySignature(messageBuffer, byteSignature))
+
         val x25519Key = key.convertKey(KeyAlgs.X25519)
         val x25519Key2 = Key.generate(KeyAlgs.X25519)
 

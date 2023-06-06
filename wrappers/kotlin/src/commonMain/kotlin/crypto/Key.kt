@@ -24,7 +24,7 @@ class Key(private val localKeyHandle: LocalKeyHandleKot) {
             return Key(Askar.key.keyFromSecretBytes(algorithm, secretKey))
         }
 
-        fun fromPublicBytes(algorithm: KeyAlgs, publicKey: String): Key {
+        fun fromPublicBytes(algorithm: KeyAlgs, publicKey: ByteArray): Key {
             return Key(Askar.key.keyFromPublicBytes(algorithm, publicKey))
         }
 
@@ -92,6 +92,14 @@ class Key(private val localKeyHandle: LocalKeyHandleKot) {
         return Askar.key.keyAeadEncrypt(localKeyHandle.handle, message, nonce, aad)
     }
 
+    fun aeadEncrypt(
+        message: ByteArray,
+        nonce: ByteArray = ByteArray(0),
+        aad: String = ""
+    ): askar.EncryptedBuffer {
+        return Askar.key.keyAeadEncrypt(localKeyHandle.handle, message, nonce, aad)
+    }
+
     fun aeadDeCrypt(
         cipherText: ByteArray,
         nonce: ByteArray = ByteArray(0),
@@ -105,7 +113,16 @@ class Key(private val localKeyHandle: LocalKeyHandleKot) {
         return Askar.key.keySignMessage(this.localKeyHandle.handle, message, sigType)
     }
 
+    fun signMessage(message: ByteArray, sigType: SigAlgs? = null): ByteArray {
+        return Askar.key.keySignMessage(this.localKeyHandle.handle, message, sigType)
+    }
+
     fun verifySignature(message: String, signature: ByteArray, sigType: SigAlgs? = null): Boolean {
+        val num = Askar.key.keyVerifySignature(this.localKeyHandle.handle, message, signature, sigType)
+        return num.toInt() != 0
+    }
+
+    fun verifySignature(message: ByteArray, signature: ByteArray, sigType: SigAlgs? = null): Boolean {
         val num = Askar.key.keyVerifySignature(this.localKeyHandle.handle, message, signature, sigType)
         return num.toInt() != 0
     }

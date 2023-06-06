@@ -47,18 +47,10 @@ class KeyWrapper {
         }
     }
 
-    fun keyFromPublicBytes(algorithm: KeyAlgs, publicString: String): askar.crypto.LocalKeyHandleKot {
+    fun keyFromPublicBytes(algorithm: KeyAlgs, publicBytes: ByteArray): askar.crypto.LocalKeyHandleKot {
         memScoped {
-            val cString = publicString.cstr
-            val uIntBuffer = allocArray<uint8_tVar>(cString.size)
-            for (i in 0..cString.size) {
-                uIntBuffer[i] = cString.ptr[i].toUByte()
-            }
-            val buffer = cValue<ByteBuffer> {
-                data = uIntBuffer
-                len = cString.size.toLong()
-            }
-            val out = alloc<LocalKeyHandle>()
+            val buffer = byteArrayToByteBuffer(publicBytes, this)
+            val out = nativeHeap.alloc<LocalKeyHandle>()
             val errorCode = askar_key_from_public_bytes(algorithm.alg, buffer, out.ptr)
             Askar.assertNoError(errorCode)
             return askar.crypto.LocalKeyHandleKot(out)
@@ -227,6 +219,22 @@ class KeyWrapper {
         }
     }
 
+    fun keyAeadEncrypt(handle: LocalKeyHandle, message: ByteArray, nonce: ByteArray, aad: String): askar.EncryptedBuffer {
+        memScoped {
+            val cHandle = cValue<LocalKeyHandle> {
+                _0 = handle._0
+            }
+            val messageBuf = byteArrayToByteBuffer(message, this)
+            val aadBuf = stringToByteBuffer(aad, this)
+            val nonceBuf = byteArrayToByteBuffer(nonce, this)
+            val out = alloc<EncryptedBuffer>()
+            val errorCode = askar_key_aead_encrypt(cHandle, messageBuf, nonceBuf, aadBuf, out.ptr)
+            Askar.assertNoError(errorCode)
+            val buf = secretBufferToByteArray(out.buffer)
+            return askar.EncryptedBuffer(buf, out.tag_pos.toInt(), out.nonce_pos.toInt())
+        }
+    }
+
     fun keyAeadDecrypt(
         handle: LocalKeyHandle,
         cipherText: ByteArray,
@@ -261,6 +269,18 @@ class KeyWrapper {
         }
     }
 
+    fun keySignMessage(handle: LocalKeyHandle, message: ByteArray, sigType: SigAlgs?): ByteArray {
+        memScoped {
+            val cHandle = cValue<LocalKeyHandle> {
+                _0 = handle._0
+            }
+            val out = alloc<SecretBuffer>()
+            val errorCode = askar_key_sign_message(cHandle, byteArrayToByteBuffer(message, this), sigType?.alg, out.ptr)
+            Askar.assertNoError(errorCode)
+            return secretBufferToByteArray(out)
+        }
+    }
+
     fun keyVerifySignature(handle: LocalKeyHandle, message: String, signature: ByteArray, sigType: SigAlgs?): int8_t {
         memScoped {
             val cHandle = cValue<LocalKeyHandle> {
@@ -270,6 +290,24 @@ class KeyWrapper {
             val errorCode = askar_key_verify_signature(
                 cHandle,
                 stringToByteBuffer(message, this),
+                byteArrayToByteBuffer(signature, this),
+                sigType?.alg,
+                out.ptr
+            )
+            Askar.assertNoError(errorCode)
+            return out.value
+        }
+    }
+
+    fun keyVerifySignature(handle: LocalKeyHandle, message: ByteArray, signature: ByteArray, sigType: SigAlgs?): int8_t {
+        memScoped {
+            val cHandle = cValue<LocalKeyHandle> {
+                _0 = handle._0
+            }
+            val out = alloc<int8_tVar>()
+            val errorCode = askar_key_verify_signature(
+                cHandle,
+                byteArrayToByteBuffer(message, this),
                 byteArrayToByteBuffer(signature, this),
                 sigType?.alg,
                 out.ptr
