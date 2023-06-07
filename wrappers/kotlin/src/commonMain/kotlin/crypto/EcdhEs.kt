@@ -61,9 +61,9 @@ class EcdhEs(private val algId: String, private val apu: String, private val apv
         nonce: ByteArray,
         aad: String? = null,
         tag: ByteArray,
-    ): String {
+    ): ByteArray {
         val derived = this.deriveKey(encAlg, ephemeralKey, recipientKey, false)
-        val encryptedBuffer = derived.aeadDeCrypt(cipherText, aad = aad?: "", tag = tag, nonce = nonce)
+        val encryptedBuffer = derived.aeadDecrypt(cipherText, aad = aad?: "", tag = tag, nonce = nonce)
         derived.handle().free()
         return encryptedBuffer
     }
@@ -76,9 +76,9 @@ class EcdhEs(private val algId: String, private val apu: String, private val apv
         nonce: ByteArray,
         aad: String? = null,
         tag: ByteArray,
-    ): String {
+    ): ByteArray {
         val derived = this.deriveKey(encAlg, Key.fromJwk(ephemeralKey), Key.fromJwk(recipientKey),  false)
-        val encryptedBuffer = derived.aeadDeCrypt(cipherText, aad = aad?: "", tag = tag, nonce = nonce)
+        val encryptedBuffer = derived.aeadDecrypt(cipherText, aad = aad?: "", tag = tag, nonce = nonce)
         derived.handle().free()
         return encryptedBuffer
     }

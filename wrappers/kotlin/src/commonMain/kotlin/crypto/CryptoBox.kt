@@ -17,7 +17,7 @@ class CryptoBox {
             return Askar.cryptoBox.keyCryptoBox(recipientKey.handle(), senderKey.handle(), message, nonce)
         }
 
-        fun open(recipientKey: Key, senderKey: Key, message: String, nonce: ByteArray): String {
+        fun open(recipientKey: Key, senderKey: Key, message: ByteArray, nonce: ByteArray): String {
             return Askar.cryptoBox.cryptoBoxOpen(recipientKey.handle(), senderKey.handle(), message, nonce)
         }
 
@@ -29,7 +29,7 @@ class CryptoBox {
             return Askar.cryptoBox.cryptoBoxSeal(recipientKey.handle(), message)
         }
 
-        fun sealOpen(recipientKey: Key, cipherText: ByteArray): String {
+        fun sealOpen(recipientKey: Key, cipherText: ByteArray): ByteArray {
             return Askar.cryptoBox.cryptoBoxSealOpen(recipientKey.handle(), cipherText)
         }
 

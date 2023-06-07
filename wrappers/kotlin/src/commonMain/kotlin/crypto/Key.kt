@@ -100,12 +100,12 @@ class Key(private val localKeyHandle: LocalKeyHandleKot) {
         return Askar.key.keyAeadEncrypt(localKeyHandle.handle, message, nonce, aad)
     }
 
-    fun aeadDeCrypt(
+    fun aeadDecrypt(
         cipherText: ByteArray,
         nonce: ByteArray = ByteArray(0),
         tag: ByteArray = ByteArray(0),
         aad: String = ""
-    ): String {
+    ): ByteArray {
         return Askar.key.keyAeadDecrypt(localKeyHandle.handle, cipherText, nonce, tag, aad)
     }
 

@@ -52,7 +52,7 @@ class JoseEcdh {
             b64,
             tags
         )
-        assertEquals(message, messageReceived)
+        assertEquals(message, messageReceived.toKString())
         ephemeralKey.handle().free()
         bobKey.handle().free()
     }
@@ -95,9 +95,9 @@ class JoseEcdh {
             cipherText = encryptedKey
         )
 
-        val messageReceived = cekReceiver.aeadDeCrypt(cipherText, nonce, tags, b64)
+        val messageReceived = cekReceiver.aeadDecrypt(cipherText, nonce, tags, b64)
 
-        assertEquals(message, messageReceived)
+        assertEquals(message, messageReceived.toKString())
         ephemeralKey.handle().free()
         bobKey.handle().free()
         cek.handle().free()
@@ -160,7 +160,7 @@ class JoseEcdh {
             tag
         )
 
-        assertEquals(message, messageReceived)
+        assertEquals(message, messageReceived.toKString())
         aliceKey.handle().free()
         bobKey.handle().free()
         ephemeralKey.handle().free()
@@ -297,9 +297,9 @@ class JoseEcdh {
 
         val cekReveiver = derivedReciever.unwrapKey(algorithm = KeyAlgs.AesA256CbcHs512, cipherText = encryptedKey)
 
-        val messageReceived = cekReveiver.aeadDeCrypt(cipherText = ciphertext, nonce = iv, aad = b64, tag = tags)
+        val messageReceived = cekReveiver.aeadDecrypt(cipherText = ciphertext, nonce = iv, aad = b64, tag = tags)
 
-        assertEquals(message, messageReceived)
+        assertEquals(message, messageReceived.toKString())
 
         val cekReceiver2 = Ecdh1PU(
             apv = apv,

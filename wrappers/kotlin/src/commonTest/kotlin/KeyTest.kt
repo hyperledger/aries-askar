@@ -28,8 +28,8 @@ class KeyTest {
                 assertEquals(16, params.nonceLength)
                 assertEquals(16, params.tagsLength)
                 val enc = key.aeadEncrypt(message, nonce = aeadNonce)
-                val dec = key.aeadDeCrypt(enc.cipherText(), nonce = enc.nonce(), tag = enc.tag())
-                assertEquals(message, dec)
+                val dec = key.aeadDecrypt(enc.cipherText(), nonce = enc.nonce(), tag = enc.tag())
+                assertEquals(message, dec.toKString())
             }
         }
     }

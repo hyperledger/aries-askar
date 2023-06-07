@@ -241,7 +241,7 @@ class KeyWrapper {
         nonce: ByteArray,
         tag: ByteArray,
         aad: String,
-    ): String {
+    ): ByteArray {
         memScoped {
             val cHandle = cValue<LocalKeyHandle> {
                 _0 = handle._0
@@ -253,7 +253,7 @@ class KeyWrapper {
             val aadBuf = stringToByteBuffer(aad, this)
             val errorCode = askar_key_aead_decrypt(cHandle, cipherBuf, nonceBuf, tagBuf, aadBuf, out.ptr)
             Askar.assertNoError(errorCode)
-            return secretBufferToString(out)
+            return secretBufferToByteArray(out)
         }
     }
 

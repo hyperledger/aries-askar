@@ -66,7 +66,7 @@ class CryptoBoxWrapper {
     fun cryptoBoxOpen(
         recipientKey: askar.crypto.LocalKeyHandleKot,
         senderKey: askar.crypto.LocalKeyHandleKot,
-        message: String,
+        message: ByteArray,
         nonce: ByteArray
     ): String {
         memScoped {
@@ -79,7 +79,7 @@ class CryptoBoxWrapper {
             val out = alloc<SecretBuffer>()
 
             val errorCode =
-                askar_key_crypto_box_open(rk, sk, stringToByteBuffer(message, this), byteArrayToByteBuffer(nonce, this), out.ptr)
+                askar_key_crypto_box_open(rk, sk, byteArrayToByteBuffer(message, this), byteArrayToByteBuffer(nonce, this), out.ptr)
             Askar.assertNoError(errorCode)
             return secretBufferToString(out)
         }
@@ -109,7 +109,7 @@ class CryptoBoxWrapper {
         }
     }
 
-    fun cryptoBoxSealOpen(recipientKey: askar.crypto.LocalKeyHandleKot, cipherText: ByteArray): String {
+    fun cryptoBoxSealOpen(recipientKey: askar.crypto.LocalKeyHandleKot, cipherText: ByteArray): ByteArray {
         memScoped {
             val rk = cValue<LocalKeyHandle> {
                 _0 = recipientKey.handle._0
@@ -117,7 +117,7 @@ class CryptoBoxWrapper {
             val out = alloc<SecretBuffer>()
             val errorCode = askar_key_crypto_box_seal_open(rk, byteArrayToByteBuffer(cipherText, this), out.ptr)
             Askar.assertNoError(errorCode)
-            return secretBufferToString(out)
+            return secretBufferToByteArray(out)
         }
     }
 

@@ -2,10 +2,13 @@ package askar.wrappers
 
 import aries_askar.*
 import askar.Askar
+import askar.Askar.Companion.secretBufferToByteArray
 import askar.Askar.Companion.secretBufferToString
 import kotlinx.cinterop.*
 import platform.posix.int32_t
 import platform.posix.int32_tVar
+import kotlin.io.encoding.Base64
+import kotlin.io.encoding.ExperimentalEncodingApi
 
 class EntryListWrapper {
 

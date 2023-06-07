@@ -58,9 +58,9 @@ class Ecdh1PU(private val algId: String, private val apu: String, private val ap
         nonce: ByteArray,
         aad: String? = null,
         tag: ByteArray,
-    ): String {
+    ): ByteArray {
         val derived = this.deriveKey(encAlg, ephemeralKey, recipientKey, senderKey, false, ccTag = byteArrayOf())
-        val encryptedBuffer = derived.aeadDeCrypt(cipherText, aad = aad?: "", tag = tag, nonce = nonce)
+        val encryptedBuffer = derived.aeadDecrypt(cipherText, aad = aad?: "", tag = tag, nonce = nonce)
         derived.handle().free()
         return encryptedBuffer
     }
