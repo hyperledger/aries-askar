@@ -6,11 +6,7 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.*
 
 @Serializable
-class EntryObject(val category: String, val name: String,val value: String, val tags: JsonObject ) {
-
-    constructor(category: String, name: String, tags: JsonObject, value: JsonObject): this(
-        category, name,  value.toString(), tags
-    )
+class EntryObject(val category: String, val name: String,val value: String, val tags: Map<String, String>) {
 
     override fun toString(): String {
         return Json.encodeToString(this)
@@ -42,8 +38,8 @@ class Entry (private val list: EntryListHandle, private val pos: Int) {
 //        return this.list.getValue(this.pos)
 //    }
 
-    fun tags(): JsonObject {
-        return Json.decodeFromString<JsonObject>(list.getTags(pos) ?: "{}")
+    fun tags(): Map<String, String> {
+        return Json.decodeFromString<Map<String, String>>(list.getTags(pos) ?: "{}")
     }
 
     fun toJson(): EntryObject {

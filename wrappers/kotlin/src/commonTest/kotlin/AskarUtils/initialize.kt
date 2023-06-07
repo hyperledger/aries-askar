@@ -12,20 +12,20 @@ fun getRawKey(): String? {
 }
 
 val firstEntry = EntryObject("category-one", "test-entry", tags =
-buildJsonObject {
-    put("~plaintag", "a")
-    put("enctag", "b")
-}, value = "foo"
+mapOf(
+    Pair("~plaintag", "a"),
+    Pair("enctag", "b")
+), value = "foo"
 )
 
 
 val secondEntry = EntryObject("category-one", "secondEntry", tags =
-buildJsonObject {
-    put("~plaintag", "a")
-    put("enctag", "b")
-}, value = buildJsonObject {
+mapOf(
+    Pair("~plaintag", "a"),
+    Pair("enctag", "b")
+), value = buildJsonObject {
     put("foo", "bar")
-})
+}.toString())
 
 
 //     const thirdEntry = {

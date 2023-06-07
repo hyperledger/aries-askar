@@ -14,7 +14,7 @@ class KeyEntryObject(
     val algorithm: String,
     val name: String,
     val metadata: String?,
-    val tags: JsonObject,
+    val tags: Map<String, String>,
     @Transient
     val key: Key? = null
 ) {
@@ -49,8 +49,8 @@ class KeyEntry(
         return list.getMetadata(pos)
     }
 
-    fun tags(): JsonObject {
-        return Json.decodeFromString<JsonObject>(list.getTags(pos) ?: "{}")
+    fun tags(): Map<String, String> {
+        return Json.decodeFromString<Map<String, String>>(list.getTags(pos) ?: "{}")
     }
 
     fun key(): Key {

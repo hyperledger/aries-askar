@@ -6,7 +6,7 @@ package askar
 import aries_askar.*
 import askar.wrappers.*
 import kotlinx.cinterop.*
-import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.*
 import kotlin.coroutines.Continuation
 
 class Askar {
@@ -94,6 +94,16 @@ class Askar {
                 len = buffer.size.toLong()
             }
             return byteBuffer
+        }
+
+        fun Map<String, String>.mapToJsonObject(): JsonObject {
+            val map = this
+            val json = buildJsonObject {
+                map.forEach { entry ->
+                    put(entry.key, entry.value)
+                }
+            }
+            return json
         }
 
 

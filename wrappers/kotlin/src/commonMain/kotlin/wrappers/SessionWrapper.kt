@@ -4,6 +4,7 @@ import aries_askar.*
 
 import aries_askar.LocalKeyHandle
 import askar.Askar
+import askar.Askar.Companion.stringToByteBuffer
 import askar.crypto.EntryListHandle
 import askar.crypto.Key
 import askar.crypto.KeyEntryListHandle
@@ -12,6 +13,7 @@ import askar.enums.KeyAlgs
 import kotlinx.cinterop.*
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import platform.posix.uint8_tVar
 import kotlin.coroutines.Continuation
 
@@ -38,13 +40,13 @@ class SessionWrapper {
         Askar.assertNoError(errorCode, continuation)
     }
 
-    suspend fun sessionCount(handle: SessionHandle, category: String, tagFilter: String) =
+    suspend fun sessionCount(handle: SessionHandle, category: String, tagFilter: JsonObject) =
         suspendCoroutine<Long> { continuation ->
             val stableRef = StableRef.create(continuation)
             val contPtr = stableRef.asCPointer()
 
             val errorCode =
-                askar_session_count(handle, category, tagFilter, staticCFunction { callBackId, errorCode, count ->
+                askar_session_count(handle, category, tagFilter.toString(), staticCFunction { callBackId, errorCode, count ->
                     val contRef = callBackId.toCPointer<CPointed>()?.asStableRef<Continuation<Long>>()
                     val cont = contRef?.get()
                     contRef?.dispose()
@@ -94,7 +96,7 @@ class SessionWrapper {
     suspend fun fetchAll(
         handle: SessionHandle,
         category: String,
-        tagFilter: String,
+        tagFilter: JsonObject,
         limit: Long,
         forUpdate: Boolean,
     ) =
@@ -104,7 +106,7 @@ class SessionWrapper {
             val bool = if (forUpdate) 1 else 0
 
             val errorCode = askar_session_fetch_all(
-                handle, category, tagFilter, limit, bool.toByte(),
+                handle, category, tagFilter.toString(), limit, bool.toByte(),
                 staticCFunction { callBackId, errorCode, entryListHandle ->
                     val contRef = callBackId.toCPointer<CPointed>()?.asStableRef<Continuation<EntryListHandle?>>()
                     val cont = contRef?.get()
@@ -136,15 +138,7 @@ class SessionWrapper {
         val stableRef = StableRef.create(continuation)
         val contPtr = stableRef.asCPointer()
         memScoped {
-            val cString = value.cstr
-            val uIntBuffer = allocArray<uint8_tVar>(cString.size)
-            for (i in 0..cString.size) {
-                uIntBuffer[i] = cString.ptr[i].toUByte()
-            }
-            val buffer = cValue<ByteBuffer> {
-                data = uIntBuffer
-                len = cString.size.toLong()
-            }
+            val buffer = stringToByteBuffer(value, this)
             val errorCode = askar_session_update(
                 handle,
                 operation.ordinal.toByte(),
@@ -237,7 +231,7 @@ class SessionWrapper {
         handle: SessionHandle,
         algorithm: KeyAlgs?,
         thumbprint: String?,
-        tagFilter: String?,
+        tagFilter: JsonObject?,
         limit: Long,
         forUpdate: Boolean,
     ) = suspendCoroutine<KeyEntryListHandle?> { continuation ->
@@ -246,7 +240,7 @@ class SessionWrapper {
         val bool = if (forUpdate) 1 else 0
         val errorCode =
             askar_session_fetch_all_keys(
-                handle, algorithm?.alg, thumbprint, tagFilter, limit, bool.toByte(),
+                handle, algorithm?.alg, thumbprint, tagFilter.toString(), limit, bool.toByte(),
                 staticCFunction { callBackId, errorCode, key ->
                     val contRef =
                         callBackId.toCPointer<CPointed>()?.asStableRef<Continuation<KeyEntryListHandle?>>()

@@ -17,7 +17,7 @@ class CryptoBox {
             return Askar.cryptoBox.keyCryptoBox(recipientKey.handle(), senderKey.handle(), message, nonce)
         }
 
-        fun open(recipientKey: Key, senderKey: Key, message: ByteArray, nonce: ByteArray): String {
+        fun open(recipientKey: Key, senderKey: Key, message: ByteArray, nonce: ByteArray): ByteArray {
             return Askar.cryptoBox.cryptoBoxOpen(recipientKey.handle(), senderKey.handle(), message, nonce)
         }
 

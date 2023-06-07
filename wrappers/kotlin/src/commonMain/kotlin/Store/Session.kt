@@ -1,6 +1,7 @@
 package askar.Store
 
 import askar.Askar
+import askar.Askar.Companion.mapToJsonObject
 import askar.crypto.Key
 import askar.crypto.SessionHandle
 import askar.enums.EntryOperation
@@ -23,10 +24,10 @@ class Session(private var handle: SessionHandle?, private val isTxn: Boolean) {
         return this.handle
     }
 
-    suspend fun count(category: String, tagFilter: String): Long {
+    suspend fun count(category: String, tagFilter: Map<String, String>): Long {
         if (this.handle == null) throw Error("Cannot get count of closed session")
         val handle = this.handle
-        var count = Askar.session.sessionCount(handle!!.handle, category, tagFilter)
+        var count = Askar.session.sessionCount(handle!!.handle, category, tagFilter.mapToJsonObject())
         return count
     }
 
@@ -43,13 +44,13 @@ class Session(private var handle: SessionHandle?, private val isTxn: Boolean) {
 
     suspend fun fetchAll(
         category: String,
-        tagFilter: String = "{}",
+        tagFilter: Map<String, String> = mapOf(),
         forUpdate: Boolean = false,
         limit: Long = -1L,
     ): ArrayList<EntryObject> {
         if (this.handle == null) throw Error("Cannot fetch from a closed session")
         val handle =
-            Askar.session.fetchAll(handle!!.handle, category, tagFilter, limit, forUpdate)
+            Askar.session.fetchAll(handle!!.handle, category, tagFilter.mapToJsonObject(), limit, forUpdate)
                 ?: return arrayListOf()
         val entryList = EntryList(handle)
         return entryList.toArray()
@@ -59,7 +60,7 @@ class Session(private var handle: SessionHandle?, private val isTxn: Boolean) {
         category: String,
         name: String,
         expiryMs: Long = -1,
-        tags: JsonObject = buildJsonObject {},
+        tags: Map<String, String> = mapOf(),
         value: String
     ): Boolean {
         if (this.handle == null) throw Error("Cannot insert into a closed session")
@@ -68,7 +69,7 @@ class Session(private var handle: SessionHandle?, private val isTxn: Boolean) {
             category,
             name,
             expiryMs,
-            tags,
+            tags.mapToJsonObject(),
             value,
             EntryOperation.Insert
         )
@@ -79,7 +80,7 @@ class Session(private var handle: SessionHandle?, private val isTxn: Boolean) {
         category: String,
         name: String,
         expiryMs: Long = -1,
-        tags: JsonObject = buildJsonObject {},
+        tags: Map<String, String> = mapOf(),
         value: String
     ): Boolean {
         if (this.handle == null) throw Error("Cannot replace in a closed session")
@@ -89,7 +90,7 @@ class Session(private var handle: SessionHandle?, private val isTxn: Boolean) {
                 category,
                 name,
                 expiryMs,
-                tags,
+                tags.mapToJsonObject(),
                 value,
                 EntryOperation.Replace
             )
@@ -122,10 +123,10 @@ class Session(private var handle: SessionHandle?, private val isTxn: Boolean) {
         key: Key,
         expiryMs: Long = -1,
         metadata: String? = null,
-        tags: JsonObject = buildJsonObject { }
+        tags: Map<String, String> = mapOf()
     ): Boolean {
         if (this.handle == null) throw Error("Cannot insert a key with a closed session")
-        val code = Askar.session.sessionInsertKey(handle!!.handle, name, key, metadata, tags, expiryMs)
+        val code = Askar.session.sessionInsertKey(handle!!.handle, name, key, metadata, tags.mapToJsonObject(), expiryMs)
         return code == 0L
     }
 
@@ -141,7 +142,7 @@ class Session(private var handle: SessionHandle?, private val isTxn: Boolean) {
     suspend fun fetchAllKeys(
         algorithm: KeyAlgs? = null,
         thumbprint: String? = null,
-        tagFilter: String? = null,
+        tagFilter: Map<String, String>? = null,
         limit: Long = -1,
         forUpdate: Boolean = false,
     ): ArrayList<KeyEntryObject> {
@@ -150,7 +151,7 @@ class Session(private var handle: SessionHandle?, private val isTxn: Boolean) {
             handle!!.handle,
             algorithm,
             thumbprint,
-            tagFilter,
+            tagFilter?.mapToJsonObject(),
             limit,
             forUpdate,
         ) ?: return ArrayList()
@@ -161,11 +162,11 @@ class Session(private var handle: SessionHandle?, private val isTxn: Boolean) {
     suspend fun updateKey(
         name: String,
         metadata: String? = null,
-        tags: JsonObject = buildJsonObject {},
+        tags: Map<String, String> = mapOf(),
         expiryMs: Long = -1
     ): Boolean {
         if (this.handle == null) throw Error("Cannot update key from a closed session")
-        val code = Askar.session.sessionUpdateKey(handle!!.handle, name, metadata, tags, expiryMs)
+        val code = Askar.session.sessionUpdateKey(handle!!.handle, name, metadata, tags.mapToJsonObject(), expiryMs)
         return code == 0L
     }
 

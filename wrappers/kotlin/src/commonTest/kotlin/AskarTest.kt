@@ -1,6 +1,7 @@
 package tech.indicio.holdr
 
 
+import askar.Askar.Companion.mapToJsonObject
 import askar.Store.*
 import askar.crypto.Key
 import askar.enums.KeyAlgs
@@ -109,7 +110,7 @@ class AskarTest {
                 value = firstEntry.value,
                 tags = firstEntry.tags
             )
-            assertEquals(1, session.count(firstEntry.category, firstEntry.tags.toString()))
+            assertEquals(1, session.count(firstEntry.category, firstEntry.tags))
 
             session.close()
         }
@@ -125,17 +126,16 @@ class AskarTest {
                 value = firstEntry.value,
                 tags = firstEntry.tags
             )
-            assertEquals(1, session.count(firstEntry.category, firstEntry.tags.toString()))
-            val updatedEntry = EntryObject(firstEntry.category, firstEntry.name, value = "bar", tags = buildJsonObject {
-                put("foo", "bar")
-            })
+            assertEquals(1, session.count(firstEntry.category, firstEntry.tags))
+            val updatedEntry = EntryObject(firstEntry.category, firstEntry.name, value = "bar", tags = mapOf(Pair("foo", "bar"))
+            )
             session.replace(
                 updatedEntry.category,
                 updatedEntry.name,
                 value = updatedEntry.value,
                 tags = updatedEntry.tags
             )
-            assertEquals(1, session.count(updatedEntry.category, updatedEntry.tags.toString()))
+            assertEquals(1, session.count(updatedEntry.category, updatedEntry.tags))
             session.close()
         }
     }
@@ -151,11 +151,11 @@ class AskarTest {
                 tags = firstEntry.tags
             )
 
-            assertEquals(1, session.count(firstEntry.category, firstEntry.tags.toString()))
+            assertEquals(1, session.count(firstEntry.category, firstEntry.tags))
 
             session.remove(firstEntry.category, firstEntry.name)
 
-            assertEquals(0, session.count(firstEntry.category, firstEntry.tags.toString()))
+            assertEquals(0, session.count(firstEntry.category, firstEntry.tags))
 
             session.close()
         }
@@ -178,11 +178,11 @@ class AskarTest {
                 tags = secondEntry.tags
             )
 
-            assertEquals(2, session.count(firstEntry.category, firstEntry.tags.toString()))
+            assertEquals(2, session.count(firstEntry.category, firstEntry.tags))
 
             session.removeAll(firstEntry.category)
 
-            assertEquals(0, session.count(firstEntry.category, firstEntry.tags.toString()))
+            assertEquals(0, session.count(firstEntry.category, firstEntry.tags))
 
             session.close()
         }
@@ -225,7 +225,7 @@ class AskarTest {
                 tags = firstEntry.tags
             )
 
-            assertEquals(1, txn.count(firstEntry.category, firstEntry.tags.toString()))
+            assertEquals(1, txn.count(firstEntry.category, firstEntry.tags))
 
             val ret = txn.fetch(firstEntry.category, firstEntry.name) ?: throw Error("should not happen")
 
@@ -256,16 +256,16 @@ class AskarTest {
 
             val keyName = "testKey"
 
-            session.insertKey(keyName, key, metadata = "metadata", tags = buildJsonObject { put("a", "b") })
+            session.insertKey(keyName, key, metadata = "metadata", tags = mapOf(Pair("a", "b")))
 
             val fetchedKey = session.fetchKey(keyName)
 
             assertEquals(
                 fetchedKey,
-                KeyEntryObject(KeyAlgs.Ed25519.alg, keyName, "metadata", buildJsonObject { put("a", "b") })
+                KeyEntryObject(KeyAlgs.Ed25519.alg, keyName, "metadata", mapOf(Pair("a", "b")))
             )
 
-            session.updateKey(keyName, "updated metadata", tags = buildJsonObject { put("a", "c") })
+            session.updateKey(keyName, "updated metadata", tags = mapOf(Pair("a", "c")))
 
             val updatedFetch = session.fetchKey(keyName)
 
@@ -276,7 +276,7 @@ class AskarTest {
             val found = session.fetchAllKeys(
                 KeyAlgs.Ed25519,
                 key.jwkThumbprint(),
-                buildJsonObject { put("a", "c") }.toString(),
+                mapOf(Pair("a", "c") ),
             )
 
             assertEquals(found[0], updatedFetch)
@@ -305,9 +305,9 @@ class AskarTest {
             val profile = store.createProfile()!!
 
             val session2 = store.session(profile).open()
-            assertEquals(0, session2.count(firstEntry.category, firstEntry.tags.toString()))
+            assertEquals(0, session2.count(firstEntry.category, firstEntry.tags))
             session2.insert(firstEntry.category, firstEntry.name, value = firstEntry.value, tags = firstEntry.tags)
-            assertEquals(1, session2.count(firstEntry.category, firstEntry.tags.toString()))
+            assertEquals(1, session2.count(firstEntry.category, firstEntry.tags))
             session2.close()
 
             //TODO: Find out why this fails
@@ -315,7 +315,7 @@ class AskarTest {
 //                val key = getRawKey()!!
 //                val store2 = Store.open(testStoreUri, StoreKeyMethod(KdfMethod.Raw), passkey = key)
 //                val session3 = store2.openSession()
-//                assertEquals(0, session3.count(firstEntry.category, firstEntry.tags.toString()))
+//                assertEquals(0, session3.count(firstEntry.category, firstEntry.tags))
 //                session3.close()
 //                store2.close()
 //            }
@@ -323,21 +323,21 @@ class AskarTest {
             assertFails { store.createProfile(profile) }
 
             val session4 = store.session(profile).open()
-            assertEquals(1, session4.count(firstEntry.category, firstEntry.tags.toString()))
+            assertEquals(1, session4.count(firstEntry.category, firstEntry.tags))
             session4.close()
 
             store.removeProfile(profile)
 
             val session5 = store.session(profile).open()
-            assertEquals(0, session5.count(firstEntry.category, firstEntry.tags.toString()))
+            assertEquals(0, session5.count(firstEntry.category, firstEntry.tags))
             session5.close()
 
             val session6 = store.session("unknown profile").open()
-            assertFails { session6.count(firstEntry.category, firstEntry.tags.toString()) }
+            assertFails { session6.count(firstEntry.category, firstEntry.tags) }
             session6.close()
 
             val session7 = store.session(profile).open()
-            assertEquals(0, session7.count(firstEntry.category, firstEntry.tags.toString()))
+            assertEquals(0, session7.count(firstEntry.category, firstEntry.tags))
             session7.close()
         }
     }
