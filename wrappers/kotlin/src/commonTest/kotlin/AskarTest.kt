@@ -7,8 +7,7 @@ import askar.crypto.Key
 import askar.enums.KeyAlgs
 import kotlinx.cinterop.memScoped
 import kotlinx.coroutines.runBlocking
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
+import kotlinx.serialization.json.*
 import tech.indicio.holdr.AskarUtils.*
 import kotlin.test.*
 import kotlin.test.Test
@@ -127,8 +126,10 @@ class AskarTest {
                 tags = firstEntry.tags
             )
             assertEquals(1, session.count(firstEntry.category, firstEntry.tags))
-            val updatedEntry = EntryObject(firstEntry.category, firstEntry.name, value = "bar", tags = mapOf(Pair("foo", "bar"))
+
+            val updatedEntry = EntryObject(firstEntry.category, firstEntry.name, value = "bar", tags = "{\"foo\": \"bar\"}"
             )
+            println(updatedEntry)
             session.replace(
                 updatedEntry.category,
                 updatedEntry.name,
@@ -256,16 +257,16 @@ class AskarTest {
 
             val keyName = "testKey"
 
-            session.insertKey(keyName, key, metadata = "metadata", tags = mapOf(Pair("a", "b")))
+            session.insertKey(keyName, key, metadata = "metadata", tags = mapOf(Pair("a", JsonPrimitive("b"))).mapToJsonObject().toString())
 
             val fetchedKey = session.fetchKey(keyName)
 
             assertEquals(
                 fetchedKey,
-                KeyEntryObject(KeyAlgs.Ed25519.alg, keyName, "metadata", mapOf(Pair("a", "b")))
+                KeyEntryObject(KeyAlgs.Ed25519.alg, keyName, "metadata", mapOf(Pair("a", JsonPrimitive("b"))).mapToJsonObject().toString())
             )
 
-            session.updateKey(keyName, "updated metadata", tags = mapOf(Pair("a", "c")))
+            session.updateKey(keyName, "updated metadata", tags = mapOf(Pair("a", JsonPrimitive("c"))).mapToJsonObject().toString())
 
             val updatedFetch = session.fetchKey(keyName)
 
@@ -276,7 +277,7 @@ class AskarTest {
             val found = session.fetchAllKeys(
                 KeyAlgs.Ed25519,
                 key.jwkThumbprint(),
-                mapOf(Pair("a", "c") ),
+                mapOf(Pair("a", JsonPrimitive("c"))).mapToJsonObject().toString(),
             )
 
             assertEquals(found[0], updatedFetch)

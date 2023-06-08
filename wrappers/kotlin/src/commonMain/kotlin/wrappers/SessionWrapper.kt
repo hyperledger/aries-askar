@@ -40,13 +40,13 @@ class SessionWrapper {
         Askar.assertNoError(errorCode, continuation)
     }
 
-    suspend fun sessionCount(handle: SessionHandle, category: String, tagFilter: JsonObject) =
+    suspend fun sessionCount(handle: SessionHandle, category: String, tagFilter: String) =
         suspendCoroutine<Long> { continuation ->
             val stableRef = StableRef.create(continuation)
             val contPtr = stableRef.asCPointer()
 
             val errorCode =
-                askar_session_count(handle, category, tagFilter.toString(), staticCFunction { callBackId, errorCode, count ->
+                askar_session_count(handle, category, tagFilter, staticCFunction { callBackId, errorCode, count ->
                     val contRef = callBackId.toCPointer<CPointed>()?.asStableRef<Continuation<Long>>()
                     val cont = contRef?.get()
                     contRef?.dispose()
@@ -96,7 +96,7 @@ class SessionWrapper {
     suspend fun fetchAll(
         handle: SessionHandle,
         category: String,
-        tagFilter: JsonObject,
+        tagFilter: String,
         limit: Long,
         forUpdate: Boolean,
     ) =
@@ -106,7 +106,7 @@ class SessionWrapper {
             val bool = if (forUpdate) 1 else 0
 
             val errorCode = askar_session_fetch_all(
-                handle, category, tagFilter.toString(), limit, bool.toByte(),
+                handle, category, tagFilter, limit, bool.toByte(),
                 staticCFunction { callBackId, errorCode, entryListHandle ->
                     val contRef = callBackId.toCPointer<CPointed>()?.asStableRef<Continuation<EntryListHandle?>>()
                     val cont = contRef?.get()
@@ -131,7 +131,7 @@ class SessionWrapper {
         category: String,
         name: String,
         expiryMs: Long,
-        tags: JsonObject = buildJsonObject {  },
+        tags: String = "{}",
         value: String = "",
         operation: EntryOperation
     ) = suspendCoroutine<ErrorCode> { continuation ->
@@ -145,7 +145,7 @@ class SessionWrapper {
                 category,
                 name,
                 buffer,
-                tags.toString(),
+                tags,
                 expiryMs,
                 staticCFunction { callBackId, errorCode ->
                     val contRef = callBackId.toCPointer<CPointed>()?.asStableRef<Continuation<ErrorCode>>()
@@ -181,7 +181,7 @@ class SessionWrapper {
         name: String,
         key: Key,
         metadata: String? = null,
-        tags: JsonObject = buildJsonObject {  },
+        tags: String = "{}",
         expiryMs: Long
     ) = suspendCoroutine<ErrorCode> { continuation ->
         val stableRef = StableRef.create(continuation)
@@ -191,7 +191,7 @@ class SessionWrapper {
         }
 
         val errorCode = askar_session_insert_key(
-            handle, cHandle, name, metadata, tags.toString(), expiryMs,
+            handle, cHandle, name, metadata, tags, expiryMs,
             staticCFunction { callBackId, errorCode ->
                 val contRef = callBackId.toCPointer<CPointed>()?.asStableRef<Continuation<ErrorCode>>()
                 val cont = contRef?.get()
@@ -231,7 +231,7 @@ class SessionWrapper {
         handle: SessionHandle,
         algorithm: KeyAlgs?,
         thumbprint: String?,
-        tagFilter: JsonObject?,
+        tagFilter: String?,
         limit: Long,
         forUpdate: Boolean,
     ) = suspendCoroutine<KeyEntryListHandle?> { continuation ->
@@ -240,7 +240,7 @@ class SessionWrapper {
         val bool = if (forUpdate) 1 else 0
         val errorCode =
             askar_session_fetch_all_keys(
-                handle, algorithm?.alg, thumbprint, tagFilter.toString(), limit, bool.toByte(),
+                handle, algorithm?.alg, thumbprint, tagFilter, limit, bool.toByte(),
                 staticCFunction { callBackId, errorCode, key ->
                     val contRef =
                         callBackId.toCPointer<CPointed>()?.asStableRef<Continuation<KeyEntryListHandle?>>()
@@ -263,7 +263,7 @@ class SessionWrapper {
         handle: SessionHandle,
         name: String,
         metadata: String?,
-        tags: JsonObject?,
+        tags: String?,
         expiryMs: Long
     ) = suspendCoroutine<ErrorCode> { continuation ->
         val stableRef = StableRef.create(continuation)

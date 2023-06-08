@@ -1,9 +1,11 @@
 package tech.indicio.holdr.AskarUtils
 
+import askar.Askar.Companion.mapToJsonObject
 import askar.Store.EntryObject
 import askar.Store.KdfMethod
 import askar.Store.Store
 import askar.Store.StoreKeyMethod
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
@@ -13,17 +15,17 @@ fun getRawKey(): String? {
 
 val firstEntry = EntryObject("category-one", "test-entry", tags =
 mapOf(
-    Pair("~plaintag", "a"),
-    Pair("enctag", "b")
-), value = "foo"
+    Pair("~plaintag", JsonPrimitive("a")),
+    Pair("enctag", JsonPrimitive("b"))
+).mapToJsonObject().toString() , value = "foo"
 )
 
 
 val secondEntry = EntryObject("category-one", "secondEntry", tags =
 mapOf(
-    Pair("~plaintag", "a"),
-    Pair("enctag", "b")
-), value = buildJsonObject {
+    Pair("~plaintag", JsonPrimitive("a")),
+    Pair("enctag",JsonPrimitive("b"))
+).mapToJsonObject().toString(), value = buildJsonObject {
     put("foo", "bar")
 }.toString())
 

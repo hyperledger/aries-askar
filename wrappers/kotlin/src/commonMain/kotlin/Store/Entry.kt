@@ -2,20 +2,36 @@ package askar.Store
 
 import askar.crypto.EntryListHandle
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.*
 
+/***
+ * @param category the string name of the category
+ * @param name the string name of the entry
+ * @param value the value passed in when the entry was created
+ * @param tags a json formatted string of tags
+ */
 @Serializable
-class EntryObject(val category: String, val name: String,val value: String, val tags: Map<String, String>) {
+class EntryObject(val category: String, val name: String,val value: String, val tags: String) {
 
     override fun toString(): String {
-        return Json.encodeToString(this)
+        val temp = buildJsonObject {
+            put("category", category)
+            put("name", name)
+            put("value", value)
+            val tagsJson = Json.decodeFromString<JsonElement>(tags)
+            put("tags", tagsJson)
+        }
+        return temp.toString()
     }
 
     override fun equals(other: Any?): Boolean {
         if(other == null) return false
         val o = other as EntryObject
-        return o.category == this.category && o.name == this.name && o.value == this.value && o.tags == this.tags
+        val tags = Json.decodeFromString<JsonObject>(this.tags)
+        val otherTags = Json.decodeFromString<JsonObject>(o.tags)
+        return o.category == this.category && o.name == this.name && o.value == this.value && tags == otherTags
     }
 
 }
@@ -38,8 +54,8 @@ class Entry (private val list: EntryListHandle, private val pos: Int) {
 //        return this.list.getValue(this.pos)
 //    }
 
-    fun tags(): Map<String, String> {
-        return Json.decodeFromString<Map<String, String>>(list.getTags(pos) ?: "{}")
+    fun tags(): String {
+        return list.getTags(pos) ?: "{}"
     }
 
     fun toJson(): EntryObject {

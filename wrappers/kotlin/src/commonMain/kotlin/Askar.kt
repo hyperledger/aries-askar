@@ -96,7 +96,7 @@ class Askar {
             return byteBuffer
         }
 
-        fun Map<String, String>.mapToJsonObject(): JsonObject {
+        fun Map<String, JsonElement>.mapToJsonObject(): JsonObject {
             val map = this
             val json = buildJsonObject {
                 map.forEach { entry ->

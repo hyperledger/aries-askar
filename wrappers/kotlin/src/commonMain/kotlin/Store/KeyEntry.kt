@@ -8,27 +8,41 @@ import kotlinx.serialization.Transient
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.*
 
-//TODO: They localKey object is internal to askar and its props are not exposed to us. Not sure what the javascript wrapper is serializing
+/***
+ * @param algorithm the string name of the category
+ * @param name the string name of the entry
+ * @param metadata the metadata passed in when the entry was created
+ * @param tags a json formatted string of tags
+ */
 @Serializable
 class KeyEntryObject(
     val algorithm: String,
     val name: String,
     val metadata: String?,
-    val tags: Map<String, String>,
+    val tags: String,
     @Transient
     val key: Key? = null
 ) {
 
     override fun toString(): String {
-        return Json.encodeToString(this)
+        val temp = buildJsonObject {
+            put("algorithm", algorithm)
+            put("name", name)
+            put("metadata", metadata)
+            val tagsJson = Json.decodeFromString<JsonElement>(tags)
+            put("tags", tagsJson)
+        }
+
+        return temp.toString()
     }
 
     override fun equals(other: Any?): Boolean {
         if (other == null) return false
         val o = other as KeyEntryObject
-        return o.algorithm == this.algorithm && o.name == this.name && o.tags == this.tags && o.metadata == this.metadata
+        val tags = Json.decodeFromString<JsonObject>(this.tags)
+        val otherTags = Json.decodeFromString<JsonObject>(o.tags)
+        return o.algorithm == this.algorithm && o.name == this.name && tags == otherTags && o.metadata == this.metadata
     }
-
 
 }
 
@@ -49,8 +63,8 @@ class KeyEntry(
         return list.getMetadata(pos)
     }
 
-    fun tags(): Map<String, String> {
-        return Json.decodeFromString<Map<String, String>>(list.getTags(pos) ?: "{}")
+    fun tags(): String {
+        return list.getTags(pos) ?: "{}"
     }
 
     fun key(): Key {
