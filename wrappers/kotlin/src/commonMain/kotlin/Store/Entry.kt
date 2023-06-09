@@ -2,8 +2,6 @@ package askar.Store
 
 import askar.crypto.EntryListHandle
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.decodeFromString
-import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.*
 
 /***
@@ -13,7 +11,7 @@ import kotlinx.serialization.json.*
  * @param tags a json formatted string of tags
  */
 @Serializable
-class EntryObject(val category: String, val name: String,val value: String, val tags: String) {
+class EntryObject(val category: String, val name: String, val value: String, val tags: String) {
 
     override fun toString(): String {
         val temp = buildJsonObject {

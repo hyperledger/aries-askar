@@ -55,10 +55,10 @@ class Scan(
 
     }
 
-    suspend fun fetchAll(): ArrayList<Entry> {
-        val rows = ArrayList<Entry>()
+    suspend fun fetchAll(): ArrayList<EntryObject> {
+        val rows = ArrayList<EntryObject>()
         val scope = CoroutineScope(Dispatchers.Default)
-        scope.launch { forEach { row: Entry, _ -> rows.add(row) } }.join()
+        scope.launch { forEach { row: Entry, _ -> rows.add(row.toJson()) } }.join()
         return rows
     }
 }
