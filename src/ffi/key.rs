@@ -383,7 +383,7 @@ pub extern "C" fn askar_key_wrap_key(
         check_useful_c_ptr!(out);
         let key = handle.load()?;
         let other = other.load()?;
-        let result = key.wrap_key(&*other, nonce.as_slice())?;
+        let result = key.wrap_key(&other, nonce.as_slice())?;
         unsafe { *out = EncryptedBuffer::from_encrypted(result) };
         Ok(ErrorCode::Success)
     }
@@ -435,8 +435,8 @@ pub extern "C" fn askar_key_crypto_box(
         let recip_key = recip_key.load()?;
         let sender_key = sender_key.load()?;
         let message = crypto_box(
-            &*recip_key,
-            &*sender_key,
+            &recip_key,
+            &sender_key,
             message.as_slice(),
             nonce.as_slice()
         )?;
@@ -459,8 +459,8 @@ pub extern "C" fn askar_key_crypto_box_open(
         let recip_key = recip_key.load()?;
         let sender_key = sender_key.load()?;
         let message = crypto_box_open(
-            &*recip_key,
-            &*sender_key,
+            &recip_key,
+            &sender_key,
             message.as_slice(),
             nonce.as_slice()
         )?;

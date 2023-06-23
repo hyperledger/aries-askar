@@ -1,7 +1,12 @@
-use std::{fmt::Display, mem, ptr, sync::Arc};
+use std::{
+    fmt::{Debug, Display},
+    mem, ptr,
+    sync::Arc,
+};
 
 use crate::error::Error;
 
+#[derive(Debug)]
 #[repr(C)]
 pub struct ArcHandle<T: Send>(*const T);
 
@@ -18,6 +23,7 @@ impl<T: Send> ArcHandle<T> {
     pub fn load(&self) -> Result<Arc<T>, Error> {
         self.validate()?;
         let result = unsafe { mem::ManuallyDrop::new(Arc::from_raw(self.0)) };
+        #[allow(clippy::needless_borrow)]
         Ok((&*result).clone())
     }
 
@@ -46,7 +52,7 @@ impl<T: Send> std::fmt::Display for ArcHandle<T> {
     }
 }
 
-pub trait ResourceHandle: Copy + Ord + From<usize> + Display {
+pub trait ResourceHandle: Copy + Eq + Ord + From<usize> + Debug + Display {
     fn invalid() -> Self {
         Self::from(0)
     }
