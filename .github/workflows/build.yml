@@ -1,7 +1,7 @@
 name: "Aries-Askar"
 
 env:
-  RUST_VERSION: "1.61.0"
+  RUST_VERSION: "1.64.0"
   CROSS_VERSION: "0.2.4"
 
 on:
@@ -387,8 +387,7 @@ jobs:
   build-android:
     name: Build library (Android)
     needs: [checks]
-    env:
-      RUST_VERSION: "1.64.0" # Overriding the rust version here for lower NDK support
+    # NB: RUST_VERSION must be 1.64+ here for lower NDK support
 
     runs-on: ubuntu-latest
 
