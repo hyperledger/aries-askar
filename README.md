@@ -7,7 +7,7 @@
 
 Aries Askar is a secure (encrypted at rest) storage and a key management service
 suitable for use with [Hyperledger Aries] agents and possibly other digital
-trust agents. Askar is a re-implementation (with lessons learned!) of the
+trust agents. Askar is a replacement implementation (with lessons learned!) of the
 [indy-wallet] part of the [Hyperledger Indy SDK]. Askar has been demonstrated to
 be more performant and stable than the Indy SDK when under comparable load.
 
