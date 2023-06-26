@@ -1,11 +1,9 @@
 use std::{ffi::CString, os::raw::c_char, ptr};
 
-use super::{handle::ArcHandle, key::LocalKeyHandle, secret::SecretBuffer, ErrorCode};
-use crate::{
-    error::Error,
-    kms::KeyEntry,
-    storage::{Entry, EntryTagSet},
+use super::{
+    handle::ArcHandle, key::LocalKeyHandle, secret::SecretBuffer, tags::EntryTagSet, ErrorCode,
 };
+use crate::{entry::Entry, error::Error, kms::KeyEntry};
 
 pub enum FfiResultList<R> {
     Single(R),
@@ -28,7 +26,7 @@ impl<R> FfiResultList<R> {
                 }
             }
         }
-        return Err(err_msg!(Input, "Invalid index for result set"));
+        Err(err_msg!(Input, "Invalid index for result set"))
     }
 
     pub fn len(&self) -> i32 {

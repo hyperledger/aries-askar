@@ -71,7 +71,7 @@ pub fn write_jwk_thumbprint<K: ToJwk + ?Sized>(
     buf.finalize()?;
     let hash = hasher.finalize();
     let mut buf = [0u8; 43];
-    let len = base64::encode_config_slice(&hash, base64::URL_SAFE_NO_PAD, &mut buf);
+    let len = base64::encode_config_slice(hash, base64::URL_SAFE_NO_PAD, &mut buf);
     output.buffer_write(&buf[..len])?;
     Ok(())
 }

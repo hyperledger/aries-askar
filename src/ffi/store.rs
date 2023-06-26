@@ -8,39 +8,36 @@ use super::{
     error::set_last_error,
     key::LocalKeyHandle,
     result_list::{EntryListHandle, FfiEntryList, FfiKeyEntryList, KeyEntryListHandle},
+    tags::EntryTagSet,
     CallbackId, EnsureCallback, ErrorCode, ResourceHandle,
 };
 use crate::{
-    backend::{
-        any::{AnySession, AnyStore},
-        ManageBackend,
-    },
+    entry::{Entry, EntryOperation, Scan, TagFilter},
     error::Error,
     future::spawn_ok,
-    protect::{generate_raw_store_key, PassKey, StoreKeyMethod},
-    storage::{Entry, EntryOperation, EntryTagSet, Scan, TagFilter},
+    store::{PassKey, Session, Store, StoreKeyMethod},
 };
 
 new_sequence_handle!(StoreHandle, FFI_STORE_COUNTER);
 new_sequence_handle!(SessionHandle, FFI_SESSION_COUNTER);
 new_sequence_handle!(ScanHandle, FFI_SCAN_COUNTER);
 
-static FFI_STORES: Lazy<RwLock<BTreeMap<StoreHandle, Arc<AnyStore>>>> =
+static FFI_STORES: Lazy<RwLock<BTreeMap<StoreHandle, Store>>> =
     Lazy::new(|| RwLock::new(BTreeMap::new()));
-static FFI_SESSIONS: Lazy<StoreResourceMap<SessionHandle, AnySession>> =
+static FFI_SESSIONS: Lazy<StoreResourceMap<SessionHandle, Session>> =
     Lazy::new(StoreResourceMap::new);
 static FFI_SCANS: Lazy<StoreResourceMap<ScanHandle, Scan<'static, Entry>>> =
     Lazy::new(StoreResourceMap::new);
 
 impl StoreHandle {
-    pub async fn create(value: AnyStore) -> Self {
+    pub async fn create(value: Store) -> Self {
         let handle = Self::next();
         let mut repo = FFI_STORES.write().await;
-        repo.insert(handle, Arc::new(value));
+        repo.insert(handle, value);
         handle
     }
 
-    pub async fn load(&self) -> Result<Arc<AnyStore>, Error> {
+    pub async fn load(&self) -> Result<Store, Error> {
         FFI_STORES
             .read()
             .await
@@ -49,7 +46,7 @@ impl StoreHandle {
             .ok_or_else(|| err_msg!("Invalid store handle"))
     }
 
-    pub async fn remove(&self) -> Result<Arc<AnyStore>, Error> {
+    pub async fn remove(&self) -> Result<Store, Error> {
         FFI_STORES
             .write()
             .await
@@ -57,7 +54,7 @@ impl StoreHandle {
             .ok_or_else(|| err_msg!("Invalid store handle"))
     }
 
-    pub async fn replace(&self, store: Arc<AnyStore>) {
+    pub async fn replace(&self, store: Store) {
         FFI_STORES.write().await.insert(*self, store);
     }
 }
@@ -138,7 +135,7 @@ pub extern "C" fn askar_store_generate_raw_key(
             s if s.is_empty() => None,
             s => Some(s)
         };
-        let key = generate_raw_store_key(seed)?;
+        let key = Store::new_raw_key(seed)?;
         unsafe { *out = rust_string_to_c(key.to_string()); }
         Ok(ErrorCode::Success)
     }
@@ -175,7 +172,8 @@ pub extern "C" fn askar_store_provision(
         );
         spawn_ok(async move {
             let result = async {
-                let store = spec_uri.provision_backend(
+                let store = Store::provision(
+                    spec_uri.as_str(),
                     key_method,
                     pass_key,
                     profile.as_deref(),
@@ -219,7 +217,8 @@ pub extern "C" fn askar_store_open(
         );
         spawn_ok(async move {
             let result = async {
-                let store = spec_uri.open_backend(
+                let store = Store::open (
+                spec_uri.as_str(),
                     key_method,
                     pass_key,
                     profile.as_deref()
@@ -249,10 +248,7 @@ pub extern "C" fn askar_store_remove(
             }
         );
         spawn_ok(async move {
-            let result = async {
-                let removed = spec_uri.remove_backend().await?;
-                Ok(removed)
-            }.await;
+            let result = Store::remove(spec_uri.as_str()).await;
             cb.resolve(result);
         });
         Ok(ErrorCode::Success)
@@ -366,18 +362,10 @@ pub extern "C" fn askar_store_rekey(
         );
         spawn_ok(async move {
             let result = async {
-                let store = handle.remove().await?;
-                match Arc::try_unwrap(store) {
-                    Ok(mut store) => {
-                        store.rekey(key_method, pass_key.as_ref()).await?;
-                        handle.replace(Arc::new(store)).await;
-                        Ok(())
-                    }
-                    Err(arc_store) => {
-                        handle.replace(arc_store).await;
-                        Err(err_msg!("Cannot re-key store with multiple references"))
-                    }
-                }
+                let mut store = handle.remove().await?;
+                let result = store.rekey(key_method, pass_key.as_ref()).await;
+                handle.replace(store).await;
+                result
             }.await;
             cb.resolve(result);
         });
@@ -409,7 +397,7 @@ pub extern "C" fn askar_store_close(
                 // been dropped yet (this will invalidate associated handles)
                 FFI_SESSIONS.remove_all(handle).await?;
                 FFI_SCANS.remove_all(handle).await?;
-                store.arc_close().await?;
+                store.close().await?;
                 info!("Closed store {}", handle);
                 Ok(())
             }.await;
@@ -439,7 +427,7 @@ pub extern "C" fn askar_scan_start(
         trace!("Scan store start");
         let cb = cb.ok_or_else(|| err_msg!("No callback provided"))?;
         let profile = profile.into_opt_string();
-        let category = category.into_opt_string().ok_or_else(|| err_msg!("Category not provided"))?;
+        let category = category.into_opt_string();
         let tag_filter = tag_filter.as_opt_str().map(TagFilter::from_str).transpose()?;
         let cb = EnsureCallback::new(move |result: Result<ScanHandle,Error>|
             match result {
@@ -558,7 +546,7 @@ pub extern "C" fn askar_session_count(
     catch_err! {
         trace!("Count from store");
         let cb = cb.ok_or_else(|| err_msg!("No callback provided"))?;
-        let category = category.into_opt_string().ok_or_else(|| err_msg!("Category not provided"))?;
+        let category = category.into_opt_string();
         let tag_filter = tag_filter.as_opt_str().map(TagFilter::from_str).transpose()?;
         let cb = EnsureCallback::new(move |result: Result<i64,Error>|
             match result {
@@ -569,8 +557,7 @@ pub extern "C" fn askar_session_count(
         spawn_ok(async move {
             let result = async {
                 let mut session = FFI_SESSIONS.borrow(handle).await?;
-                let count = session.count(&category, tag_filter).await;
-                count
+                session.count(category.as_deref(), tag_filter).await
             }.await;
             cb.resolve(result);
         });
@@ -605,8 +592,7 @@ pub extern "C" fn askar_session_fetch(
         spawn_ok(async move {
             let result = async {
                 let mut session = FFI_SESSIONS.borrow(handle).await?;
-                let found = session.fetch(&category, &name, for_update != 0).await;
-                found
+                session.fetch(&category, &name, for_update != 0).await
             }.await;
             cb.resolve(result);
         });
@@ -627,7 +613,7 @@ pub extern "C" fn askar_session_fetch_all(
     catch_err! {
         trace!("Count from store");
         let cb = cb.ok_or_else(|| err_msg!("No callback provided"))?;
-        let category = category.into_opt_string().ok_or_else(|| err_msg!("Category not provided"))?;
+        let category = category.into_opt_string();
         let tag_filter = tag_filter.as_opt_str().map(TagFilter::from_str).transpose()?;
         let limit = if limit < 0 { None } else {Some(limit)};
         let cb = EnsureCallback::new(move |result|
@@ -642,8 +628,7 @@ pub extern "C" fn askar_session_fetch_all(
         spawn_ok(async move {
             let result = async {
                 let mut session = FFI_SESSIONS.borrow(handle).await?;
-                let found = session.fetch_all(&category, tag_filter, limit, for_update != 0).await;
-                found
+                session.fetch_all(category.as_deref(), tag_filter, limit, for_update != 0).await
             }.await;
             cb.resolve(result);
         });
@@ -662,7 +647,7 @@ pub extern "C" fn askar_session_remove_all(
     catch_err! {
         trace!("Count from store");
         let cb = cb.ok_or_else(|| err_msg!("No callback provided"))?;
-        let category = category.into_opt_string().ok_or_else(|| err_msg!("Category not provided"))?;
+        let category = category.into_opt_string();
         let tag_filter = tag_filter.as_opt_str().map(TagFilter::from_str).transpose()?;
         let cb = EnsureCallback::new(move |result|
             match result {
@@ -675,8 +660,7 @@ pub extern "C" fn askar_session_remove_all(
         spawn_ok(async move {
             let result = async {
                 let mut session = FFI_SESSIONS.borrow(handle).await?;
-                let removed = session.remove_all(&category, tag_filter).await;
-                removed
+                session.remove_all(category.as_deref(), tag_filter).await
             }.await;
             cb.resolve(result);
         });
@@ -731,8 +715,7 @@ pub extern "C" fn askar_session_update(
         spawn_ok(async move {
             let result = async {
                 let mut session = FFI_SESSIONS.borrow(handle).await?;
-                let result = session.update(operation, &category, &name, Some(value.as_slice()), tags.as_deref(), expiry_ms).await;
-                result
+                session.update(operation, &category, &name, Some(value.as_slice()), tags.as_deref(), expiry_ms).await
             }.await;
             cb.resolve(result);
         });
@@ -783,14 +766,13 @@ pub extern "C" fn askar_session_insert_key(
         spawn_ok(async move {
             let result = async {
                 let mut session = FFI_SESSIONS.borrow(handle).await?;
-                let result = session.insert_key(
+                session.insert_key(
                     name.as_str(),
                     &key,
                     metadata.as_deref(),
                     tags.as_deref(),
                     expiry_ms,
-                ).await;
-                result
+                ).await
             }.await;
             cb.resolve(result);
         });
@@ -827,11 +809,10 @@ pub extern "C" fn askar_session_fetch_key(
         spawn_ok(async move {
             let result = async {
                 let mut session = FFI_SESSIONS.borrow(handle).await?;
-                let result = session.fetch_key(
+                session.fetch_key(
                     name.as_str(),
                     for_update != 0
-                ).await;
-                result
+                ).await
             }.await;
             cb.resolve(result);
         });
@@ -871,14 +852,13 @@ pub extern "C" fn askar_session_fetch_all_keys(
         spawn_ok(async move {
             let result = async {
                 let mut session = FFI_SESSIONS.borrow(handle).await?;
-                let result = session.fetch_all_keys(
+                session.fetch_all_keys(
                     alg.as_deref(),
                     thumbprint.as_deref(),
                     tag_filter,
                     limit,
                     for_update != 0
-                ).await;
-                result
+                ).await
             }.await;
             cb.resolve(result);
         });
@@ -927,14 +907,13 @@ pub extern "C" fn askar_session_update_key(
         spawn_ok(async move {
             let result = async {
                 let mut session = FFI_SESSIONS.borrow(handle).await?;
-                let result = session.update_key(
+                session.update_key(
                     &name,
                     metadata.as_deref(),
                     tags.as_deref(),
                     expiry_ms,
 
-                ).await;
-                result
+                ).await
             }.await;
             cb.resolve(result);
         });
@@ -965,10 +944,9 @@ pub extern "C" fn askar_session_remove_key(
         spawn_ok(async move {
             let result = async {
                 let mut session = FFI_SESSIONS.borrow(handle).await?;
-                let result = session.remove_key(
+                session.remove_key(
                     &name,
-                ).await;
-                result
+                ).await
             }.await;
             cb.resolve(result);
         });
