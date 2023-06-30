@@ -1,11 +1,9 @@
-use std::sync::Arc;
-
 use crate::{
     error::Error,
     kms::{KeyEntry, KeyParams, KmsCategory, LocalKey},
     storage::{
         any::{AnyBackend, AnyBackendSession},
-        backend::{BackendSession, ManageBackend},
+        backend::{Backend, BackendSession, ManageBackend},
         entry::{Entry, EntryKind, EntryOperation, EntryTag, Scan, TagFilter},
         generate_raw_store_key,
     },
@@ -58,8 +56,8 @@ impl Store {
     }
 
     /// Get the default profile name used when starting a scan or a session
-    pub fn get_profile_name(&self) -> &str {
-        self.0.get_profile_name()
+    pub fn get_active_profile(&self) -> String {
+        self.0.get_active_profile()
     }
 
     /// Replace the wrapping key on a store
@@ -68,15 +66,17 @@ impl Store {
         method: StoreKeyMethod,
         pass_key: PassKey<'_>,
     ) -> Result<(), Error> {
-        match Arc::get_mut(&mut self.0) {
-            Some(inner) => Ok(inner.rekey(method, pass_key).await?),
-            None => Err(err_msg!("Cannot re-key a store with multiple references")),
-        }
+        Ok(self.0.rekey(method, pass_key).await?)
     }
 
     /// Create a new profile with the given profile name
     pub async fn create_profile(&self, name: Option<String>) -> Result<String, Error> {
         Ok(self.0.create_profile(name).await?)
+    }
+
+    /// Get the details of all store profiles
+    pub async fn list_profiles(&self) -> Result<Vec<String>, Error> {
+        Ok(self.0.list_profiles().await?)
     }
 
     /// Remove an existing profile with the given profile name
@@ -110,7 +110,6 @@ impl Store {
 
     /// Create a new session against the store
     pub async fn session(&self, profile: Option<String>) -> Result<Session, Error> {
-        // FIXME - add 'immediate' flag
         Ok(Session::new(self.0.session(profile, false)?))
     }
 

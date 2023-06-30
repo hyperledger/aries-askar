@@ -7,13 +7,16 @@ use once_cell::sync::Lazy;
 use super::{
     error::set_last_error,
     key::LocalKeyHandle,
-    result_list::{EntryListHandle, FfiEntryList, FfiKeyEntryList, KeyEntryListHandle},
+    result_list::{
+        EntryListHandle, FfiEntryList, FfiKeyEntryList, KeyEntryListHandle, StringListHandle,
+    },
     tags::EntryTagSet,
     CallbackId, EnsureCallback, ErrorCode, ResourceHandle,
 };
 use crate::{
     entry::{Entry, EntryOperation, Scan, TagFilter},
     error::Error,
+    ffi::result_list::FfiStringList,
     future::spawn_ok,
     store::{PassKey, Session, Store, StoreKeyMethod},
 };
@@ -302,7 +305,37 @@ pub extern "C" fn askar_store_get_profile_name(
         spawn_ok(async move {
             let result = async {
                 let store = handle.load().await?;
-                Ok(store.get_profile_name().to_string())
+                Ok(store.get_active_profile())
+            }.await;
+            cb.resolve(result);
+        });
+        Ok(ErrorCode::Success)
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn askar_store_list_profiles(
+    handle: StoreHandle,
+    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, results: StringListHandle)>,
+    cb_id: CallbackId,
+) -> ErrorCode {
+    catch_err! {
+        trace!("List profiles");
+        let cb = cb.ok_or_else(|| err_msg!("No callback provided"))?;
+        let cb = EnsureCallback::new(move |result|
+            match result {
+                Ok(rows) => {
+                    let res = StringListHandle::create(FfiStringList::from(rows));
+                    cb(cb_id, ErrorCode::Success, res)
+                },
+                Err(err) => cb(cb_id, set_last_error(Some(err)), StringListHandle::invalid()),
+            }
+        );
+        spawn_ok(async move {
+            let result = async {
+                let store = handle.load().await?;
+                let rows = store.list_profiles().await?;
+                Ok(rows)
             }.await;
             cb.resolve(result);
         });

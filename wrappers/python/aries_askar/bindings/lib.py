@@ -406,7 +406,7 @@ class RawBuffer(Structure):
         return bytes(self.array)
 
     def __len__(self) -> int:
-        return int(self.len)
+        return self.len.value
 
     @property
     def array(self) -> Array:

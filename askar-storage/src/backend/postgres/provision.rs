@@ -172,7 +172,7 @@ impl PostgresStoreOptions {
         self,
         method: StoreKeyMethod,
         pass_key: PassKey<'_>,
-        profile: Option<&str>,
+        profile: Option<String>,
         recreate: bool,
     ) -> Result<PostgresBackend, Error> {
         let conn_pool = self.create_db_pool().await?;
@@ -207,9 +207,7 @@ impl PostgresStoreOptions {
             move || init_keys(method, pass_key)
         })
         .await?;
-        let default_profile = profile
-            .map(str::to_string)
-            .unwrap_or_else(random_profile_name);
+        let default_profile = profile.unwrap_or_else(random_profile_name);
         let profile_id = init_db(txn, &default_profile, store_key_ref, enc_profile_key).await?;
         let mut key_cache = KeyCache::new(store_key);
         key_cache.add_profile_mut(default_profile.clone(), profile_id, profile_key);
@@ -228,7 +226,7 @@ impl PostgresStoreOptions {
         self,
         method: Option<StoreKeyMethod>,
         pass_key: PassKey<'_>,
-        profile: Option<&str>,
+        profile: Option<String>,
     ) -> Result<PostgresBackend, Error> {
         let pool = match self.pool().await {
             Ok(p) => Ok(p),
@@ -270,7 +268,7 @@ impl<'a> ManageBackend<'a> for PostgresStoreOptions {
         self,
         method: Option<StoreKeyMethod>,
         pass_key: PassKey<'_>,
-        profile: Option<&'a str>,
+        profile: Option<String>,
     ) -> BoxFuture<'a, Result<PostgresBackend, Error>> {
         let pass_key = pass_key.into_owned();
         Box::pin(self.open(method, pass_key, profile))
@@ -280,7 +278,7 @@ impl<'a> ManageBackend<'a> for PostgresStoreOptions {
         self,
         method: StoreKeyMethod,
         pass_key: PassKey<'_>,
-        profile: Option<&'a str>,
+        profile: Option<String>,
         recreate: bool,
     ) -> BoxFuture<'a, Result<PostgresBackend, Error>> {
         let pass_key = pass_key.into_owned();
@@ -387,7 +385,7 @@ pub(crate) async fn open_db(
     conn_pool: PgPool,
     method: Option<StoreKeyMethod>,
     pass_key: PassKey<'_>,
-    profile: Option<&str>,
+    profile: Option<String>,
     host: String,
     name: String,
 ) -> Result<PostgresBackend, Error> {
@@ -423,7 +421,6 @@ pub(crate) async fn open_db(
         return Err(err_msg!(Unsupported, "Store version not found"));
     }
     let profile = profile
-        .map(str::to_string)
         .or(default_profile)
         .ok_or_else(|| err_msg!(Unsupported, "Default store profile not found"))?;
     let store_key = if let Some(store_key_ref) = store_key_ref {

@@ -293,6 +293,9 @@ async def test_profile(store: Store):
 
     profile = await store.create_profile()
 
+    default_profile = await store.get_profile_name()
+    assert set(await store.list_profiles()) == {default_profile, profile}
+
     async with store.session(profile) as session:
         # Should not find previously stored record
         assert (

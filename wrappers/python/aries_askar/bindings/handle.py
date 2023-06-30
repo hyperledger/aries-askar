@@ -246,3 +246,9 @@ class LocalKeyHandle(ArcHandle):
     """Handle for an active LocalKey instance."""
 
     _dtor_ = "askar_key_free"
+
+
+class StringListHandle(ArcHandle):
+    """Handle for an active string list instance."""
+
+    _dtor_ = "askar_string_list_free"

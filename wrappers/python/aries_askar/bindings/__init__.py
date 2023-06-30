@@ -27,6 +27,7 @@ from .handle import (
     ScanHandle,
     SessionHandle,
     StoreHandle,
+    StringListHandle,
 )
 
 
@@ -148,6 +149,35 @@ async def store_remove_profile(handle: StoreHandle, name: str) -> bool:
         )
         != 0
     )
+
+
+async def store_list_profiles(handle: StoreHandle) -> list[str]:
+    """List the profile identifiers present in a Store."""
+    handle = await invoke_async(
+        "askar_store_list_profiles",
+        (StoreHandle,),
+        handle,
+        return_type=StringListHandle,
+    )
+    count = c_int32()
+    invoke(
+        "askar_string_list_count",
+        (StringListHandle, POINTER(c_int32)),
+        handle,
+        byref(count),
+    )
+    ret = []
+    for idx in range(count.value):
+        buf = StrBuffer()
+        invoke(
+            "askar_string_list_get_item",
+            (StringListHandle, c_int32, POINTER(StrBuffer)),
+            handle,
+            idx,
+            byref(buf),
+        )
+        ret.append(str(buf))
+    return ret
 
 
 async def store_rekey(

@@ -33,6 +33,8 @@ use crate::{
 mod provision;
 pub use provision::SqliteStoreOptions;
 
+const CONFIG_FETCH_QUERY: &str = "SELECT value FROM config WHERE name = ?1";
+const CONFIG_UPDATE_QUERY: &str = "INSERT OR REPLACE INTO config (name, value) VALUES (?1, ?2)";
 const COUNT_QUERY: &str = "SELECT COUNT(*) FROM items i
     WHERE profile_id = ?1
     AND (kind = ?2 OR ?2 IS NULL)
@@ -70,7 +72,7 @@ const TAG_DELETE_QUERY: &str = "DELETE FROM items_tags
 /// A Sqlite database store
 pub struct SqliteBackend {
     conn_pool: SqlitePool,
-    default_profile: String,
+    active_profile: String,
     key_cache: Arc<KeyCache>,
     path: String,
 }
@@ -78,13 +80,13 @@ pub struct SqliteBackend {
 impl SqliteBackend {
     pub(crate) fn new(
         conn_pool: SqlitePool,
-        default_profile: String,
+        active_profile: String,
         key_cache: KeyCache,
         path: String,
     ) -> Self {
         Self {
             conn_pool,
-            default_profile,
+            active_profile,
             key_cache: Arc::new(key_cache),
             path,
         }
@@ -94,7 +96,7 @@ impl SqliteBackend {
 impl Debug for SqliteBackend {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         f.debug_struct("SqliteStore")
-            .field("default_profile", &self.default_profile)
+            .field("active_profile", &self.active_profile)
             .field("path", &self.path)
             .finish()
     }
@@ -138,8 +140,42 @@ impl Backend for SqliteBackend {
         })
     }
 
-    fn get_profile_name(&self) -> &str {
-        self.default_profile.as_str()
+    fn get_active_profile(&self) -> String {
+        self.active_profile.clone()
+    }
+
+    fn get_default_profile(&self) -> BoxFuture<'_, Result<String, Error>> {
+        Box::pin(async move {
+            let mut conn = self.conn_pool.acquire().await?;
+            let profile: Option<String> = sqlx::query_scalar(CONFIG_FETCH_QUERY)
+                .bind("default_profile")
+                .fetch_one(&mut conn)
+                .await?;
+            Ok(profile.unwrap_or_default())
+        })
+    }
+
+    fn set_default_profile(&self, profile: String) -> BoxFuture<'_, Result<(), Error>> {
+        Box::pin(async move {
+            let mut conn = self.conn_pool.acquire().await?;
+            sqlx::query(CONFIG_UPDATE_QUERY)
+                .bind("default_profile")
+                .bind(profile)
+                .execute(&mut conn)
+                .await?;
+            Ok(())
+        })
+    }
+
+    fn list_profiles(&self) -> BoxFuture<'_, Result<Vec<String>, Error>> {
+        Box::pin(async move {
+            let mut conn = self.conn_pool.acquire().await?;
+            let rows = sqlx::query("SELECT name FROM profiles")
+                .fetch_all(&mut conn)
+                .await?;
+            let names = rows.into_iter().flat_map(|r| r.try_get(0)).collect();
+            Ok(names)
+        })
     }
 
     fn remove_profile(&self, name: String) -> BoxFuture<'_, Result<bool, Error>> {
@@ -242,7 +278,7 @@ impl Backend for SqliteBackend {
         Ok(DbSession::new(
             self.conn_pool.clone(),
             self.key_cache.clone(),
-            profile.unwrap_or_else(|| self.default_profile.clone()),
+            profile.unwrap_or_else(|| self.active_profile.clone()),
             transaction,
         ))
     }

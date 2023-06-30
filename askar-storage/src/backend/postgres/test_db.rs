@@ -10,7 +10,10 @@ use super::provision::{init_db, reset_db, PostgresStoreOptions};
 use super::PostgresBackend;
 use crate::{
     any::{into_any_backend, AnyBackend},
-    backend::db_utils::{init_keys, random_profile_name},
+    backend::{
+        db_utils::{init_keys, random_profile_name},
+        Backend,
+    },
     error::Error,
     future::{sleep, spawn_ok, timeout, unblock},
     protect::{generate_raw_store_key, KeyCache, StoreKeyMethod},

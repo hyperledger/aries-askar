@@ -19,6 +19,16 @@ macro_rules! backend_tests {
         }
 
         #[test]
+        fn list_profiles() {
+            $run(super::utils::db_list_profiles)
+        }
+
+        #[test]
+        fn get_set_default_profile() {
+            $run(super::utils::db_get_set_default_profile)
+        }
+
+        #[test]
         fn fetch_fail() {
             $run(super::utils::db_fetch_fail)
         }
@@ -102,6 +112,11 @@ macro_rules! backend_tests {
         fn txn_contention() {
             $run(super::utils::db_txn_contention)
         }
+
+        #[test]
+        fn db_import() {
+            $run(super::utils::db_import_scan)
+        }
     };
 }
 
@@ -112,6 +127,7 @@ fn log_init() {
 #[cfg(feature = "sqlite")]
 mod sqlite {
     use askar_storage::any::{into_any_backend, AnyBackend};
+    use askar_storage::backend::copy_store;
     use askar_storage::backend::sqlite::SqliteStoreOptions;
     use askar_storage::future::block_on;
     use askar_storage::{generate_raw_store_key, Backend, ManageBackend, StoreKeyMethod};
@@ -201,6 +217,57 @@ mod sqlite {
             store.close().await.expect("Error closing store");
 
             SqliteStoreOptions::new(fname.as_str())
+                .expect("Error initializing sqlite store options")
+                .remove_backend()
+                .await
+                .expect("Error removing sqlite store");
+        })
+    }
+
+    #[test]
+    fn copy_db() {
+        log_init();
+        let fname_source = format!("sqlite-copy-{}.db", uuid::Uuid::new_v4());
+        let url_target = format!("sqlite://sqlite-copy-{}.db", uuid::Uuid::new_v4());
+        let key_source = generate_raw_store_key(None).expect("Error creating raw key");
+        let key_target = generate_raw_store_key(None).expect("Error creating raw key");
+
+        block_on(async move {
+            let source = SqliteStoreOptions::new(fname_source.as_str())
+                .expect("Error initializing sqlite store options")
+                .provision_backend(StoreKeyMethod::RawKey, key_source.as_ref(), None, false)
+                .await
+                .expect("Error provisioning sqlite store");
+            let profile = source
+                .get_default_profile()
+                .await
+                .expect("Error fetching default profile");
+
+            copy_store(
+                &source,
+                url_target.as_str(),
+                StoreKeyMethod::RawKey,
+                key_target.as_ref(),
+            )
+            .await
+            .expect("Error copying store");
+
+            source.close().await.expect("Error closing store");
+            SqliteStoreOptions::new(fname_source.as_str())
+                .expect("Error initializing sqlite store options")
+                .remove_backend()
+                .await
+                .expect("Error removing sqlite store");
+
+            let copied = SqliteStoreOptions::new(url_target.as_str())
+                .expect("Error initializing sqlite store options")
+                .open_backend(Some(StoreKeyMethod::RawKey), key_target.as_ref(), None)
+                .await
+                .expect("Error opening rekeyed store");
+            assert_eq!(copied.get_active_profile(), profile);
+            copied.close().await.expect("Error closing store");
+
+            SqliteStoreOptions::new(url_target.as_str())
                 .expect("Error initializing sqlite store options")
                 .remove_backend()
                 .await

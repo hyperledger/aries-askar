@@ -1,7 +1,7 @@
 use askar_storage::{
     any::AnyBackend,
     entry::{Entry, EntryKind, EntryOperation, EntryTag, TagFilter},
-    BackendSession, ErrorKind,
+    Backend, BackendSession, ErrorKind,
 };
 
 use tokio::task::spawn;
@@ -805,4 +805,74 @@ pub async fn db_txn_contention(db: AnyBackend) {
         .expect(ERR_FETCH)
         .expect(ERR_REQ_ROW);
     assert_eq!(row.value, format!("{}", TASKS * INC).as_bytes());
+}
+
+pub async fn db_list_profiles(db: AnyBackend) {
+    let p_active = db.get_active_profile();
+    assert_eq!(vec![p_active.clone()], db.list_profiles().await.unwrap());
+
+    let p_new = db.create_profile(None).await.unwrap();
+    let mut profs = vec![p_active, p_new];
+    profs.sort();
+    let mut found = db.list_profiles().await.unwrap();
+    found.sort();
+    assert_eq!(profs, found);
+}
+
+pub async fn db_get_set_default_profile(db: AnyBackend) {
+    let p_default = db.get_default_profile().await.unwrap();
+    let p_new = db.create_profile(None).await.unwrap();
+    assert_ne!(p_new, p_default);
+    db.set_default_profile(p_new.clone()).await.unwrap();
+    assert_eq!(db.get_default_profile().await.unwrap(), p_new);
+}
+
+pub async fn db_import_scan(db: AnyBackend) {
+    let test_rows = vec![Entry::new(
+        "category",
+        "name",
+        "value",
+        vec![
+            EntryTag::Encrypted("t1".to_string(), "v1".to_string()),
+            EntryTag::Plaintext("t2".to_string(), "v2".to_string()),
+        ],
+    )];
+
+    let mut conn = db.session(None, false).expect(ERR_SESSION);
+    for upd in test_rows.iter() {
+        conn.update(
+            EntryKind::Item,
+            EntryOperation::Insert,
+            &upd.category,
+            &upd.name,
+            Some(&upd.value),
+            Some(upd.tags.as_slice()),
+            None,
+        )
+        .await
+        .expect(ERR_INSERT);
+    }
+    drop(conn);
+
+    let copy = db.create_profile(None).await.expect(ERR_PROFILE);
+    let mut copy_conn = db.session(Some(copy.clone()), true).expect(ERR_SESSION);
+    let records = db
+        .scan(None, Some(EntryKind::Item), None, None, None, None)
+        .await
+        .expect(ERR_SCAN);
+    copy_conn
+        .import_scan(EntryKind::Item, records)
+        .await
+        .expect("Error importing records");
+    copy_conn.close(true).await.expect(ERR_COMMIT);
+
+    let mut scan = db
+        .scan(Some(copy), Some(EntryKind::Item), None, None, None, None)
+        .await
+        .expect(ERR_SCAN);
+
+    let rows = scan.fetch_next().await.expect(ERR_SCAN_NEXT);
+    assert_eq!(rows, Some(test_rows));
+    let rows = scan.fetch_next().await.expect(ERR_SCAN_NEXT);
+    assert_eq!(rows, None);
 }

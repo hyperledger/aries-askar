@@ -10,7 +10,7 @@ use zeroize::Zeroize;
 use crate::error::Error;
 
 mod enc;
-pub use enc::{Encrypted, SecretBytes, ToDecrypt};
+pub use self::enc::{Encrypted, SecretBytes, ToDecrypt};
 
 mod envelope;
 pub use self::envelope::{
