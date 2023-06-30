@@ -52,23 +52,19 @@ pub fn spawn_ok(fut: impl Future<Output = ()> + Send + 'static) {
 }
 
 /// Wait until a specific duration has passed (used in tests).
+/// This method must be called within `block_on` or a spawned task in order to have
+/// access to the async runtime.
 #[doc(hidden)]
 pub async fn sleep(dur: Duration) {
-    if let Some(rt) = RUNTIME.load().clone() {
-        let _rt = rt.enter();
-        tokio::time::sleep(dur).await
-    }
+    tokio::time::sleep(dur).await
 }
 
 /// Cancel an async task if it does not complete after a timeout (used in tests).
+/// This method must be called within `block_on` or a spawned task in order to have
+/// access to the async runtime.
 #[doc(hidden)]
 pub async fn timeout<R>(dur: Duration, f: impl Future<Output = R>) -> Option<R> {
-    if let Some(rt) = RUNTIME.load().clone() {
-        let _rt = rt.enter();
-        tokio::time::timeout(dur, f).await.ok()
-    } else {
-        None
-    }
+    tokio::time::timeout(dur, f).await.ok()
 }
 
 /// Shut down the async runtime.
