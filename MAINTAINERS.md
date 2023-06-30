@@ -27,7 +27,7 @@ Maintainers are assigned the following scopes in this repository:
 | andrewwhitehead | Andrew Whitehead  | Admin      |      |            | cywolf@gmail.com         | BC Gov              |
 | dbluhm          | Daniel Bluhm      | Admin      |      |            | daniel@indicio.tech      | Indicio PBC         |
 | blu3beri        | Berend Sliedrecht | Maintainer |      |            | berend@animo.id          | Animo Solutions     |
-| dh1128          | Daniel Hardman    | Admin      |      |            | daniel.hardman@gmail.com | Provident           |
+| dhh1128         | Daniel Hardman    | Admin      |      |            | daniel.hardman@gmail.com | Provident           |
 | ianco           | Ian Costanzo      | Maintainer |      |            | iancostanzo@gmail.com    | Anon Solutions      |
 | nage            | Nathan George     | Maintainer |      |            | nathang@kiva.org         | Kiva                |
 | swcurran        | Stephen Curran    | Admin      |      |            | swcurran@cloudcompass.ca | BC Gov              |
