@@ -438,7 +438,7 @@ pub fn replace_arg_placeholders<Q: QueryPrepare + ?Sized>(
             '0'..='9' => {
                 let mut end_offs = start_offs + 2;
                 for c in iter {
-                    if ('0'..='9').contains(&c) {
+                    if c.is_ascii_digit() {
                         end_offs += 1;
                     } else {
                         break;
