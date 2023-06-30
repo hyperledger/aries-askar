@@ -205,7 +205,7 @@ mod serde_support {
                             .ok_or_else(|| de::Error::custom("Restriction is invalid"))?
                             .clone()
                             .into_iter()
-                            .filter(|&(_, ref v)| !v.is_null())
+                            .filter(|(_, v)| !v.is_null())
                             .collect();
 
                         if !sub_query.is_empty() {

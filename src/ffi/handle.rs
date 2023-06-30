@@ -23,8 +23,7 @@ impl<T: Send> ArcHandle<T> {
     pub fn load(&self) -> Result<Arc<T>, Error> {
         self.validate()?;
         let result = unsafe { mem::ManuallyDrop::new(Arc::from_raw(self.0)) };
-        #[allow(clippy::needless_borrow)]
-        Ok((&*result).clone())
+        Ok(Arc::clone(&result))
     }
 
     pub fn remove(&self) {

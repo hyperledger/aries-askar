@@ -131,7 +131,7 @@ where
         buffer.buffer_remove(0..8)?;
 
         let mut block = GenericArray::default();
-        for j in (0..6).into_iter().rev() {
+        for j in (0..6).rev() {
             for (i, chunk) in buffer.as_mut().chunks_exact_mut(8).enumerate().rev() {
                 block[0..8].copy_from_slice(iv.as_ref());
                 let t = (((blocks * j) + i + 1) as u64).to_be_bytes();

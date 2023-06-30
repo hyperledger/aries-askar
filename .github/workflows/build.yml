@@ -55,7 +55,7 @@ jobs:
       - name: Cargo check
         run: cargo check --workspace
 
-      - if: "runner.os == 'Linux'"
+      - if: ${{ runner.os == 'Linux' }}
         name: Pre-install cross
         run: |
           cargo install --bins --git https://github.com/rust-embedded/cross --tag v${{ env.CROSS_VERSION }} cross
@@ -87,7 +87,7 @@ jobs:
       - name: Debug build
         run: cargo build --all-targets
 
-      - if: "runner.os == 'Linux'"
+      - if: ${{ runner.os == 'Linux' }}
         name: Start postgres (Linux)
         run: |
           sudo systemctl start postgresql.service
@@ -242,7 +242,7 @@ jobs:
           name: library-${{ matrix.architecture }}
           path: wrappers/python/aries_askar/
 
-      - if: "runner.os == 'Linux'"
+      - if: ${{ runner.os == 'Linux' }}
         name: Start postgres (Linux)
         run: |
           sudo systemctl start postgresql.service
@@ -259,7 +259,7 @@ jobs:
       - name: Run tests
         # FIXME cross platform test the python package
         # maybe use the cross docker image?
-        if: "matrix.architecture != 'linux-aarch64'"
+        if: ${{ matrix.architecture != 'linux-aarch64' }}
         shell: sh
         run: |
           pip install pytest pytest-asyncio dist/*
@@ -277,7 +277,7 @@ jobs:
           RUST_BACKTRACE: full
           # RUST_LOG: debug
 
-      - if: "runner.os == 'Linux'"
+      - if: ${{ runner.os == 'Linux' }}
         name: Audit wheel
         run: |
           auditwheel show wrappers/python/dist/* | tee auditwheel.log
@@ -498,7 +498,7 @@ jobs:
     if: |
       (github.event_name == 'release' ||
       (github.event_name == 'workflow_dispatch' &&
-       github.event.inputs.publish == 'true'))
+       github.event.inputs.publish-binaries == 'true'))
 
     steps:
       - name: Fetch Android libraries
