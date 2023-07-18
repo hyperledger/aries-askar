@@ -87,7 +87,9 @@ impl TestDB {
         mut inst: Option<AnyBackend>,
     ) -> Result<(), Error> {
         if let Some(lock_txn) = lock_txn.take() {
-            lock_txn.close().await?;
+            if let Err(e) = lock_txn.close().await {
+                warn!("Error closing lock transaction: {}", e);
+            }
         }
         if let Some(inst) = inst.take() {
             timeout(Duration::from_secs(30), inst.close())
