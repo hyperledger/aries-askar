@@ -1,5 +1,7 @@
 import json
 
+import pytest
+
 from aries_askar import (
     KeyAlg,
     Key,
@@ -77,3 +79,28 @@ def test_ed25519():
     jwk = json.loads(key.get_jwk_secret())
     assert jwk["kty"] == "OKP"
     assert jwk["crv"] == "Ed25519"
+
+
+@pytest.mark.parametrize(
+    "key_alg",
+    [KeyAlg.K256, KeyAlg.P256, KeyAlg.P384],
+)
+def test_ec_curves(key_alg: KeyAlg):
+    key = Key.generate(key_alg)
+    assert key.algorithm == key_alg
+    message = b"test message"
+    sig = key.sign_message(message)
+    assert key.verify_signature(message, sig)
+
+    jwk = json.loads(key.get_jwk_public())
+    assert jwk["kty"] == "EC"
+    assert jwk["crv"]
+    assert jwk["x"]
+    assert jwk["y"]
+
+    jwk = json.loads(key.get_jwk_secret())
+    assert jwk["kty"] == "EC"
+    assert jwk["crv"]
+    assert jwk["x"]
+    assert jwk["y"]
+    assert jwk["d"]
