@@ -23,6 +23,8 @@ pub const PAGE_SIZE: usize = 32;
 
 pub type Expiry = chrono::DateTime<chrono::Utc>;
 
+pub(crate) type Connection<DB> = <DB as Database>::Connection;
+
 #[derive(Debug)]
 pub(crate) enum DbSessionState<DB: ExtDatabase> {
     Active { conn: PoolConnection<DB> },
@@ -208,7 +210,7 @@ pub(crate) enum DbSessionKey {
 
 pub trait ExtDatabase: Database {
     fn start_transaction(
-        conn: &mut PoolConnection<Self>,
+        conn: &mut Connection<Self>,
         _nested: bool,
     ) -> BoxFuture<'_, Result<(), SqlxError>> {
         <Self as Database>::TransactionManager::begin(conn)
@@ -247,8 +249,8 @@ pub(crate) struct DbSessionActive<'a, DB: ExtDatabase> {
 
 impl<'q, DB: ExtDatabase> DbSessionActive<'q, DB> {
     #[inline]
-    pub fn connection_mut(&mut self) -> &mut PoolConnection<DB> {
-        self.inner.connection_mut().unwrap()
+    pub fn connection_mut(&mut self) -> &mut Connection<DB> {
+        self.inner.connection_mut().unwrap().as_mut()
     }
 
     #[allow(unused)]
@@ -301,8 +303,8 @@ pub(crate) struct DbSessionTxn<'a, DB: ExtDatabase> {
 }
 
 impl<'a, DB: ExtDatabase> DbSessionTxn<'a, DB> {
-    pub fn connection_mut(&mut self) -> &mut PoolConnection<DB> {
-        self.inner.connection_mut().unwrap()
+    pub fn connection_mut(&mut self) -> &mut Connection<DB> {
+        self.inner.connection_mut().unwrap().as_mut()
     }
 
     pub async fn commit(mut self) -> Result<(), Error> {

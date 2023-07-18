@@ -33,7 +33,7 @@ pub fn generate_raw_store_key(seed: Option<&[u8]>) -> Result<PassKey<'static>, E
 pub fn parse_raw_store_key(raw_key: &str) -> Result<StoreKey, Error> {
     ArrayKey::<<StoreKeyType as KeyMeta>::KeySize>::temp(|key| {
         let key_len = bs58::decode(raw_key)
-            .into(&mut *key)
+            .onto(key.as_mut_slice())
             .map_err(|_| err_msg!(Input, "Error parsing raw key as base58 value"))?;
         if key_len != key.len() {
             Err(err_msg!(Input, "Incorrect length for encoded raw key"))
