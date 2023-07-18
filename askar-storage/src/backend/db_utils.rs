@@ -100,10 +100,10 @@ impl<DB: ExtDatabase> DbSession<DB> {
         I: for<'a> GetProfileKey<'a, DB>,
     {
         if let DbSessionState::Pending { pool, transaction } = &self.state {
-            info!("Acquire pool connection");
+            debug!("Acquire pool connection");
             let mut conn = pool.acquire().await?;
             if *transaction {
-                info!("Start transaction");
+                debug!("Start transaction");
                 DB::start_transaction(&mut conn, false).await?;
                 self.txn_depth += 1;
             }
@@ -143,10 +143,10 @@ impl<DB: ExtDatabase> DbSession<DB> {
             self.txn_depth = 0;
             if let Some(conn) = self.connection_mut() {
                 if commit {
-                    info!("Commit transaction on close");
+                    debug!("Commit transaction on close");
                     DB::TransactionManager::commit(conn).await
                 } else {
-                    info!("Roll-back transaction on close");
+                    debug!("Roll-back transaction on close");
                     DB::TransactionManager::rollback(conn).await
                 }
                 .map_err(err_map!(Backend, "Error closing transaction"))?;
@@ -161,11 +161,11 @@ impl<DB: ExtDatabase> Drop for DbSession<DB> {
         if self.txn_depth > 0 {
             self.txn_depth = 0;
             if let Some(conn) = self.connection_mut() {
-                info!("Dropped transaction: roll-back");
+                debug!("Dropped transaction: roll-back");
                 DB::TransactionManager::start_rollback(conn);
             }
         } else {
-            info!("Dropped pool connection")
+            debug!("Dropped pool connection")
         }
     }
 }
@@ -263,7 +263,7 @@ impl<'q, DB: ExtDatabase> DbSessionActive<'q, DB> {
     where
         'q: 't,
     {
-        info!("Start nested transaction");
+        debug!("Start nested transaction");
         DB::start_transaction(self.connection_mut(), true).await?;
         self.inner.txn_depth += 1;
         Ok(DbSessionTxn {
@@ -278,7 +278,7 @@ impl<'q, DB: ExtDatabase> DbSessionActive<'q, DB> {
         'q: 't,
     {
         if self.inner.txn_depth == 0 {
-            info!("Start transaction");
+            debug!("Start transaction");
             DB::start_transaction(self.connection_mut(), false).await?;
             self.inner.txn_depth += 1;
             Ok(DbSessionTxn {
@@ -312,7 +312,7 @@ impl<'a, DB: ExtDatabase> DbSessionTxn<'a, DB> {
             self.rollback = false;
             self.inner.txn_depth -= 1;
             let conn = self.connection_mut();
-            info!("Commit transaction");
+            debug!("Commit transaction");
             DB::TransactionManager::commit(conn).await?;
         }
         Ok(())
@@ -323,7 +323,7 @@ impl<'a, DB: ExtDatabase> Drop for DbSessionTxn<'a, DB> {
     fn drop(&mut self) {
         if self.rollback {
             self.inner.txn_depth -= 1;
-            info!("Roll-back dropped nested transaction");
+            debug!("Roll-back dropped nested transaction");
             DB::TransactionManager::start_rollback(self.connection_mut());
         }
     }
