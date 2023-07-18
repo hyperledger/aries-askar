@@ -1,5 +1,5 @@
 [workspace]
-members = ["askar-bbs", "askar-crypto", "askar-storage"]
+members = ["askar-crypto", "askar-storage"]
 
 [package]
 name = "aries-askar"

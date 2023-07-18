@@ -4,6 +4,10 @@ env:
   RUST_VERSION: "1.65.0"
   CROSS_VERSION: "0.2.4"
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 on:
   push:
     branches: [main]
@@ -104,9 +108,6 @@ jobs:
 
       - name: Test askar-crypto no default features
         run: cargo test --manifest-path ./askar-crypto/Cargo.toml --no-default-features
-
-      - name: Test askar-bbs no default features
-        run: cargo test --manifest-path ./askar-bbs/Cargo.toml --no-default-features
 
   build-release:
     name: Build library
