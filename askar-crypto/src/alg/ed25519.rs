@@ -317,6 +317,8 @@ impl Debug for Ed25519SigningKey<'_> {
 
 #[cfg(test)]
 mod tests {
+    use base64::Engine;
+
     use super::*;
     use crate::repr::{ToPublicBytes, ToSecretBytes};
 
@@ -361,7 +363,9 @@ mod tests {
         //   }
         let test_pvt_b64 = "nWGxne_9WmC6hEr0kuwsxERJxWl7MmkZcDusAxyuf2A";
         let test_pub_b64 = "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo";
-        let test_pvt = base64::decode_config(test_pvt_b64, base64::URL_SAFE).unwrap();
+        let test_pvt = base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .decode(test_pvt_b64)
+            .unwrap();
         let kp = Ed25519KeyPair::from_secret_bytes(&test_pvt).expect("Error creating signing key");
         let jwk = kp
             .to_jwk_public(None)

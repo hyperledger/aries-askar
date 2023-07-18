@@ -323,6 +323,8 @@ impl KeyExchange for P256KeyPair {
 
 #[cfg(test)]
 mod tests {
+    use base64::Engine;
+
     use super::*;
     use crate::repr::ToPublicBytes;
 
@@ -340,7 +342,9 @@ mod tests {
             "f83OJ3D2xF1Bg8vub9tLe1gHMzV76e8Tus9uPHvRVEU",
             "x_FEzRu9m36HLN_tue659LNpXW6pCyStikYjKIWI5a0",
         );
-        let test_pvt = base64::decode_config(test_pvt_b64, base64::URL_SAFE).unwrap();
+        let test_pvt = base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .decode(test_pvt_b64)
+            .unwrap();
         let sk = P256KeyPair::from_secret_bytes(&test_pvt).expect("Error creating signing key");
 
         let jwk = sk.to_jwk_public(None).expect("Error converting key to JWK");
@@ -391,11 +395,9 @@ mod tests {
             "241f765f19d4e6148452f2249d2fa69882244a6ad6e70aadb8848a6409d20712
             4e85faf9587100247de7bdace13a3073b47ec8a531ca91c1375b2b6134344413"
         );
-        let test_pvt = base64::decode_config(
-            "jpsQnnGQmL-YBIffH1136cspYG6-0iY7X1fCE9-E9LI",
-            base64::URL_SAFE_NO_PAD,
-        )
-        .unwrap();
+        let test_pvt = base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .decode("jpsQnnGQmL-YBIffH1136cspYG6-0iY7X1fCE9-E9LI")
+            .unwrap();
         let kp = P256KeyPair::from_secret_bytes(&test_pvt).unwrap();
         let sig = kp.sign(&test_msg[..]).unwrap();
         assert_eq!(sig, &test_sig[..]);

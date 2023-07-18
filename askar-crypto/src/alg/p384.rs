@@ -323,6 +323,8 @@ impl KeyExchange for P384KeyPair {
 
 #[cfg(test)]
 mod tests {
+    use base64::Engine;
+
     use super::*;
     use crate::repr::ToPublicBytes;
 
@@ -340,7 +342,9 @@ mod tests {
             "p3ZI8DAmxn8BJ3936Y5MHRLXTAg6SxCNhuH6JBEuieuicUY9wqZk8C63SZIj4htA",
             "eqSjvs1X7eI9V2o8sYUpsrj6WUKOymqFtkCxMwWQuDPtZKOHC3fSWkjQvf_73GH-",
         );
-        let test_pvt = base64::decode_config(test_pvt_b64, base64::URL_SAFE).unwrap();
+        let test_pvt = base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .decode(test_pvt_b64)
+            .unwrap();
         let sk = P384KeyPair::from_secret_bytes(&test_pvt).expect("Error creating signing key");
 
         let jwk = sk.to_jwk_public(None).expect("Error converting key to JWK");
@@ -391,11 +395,9 @@ mod tests {
             "acf7e9f0975738d446b26aa1651ad699cac490a496d6f70221126c35d8e4fcc5a28f63f611557be9d4c321d8fa24dbf2
              846e3bcbea2e45eff577974664b1e98fffdad8ddbe7bfa792c17a9981915aa63755cfd338fd28874de02c42d966ece67"
         );
-        let test_pvt = base64::decode_config(
-            "rgFYq-b_toGb-wN3URCk_e-6Sj2PtUvoefF284q9oKnVCi7sglAmCZkOv-2nOAeE",
-            base64::URL_SAFE_NO_PAD,
-        )
-        .unwrap();
+        let test_pvt = base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .decode("rgFYq-b_toGb-wN3URCk_e-6Sj2PtUvoefF284q9oKnVCi7sglAmCZkOv-2nOAeE")
+            .unwrap();
         let kp = P384KeyPair::from_secret_bytes(&test_pvt).unwrap();
         let sig = kp.sign(&test_msg[..]).unwrap();
         assert_eq!(sig, &test_sig[..]);

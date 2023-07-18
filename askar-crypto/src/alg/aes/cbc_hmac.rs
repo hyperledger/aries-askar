@@ -178,10 +178,12 @@ where
 
 #[cfg(test)]
 mod tests {
+    use base64::Engine;
+    use std::string::ToString;
+
     use super::*;
     use crate::buffer::SecretBytes;
     use crate::repr::KeySecretBytes;
-    use std::string::ToString;
 
     #[test]
     fn encrypt_expected_cbc_128_hmac_256() {
@@ -246,15 +248,17 @@ mod tests {
             \"apu\":\"QWxpY2U\",\"apv\":\"Qm9iIGFuZCBDaGFybGll\",\"epk\":{\
                 \"kty\":\"OKP\",\"crv\":\"X25519\",\
                 \"x\":\"k9of_cpAajy0poW5gaixXGs9nHkwg1AFqUAFa39dyBc\"}}";
-        let aad = base64::encode_config(protected, base64::URL_SAFE_NO_PAD);
+        let aad = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(protected);
         let input = b"Three is a magic number.";
         let key = AesKey::<A256CbcHs512>::from_secret_bytes(key_data).unwrap();
         let mut buffer = SecretBytes::from_slice(input);
         let ct_len = key
             .encrypt_in_place(&mut buffer, &nonce[..], aad.as_bytes())
             .unwrap();
-        let ctext = base64::encode_config(&buffer.as_ref()[..ct_len], base64::URL_SAFE_NO_PAD);
-        let tag = base64::encode_config(&buffer.as_ref()[ct_len..], base64::URL_SAFE_NO_PAD);
+        let ctext =
+            base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(&buffer.as_ref()[..ct_len]);
+        let tag =
+            base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(&buffer.as_ref()[ct_len..]);
         assert_eq!(ctext, "Az2IWsISEMDJvyc5XRL-3-d-RgNBOGolCsxFFoUXFYw");
         assert_eq!(tag, "HLb4fTlm8spGmij3RyOs2gJ4DpHM4hhVRwdF_hGb3WQ");
         key.decrypt_in_place(&mut buffer, &nonce[..], aad.as_bytes())
