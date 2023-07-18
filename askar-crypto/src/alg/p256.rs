@@ -1,6 +1,6 @@
 //! Elliptic curve ECDH and ECDSA support on curve secp256r1
 
-use core::convert::{TryFrom, TryInto};
+use core::convert::TryFrom;
 
 use p256::{
     ecdsa::{
@@ -51,7 +51,7 @@ pub static JWK_KEY_TYPE: &str = "EC";
 /// The 'crv' value of a P-256 key JWK
 pub static JWK_CURVE: &str = "P-256";
 
-type FieldSize = elliptic_curve::FieldSize<p256::NistP256>;
+type FieldSize = elliptic_curve::FieldBytesSize<p256::NistP256>;
 
 /// A P-256 (secp256r1) public key or keypair
 #[derive(Clone, Debug)]
@@ -87,7 +87,7 @@ impl P256KeyPair {
     pub fn sign(&self, message: &[u8]) -> Option<[u8; ES256_SIGNATURE_LENGTH]> {
         if let Some(skey) = self.to_signing_key() {
             let sig: Signature = skey.sign(message);
-            let sigb: [u8; 64] = sig.as_ref().try_into().unwrap();
+            let sigb: [u8; 64] = sig.to_bytes().try_into().unwrap();
             Some(sigb)
         } else {
             None
@@ -119,7 +119,7 @@ impl KeyGen for P256KeyPair {
     fn generate(mut rng: impl KeyMaterial) -> Result<Self, Error> {
         ArrayKey::<FieldSize>::temp(|buf| loop {
             rng.read_okm(buf);
-            if let Ok(key) = SecretKey::from_be_bytes(buf) {
+            if let Ok(key) = SecretKey::from_bytes(buf) {
                 return Ok(Self::from_secret_key(key));
             }
         })
@@ -128,9 +128,12 @@ impl KeyGen for P256KeyPair {
 
 impl KeySecretBytes for P256KeyPair {
     fn from_secret_bytes(key: &[u8]) -> Result<Self, Error> {
-        Ok(Self::from_secret_key(
-            SecretKey::from_be_bytes(key).map_err(|_| err_msg!(InvalidKeyData))?,
-        ))
+        if let Ok(key) = key.try_into() {
+            if let Ok(sk) = SecretKey::from_bytes(key) {
+                return Ok(Self::from_secret_key(sk));
+            }
+        }
+        Err(err_msg!(InvalidKeyData))
     }
 
     fn with_secret_bytes<O>(&self, f: impl FnOnce(Option<&[u8]>) -> O) -> O {
@@ -310,7 +313,7 @@ impl KeyExchange for P256KeyPair {
         match self.secret.as_ref() {
             Some(sk) => {
                 let xk = diffie_hellman(sk.to_nonzero_scalar(), other.public.as_affine());
-                out.buffer_write(xk.as_bytes().as_ref())?;
+                out.buffer_write(xk.raw_secret_bytes().as_ref())?;
                 Ok(())
             }
             None => Err(err_msg!(MissingSecretKey)),
