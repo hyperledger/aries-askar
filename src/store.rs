@@ -25,7 +25,7 @@ impl Store {
         db_url: &str,
         key_method: StoreKeyMethod,
         pass_key: PassKey<'_>,
-        profile: Option<&str>,
+        profile: Option<String>,
         recreate: bool,
     ) -> Result<Self, Error> {
         let backend = db_url
@@ -39,7 +39,7 @@ impl Store {
         db_url: &str,
         key_method: Option<StoreKeyMethod>,
         pass_key: PassKey<'_>,
-        profile: Option<&str>,
+        profile: Option<String>,
     ) -> Result<Self, Error> {
         let backend = db_url.open_backend(key_method, pass_key, profile).await?;
         Ok(Self::new(backend))

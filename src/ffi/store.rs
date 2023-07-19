@@ -179,7 +179,7 @@ pub extern "C" fn askar_store_provision(
                     spec_uri.as_str(),
                     key_method,
                     pass_key,
-                    profile.as_deref(),
+                    profile,
                     recreate != 0
                 ).await?;
                 Ok(StoreHandle::create(store).await)
@@ -224,7 +224,7 @@ pub extern "C" fn askar_store_open(
                 spec_uri.as_str(),
                     key_method,
                     pass_key,
-                    profile.as_deref()
+                    profile
                 ).await?;
                 Ok(StoreHandle::create(store).await)
             }.await;

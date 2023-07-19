@@ -149,7 +149,7 @@ impl Backend for SqliteBackend {
             let mut conn = self.conn_pool.acquire().await?;
             let profile: Option<String> = sqlx::query_scalar(CONFIG_FETCH_QUERY)
                 .bind("default_profile")
-                .fetch_one(&mut conn)
+                .fetch_one(conn.as_mut())
                 .await?;
             Ok(profile.unwrap_or_default())
         })
@@ -161,7 +161,7 @@ impl Backend for SqliteBackend {
             sqlx::query(CONFIG_UPDATE_QUERY)
                 .bind("default_profile")
                 .bind(profile)
-                .execute(&mut conn)
+                .execute(conn.as_mut())
                 .await?;
             Ok(())
         })
@@ -171,7 +171,7 @@ impl Backend for SqliteBackend {
         Box::pin(async move {
             let mut conn = self.conn_pool.acquire().await?;
             let rows = sqlx::query("SELECT name FROM profiles")
-                .fetch_all(&mut conn)
+                .fetch_all(conn.as_mut())
                 .await?;
             let names = rows.into_iter().flat_map(|r| r.try_get(0)).collect();
             Ok(names)
