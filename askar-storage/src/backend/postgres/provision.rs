@@ -115,8 +115,9 @@ impl PostgresStoreOptions {
         let mut conn_opts = PgConnectOptions::from_str(self.uri.as_str())?;
         #[cfg(feature = "log")]
         {
-            conn_opts.log_statements(log::LevelFilter::Debug);
-            conn_opts.log_slow_statements(log::LevelFilter::Debug, Default::default());
+            conn_opts = conn_opts
+                .log_statements(log::LevelFilter::Debug)
+                .log_slow_statements(log::LevelFilter::Debug, Default::default());
         }
         PgPoolOptions::default()
             .acquire_timeout(self.connect_timeout)
@@ -184,7 +185,7 @@ impl PostgresStoreOptions {
             "SELECT COUNT(*) FROM information_schema.tables
                 WHERE table_schema='public' AND table_name='config'",
         )
-        .fetch_one(&mut txn)
+        .fetch_one(txn.as_mut())
         .await?
             == 1
         {
@@ -354,14 +355,14 @@ pub(crate) async fn init_db<'t>(
     .persistent(false)
     .bind(profile_name)
     .bind(store_key_ref)
-    .execute(&mut txn)
+    .execute(txn.as_mut())
     .await?;
 
     let profile_id =
         sqlx::query_scalar("INSERT INTO profiles (name, profile_key) VALUES ($1, $2) RETURNING id")
             .bind(profile_name)
             .bind(enc_profile_key)
-            .fetch_one(&mut txn)
+            .fetch_one(txn.as_mut())
             .await?;
 
     txn.commit().await?;
@@ -399,7 +400,7 @@ pub(crate) async fn open_db(
         r#"SELECT name, value FROM config
         WHERE name IN ('default_profile', 'key', 'version')"#,
     )
-    .fetch_all(&mut conn)
+    .fetch_all(conn.as_mut())
     .await?;
     for row in config {
         match row.try_get(0)? {
@@ -444,7 +445,7 @@ pub(crate) async fn open_db(
 
     let row = sqlx::query("SELECT id, profile_key FROM profiles WHERE name = $1")
         .bind(&profile)
-        .fetch_one(&mut conn)
+        .fetch_one(conn.as_mut())
         .await?;
     let profile_id = row.try_get(0)?;
     let profile_key = key_cache.load_key(row.try_get(1)?).await?;

@@ -164,7 +164,7 @@ pub extern "C" fn askar_store_provision(
         let cb = EnsureCallback::new(move |result|
             match result {
                 Ok(sid) => {
-                    info!("Provisioned store {}", sid);
+                    debug!("Provisioned store {}", sid);
                     cb(cb_id, ErrorCode::Success, sid)
                 }
                 Err(err) => cb(cb_id, set_last_error(Some(err)), StoreHandle::invalid()),
@@ -209,7 +209,7 @@ pub extern "C" fn askar_store_open(
         let cb = EnsureCallback::new(move |result|
             match result {
                 Ok(sid) => {
-                    info!("Opened store {}", sid);
+                    debug!("Opened store {}", sid);
                     cb(cb_id, ErrorCode::Success, sid)
                 }
                 Err(err) => cb(cb_id, set_last_error(Some(err)), StoreHandle::invalid()),
@@ -398,7 +398,7 @@ pub extern "C" fn askar_store_close(
                 FFI_SESSIONS.remove_all(handle).await?;
                 FFI_SCANS.remove_all(handle).await?;
                 store.close().await?;
-                info!("Closed store {}", handle);
+                debug!("Closed store {}", handle);
                 Ok(())
             }.await;
             if let Some(cb) = cb {
@@ -432,7 +432,7 @@ pub extern "C" fn askar_scan_start(
         let cb = EnsureCallback::new(move |result: Result<ScanHandle,Error>|
             match result {
                 Ok(scan_handle) => {
-                    info!("Started scan {} on store {}", scan_handle, handle);
+                    debug!("Started scan {} on store {}", scan_handle, handle);
                     cb(cb_id, ErrorCode::Success, scan_handle)
                 }
                 Err(err) => cb(cb_id, set_last_error(Some(err)), ScanHandle::invalid()),
@@ -489,9 +489,9 @@ pub extern "C" fn askar_scan_free(handle: ScanHandle) -> ErrorCode {
             // the Scan may have been removed due to the Store being closed
             if let Some(scan) = FFI_SCANS.remove(handle).await {
                 scan.ok();
-                info!("Closed scan {}", handle);
+                debug!("Closed scan {}", handle);
             } else {
-                info!("Scan not found for closing: {}", handle);
+                debug!("Scan not found for closing: {}", handle);
             }
         });
         Ok(ErrorCode::Success)
@@ -513,7 +513,7 @@ pub extern "C" fn askar_session_start(
         let cb = EnsureCallback::new(move |result: Result<SessionHandle,Error>|
             match result {
                 Ok(sess_handle) => {
-                    info!("Started session {} on store {} (txn: {})", sess_handle, handle, as_transaction != 0);
+                    debug!("Started session {} on store {} (txn: {})", sess_handle, handle, as_transaction != 0);
                     cb(cb_id, ErrorCode::Success, sess_handle)
                 }
                 Err(err) => cb(cb_id, set_last_error(Some(err)), SessionHandle::invalid()),
@@ -985,9 +985,9 @@ pub extern "C" fn askar_session_close(
                     } else {
                         session.commit().await?;
                     }
-                    info!("Closed session {}", handle);
+                    debug!("Closed session {}", handle);
                 } else {
-                    info!("Session not found for closing: {}", handle);
+                    debug!("Session not found for closing: {}", handle);
                 }
                 Ok(())
             }.await;

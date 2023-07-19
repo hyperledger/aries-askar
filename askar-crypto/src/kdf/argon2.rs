@@ -69,12 +69,13 @@ impl KeyDerivation for Argon2<'_> {
             ));
         }
         let mut pbuild = argon2::ParamsBuilder::new();
-        pbuild.m_cost(self.params.mem_cost).unwrap();
-        pbuild.t_cost(self.params.time_cost).unwrap();
+        pbuild
+            .m_cost(self.params.mem_cost)
+            .t_cost(self.params.time_cost);
         argon2::Argon2::new(
             self.params.alg,
             self.params.version,
-            pbuild.params().unwrap(),
+            pbuild.build().unwrap(),
         )
         .hash_password_into(self.password, self.salt, key_output)
         .map_err(|_| err_msg!(Unexpected, "Error deriving key"))

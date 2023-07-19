@@ -16,7 +16,10 @@ fn write_hex_buffer(mut buffer: impl Write, value: &[u8]) -> Result<(), Error> {
     write!(
         buffer,
         "{}",
-        base64::display::Base64Display::with_config(value, base64::URL_SAFE_NO_PAD)
+        base64::display::Base64Display::new(
+            value,
+            &base64::engine::general_purpose::URL_SAFE_NO_PAD
+        )
     )
     .map_err(|_| err_msg!(Unexpected, "Error writing to JWK buffer"))
 }

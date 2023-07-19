@@ -4,10 +4,9 @@ use core::marker::PhantomData;
 
 use aead::generic_array::ArrayLength;
 use aes_core::{Aes128, Aes256};
-use block_modes::{
-    block_padding::Pkcs7,
-    cipher::{BlockCipher, BlockDecrypt, BlockEncrypt, NewBlockCipher},
-    BlockMode, Cbc,
+use cbc::{Decryptor as CbcDec, Encryptor as CbcEnc};
+use cipher::{
+    block_padding::Pkcs7, BlockCipher, BlockDecryptMut, BlockEncryptMut, KeyInit, KeyIvInit,
 };
 use digest::{crypto_common::BlockSizeUser, Digest};
 use hmac::{Mac, SimpleHmac};
@@ -60,7 +59,7 @@ where
 impl<C, D> KeyAeadMeta for AesKey<AesCbcHmac<C, D>>
 where
     AesCbcHmac<C, D>: AesType,
-    C: BlockCipher + NewBlockCipher,
+    C: BlockCipher + KeyInit,
 {
     type NonceSize = C::BlockSize;
     type TagSize = C::KeySize;
@@ -69,7 +68,7 @@ where
 impl<C, D> KeyAeadInPlace for AesKey<AesCbcHmac<C, D>>
 where
     AesCbcHmac<C, D>: AesType,
-    C: BlockCipher + NewBlockCipher + BlockEncrypt + BlockDecrypt,
+    C: BlockCipher + KeyInit + BlockEncryptMut + BlockDecryptMut,
     D: Digest + BlockSizeUser,
     C::KeySize: core::ops::Shl<consts::B1>,
     <C::KeySize as core::ops::Shl<consts::B1>>::Output: ArrayLength<u8>,
@@ -101,12 +100,12 @@ where
         let pad_len = AesCbcHmac::<C, D>::padding_length(msg_len);
         buffer.buffer_extend(pad_len + TagSize::<Self>::USIZE)?;
         let enc_key = GenericArray::from_slice(&self.0[C::KeySize::USIZE..]);
-        Cbc::<C, Pkcs7>::new_fix(enc_key, GenericArray::from_slice(nonce))
-            .encrypt(buffer.as_mut(), msg_len)
+        <CbcEnc<C> as KeyIvInit>::new(enc_key, GenericArray::from_slice(nonce))
+            .encrypt_padded_mut::<Pkcs7>(buffer.as_mut(), msg_len)
             .map_err(|_| err_msg!(Encryption, "AES-CBC encryption error"))?;
         let ctext_end = msg_len + pad_len;
 
-        let mut hmac = SimpleHmac::<D>::new_from_slice(&self.0[..C::KeySize::USIZE])
+        let mut hmac = <SimpleHmac<D> as Mac>::new_from_slice(&self.0[..C::KeySize::USIZE])
             .expect("Incompatible HMAC key length");
         hmac.update(aad);
         hmac.update(nonce.as_ref());
@@ -141,7 +140,7 @@ where
         let ctext_end = buf_len - TagSize::<Self>::USIZE;
         let tag = GenericArray::<u8, TagSize<Self>>::from_slice(&buffer.as_ref()[ctext_end..]);
 
-        let mut hmac = SimpleHmac::<D>::new_from_slice(&self.0[..C::KeySize::USIZE])
+        let mut hmac = <SimpleHmac<D> as Mac>::new_from_slice(&self.0[..C::KeySize::USIZE])
             .expect("Incompatible HMAC key length");
         hmac.update(aad);
         hmac.update(nonce.as_ref());
@@ -151,8 +150,8 @@ where
         let tag_match = tag.as_ref().ct_eq(&mac[..TagSize::<Self>::USIZE]);
 
         let enc_key = GenericArray::from_slice(&self.0[C::KeySize::USIZE..]);
-        let dec_len = Cbc::<C, Pkcs7>::new_fix(enc_key, GenericArray::from_slice(nonce))
-            .decrypt(&mut buffer.as_mut()[..ctext_end])
+        let dec_len = <CbcDec<C> as KeyIvInit>::new(enc_key, GenericArray::from_slice(nonce))
+            .decrypt_padded_mut::<Pkcs7>(&mut buffer.as_mut()[..ctext_end])
             .map_err(|_| err_msg!(Encryption, "AES-CBC decryption error"))?
             .len();
         buffer.buffer_resize(dec_len)?;
@@ -178,10 +177,12 @@ where
 
 #[cfg(test)]
 mod tests {
+    use base64::Engine;
+    use std::string::ToString;
+
     use super::*;
     use crate::buffer::SecretBytes;
     use crate::repr::KeySecretBytes;
-    use std::string::ToString;
 
     #[test]
     fn encrypt_expected_cbc_128_hmac_256() {
@@ -246,15 +247,17 @@ mod tests {
             \"apu\":\"QWxpY2U\",\"apv\":\"Qm9iIGFuZCBDaGFybGll\",\"epk\":{\
                 \"kty\":\"OKP\",\"crv\":\"X25519\",\
                 \"x\":\"k9of_cpAajy0poW5gaixXGs9nHkwg1AFqUAFa39dyBc\"}}";
-        let aad = base64::encode_config(protected, base64::URL_SAFE_NO_PAD);
+        let aad = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(protected);
         let input = b"Three is a magic number.";
         let key = AesKey::<A256CbcHs512>::from_secret_bytes(key_data).unwrap();
         let mut buffer = SecretBytes::from_slice(input);
         let ct_len = key
             .encrypt_in_place(&mut buffer, &nonce[..], aad.as_bytes())
             .unwrap();
-        let ctext = base64::encode_config(&buffer.as_ref()[..ct_len], base64::URL_SAFE_NO_PAD);
-        let tag = base64::encode_config(&buffer.as_ref()[ct_len..], base64::URL_SAFE_NO_PAD);
+        let ctext =
+            base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(&buffer.as_ref()[..ct_len]);
+        let tag =
+            base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(&buffer.as_ref()[ct_len..]);
         assert_eq!(ctext, "Az2IWsISEMDJvyc5XRL-3-d-RgNBOGolCsxFFoUXFYw");
         assert_eq!(tag, "HLb4fTlm8spGmij3RyOs2gJ4DpHM4hhVRwdF_hGb3WQ");
         key.decrypt_in_place(&mut buffer, &nonce[..], aad.as_bytes())

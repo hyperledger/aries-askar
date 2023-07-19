@@ -3,6 +3,7 @@
 #[cfg(feature = "alloc")]
 use alloc::{string::String, vec::Vec};
 
+use base64::Engine;
 use sha2::Sha256;
 
 #[cfg(feature = "alloc")]
@@ -71,7 +72,9 @@ pub fn write_jwk_thumbprint<K: ToJwk + ?Sized>(
     buf.finalize()?;
     let hash = hasher.finalize();
     let mut buf = [0u8; 43];
-    let len = base64::encode_config_slice(hash, base64::URL_SAFE_NO_PAD, &mut buf);
+    let len = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .encode_slice(hash, &mut buf)
+        .map_err(|_| err_msg!(Unexpected, "Base64 encoding error"))?;
     output.buffer_write(&buf[..len])?;
     Ok(())
 }

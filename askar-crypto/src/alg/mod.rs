@@ -50,6 +50,10 @@ pub mod k256;
 #[cfg_attr(docsrs, doc(cfg(feature = "p256")))]
 pub mod p256;
 
+#[cfg(feature = "p384")]
+#[cfg_attr(docsrs, doc(cfg(feature = "p384")))]
+pub mod p384;
+
 /// Supported key algorithms
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Zeroize)]
 #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
@@ -60,9 +64,9 @@ pub enum KeyAlg {
     Bls12_381(BlsCurves),
     /// (X)ChaCha20-Poly1305
     Chacha20(Chacha20Types),
-    /// Curve25519 signing key
+    /// Ed25519 signing key
     Ed25519,
-    /// Curve25519 diffie-hellman key exchange key
+    /// Curve25519 elliptic curve key exchange key
     X25519,
     /// Elliptic Curve key for signing or key exchange
     EcCurve(EcCurves),
@@ -87,6 +91,7 @@ impl KeyAlg {
             Self::X25519 => "x25519",
             Self::EcCurve(EcCurves::Secp256k1) => "k256",
             Self::EcCurve(EcCurves::Secp256r1) => "p256",
+            Self::EcCurve(EcCurves::Secp384r1) => "p384",
         }
     }
 }
@@ -123,6 +128,7 @@ impl FromStr for KeyAlg {
             a if a == "x25519" => Ok(Self::X25519),
             a if a == "k256" || a == "secp256k1" => Ok(Self::EcCurve(EcCurves::Secp256k1)),
             a if a == "p256" || a == "secp256r1" => Ok(Self::EcCurve(EcCurves::Secp256r1)),
+            a if a == "p384" || a == "secp384r1" => Ok(Self::EcCurve(EcCurves::Secp384r1)),
             _ => Err(err_msg!(Unsupported, "Unknown key algorithm")),
         }
     }
@@ -248,6 +254,8 @@ pub enum EcCurves {
     Secp256r1,
     /// Koblitz 256 curve
     Secp256k1,
+    /// NIST P-384 curve
+    Secp384r1,
 }
 
 /// A trait for accessing the algorithm of a key, used when

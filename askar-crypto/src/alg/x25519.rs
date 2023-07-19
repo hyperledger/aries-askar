@@ -242,6 +242,8 @@ impl TryFrom<&Ed25519KeyPair> for X25519KeyPair {
 
 #[cfg(test)]
 mod tests {
+    use base64::Engine;
+
     use super::*;
     use crate::repr::ToPublicBytes;
 
@@ -255,7 +257,9 @@ mod tests {
         //   "x": "tGskN_ae61DP4DLY31_fjkbvnKqf-ze7kA6Cj2vyQxU"
         // }
         let test_pvt_b64 = "qL25gw-HkNJC9m4EsRzCoUx1KntjwHPzxo6a2xUcyFQ";
-        let test_pvt = base64::decode_config(test_pvt_b64, base64::URL_SAFE).unwrap();
+        let test_pvt = base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .decode(test_pvt_b64)
+            .unwrap();
         let kp =
             X25519KeyPair::from_secret_bytes(&test_pvt).expect("Error creating x25519 keypair");
         let jwk = kp

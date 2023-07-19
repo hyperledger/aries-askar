@@ -446,9 +446,11 @@ pub struct G1G2Pair(G1Affine, G2Affine);
 
 #[cfg(test)]
 mod tests {
+    use base64::Engine;
+    use std::string::ToString;
+
     use super::*;
     use crate::repr::{ToPublicBytes, ToSecretBytes};
-    use std::string::ToString;
 
     // test against EIP-2333 (as updated for signatures draft 4)
     #[test]
@@ -532,7 +534,9 @@ mod tests {
         assert_eq!(jwk.crv, G1::JWK_CURVE);
         assert_eq!(
             jwk.x,
-            base64::encode_config(test_pub_g1, base64::URL_SAFE_NO_PAD).as_str()
+            base64::engine::general_purpose::URL_SAFE_NO_PAD
+                .encode(test_pub_g1)
+                .as_str()
         );
         assert_eq!(jwk.d, None);
         let pk_load = BlsKeyPair::<G1>::from_jwk_parts(jwk).unwrap();
@@ -544,11 +548,15 @@ mod tests {
         assert_eq!(jwk.crv, G1::JWK_CURVE);
         assert_eq!(
             jwk.x,
-            base64::encode_config(test_pub_g1, base64::URL_SAFE_NO_PAD).as_str()
+            base64::engine::general_purpose::URL_SAFE_NO_PAD
+                .encode(test_pub_g1)
+                .as_str()
         );
         assert_eq!(
             jwk.d,
-            base64::encode_config(test_pvt, base64::URL_SAFE_NO_PAD).as_str()
+            base64::engine::general_purpose::URL_SAFE_NO_PAD
+                .encode(test_pvt)
+                .as_str()
         );
         let _sk_load = BlsKeyPair::<G1>::from_jwk_parts(jwk).unwrap();
         // assert_eq!(

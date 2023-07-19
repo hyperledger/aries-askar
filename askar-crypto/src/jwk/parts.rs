@@ -5,6 +5,7 @@ use core::{
 
 #[cfg(feature = "arbitrary")]
 use arbitrary::Arbitrary;
+use base64::Engine;
 use serde::{
     de::{Deserialize, Deserializer, MapAccess, Visitor},
     ser::{Serialize, SerializeMap, Serializer},
@@ -77,7 +78,8 @@ impl OptAttr<'_> {
             if s.len() > max_input {
                 Err(err_msg!(Invalid, "Base64 length exceeds max"))
             } else {
-                base64::decode_config_slice(s, base64::URL_SAFE_NO_PAD, output)
+                base64::engine::general_purpose::URL_SAFE_NO_PAD
+                    .decode_slice_unchecked(s, output)
                     .map_err(|_| err_msg!(Invalid, "Base64 decoding error"))
             }
         } else {

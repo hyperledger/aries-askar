@@ -1,8 +1,8 @@
-//! Elliptic curve ECDH and ECDSA support on curve secp256r1
+//! Elliptic curve ECDH and ECDSA support on curve secp384r1
 
-use core::convert::TryFrom;
+use core::convert::{TryFrom, TryInto};
 
-use p256::{
+use p384::{
     ecdsa::{
         signature::{Signer, Verifier},
         Signature, SigningKey, VerifyingKey,
@@ -20,7 +20,7 @@ use super::{ec_common, EcCurves, HasKeyAlg, KeyAlg};
 use crate::{
     buffer::{ArrayKey, WriteBuffer},
     error::Error,
-    generic_array::typenum::{U32, U33, U65},
+    generic_array::typenum::{U48, U49, U97},
     jwk::{FromJwk, JwkEncoder, JwkParts, ToJwk},
     kdf::KeyExchange,
     random::KeyMaterial,
@@ -28,40 +28,39 @@ use crate::{
     sign::{KeySigVerify, KeySign, SignatureType},
 };
 
-// SECURITY: PublicKey contains a p256::AffinePoint, which is always checked
-// to be on the curve when loaded:
-// <https://github.com/RustCrypto/elliptic-curves/blob/a38df18d221a4ca27851c4523f90ceded6bbd361/p256/src/arithmetic/affine.rs#L94>
-// The identity point is rejected when converting into a p256::PublicKey.
+// SECURITY: PublicKey contains a p384::AffinePoint, which is always checked
+// to be on the curve when loaded.
+// The identity point is rejected when converting into a p384::PublicKey.
 // This satisfies 5.6.2.3.4 ECC Partial Public-Key Validation Routine from
 // NIST SP 800-56A: _Recommendation for Pair-Wise Key-Establishment Schemes
 // Using Discrete Logarithm Cryptography_.
 
-/// The length of an ES256 signature
-pub const ES256_SIGNATURE_LENGTH: usize = 64;
+/// The length of an ES384 signature
+pub const ES384_SIGNATURE_LENGTH: usize = 96;
 
 /// The length of a compressed public key in bytes
-pub const PUBLIC_KEY_LENGTH: usize = 33;
+pub const PUBLIC_KEY_LENGTH: usize = 49;
 /// The length of a secret key
-pub const SECRET_KEY_LENGTH: usize = 32;
+pub const SECRET_KEY_LENGTH: usize = 48;
 /// The length of a keypair in bytes
 pub const KEYPAIR_LENGTH: usize = SECRET_KEY_LENGTH + PUBLIC_KEY_LENGTH;
 
 /// The 'kty' value of an elliptic curve key JWK
 pub static JWK_KEY_TYPE: &str = "EC";
-/// The 'crv' value of a P-256 key JWK
-pub static JWK_CURVE: &str = "P-256";
+/// The 'crv' value of a P-384 key JWK
+pub static JWK_CURVE: &str = "P-384";
 
-type FieldSize = elliptic_curve::FieldBytesSize<p256::NistP256>;
+type FieldSize = elliptic_curve::FieldBytesSize<p384::NistP384>;
 
-/// A P-256 (secp256r1) public key or keypair
+/// A P-384 (secp384r1) public key or keypair
 #[derive(Clone, Debug)]
-pub struct P256KeyPair {
+pub struct P384KeyPair {
     // SECURITY: SecretKey zeroizes on drop
     secret: Option<SecretKey>,
     public: PublicKey,
 }
 
-impl P256KeyPair {
+impl P384KeyPair {
     #[inline]
     pub(crate) fn from_secret_key(sk: SecretKey) -> Self {
         let pk = sk.public_key();
@@ -75,7 +74,7 @@ impl P256KeyPair {
         if self.with_public_bytes(|slf| slf.ct_eq(pk)).into() {
             Ok(())
         } else {
-            Err(err_msg!(InvalidKeyData, "invalid p256 keypair"))
+            Err(err_msg!(InvalidKeyData, "invalid p384 keypair"))
         }
     }
 
@@ -84,10 +83,11 @@ impl P256KeyPair {
     }
 
     /// Sign a message with the secret key
-    pub fn sign(&self, message: &[u8]) -> Option<[u8; ES256_SIGNATURE_LENGTH]> {
+    pub fn sign(&self, message: &[u8]) -> Option<[u8; ES384_SIGNATURE_LENGTH]> {
         if let Some(skey) = self.to_signing_key() {
             let sig: Signature = skey.sign(message);
-            let sigb: [u8; 64] = sig.to_bytes().try_into().unwrap();
+            let mut sigb = [0u8; 96];
+            sigb.copy_from_slice(&sig.to_bytes());
             Some(sigb)
         } else {
             None
@@ -105,17 +105,17 @@ impl P256KeyPair {
     }
 }
 
-impl HasKeyAlg for P256KeyPair {
+impl HasKeyAlg for P384KeyPair {
     fn algorithm(&self) -> KeyAlg {
-        KeyAlg::EcCurve(EcCurves::Secp256r1)
+        KeyAlg::EcCurve(EcCurves::Secp384r1)
     }
 }
 
-impl KeyMeta for P256KeyPair {
-    type KeySize = U32;
+impl KeyMeta for P384KeyPair {
+    type KeySize = U48;
 }
 
-impl KeyGen for P256KeyPair {
+impl KeyGen for P384KeyPair {
     fn generate(mut rng: impl KeyMaterial) -> Result<Self, Error> {
         ArrayKey::<FieldSize>::temp(|buf| loop {
             rng.read_okm(buf);
@@ -126,7 +126,7 @@ impl KeyGen for P256KeyPair {
     }
 }
 
-impl KeySecretBytes for P256KeyPair {
+impl KeySecretBytes for P384KeyPair {
     fn from_secret_bytes(key: &[u8]) -> Result<Self, Error> {
         if let Ok(key) = key.try_into() {
             if let Ok(sk) = SecretKey::from_bytes(key) {
@@ -148,17 +148,17 @@ impl KeySecretBytes for P256KeyPair {
     }
 }
 
-impl KeypairMeta for P256KeyPair {
-    type PublicKeySize = U33;
-    type KeypairSize = U65;
+impl KeypairMeta for P384KeyPair {
+    type PublicKeySize = U49;
+    type KeypairSize = U97;
 }
 
-impl KeypairBytes for P256KeyPair {
+impl KeypairBytes for P384KeyPair {
     fn from_keypair_bytes(kp: &[u8]) -> Result<Self, Error> {
         if kp.len() != KEYPAIR_LENGTH {
             return Err(err_msg!(InvalidKeyData));
         }
-        let result = P256KeyPair::from_secret_bytes(&kp[..SECRET_KEY_LENGTH])
+        let result = P384KeyPair::from_secret_bytes(&kp[..SECRET_KEY_LENGTH])
             .map_err(|_| err_msg!(InvalidKeyData))?;
         result.check_public_bytes(&kp[SECRET_KEY_LENGTH..])?;
         Ok(result)
@@ -178,7 +178,7 @@ impl KeypairBytes for P256KeyPair {
     }
 }
 
-impl KeyPublicBytes for P256KeyPair {
+impl KeyPublicBytes for P384KeyPair {
     fn from_public_bytes(key: &[u8]) -> Result<Self, Error> {
         let pk = PublicKey::from_sec1_bytes(key).map_err(|_| err_msg!(InvalidKeyData))?;
         Ok(Self {
@@ -192,7 +192,7 @@ impl KeyPublicBytes for P256KeyPair {
     }
 }
 
-impl KeySign for P256KeyPair {
+impl KeySign for P384KeyPair {
     fn write_signature(
         &self,
         message: &[u8],
@@ -200,7 +200,7 @@ impl KeySign for P256KeyPair {
         out: &mut dyn WriteBuffer,
     ) -> Result<(), Error> {
         match sig_type {
-            None | Some(SignatureType::ES256) => {
+            None | Some(SignatureType::ES384) => {
                 if let Some(sig) = self.sign(message) {
                     out.buffer_write(&sig[..])?;
                     Ok(())
@@ -214,7 +214,7 @@ impl KeySign for P256KeyPair {
     }
 }
 
-impl KeySigVerify for P256KeyPair {
+impl KeySigVerify for P384KeyPair {
     fn verify_signature(
         &self,
         message: &[u8],
@@ -229,7 +229,7 @@ impl KeySigVerify for P256KeyPair {
     }
 }
 
-impl ToJwk for P256KeyPair {
+impl ToJwk for P384KeyPair {
     fn encode_jwk(&self, enc: &mut dyn JwkEncoder) -> Result<(), Error> {
         let pk_enc = self.public.to_encoded_point(false);
         let (x, y) = match pk_enc.coordinates() {
@@ -260,7 +260,7 @@ impl ToJwk for P256KeyPair {
     }
 }
 
-impl FromJwk for P256KeyPair {
+impl FromJwk for P384KeyPair {
     fn from_jwk_parts(jwk: JwkParts<'_>) -> Result<Self, Error> {
         if jwk.kty != JWK_KEY_TYPE {
             return Err(err_msg!(InvalidKeyData, "Unsupported key type"));
@@ -291,7 +291,7 @@ impl FromJwk for P256KeyPair {
                 if jwk.d.decode_base64(arr)? != arr.len() {
                     Err(err_msg!(InvalidKeyData))
                 } else {
-                    let kp = P256KeyPair::from_secret_bytes(arr)?;
+                    let kp = P384KeyPair::from_secret_bytes(arr)?;
                     if kp.public != pk {
                         Err(err_msg!(InvalidKeyData))
                     } else {
@@ -308,7 +308,7 @@ impl FromJwk for P256KeyPair {
     }
 }
 
-impl KeyExchange for P256KeyPair {
+impl KeyExchange for P384KeyPair {
     fn write_key_exchange(&self, other: &Self, out: &mut dyn WriteBuffer) -> Result<(), Error> {
         match self.secret.as_ref() {
             Some(sk) => {
@@ -330,22 +330,22 @@ mod tests {
 
     #[test]
     fn jwk_expected() {
-        // from JWS RFC https://tools.ietf.org/html/rfc7515
-        // {"kty":"EC",
-        // "crv":"P-256",
-        // "x":"f83OJ3D2xF1Bg8vub9tLe1gHMzV76e8Tus9uPHvRVEU",
-        // "y":"x_FEzRu9m36HLN_tue659LNpXW6pCyStikYjKIWI5a0",
-        // "d":"jpsQnnGQmL-YBIffH1136cspYG6-0iY7X1fCE9-E9LI"
+        // {
+        //   "kty": "EC",
+        //   "x": "p3ZI8DAmxn8BJ3936Y5MHRLXTAg6SxCNhuH6JBEuieuicUY9wqZk8C63SZIj4htA",
+        //   "y": "eqSjvs1X7eI9V2o8sYUpsrj6WUKOymqFtkCxMwWQuDPtZKOHC3fSWkjQvf_73GH-",
+        //   "crv": "P-384",
+        //   "d": "rgFYq-b_toGb-wN3URCk_e-6Sj2PtUvoefF284q9oKnVCi7sglAmCZkOv-2nOAeE"
         // }
-        let test_pvt_b64 = "jpsQnnGQmL-YBIffH1136cspYG6-0iY7X1fCE9-E9LI";
+        let test_pvt_b64 = "rgFYq-b_toGb-wN3URCk_e-6Sj2PtUvoefF284q9oKnVCi7sglAmCZkOv-2nOAeE";
         let test_pub_b64 = (
-            "f83OJ3D2xF1Bg8vub9tLe1gHMzV76e8Tus9uPHvRVEU",
-            "x_FEzRu9m36HLN_tue659LNpXW6pCyStikYjKIWI5a0",
+            "p3ZI8DAmxn8BJ3936Y5MHRLXTAg6SxCNhuH6JBEuieuicUY9wqZk8C63SZIj4htA",
+            "eqSjvs1X7eI9V2o8sYUpsrj6WUKOymqFtkCxMwWQuDPtZKOHC3fSWkjQvf_73GH-",
         );
         let test_pvt = base64::engine::general_purpose::URL_SAFE_NO_PAD
             .decode(test_pvt_b64)
             .unwrap();
-        let sk = P256KeyPair::from_secret_bytes(&test_pvt).expect("Error creating signing key");
+        let sk = P384KeyPair::from_secret_bytes(&test_pvt).expect("Error creating signing key");
 
         let jwk = sk.to_jwk_public(None).expect("Error converting key to JWK");
         let jwk = JwkParts::try_from_str(&jwk).expect("Error parsing JWK");
@@ -354,7 +354,7 @@ mod tests {
         assert_eq!(jwk.x, test_pub_b64.0);
         assert_eq!(jwk.y, test_pub_b64.1);
         assert_eq!(jwk.d, None);
-        let pk_load = P256KeyPair::from_jwk_parts(jwk).unwrap();
+        let pk_load = P384KeyPair::from_jwk_parts(jwk).unwrap();
         assert_eq!(sk.to_public_bytes(), pk_load.to_public_bytes());
 
         let jwk = sk.to_jwk_secret(None).expect("Error converting key to JWK");
@@ -364,7 +364,7 @@ mod tests {
         assert_eq!(jwk.x, test_pub_b64.0);
         assert_eq!(jwk.y, test_pub_b64.1);
         assert_eq!(jwk.d, test_pvt_b64);
-        let sk_load = P256KeyPair::from_jwk_parts(jwk).unwrap();
+        let sk_load = P384KeyPair::from_jwk_parts(jwk).unwrap();
         assert_eq!(
             sk.to_keypair_bytes().unwrap(),
             sk_load.to_keypair_bytes().unwrap()
@@ -373,18 +373,18 @@ mod tests {
 
     #[test]
     fn jwk_thumbprint() {
-        let pk = P256KeyPair::from_jwk(
+        let pk = P384KeyPair::from_jwk(
             r#"{
                 "kty": "EC",
-                "crv": "P-256",
-                "x": "tDeeYABgKEAbWicYPCEEI8sP4SRIhHKcHDW7VqrB4LA",
-                "y": "J08HOoIZ0rX2Me3bNFZUltfxIk1Hrc8FsLu8VaSxsMI"
+                "x": "p3ZI8DAmxn8BJ3936Y5MHRLXTAg6SxCNhuH6JBEuieuicUY9wqZk8C63SZIj4htA",
+                "y": "eqSjvs1X7eI9V2o8sYUpsrj6WUKOymqFtkCxMwWQuDPtZKOHC3fSWkjQvf_73GH-",
+                "crv": "P-384"
             }"#,
         )
         .unwrap();
         assert_eq!(
             pk.to_jwk_thumbprint(None).unwrap(),
-            "8fm8079s3nu4FLV_7dVJoJ69A8XCXn7Za2mtaWCnxR4"
+            "4zlc15_l012-r5pFk7mnEFs6MghkhSAkdMeNeyL00u4"
         );
     }
 
@@ -392,24 +392,24 @@ mod tests {
     fn sign_verify_expected() {
         let test_msg = b"This is a dummy message for use with tests";
         let test_sig = &hex!(
-            "241f765f19d4e6148452f2249d2fa69882244a6ad6e70aadb8848a6409d20712
-            4e85faf9587100247de7bdace13a3073b47ec8a531ca91c1375b2b6134344413"
+            "acf7e9f0975738d446b26aa1651ad699cac490a496d6f70221126c35d8e4fcc5a28f63f611557be9d4c321d8fa24dbf2
+             846e3bcbea2e45eff577974664b1e98fffdad8ddbe7bfa792c17a9981915aa63755cfd338fd28874de02c42d966ece67"
         );
         let test_pvt = base64::engine::general_purpose::URL_SAFE_NO_PAD
-            .decode("jpsQnnGQmL-YBIffH1136cspYG6-0iY7X1fCE9-E9LI")
+            .decode("rgFYq-b_toGb-wN3URCk_e-6Sj2PtUvoefF284q9oKnVCi7sglAmCZkOv-2nOAeE")
             .unwrap();
-        let kp = P256KeyPair::from_secret_bytes(&test_pvt).unwrap();
+        let kp = P384KeyPair::from_secret_bytes(&test_pvt).unwrap();
         let sig = kp.sign(&test_msg[..]).unwrap();
         assert_eq!(sig, &test_sig[..]);
         assert!(kp.verify_signature(&test_msg[..], &sig[..]));
         assert!(!kp.verify_signature(b"Not the message", &sig[..]));
-        assert!(!kp.verify_signature(&test_msg[..], &[0u8; 64]));
+        assert!(!kp.verify_signature(&test_msg[..], &[0u8; 96]));
     }
 
     #[test]
     fn key_exchange_random() {
-        let kp1 = P256KeyPair::random().unwrap();
-        let kp2 = P256KeyPair::random().unwrap();
+        let kp1 = P384KeyPair::random().unwrap();
+        let kp2 = P384KeyPair::random().unwrap();
         assert_ne!(
             kp1.to_keypair_bytes().unwrap(),
             kp2.to_keypair_bytes().unwrap()
@@ -417,14 +417,14 @@ mod tests {
 
         let xch1 = kp1.key_exchange_bytes(&kp2).unwrap();
         let xch2 = kp2.key_exchange_bytes(&kp1).unwrap();
-        assert_eq!(xch1.len(), 32);
+        assert_eq!(xch1.len(), 48);
         assert_eq!(xch1, xch2);
     }
 
     #[test]
     fn round_trip_bytes() {
-        let kp = P256KeyPair::random().unwrap();
-        let cmp = P256KeyPair::from_keypair_bytes(&kp.to_keypair_bytes().unwrap()).unwrap();
+        let kp = P384KeyPair::random().unwrap();
+        let cmp = P384KeyPair::from_keypair_bytes(&kp.to_keypair_bytes().unwrap()).unwrap();
         assert_eq!(
             kp.to_keypair_bytes().unwrap(),
             cmp.to_keypair_bytes().unwrap()

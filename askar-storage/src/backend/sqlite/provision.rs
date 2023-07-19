@@ -137,8 +137,9 @@ impl SqliteStoreOptions {
             .synchronous(self.synchronous);
         #[cfg(feature = "log")]
         {
-            conn_opts.log_statements(log::LevelFilter::Debug);
-            conn_opts.log_slow_statements(log::LevelFilter::Debug, Default::default());
+            conn_opts = conn_opts
+                .log_statements(log::LevelFilter::Debug)
+                .log_slow_statements(log::LevelFilter::Debug, Default::default());
         }
         SqlitePoolOptions::default()
             // maintains at least 1 connection.
@@ -346,7 +347,7 @@ async fn init_db(
     .bind(profile_name)
     .bind(store_key_ref)
     .bind(enc_profile_key)
-    .execute(&mut conn)
+    .execute(conn.as_mut())
     .await?;
 
     let mut key_cache = KeyCache::new(store_key);
@@ -354,7 +355,7 @@ async fn init_db(
     let row = sqlx::query("SELECT id FROM profiles WHERE name = ?1")
         .persistent(false)
         .bind(profile_name)
-        .fetch_one(&mut conn)
+        .fetch_one(conn.as_mut())
         .await?;
     key_cache.add_profile_mut(profile_name.to_string(), row.try_get(0)?, profile_key);
 
@@ -377,7 +378,7 @@ async fn open_db(
         r#"SELECT name, value FROM config
         WHERE name IN ("default_profile", "key", "version")"#,
     )
-    .fetch_all(&mut conn)
+    .fetch_all(conn.as_mut())
     .await?;
     for row in config {
         match row.try_get(0)? {
@@ -422,7 +423,7 @@ async fn open_db(
 
     let row = sqlx::query("SELECT id, profile_key FROM profiles WHERE name = ?1")
         .bind(&profile)
-        .fetch_one(&mut conn)
+        .fetch_one(conn.as_mut())
         .await?;
     let profile_id = row.try_get(0)?;
     let profile_key = key_cache.load_key(row.try_get(1)?).await?;

@@ -130,7 +130,7 @@ impl Backend for PostgresBackend {
             )
             .bind(&name)
             .bind(enc_key)
-            .fetch_optional(&mut conn)
+            .fetch_optional(conn.as_mut())
             .await?
             {
                 self.key_cache
@@ -152,7 +152,7 @@ impl Backend for PostgresBackend {
             let mut conn = self.conn_pool.acquire().await?;
             Ok(sqlx::query("DELETE FROM profiles WHERE name=$1")
                 .bind(&name)
-                .execute(&mut conn)
+                .execute(conn.as_mut())
                 .await?
                 .rows_affected()
                 != 0)
@@ -169,7 +169,7 @@ impl Backend for PostgresBackend {
             let (store_key, store_key_ref) = unblock(move || method.resolve(pass_key)).await?;
             let store_key = Arc::new(store_key);
             let mut txn = self.conn_pool.begin().await?;
-            let mut rows = sqlx::query("SELECT id, profile_key FROM profiles").fetch(&mut txn);
+            let mut rows = sqlx::query("SELECT id, profile_key FROM profiles").fetch(txn.as_mut());
             let mut upd_keys = BTreeMap::<ProfileId, Vec<u8>>::new();
             while let Some(row) = rows.next().await {
                 let row = row?;
@@ -188,7 +188,7 @@ impl Backend for PostgresBackend {
                 if sqlx::query("UPDATE profiles SET profile_key=$1 WHERE id=$2")
                     .bind(key)
                     .bind(pid)
-                    .execute(&mut txn)
+                    .execute(txn.as_mut())
                     .await?
                     .rows_affected()
                     != 1
@@ -198,7 +198,7 @@ impl Backend for PostgresBackend {
             }
             if sqlx::query("UPDATE config SET value=$1 WHERE name='key'")
                 .bind(store_key_ref.into_uri())
-                .execute(&mut txn)
+                .execute(txn.as_mut())
                 .await?
                 .rows_affected()
                 != 1
@@ -568,7 +568,7 @@ async fn resolve_profile_key(
         Ok((pid, key))
     } else if let Some(row) = sqlx::query("SELECT id, profile_key FROM profiles WHERE name=$1")
         .bind(profile.as_str())
-        .fetch_optional(conn)
+        .fetch_optional(conn.as_mut())
         .await?
     {
         let pid = row.try_get(0)?;

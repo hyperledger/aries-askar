@@ -17,8 +17,9 @@ use sqlx::{
 use super::{
     db_utils::{
         decode_tags, decrypt_scan_batch, encode_profile_key, encode_tag_filter, expiry_timestamp,
-        extend_query, prepare_tags, random_profile_name, DbSession, DbSessionActive, DbSessionRef,
-        DbSessionTxn, EncScanEntry, ExtDatabase, QueryParams, QueryPrepare, PAGE_SIZE,
+        extend_query, prepare_tags, random_profile_name, Connection, DbSession, DbSessionActive,
+        DbSessionRef, DbSessionTxn, EncScanEntry, ExtDatabase, QueryParams, QueryPrepare,
+        PAGE_SIZE,
     },
     Backend, BackendSession,
 };
@@ -121,7 +122,7 @@ impl Backend for SqliteBackend {
                 sqlx::query("INSERT OR IGNORE INTO profiles (name, profile_key) VALUES (?1, ?2)")
                     .bind(&name)
                     .bind(enc_key)
-                    .execute(&mut conn)
+                    .execute(conn.as_mut())
                     .await?;
             if done.rows_affected() == 0 {
                 return Err(err_msg!(Duplicate, "Duplicate profile name"));
@@ -146,7 +147,7 @@ impl Backend for SqliteBackend {
             let mut conn = self.conn_pool.acquire().await?;
             Ok(sqlx::query("DELETE FROM profiles WHERE name=?")
                 .bind(&name)
-                .execute(&mut conn)
+                .execute(conn.as_mut())
                 .await?
                 .rows_affected()
                 != 0)
@@ -163,7 +164,7 @@ impl Backend for SqliteBackend {
             let (store_key, store_key_ref) = unblock(move || method.resolve(pass_key)).await?;
             let store_key = Arc::new(store_key);
             let mut txn = self.conn_pool.begin().await?;
-            let mut rows = sqlx::query("SELECT id, profile_key FROM profiles").fetch(&mut txn);
+            let mut rows = sqlx::query("SELECT id, profile_key FROM profiles").fetch(txn.as_mut());
             let mut upd_keys = BTreeMap::<ProfileId, Vec<u8>>::new();
             while let Some(row) = rows.next().await {
                 let row = row?;
@@ -182,7 +183,7 @@ impl Backend for SqliteBackend {
                 if sqlx::query("UPDATE profiles SET profile_key=?1 WHERE id=?2")
                     .bind(key)
                     .bind(pid)
-                    .execute(&mut txn)
+                    .execute(txn.as_mut())
                     .await?
                     .rows_affected()
                     != 1
@@ -192,7 +193,7 @@ impl Backend for SqliteBackend {
             }
             if sqlx::query("UPDATE config SET value=?1 WHERE name='key'")
                 .bind(store_key_ref.into_uri())
-                .execute(&mut txn)
+                .execute(txn.as_mut())
                 .await?
                 .rows_affected()
                 != 1
@@ -487,18 +488,18 @@ impl BackendSession for DbSession<Sqlite> {
 
 impl ExtDatabase for Sqlite {
     fn start_transaction(
-        conn: &mut PoolConnection<Self>,
+        conn: &mut Connection<Self>,
         nested: bool,
     ) -> BoxFuture<'_, std::result::Result<(), SqlxError>> {
         // FIXME - this is a horrible workaround because there is currently
         // no good way to start an immediate transaction with sqlx. Without this
         // adjustment, updates will run into 'database is locked' errors.
         Box::pin(async move {
-            <Sqlite as Database>::TransactionManager::begin(&mut *conn).await?;
+            <Sqlite as Database>::TransactionManager::begin(conn).await?;
             if !nested {
                 // a no-op write transaction
                 sqlx::query("DELETE FROM config WHERE 0")
-                    .execute(&mut *conn)
+                    .execute(conn)
                     .await?;
             }
             Ok(())
@@ -532,7 +533,7 @@ async fn resolve_profile_key(
         Ok((pid, key))
     } else if let Some(row) = sqlx::query("SELECT id, profile_key FROM profiles WHERE name=?1")
         .bind(profile.as_str())
-        .fetch_optional(conn)
+        .fetch_optional(conn.as_mut())
         .await?
     {
         let pid = row.try_get(0)?;
