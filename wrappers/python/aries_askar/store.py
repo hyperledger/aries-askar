@@ -393,7 +393,7 @@ class Store:
         """Remove a profile from the store."""
         return await bindings.store_remove_profile(self._handle, name)
 
-    async def list_profiles(self) -> list[str]:
+    async def list_profiles(self) -> Sequence[str]:
         """List the profile identifiers present in the store."""
         return await bindings.store_list_profiles(self._handle)
 

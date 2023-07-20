@@ -5,7 +5,7 @@ import json
 import logging
 
 from ctypes import POINTER, byref, c_int8, c_int32, c_int64
-from typing import Optional, Union
+from typing import Optional, Sequence, Union
 
 from ..types import EntryOperation, KeyAlg, SeedMethod
 
@@ -174,7 +174,7 @@ async def store_remove_profile(handle: StoreHandle, name: str) -> bool:
     )
 
 
-async def store_list_profiles(handle: StoreHandle) -> list[str]:
+async def store_list_profiles(handle: StoreHandle) -> Sequence[str]:
     """List the profile identifiers present in a Store."""
     handle = await invoke_async(
         "askar_store_list_profiles",
