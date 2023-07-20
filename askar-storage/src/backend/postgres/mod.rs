@@ -733,8 +733,8 @@ fn perform_scan(
         let mut acquired = acquire_session(&mut active).await?;
         let mut rows = sqlx::query_with(query.as_str(), params).fetch(acquired.connection_mut());
         while let Some(row) = rows.try_next().await? {
-            let tags = row.try_get::<Option<String>, _>(4)?.map(String::into_bytes).unwrap_or_default();
-            let kind: i32 = row.try_get(1)?;
+            let tags = row.try_get::<Option<String>, _>(5)?.map(String::into_bytes).unwrap_or_default();
+            let kind: i16 = row.try_get(1)?;
             let kind = EntryKind::try_from(kind as usize)?;
             batch.push(EncScanEntry {
                 kind, category: row.try_get(2)?, name: row.try_get(3)?, value: row.try_get(4)?, tags
