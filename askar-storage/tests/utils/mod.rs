@@ -44,6 +44,7 @@ pub async fn db_fetch_fail(db: AnyBackend) {
 
 pub async fn db_insert_fetch(db: AnyBackend) {
     let test_row = Entry::new(
+        EntryKind::Item,
         "category",
         "name",
         "value",
@@ -89,7 +90,7 @@ pub async fn db_insert_fetch(db: AnyBackend) {
 }
 
 pub async fn db_insert_duplicate(db: AnyBackend) {
-    let test_row = Entry::new("category", "name", "value", Vec::new());
+    let test_row = Entry::new(EntryKind::Item, "category", "name", "value", Vec::new());
 
     let mut conn = db.session(None, false).expect(ERR_SESSION);
 
@@ -121,7 +122,7 @@ pub async fn db_insert_duplicate(db: AnyBackend) {
 }
 
 pub async fn db_insert_remove(db: AnyBackend) {
-    let test_row = Entry::new("category", "name", "value", Vec::new());
+    let test_row = Entry::new(EntryKind::Item, "category", "name", "value", Vec::new());
 
     let mut conn = db.session(None, false).expect(ERR_SESSION);
 
@@ -169,7 +170,7 @@ pub async fn db_remove_missing(db: AnyBackend) {
 }
 
 pub async fn db_replace_fetch(db: AnyBackend) {
-    let test_row = Entry::new("category", "name", "value", Vec::new());
+    let test_row = Entry::new(EntryKind::Item, "category", "name", "value", Vec::new());
 
     let mut conn = db.session(None, false).expect(ERR_SESSION);
 
@@ -213,7 +214,7 @@ pub async fn db_replace_fetch(db: AnyBackend) {
 }
 
 pub async fn db_replace_missing(db: AnyBackend) {
-    let test_row = Entry::new("category", "name", "value", Vec::new());
+    let test_row = Entry::new(EntryKind::Item, "category", "name", "value", Vec::new());
 
     let mut conn = db.session(None, false).expect(ERR_SESSION);
 
@@ -234,7 +235,13 @@ pub async fn db_replace_missing(db: AnyBackend) {
 
 pub async fn db_count(db: AnyBackend) {
     let category = "category".to_string();
-    let test_rows = vec![Entry::new(&category, "name", "value", Vec::new())];
+    let test_rows = vec![Entry::new(
+        EntryKind::Item,
+        &category,
+        "name",
+        "value",
+        Vec::new(),
+    )];
 
     let mut conn = db.session(None, false).expect(ERR_SESSION);
 
@@ -269,6 +276,7 @@ pub async fn db_count(db: AnyBackend) {
 
 pub async fn db_count_exist(db: AnyBackend) {
     let test_row = Entry::new(
+        EntryKind::Item,
         "category",
         "name",
         "value",
@@ -435,6 +443,7 @@ pub async fn db_count_exist(db: AnyBackend) {
 pub async fn db_scan(db: AnyBackend) {
     let category = "category".to_string();
     let test_rows = vec![Entry::new(
+        EntryKind::Item,
         &category,
         "name",
         "value",
@@ -499,6 +508,7 @@ pub async fn db_scan(db: AnyBackend) {
 pub async fn db_remove_all(db: AnyBackend) {
     let test_rows = vec![
         Entry::new(
+            EntryKind::Item,
             "category",
             "item1",
             "value",
@@ -508,6 +518,7 @@ pub async fn db_remove_all(db: AnyBackend) {
             ],
         ),
         Entry::new(
+            EntryKind::Item,
             "category",
             "item2",
             "value",
@@ -517,6 +528,7 @@ pub async fn db_remove_all(db: AnyBackend) {
             ],
         ),
         Entry::new(
+            EntryKind::Item,
             "category",
             "item3",
             "value",
@@ -560,7 +572,7 @@ pub async fn db_remove_all(db: AnyBackend) {
 }
 
 pub async fn db_txn_rollback(db: AnyBackend) {
-    let test_row = Entry::new("category", "name", "value", Vec::new());
+    let test_row = Entry::new(EntryKind::Item, "category", "name", "value", Vec::new());
 
     let mut conn = db.session(None, true).expect(ERR_TRANSACTION);
 
@@ -590,7 +602,7 @@ pub async fn db_txn_rollback(db: AnyBackend) {
 }
 
 pub async fn db_txn_drop(db: AnyBackend) {
-    let test_row = Entry::new("category", "name", "value", Vec::new());
+    let test_row = Entry::new(EntryKind::Item, "category", "name", "value", Vec::new());
 
     let mut conn = db
         .session(None, true)
@@ -621,7 +633,7 @@ pub async fn db_txn_drop(db: AnyBackend) {
 
 // test that session does NOT have transaction rollback behaviour
 pub async fn db_session_drop(db: AnyBackend) {
-    let test_row = Entry::new("category", "name", "value", Vec::new());
+    let test_row = Entry::new(EntryKind::Item, "category", "name", "value", Vec::new());
 
     let mut conn = db.session(None, false).expect(ERR_SESSION);
 
@@ -649,7 +661,7 @@ pub async fn db_session_drop(db: AnyBackend) {
 }
 
 pub async fn db_txn_commit(db: AnyBackend) {
-    let test_row = Entry::new("category", "name", "value", Vec::new());
+    let test_row = Entry::new(EntryKind::Item, "category", "name", "value", Vec::new());
 
     let mut conn = db.session(None, true).expect(ERR_TRANSACTION);
 
@@ -677,7 +689,7 @@ pub async fn db_txn_commit(db: AnyBackend) {
 }
 
 pub async fn db_txn_fetch_for_update(db: AnyBackend) {
-    let test_row = Entry::new("category", "name", "value", Vec::new());
+    let test_row = Entry::new(EntryKind::Item, "category", "name", "value", Vec::new());
 
     let mut conn = db.session(None, true).expect(ERR_TRANSACTION);
 
@@ -720,6 +732,7 @@ pub async fn db_txn_fetch_for_update(db: AnyBackend) {
 
 pub async fn db_txn_contention(db: AnyBackend) {
     let test_row = Entry::new(
+        EntryKind::Item,
         "category",
         "count",
         "0",
@@ -829,6 +842,7 @@ pub async fn db_get_set_default_profile(db: AnyBackend) {
 
 pub async fn db_import_scan(db: AnyBackend) {
     let test_rows = vec![Entry::new(
+        EntryKind::Item,
         "category",
         "name",
         "value",
@@ -861,7 +875,7 @@ pub async fn db_import_scan(db: AnyBackend) {
         .await
         .expect(ERR_SCAN);
     copy_conn
-        .import_scan(EntryKind::Item, records)
+        .import_scan(records)
         .await
         .expect("Error importing records");
     copy_conn.close(true).await.expect(ERR_COMMIT);

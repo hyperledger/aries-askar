@@ -248,6 +248,7 @@ mod sqlite {
                 url_target.as_str(),
                 StoreKeyMethod::RawKey,
                 key_target.as_ref(),
+                false,
             )
             .await
             .expect("Error copying store");

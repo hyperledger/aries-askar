@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, os::raw::c_char, ptr, str::FromStr, sync::Arc};
+use std::{collections::BTreeMap, ffi::CString, os::raw::c_char, ptr, str::FromStr, sync::Arc};
 
 use async_lock::{Mutex as TryMutex, MutexGuardArc as TryMutexGuard, RwLock};
 use ffi_support::{rust_string_to_c, ByteBuffer, FfiStr};
@@ -372,6 +372,61 @@ pub extern "C" fn askar_store_remove_profile(
 }
 
 #[no_mangle]
+pub extern "C" fn askar_store_get_default_profile(
+    handle: StoreHandle,
+    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, profile: *const c_char)>,
+    cb_id: CallbackId,
+) -> ErrorCode {
+    catch_err! {
+        trace!("Get default profile");
+        let cb = cb.ok_or_else(|| err_msg!("No callback provided"))?;
+        let cb = EnsureCallback::new(move |result: Result<String, Error>|
+            match result {
+                Ok(name) => cb(cb_id, ErrorCode::Success,
+                    CString::new(name.as_str()).unwrap().into_raw() as *const c_char),
+                Err(err) => cb(cb_id, set_last_error(Some(err)), ptr::null()),
+            }
+        );
+        spawn_ok(async move {
+            let result = async {
+                let store = handle.load().await?;
+                store.get_default_profile().await
+            }.await;
+            cb.resolve(result);
+        });
+        Ok(ErrorCode::Success)
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn askar_store_set_default_profile(
+    handle: StoreHandle,
+    profile: FfiStr<'_>,
+    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode)>,
+    cb_id: CallbackId,
+) -> ErrorCode {
+    catch_err! {
+        trace!("Set default profile");
+        let cb = cb.ok_or_else(|| err_msg!("No callback provided"))?;
+        let profile = profile.into_opt_string().ok_or_else(|| err_msg!("Profile name not provided"))?;
+        let cb = EnsureCallback::new(move |result|
+            match result {
+                Ok(_) => cb(cb_id, ErrorCode::Success),
+                Err(err) => cb(cb_id, set_last_error(Some(err))),
+            }
+        );
+        spawn_ok(async move {
+            let result = async {
+                let store = handle.load().await?;
+                store.set_default_profile(profile).await
+            }.await;
+            cb.resolve(result);
+        });
+        Ok(ErrorCode::Success)
+    }
+}
+
+#[no_mangle]
 pub extern "C" fn askar_store_rekey(
     handle: StoreHandle,
     key_method: FfiStr<'_>,
@@ -399,6 +454,44 @@ pub extern "C" fn askar_store_rekey(
                 let result = store.rekey(key_method, pass_key.as_ref()).await;
                 handle.replace(store).await;
                 result
+            }.await;
+            cb.resolve(result);
+        });
+        Ok(ErrorCode::Success)
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn askar_store_copy(
+    handle: StoreHandle,
+    target_uri: FfiStr<'_>,
+    key_method: FfiStr<'_>,
+    pass_key: FfiStr<'_>,
+    recreate: i8,
+    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, handle: StoreHandle)>,
+    cb_id: CallbackId,
+) -> ErrorCode {
+    catch_err! {
+        trace!("Copy store");
+        let cb = cb.ok_or_else(|| err_msg!("No callback provided"))?;
+        let target_uri = target_uri.into_opt_string().ok_or_else(|| err_msg!("No target URI provided"))?;
+        let key_method = match key_method.as_opt_str() {
+            Some(method) => StoreKeyMethod::parse_uri(method)?,
+            None => StoreKeyMethod::default()
+        };
+        let pass_key = PassKey::from(pass_key.as_opt_str()).into_owned();
+        let cb = EnsureCallback::new(move |result|
+            match result {
+                Ok(handle) => cb(cb_id, ErrorCode::Success, handle),
+                Err(err) => cb(cb_id, set_last_error(Some(err)), StoreHandle::invalid()),
+            }
+        );
+        spawn_ok(async move {
+            let result = async move {
+                let store = handle.load().await?;
+                let copied = store.copy_to(target_uri.as_str(), key_method, pass_key.as_ref(), recreate != 0).await?;
+                debug!("Copied store {}", handle);
+                Ok(StoreHandle::create(copied).await)
             }.await;
             cb.resolve(result);
         });

@@ -53,7 +53,7 @@ const INSERT_QUERY: &str =
     VALUES (?1, ?2, ?3, ?4, ?5, ?6)";
 const UPDATE_QUERY: &str = "UPDATE items SET value=?5, expiry=?6 WHERE profile_id=?1 AND kind=?2
     AND category=?3 AND name=?4 RETURNING id";
-const SCAN_QUERY: &str = "SELECT i.id, i.category, i.name, i.value,
+const SCAN_QUERY: &str = "SELECT i.id, i.kind, i.category, i.name, i.value,
     (SELECT GROUP_CONCAT(it.plaintext || ':' || HEX(it.name) || ':' || HEX(it.value))
         FROM items_tags it WHERE it.item_id = i.id) AS tags
     FROM items i WHERE i.profile_id = ?1
@@ -371,7 +371,7 @@ impl BackendSession for DbSession<Sqlite> {
                     Result::<_, Error>::Ok((category, name, value, tags))
                 })
                 .await?;
-                Ok(Some(Entry::new(category, name, value, tags)))
+                Ok(Some(Entry::new(kind, category, name, value, tags)))
             } else {
                 Ok(None)
             }
@@ -695,8 +695,10 @@ fn perform_scan(
         let mut acquired = acquire_session(&mut active).await?;
         let mut rows = sqlx::query_with(query.as_str(), params).fetch(acquired.connection_mut());
         while let Some(row) = rows.try_next().await? {
+            let kind: u32 = row.try_get(1)?;
+            let kind = EntryKind::try_from(kind as usize)?;
             batch.push(EncScanEntry {
-                category: row.try_get(1)?, name: row.try_get(2)?, value: row.try_get(3)?, tags: row.try_get(4)?
+                kind, category: row.try_get(2)?, name: row.try_get(3)?, value: row.try_get(4)?, tags: row.try_get(5)?
             });
             if batch.len() == PAGE_SIZE {
                 yield batch.split_off(0);

@@ -128,14 +128,13 @@ pub trait BackendSession: Debug + Send {
     /// Insert scan results from another profile or store
     fn import_scan<'q>(
         &'q mut self,
-        kind: EntryKind,
         mut scan: Scan<'q, Entry>,
     ) -> BoxFuture<'_, Result<(), Error>> {
         Box::pin(async move {
             while let Some(rows) = scan.fetch_next().await? {
                 for entry in rows {
                     self.update(
-                        kind,
+                        entry.kind,
                         EntryOperation::Insert,
                         entry.category.as_str(),
                         entry.name.as_str(),
@@ -176,37 +175,27 @@ pub trait BackendSession: Debug + Send {
 }
 
 /// Insert all records from a given profile
-pub async fn copy_profile<'q, A: Backend, B: Backend>(
+pub async fn copy_profile<A: Backend, B: Backend>(
     from_backend: &A,
     to_backend: &B,
     from_profile: &str,
     to_profile: &str,
 ) -> Result<(), Error> {
-    let kinds = [EntryKind::Item, EntryKind::Kms];
-    for kind in kinds {
-        let scan = from_backend
-            .scan(
-                Some(from_profile.into()),
-                Some(kind),
-                None,
-                None,
-                None,
-                None,
-            )
-            .await?;
-        if let Err(e) = to_backend.create_profile(Some(to_profile.into())).await {
-            if e.kind() != ErrorKind::Duplicate {
-                return Err(e);
-            }
+    let scan = from_backend
+        .scan(Some(from_profile.into()), None, None, None, None, None)
+        .await?;
+    if let Err(e) = to_backend.create_profile(Some(to_profile.into())).await {
+        if e.kind() != ErrorKind::Duplicate {
+            return Err(e);
         }
-        let mut txn = to_backend.session(Some(to_profile.into()), true)?;
-        let count = txn.count(None, None, None).await?;
-        if count > 0 {
-            return Err(err_msg!(Input, "Profile targeted for import is not empty"));
-        }
-        txn.import_scan(kind, scan).await?;
-        txn.close(true).await?;
     }
+    let mut txn = to_backend.session(Some(to_profile.into()), true)?;
+    let count = txn.count(None, None, None).await?;
+    if count > 0 {
+        return Err(err_msg!(Input, "Profile targeted for import is not empty"));
+    }
+    txn.import_scan(scan).await?;
+    txn.close(true).await?;
     Ok(())
 }
 
@@ -214,15 +203,16 @@ pub async fn copy_profile<'q, A: Backend, B: Backend>(
 pub async fn copy_store<'m, B: Backend, M: ManageBackend<'m>>(
     source: &B,
     target: M,
-    method: StoreKeyMethod,
+    key_method: StoreKeyMethod,
     pass_key: PassKey<'m>,
+    recreate: bool,
 ) -> Result<(), Error>
 where
 {
     let default_profile = source.get_default_profile().await?;
     let profile_ids = source.list_profiles().await?;
     let target = target
-        .provision_backend(method, pass_key, Some(default_profile), true)
+        .provision_backend(key_method, pass_key, Some(default_profile), recreate)
         .await?;
     for profile in profile_ids {
         copy_profile(source, &target, &profile, &profile).await?;

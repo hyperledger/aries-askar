@@ -69,7 +69,7 @@ const INSERT_QUERY: &str = "INSERT INTO items (profile_id, kind, category, name,
 const UPDATE_QUERY: &str = "UPDATE items SET value=$5, expiry=$6
     WHERE profile_id=$1 AND kind=$2 AND category=$3 AND name=$4
     RETURNING id";
-const SCAN_QUERY: &str = "SELECT id, category, name, value,
+const SCAN_QUERY: &str = "SELECT id, kind, category, name, value,
     (SELECT ARRAY_TO_STRING(ARRAY_AGG(it.plaintext || ':'
         || ENCODE(it.name, 'hex') || ':' || ENCODE(it.value, 'hex')), ',')
         FROM items_tags it WHERE it.item_id = i.id) tags
@@ -397,7 +397,7 @@ impl BackendSession for DbSession<Postgres> {
                     Result::<_, Error>::Ok((category, name, value, tags))
                 })
                 .await?;
-                Ok(Some(Entry::new(category, name, value, tags)))
+                Ok(Some(Entry::new(kind, category, name, value, tags)))
             } else {
                 Ok(None)
             }
@@ -734,8 +734,10 @@ fn perform_scan(
         let mut rows = sqlx::query_with(query.as_str(), params).fetch(acquired.connection_mut());
         while let Some(row) = rows.try_next().await? {
             let tags = row.try_get::<Option<String>, _>(4)?.map(String::into_bytes).unwrap_or_default();
+            let kind: i32 = row.try_get(1)?;
+            let kind = EntryKind::try_from(kind as usize)?;
             batch.push(EncScanEntry {
-                category: row.try_get(1)?, name: row.try_get(2)?, value: row.try_get(3)?, tags
+                kind, category: row.try_get(2)?, name: row.try_get(3)?, value: row.try_get(4)?, tags
             });
             if batch.len() == PAGE_SIZE {
                 yield batch.split_off(0);

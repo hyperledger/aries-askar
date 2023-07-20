@@ -126,7 +126,7 @@ async def store_create_profile(handle: StoreHandle, name: str = None) -> str:
 
 
 async def store_get_profile_name(handle: StoreHandle) -> str:
-    """Get the name of the default Store instance profile."""
+    """Get the name of the selected Store instance profile."""
     return str(
         await invoke_async(
             "askar_store_get_profile_name",
@@ -134,6 +134,29 @@ async def store_get_profile_name(handle: StoreHandle) -> str:
             handle,
             return_type=StrBuffer,
         )
+    )
+
+
+async def store_get_default_profile(handle: StoreHandle) -> str:
+    """Get the name of the default Store instance profile."""
+    return str(
+        await invoke_async(
+            "askar_store_get_default_profile",
+            (StoreHandle,),
+            handle,
+            return_type=StrBuffer,
+        )
+    )
+
+
+async def store_set_default_profile(handle: StoreHandle, profile: str):
+    """Set the name of the default Store instance profile."""
+    await invoke_async(
+        "askar_store_set_default_profile",
+        (StoreHandle, FfiStr),
+        handle,
+        profile,
+        return_type=StrBuffer,
     )
 
 
@@ -193,6 +216,26 @@ async def store_rekey(
         key_method and key_method.lower(),
         pass_key,
         return_type=c_int8,
+    )
+
+
+async def store_copy(
+    handle: StoreHandle,
+    target_uri: str,
+    key_method: str = None,
+    pass_key: str = None,
+    recreate: bool = False,
+) -> StoreHandle:
+    """Copy the Store contents to a new location."""
+    return await invoke_async(
+        "askar_store_copy",
+        (StoreHandle, FfiStr, FfiStr, FfiStr, c_int8),
+        handle,
+        target_uri,
+        key_method and key_method.lower(),
+        pass_key,
+        recreate,
+        return_type=StoreHandle,
     )
 
 

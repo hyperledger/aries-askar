@@ -23,7 +23,7 @@ use crate::{
     protect::{KeyCache, PassKey, StoreKeyMethod, StoreKeyReference},
 };
 
-const DEFAULT_MIN_CONNECTIONS: usize = 1;
+const DEFAULT_MIN_CONNECTIONS: usize = 2;
 const DEFAULT_LOWER_MAX_CONNECTIONS: usize = 2;
 const DEFAULT_UPPER_MAX_CONNECTIONS: usize = 8;
 const DEFAULT_BUSY_TIMEOUT: Duration = Duration::from_secs(5);

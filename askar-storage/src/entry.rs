@@ -25,6 +25,9 @@ pub(crate) fn sorted_tags(tags: &Vec<EntryTag>) -> Vec<&EntryTag> {
 /// A record in the store
 #[derive(Clone, Debug, Eq)]
 pub struct Entry {
+    /// The entry kind discriminator
+    pub kind: EntryKind,
+
     /// The category of the entry record
     pub category: String,
 
@@ -42,12 +45,14 @@ impl Entry {
     /// Create a new `Entry`
     #[inline]
     pub fn new<C: Into<String>, N: Into<String>, V: Into<SecretBytes>>(
+        kind: EntryKind,
         category: C,
         name: N,
         value: V,
         tags: Vec<EntryTag>,
     ) -> Self {
         Self {
+            kind,
             category: category.into(),
             name: name.into(),
             value: value.into(),
@@ -76,6 +81,18 @@ pub enum EntryKind {
     Kms = 1,
     /// General stored item
     Item = 2,
+}
+
+impl TryFrom<usize> for EntryKind {
+    type Error = Error;
+
+    fn try_from(value: usize) -> Result<Self, Self::Error> {
+        match value {
+            1 => Ok(Self::Kms),
+            2 => Ok(Self::Item),
+            _ => Err(err_msg!("Unknown entry kind: {value}")),
+        }
+    }
 }
 
 /// Supported operations for entries in the store

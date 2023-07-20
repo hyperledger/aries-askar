@@ -378,8 +378,16 @@ class Store:
         return await bindings.store_create_profile(self._handle, name)
 
     async def get_profile_name(self) -> str:
-        """Accessor for the currently defined profile name."""
+        """Accessor for the currently selected profile name."""
         return await bindings.store_get_profile_name(self._handle)
+
+    async def get_default_profile(self) -> str:
+        """Accessor for the default profile name when the store is opened."""
+        return await bindings.store_get_default_profile(self._handle)
+
+    async def set_default_profile(self, profile: str) -> str:
+        """Setter for the default profile name when the store is opened."""
+        return await bindings.store_set_default_profile(self._handle, profile)
 
     async def remove_profile(self, name: str) -> bool:
         """Remove a profile from the store."""
@@ -396,6 +404,22 @@ class Store:
     ):
         """Update the master encryption key of the store."""
         await bindings.store_rekey(self._handle, key_method, pass_key)
+
+    async def copy_to(
+        self,
+        target_uri: str,
+        key_method: str = None,
+        pass_key: str = None,
+        *,
+        recreate: bool = False,
+    ) -> "Store":
+        """Copy the store contents to a new location."""
+        return Store(
+            await bindings.store_copy(
+                self._handle, target_uri, key_method, pass_key, recreate
+            ),
+            target_uri,
+        )
 
     def scan(
         self,

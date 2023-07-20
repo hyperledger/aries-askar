@@ -1,3 +1,5 @@
+use askar_storage::backend::copy_profile;
+
 use crate::{
     error::Error,
     kms::{KeyEntry, KeyParams, KmsCategory, LocalKey},
@@ -60,6 +62,16 @@ impl Store {
         self.0.get_active_profile()
     }
 
+    /// Get the default profile name used when opening the Store
+    pub async fn get_default_profile(&self) -> Result<String, Error> {
+        Ok(self.0.get_default_profile().await?)
+    }
+
+    /// Set the default profile name used when opening the Store
+    pub async fn set_default_profile(&self, profile: String) -> Result<(), Error> {
+        Ok(self.0.set_default_profile(profile).await?)
+    }
+
     /// Replace the wrapping key on a store
     pub async fn rekey(
         &mut self,
@@ -67,6 +79,26 @@ impl Store {
         pass_key: PassKey<'_>,
     ) -> Result<(), Error> {
         Ok(self.0.rekey(method, pass_key).await?)
+    }
+
+    /// Copy to a new store instance using a database URL
+    pub async fn copy_to(
+        &self,
+        target_url: &str,
+        key_method: StoreKeyMethod,
+        pass_key: PassKey<'_>,
+        recreate: bool,
+    ) -> Result<Self, Error> {
+        let default_profile = self.get_default_profile().await?;
+        let profile_ids = self.list_profiles().await?;
+        let target = target_url
+            .provision_backend(key_method, pass_key, Some(default_profile), recreate)
+            .await?;
+        for profile in profile_ids {
+            println!("copy profile: {}", profile);
+            copy_profile(&self.0, &target, &profile, &profile).await?;
+        }
+        Ok(Self::new(target))
     }
 
     /// Create a new profile with the given profile name

@@ -293,8 +293,9 @@ async def test_profile(store: Store):
 
     profile = await store.create_profile()
 
-    default_profile = await store.get_profile_name()
-    assert set(await store.list_profiles()) == {default_profile, profile}
+    active_profile = await store.get_profile_name()
+    assert (await store.get_default_profile()) == active_profile
+    assert set(await store.list_profiles()) == {active_profile, profile}
 
     async with store.session(profile) as session:
         # Should not find previously stored record
@@ -365,3 +366,28 @@ async def test_profile(store: Store):
                 TEST_ENTRY["category"], {"~plaintag": "a", "enctag": "b"}
             )
         ) == 0
+
+    await store.set_default_profile(profile)
+    assert (await store.get_default_profile()) == profile
+
+
+@mark.asyncio
+async def test_copy(store: Store):
+    async with store as session:
+        # Insert a new entry
+        await session.insert(
+            TEST_ENTRY["category"],
+            TEST_ENTRY["name"],
+            TEST_ENTRY["value"],
+            TEST_ENTRY["tags"],
+        )
+    profiles = await store.list_profiles()
+
+    copied = await store.copy_to("sqlite://:memory:", "raw", raw_key())
+    assert profiles == await copied.list_profiles()
+    await copied.close(remove=True)
+
+    async with store as session:
+        entries = await session.fetch_all(TEST_ENTRY["category"])
+        assert len(entries) == 1
+        assert entries[0].name == TEST_ENTRY["name"]

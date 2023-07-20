@@ -11,7 +11,7 @@ use std::{
 #[derive(Clone, Default)]
 pub struct PassKey<'a>(Option<Cow<'a, str>>);
 
-impl PassKey<'_> {
+impl<'a> PassKey<'a> {
     /// Create a scoped reference to the passkey
     pub fn as_ref(&self) -> PassKey<'_> {
         PassKey(Some(Cow::Borrowed(&**self)))
