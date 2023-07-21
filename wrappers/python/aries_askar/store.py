@@ -385,9 +385,9 @@ class Store:
         """Accessor for the default profile name when the store is opened."""
         return await bindings.store_get_default_profile(self._handle)
 
-    async def set_default_profile(self, profile: str) -> str:
+    async def set_default_profile(self, profile: str):
         """Setter for the default profile name when the store is opened."""
-        return await bindings.store_set_default_profile(self._handle, profile)
+        await bindings.store_set_default_profile(self._handle, profile)
 
     async def remove_profile(self, name: str) -> bool:
         """Remove a profile from the store."""

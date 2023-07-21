@@ -156,7 +156,6 @@ async def store_set_default_profile(handle: StoreHandle, profile: str):
         (StoreHandle, FfiStr),
         handle,
         profile,
-        return_type=StrBuffer,
     )
 
 

@@ -367,6 +367,7 @@ async def test_profile(store: Store):
             )
         ) == 0
 
+    assert (await store.get_default_profile()) != profile
     await store.set_default_profile(profile)
     assert (await store.get_default_profile()) == profile
 
