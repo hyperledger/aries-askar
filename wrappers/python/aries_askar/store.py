@@ -408,9 +408,9 @@ class Store:
         """Open a new session on the store without starting a transaction."""
         return OpenSession(self._handle, profile, False)
 
-    def transaction(self, profile: str = None) -> "OpenSession":
+    def transaction(self, profile: str = None, *, autocommit=None) -> "OpenSession":
         """Open a new transactional session on the store."""
-        return OpenSession(self._handle, profile, True)
+        return OpenSession(self._handle, profile, True, autocommit)
 
     async def close(self, *, remove: bool = False) -> bool:
         """Close and free the pool instance."""
@@ -431,11 +431,28 @@ class Store:
 class Session:
     """An opened Session instance."""
 
-    def __init__(self, store: StoreHandle, handle: SessionHandle, is_txn: bool):
+    def __init__(
+        self,
+        store: StoreHandle,
+        handle: SessionHandle,
+        is_txn: bool = False,
+        autocommit: Optional[bool] = None,
+    ):
         """Initialize the Session instance."""
         self._store = store
         self._handle = handle
         self._is_txn = is_txn
+        self._autocommit = autocommit or False
+
+    @property
+    def autocommit(self) -> bool:
+        """Determine if autocommit is enabled for a transaction."""
+        return self._autocommit
+
+    @autocommit.setter
+    def autocommit(self, val: bool):
+        """Set the autocommit flag for a transaction."""
+        self._autocommit = val or False
 
     @property
     def is_transaction(self) -> bool:
@@ -641,21 +658,33 @@ class Session:
     async def close(self):
         """Close the session without specifying the commit behaviour."""
         if self._handle:
-            await self._handle.close(commit=False)
+            await self._handle.close(commit=self._autocommit)
             self._handle = None
 
     def __repr__(self) -> str:
-        return f"<Session(handle={self._handle}, is_transaction={self._is_txn})>"
+        """Format a string representation of the session."""
+        return (
+            f"<Session(handle={self._handle}, "
+            f"is_transaction={self._is_txn}, "
+            f"autocommit={self._autocommit})>"
+        )
 
 
 class OpenSession:
     """A pending session instance."""
 
-    def __init__(self, store: StoreHandle, profile: Optional[str], is_txn: bool):
+    def __init__(
+        self,
+        store: StoreHandle,
+        profile: Optional[str],
+        is_txn: bool,
+        autocommit: Optional[bool] = None,
+    ):
         """Initialize the OpenSession instance."""
         self._store = store
         self._profile = profile
         self._is_txn = is_txn
+        self._autocommit = autocommit
         self._session: Session = None
 
     @property
@@ -675,6 +704,7 @@ class OpenSession:
             self._store,
             await bindings.session_start(self._store, self._profile, self._is_txn),
             self._is_txn,
+            self._autocommit,
         )
 
     def __await__(self) -> Session:
@@ -690,4 +720,6 @@ class OpenSession:
         """Terminate the async context and close the session."""
         session = self._session
         self._session = None
+        if exc:
+            session.autocommit = False
         await session.close()
