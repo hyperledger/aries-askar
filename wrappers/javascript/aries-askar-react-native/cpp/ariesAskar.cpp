@@ -179,16 +179,17 @@ jsi::Value storeGetProfileName(jsi::Runtime &rt, jsi::Object options) {
 
 jsi::Value storeRekey(jsi::Runtime &rt, jsi::Object options) {
   auto storeHandle = jsiToValue<int64_t>(rt, options, "storeHandle");
-  auto keyMethod = jsiToValue<std::string>(rt, options, "keyMethod");
+  auto keyMethod = jsiToValue<std::string>(rt, options, "keyMethod", true);
   auto passKey = jsiToValue<std::string>(rt, options, "passKey");
 
   jsi::Function cb = options.getPropertyAsFunction(rt, "cb");
   State *state = new State(&cb);
   state->rt = &rt;
 
-  ErrorCode code = askar_store_get_profile_name(
-      storeHandle, callbackWithResponse, CallbackId(state));
-
+  ErrorCode code = askar_store_rekey(storeHandle, 
+      keyMethod.length() ? keyMethod.c_str() : nullptr, 
+      passKey.c_str(), callback, CallbackId(state));
+                            
   return createReturnValue(rt, code, nullptr);
 }
 
