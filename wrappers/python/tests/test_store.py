@@ -36,7 +36,6 @@ async def store() -> Store:
 
 @mark.asyncio
 async def test_insert_update(store: Store):
-
     async with store as session:
         # Insert a new entry
         await session.insert(
@@ -84,7 +83,6 @@ async def test_insert_update(store: Store):
 
 @mark.asyncio
 async def test_remove_all(store: Store):
-
     async with store as session:
         # Insert a new entry
         await session.insert(
@@ -108,7 +106,6 @@ async def test_remove_all(store: Store):
 
 @mark.asyncio
 async def test_scan(store: Store):
-
     async with store as session:
         await session.insert(
             TEST_ENTRY["category"],
@@ -139,7 +136,6 @@ async def test_scan(store: Store):
 @mark.asyncio
 async def test_txn_basic(store: Store):
     async with store.transaction() as txn:
-
         # Insert a new entry
         await txn.insert(
             TEST_ENTRY["category"],
@@ -167,6 +163,42 @@ async def test_txn_basic(store: Store):
 
     # Check the transaction was committed
     async with store.session() as session:
+        found = await session.fetch(TEST_ENTRY["category"], TEST_ENTRY["name"])
+        assert dict(found) == TEST_ENTRY
+
+
+@mark.asyncio
+async def test_txn_autocommit(store: Store):
+    with raises(Exception):
+        async with store.transaction(autocommit=True) as txn:
+            # Insert a new entry
+            await txn.insert(
+                TEST_ENTRY["category"],
+                TEST_ENTRY["name"],
+                TEST_ENTRY["value"],
+                TEST_ENTRY["tags"],
+            )
+
+            found = await txn.fetch(TEST_ENTRY["category"], TEST_ENTRY["name"])
+            assert dict(found) == TEST_ENTRY
+
+            raise Exception()
+
+    # Row should not have been inserted
+    async with store as session:
+        assert (await session.fetch(TEST_ENTRY["category"], TEST_ENTRY["name"])) is None
+
+    async with store.transaction(autocommit=True) as txn:
+        # Insert a new entry
+        await txn.insert(
+            TEST_ENTRY["category"],
+            TEST_ENTRY["name"],
+            TEST_ENTRY["value"],
+            TEST_ENTRY["tags"],
+        )
+
+    # Transaction should have been committed
+    async with store as session:
         found = await session.fetch(TEST_ENTRY["category"], TEST_ENTRY["name"])
         assert dict(found) == TEST_ENTRY
 
