@@ -1,6 +1,6 @@
 {
   "name": "@hyperledger/aries-askar-nodejs",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "license": "Apache-2.0",
   "description": "Nodejs wrapper for Aries Askar",
   "source": "src/index",
@@ -47,7 +47,7 @@
     "typescript": "4.5.5"
   },
   "dependencies": {
-    "@hyperledger/aries-askar-shared": "0.1.0",
+    "@hyperledger/aries-askar-shared": "0.1.1",
     "@mapbox/node-pre-gyp": "^1.0.10",
     "ffi-napi": "^4.0.3",
     "node-cache": "^5.1.2",

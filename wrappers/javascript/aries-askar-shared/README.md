@@ -34,4 +34,10 @@ try {
 
 How you approach it is up to you, as long as the native binding are called before any actions are performed on the Aries Askar library.
 
----
+## Version Compatibility
+
+The JavaScript wrapper is versioned independently from the native bindings. The following table shows the compatibility between the different versions:
+
+| Aries Askar | JavaScript Wrapper |
+| ----------- | ------------------ |
+| v0.2.9      | v0.1.0, v0.1.1     |

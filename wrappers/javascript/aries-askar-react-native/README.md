@@ -26,3 +26,11 @@ const key = Key.fromSeed({ algorithm: KeyAlgs.Bls12381G1, seed })
 ```
 
 > **Note**: If you want to use this library in a cross-platform environment you need to import methods from the `@hyperledger/aries-askar-shared` package instead. This is a platform independent package that allows to register the native bindings. The `@hyperledger/aries-askar-react-native` package uses this package under the hood. See the [Aries Askar Shared README](https://github.com/hyperledger/aries-askar/tree/main/wrappers/javascript/aries-askar-shared/README.md) for documentation on how to use this package.
+
+## Version Compatibility
+
+The JavaScript wrapper is versioned independently from the native bindings. The following table shows the compatibility between the different versions:
+
+| Aries Askar | JavaScript Wrapper |
+| ----------- | ------------------ |
+| v0.2.9      | v0.1.0, v0.1.1     |

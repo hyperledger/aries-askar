@@ -22,8 +22,13 @@ on:
         required: true
         default: false
         type: boolean
-      publish-wrappers:
-        description: "Publish Wrappers to Registries"
+      publish-python-wrapper:
+        description: "Publish Python Wrapper to Registries"
+        required: true
+        default: false
+        type: boolean
+      publish-javascript-wrapper:
+        description: "Publish JavaScript Wrapper to Registries"
         required: true
         default: false
         type: boolean
@@ -286,7 +291,7 @@ jobs:
 
       - if: |
           github.event_name == 'release' ||
-          (github.event_name == 'workflow_dispatch' && github.event.inputs.publish-wrappers == 'true')
+          (github.event_name == 'workflow_dispatch' && github.event.inputs.publish-python-wrapper == 'true')
         name: Publish
         env:
           TWINE_USERNAME: ${{ secrets.PYPI_USERNAME }}
@@ -341,7 +346,7 @@ jobs:
       - name: Set NPM config
         if: |
           github.event_name == 'release' ||
-          (github.event_name == 'workflow_dispatch' && github.event.inputs.publish-wrappers == 'true')
+          (github.event_name == 'workflow_dispatch' && github.event.inputs.publish-javascript-wrapper == 'true')
         run: |
           echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" >> .npmrc
           echo "registry=https://registry.npmjs.org/" >> .npmrc
@@ -354,7 +359,7 @@ jobs:
       - name: Publish
         if: |
           github.event_name == 'release' ||
-          (github.event_name == 'workflow_dispatch' && github.event.inputs.publish-wrappers == 'true')
+          (github.event_name == 'workflow_dispatch' && github.event.inputs.publish-javascript-wrapper == 'true')
         run: npx lerna publish from-package --no-push --no-private --yes --no-git-tag-version
 
   build-ios:
