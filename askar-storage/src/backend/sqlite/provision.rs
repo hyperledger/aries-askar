@@ -29,7 +29,6 @@ const DEFAULT_UPPER_MAX_CONNECTIONS: usize = 8;
 const DEFAULT_BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 const DEFAULT_JOURNAL_MODE: SqliteJournalMode = SqliteJournalMode::Wal;
 const DEFAULT_LOCKING_MODE: SqliteLockingMode = SqliteLockingMode::Normal;
-const DEFAULT_SHARED_CACHE: bool = true;
 const DEFAULT_SYNCHRONOUS: SqliteSynchronous = SqliteSynchronous::Full;
 
 /// Configuration options for Sqlite stores
@@ -56,6 +55,10 @@ impl SqliteStoreOptions {
     /// Initialize `SqliteStoreOptions` from a generic set of options
     pub fn new<'a>(options: impl IntoOptions<'a>) -> Result<Self, Error> {
         let mut opts = options.into_options()?;
+        let mut path = opts.host.to_string();
+        path.push_str(&opts.path);
+        let in_memory = path == ":memory:";
+
         let busy_timeout = if let Some(timeout) = opts.query.remove("busy_timeout") {
             Duration::from_millis(
                 timeout
@@ -101,7 +104,7 @@ impl SqliteStoreOptions {
         let shared_cache = if let Some(cache) = opts.query.remove("cache") {
             cache.eq_ignore_ascii_case("shared")
         } else {
-            DEFAULT_SHARED_CACHE
+            in_memory
         };
         let synchronous = if let Some(sync) = opts.query.remove("synchronous") {
             SqliteSynchronous::from_str(&sync)
@@ -110,10 +113,8 @@ impl SqliteStoreOptions {
             DEFAULT_SYNCHRONOUS
         };
 
-        let mut path = opts.host.to_string();
-        path.push_str(&opts.path);
         Ok(Self {
-            in_memory: path == ":memory:",
+            in_memory,
             path,
             busy_timeout,
             max_connections,
