@@ -250,12 +250,13 @@ fn decode_utf8(value: Vec<u8>) -> Result<String, Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::entry::Entry;
+    use crate::entry::{Entry, EntryKind};
 
     #[test]
     fn encrypt_entry_round_trip() {
         let key = ProfileKey::new().unwrap();
         let test_record = Entry::new(
+            EntryKind::Item,
             "category",
             "name",
             "value",
@@ -283,6 +284,7 @@ mod tests {
         assert_ne!(test_record.value, enc_value);
 
         let cmp_record = Entry::new(
+            EntryKind::Item,
             key.decrypt_entry_category(enc_category).unwrap(),
             key.decrypt_entry_name(enc_name).unwrap(),
             key.decrypt_entry_value(

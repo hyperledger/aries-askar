@@ -39,6 +39,9 @@ mod test_db;
 #[cfg(any(test, feature = "pg_test"))]
 pub use self::test_db::TestDB;
 
+const CONFIG_FETCH_QUERY: &str = "SELECT value FROM config WHERE name = $1";
+const CONFIG_UPDATE_QUERY: &str = "INSERT INTO config (name, value) VALUES ($1, $2)
+    ON CONFLICT(name) DO UPDATE SET value = excluded.value";
 const COUNT_QUERY: &str = "SELECT COUNT(*) FROM items i
     WHERE profile_id = $1
     AND (kind = $2 OR $2 IS NULL)
@@ -66,7 +69,7 @@ const INSERT_QUERY: &str = "INSERT INTO items (profile_id, kind, category, name,
 const UPDATE_QUERY: &str = "UPDATE items SET value=$5, expiry=$6
     WHERE profile_id=$1 AND kind=$2 AND category=$3 AND name=$4
     RETURNING id";
-const SCAN_QUERY: &str = "SELECT id, category, name, value,
+const SCAN_QUERY: &str = "SELECT id, kind, category, name, value,
     (SELECT ARRAY_TO_STRING(ARRAY_AGG(it.plaintext || ':'
         || ENCODE(it.name, 'hex') || ':' || ENCODE(it.value, 'hex')), ',')
         FROM items_tags it WHERE it.item_id = i.id) tags
@@ -86,7 +89,7 @@ const TAG_DELETE_QUERY: &str = "DELETE FROM items_tags
 /// A PostgreSQL database store
 pub struct PostgresBackend {
     conn_pool: PgPool,
-    default_profile: String,
+    active_profile: String,
     key_cache: Arc<KeyCache>,
     host: String,
     name: String,
@@ -95,14 +98,14 @@ pub struct PostgresBackend {
 impl PostgresBackend {
     pub(crate) fn new(
         conn_pool: PgPool,
-        default_profile: String,
+        active_profile: String,
         key_cache: KeyCache,
         host: String,
         name: String,
     ) -> Self {
         Self {
             conn_pool,
-            default_profile,
+            active_profile,
             key_cache: Arc::new(key_cache),
             host,
             name,
@@ -143,8 +146,42 @@ impl Backend for PostgresBackend {
         })
     }
 
-    fn get_profile_name(&self) -> &str {
-        self.default_profile.as_str()
+    fn get_active_profile(&self) -> String {
+        self.active_profile.clone()
+    }
+
+    fn get_default_profile(&self) -> BoxFuture<'_, Result<String, Error>> {
+        Box::pin(async move {
+            let mut conn = self.conn_pool.acquire().await?;
+            let profile: Option<String> = sqlx::query_scalar(CONFIG_FETCH_QUERY)
+                .bind("default_profile")
+                .fetch_one(conn.as_mut())
+                .await?;
+            Ok(profile.unwrap_or_default())
+        })
+    }
+
+    fn set_default_profile(&self, profile: String) -> BoxFuture<'_, Result<(), Error>> {
+        Box::pin(async move {
+            let mut conn = self.conn_pool.acquire().await?;
+            sqlx::query(CONFIG_UPDATE_QUERY)
+                .bind("default_profile")
+                .bind(profile)
+                .execute(conn.as_mut())
+                .await?;
+            Ok(())
+        })
+    }
+
+    fn list_profiles(&self) -> BoxFuture<'_, Result<Vec<String>, Error>> {
+        Box::pin(async move {
+            let mut conn = self.conn_pool.acquire().await?;
+            let rows = sqlx::query("SELECT name FROM profiles")
+                .fetch_all(conn.as_mut())
+                .await?;
+            let names = rows.into_iter().flat_map(|r| r.try_get(0)).collect();
+            Ok(names)
+        })
     }
 
     fn remove_profile(&self, name: String) -> BoxFuture<'_, Result<bool, Error>> {
@@ -248,7 +285,7 @@ impl Backend for PostgresBackend {
         Ok(DbSession::new(
             self.conn_pool.clone(),
             self.key_cache.clone(),
-            profile.unwrap_or_else(|| self.default_profile.clone()),
+            profile.unwrap_or_else(|| self.active_profile.clone()),
             transaction,
         ))
     }
@@ -264,7 +301,7 @@ impl Backend for PostgresBackend {
 impl Debug for PostgresBackend {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         f.debug_struct("PostgresStore")
-            .field("default_profile", &self.default_profile)
+            .field("active_profile", &self.active_profile)
             .field("host", &self.host)
             .field("name", &self.name)
             .finish()
@@ -360,7 +397,7 @@ impl BackendSession for DbSession<Postgres> {
                     Result::<_, Error>::Ok((category, name, value, tags))
                 })
                 .await?;
-                Ok(Some(Entry::new(category, name, value, tags)))
+                Ok(Some(Entry::new(kind, category, name, value, tags)))
             } else {
                 Ok(None)
             }
@@ -696,9 +733,11 @@ fn perform_scan(
         let mut acquired = acquire_session(&mut active).await?;
         let mut rows = sqlx::query_with(query.as_str(), params).fetch(acquired.connection_mut());
         while let Some(row) = rows.try_next().await? {
-            let tags = row.try_get::<Option<String>, _>(4)?.map(String::into_bytes).unwrap_or_default();
+            let tags = row.try_get::<Option<String>, _>(5)?.map(String::into_bytes).unwrap_or_default();
+            let kind: i16 = row.try_get(1)?;
+            let kind = EntryKind::try_from(kind as usize)?;
             batch.push(EncScanEntry {
-                category: row.try_get(1)?, name: row.try_get(2)?, value: row.try_get(3)?, tags
+                kind, category: row.try_get(2)?, name: row.try_get(3)?, value: row.try_get(4)?, tags
             });
             if batch.len() == PAGE_SIZE {
                 yield batch.split_off(0);

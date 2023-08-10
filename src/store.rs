@@ -1,11 +1,11 @@
-use std::sync::Arc;
+use askar_storage::backend::copy_profile;
 
 use crate::{
     error::Error,
     kms::{KeyEntry, KeyParams, KmsCategory, LocalKey},
     storage::{
         any::{AnyBackend, AnyBackendSession},
-        backend::{BackendSession, ManageBackend},
+        backend::{Backend, BackendSession, ManageBackend},
         entry::{Entry, EntryKind, EntryOperation, EntryTag, Scan, TagFilter},
         generate_raw_store_key,
     },
@@ -27,7 +27,7 @@ impl Store {
         db_url: &str,
         key_method: StoreKeyMethod,
         pass_key: PassKey<'_>,
-        profile: Option<&str>,
+        profile: Option<String>,
         recreate: bool,
     ) -> Result<Self, Error> {
         let backend = db_url
@@ -41,7 +41,7 @@ impl Store {
         db_url: &str,
         key_method: Option<StoreKeyMethod>,
         pass_key: PassKey<'_>,
-        profile: Option<&str>,
+        profile: Option<String>,
     ) -> Result<Self, Error> {
         let backend = db_url.open_backend(key_method, pass_key, profile).await?;
         Ok(Self::new(backend))
@@ -58,8 +58,18 @@ impl Store {
     }
 
     /// Get the default profile name used when starting a scan or a session
-    pub fn get_profile_name(&self) -> &str {
-        self.0.get_profile_name()
+    pub fn get_active_profile(&self) -> String {
+        self.0.get_active_profile()
+    }
+
+    /// Get the default profile name used when opening the Store
+    pub async fn get_default_profile(&self) -> Result<String, Error> {
+        Ok(self.0.get_default_profile().await?)
+    }
+
+    /// Set the default profile name used when opening the Store
+    pub async fn set_default_profile(&self, profile: String) -> Result<(), Error> {
+        Ok(self.0.set_default_profile(profile).await?)
     }
 
     /// Replace the wrapping key on a store
@@ -68,15 +78,37 @@ impl Store {
         method: StoreKeyMethod,
         pass_key: PassKey<'_>,
     ) -> Result<(), Error> {
-        match Arc::get_mut(&mut self.0) {
-            Some(inner) => Ok(inner.rekey(method, pass_key).await?),
-            None => Err(err_msg!("Cannot re-key a store with multiple references")),
+        Ok(self.0.rekey(method, pass_key).await?)
+    }
+
+    /// Copy to a new store instance using a database URL
+    pub async fn copy_to(
+        &self,
+        target_url: &str,
+        key_method: StoreKeyMethod,
+        pass_key: PassKey<'_>,
+        recreate: bool,
+    ) -> Result<Self, Error> {
+        let default_profile = self.get_default_profile().await?;
+        let profile_ids = self.list_profiles().await?;
+        let target = target_url
+            .provision_backend(key_method, pass_key, Some(default_profile), recreate)
+            .await?;
+        for profile in profile_ids {
+            println!("copy profile: {}", profile);
+            copy_profile(&self.0, &target, &profile, &profile).await?;
         }
+        Ok(Self::new(target))
     }
 
     /// Create a new profile with the given profile name
     pub async fn create_profile(&self, name: Option<String>) -> Result<String, Error> {
         Ok(self.0.create_profile(name).await?)
+    }
+
+    /// Get the details of all store profiles
+    pub async fn list_profiles(&self) -> Result<Vec<String>, Error> {
+        Ok(self.0.list_profiles().await?)
     }
 
     /// Remove an existing profile with the given profile name
@@ -110,7 +142,6 @@ impl Store {
 
     /// Create a new session against the store
     pub async fn session(&self, profile: Option<String>) -> Result<Session, Error> {
-        // FIXME - add 'immediate' flag
         Ok(Session::new(self.0.session(profile, false)?))
     }
 

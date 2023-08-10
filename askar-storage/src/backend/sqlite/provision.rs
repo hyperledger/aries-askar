@@ -29,7 +29,6 @@ const DEFAULT_UPPER_MAX_CONNECTIONS: usize = 8;
 const DEFAULT_BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 const DEFAULT_JOURNAL_MODE: SqliteJournalMode = SqliteJournalMode::Wal;
 const DEFAULT_LOCKING_MODE: SqliteLockingMode = SqliteLockingMode::Normal;
-const DEFAULT_SHARED_CACHE: bool = true;
 const DEFAULT_SYNCHRONOUS: SqliteSynchronous = SqliteSynchronous::Full;
 
 /// Configuration options for Sqlite stores
@@ -56,6 +55,10 @@ impl SqliteStoreOptions {
     /// Initialize `SqliteStoreOptions` from a generic set of options
     pub fn new<'a>(options: impl IntoOptions<'a>) -> Result<Self, Error> {
         let mut opts = options.into_options()?;
+        let mut path = opts.host.to_string();
+        path.push_str(&opts.path);
+        let in_memory = path == ":memory:";
+
         let busy_timeout = if let Some(timeout) = opts.query.remove("busy_timeout") {
             Duration::from_millis(
                 timeout
@@ -101,7 +104,7 @@ impl SqliteStoreOptions {
         let shared_cache = if let Some(cache) = opts.query.remove("cache") {
             cache.eq_ignore_ascii_case("shared")
         } else {
-            DEFAULT_SHARED_CACHE
+            in_memory
         };
         let synchronous = if let Some(sync) = opts.query.remove("synchronous") {
             SqliteSynchronous::from_str(&sync)
@@ -110,10 +113,8 @@ impl SqliteStoreOptions {
             DEFAULT_SYNCHRONOUS
         };
 
-        let mut path = opts.host.to_string();
-        path.push_str(&opts.path);
         Ok(Self {
-            in_memory: path == ":memory:",
+            in_memory,
             path,
             busy_timeout,
             max_connections,
@@ -157,7 +158,7 @@ impl SqliteStoreOptions {
         self,
         method: StoreKeyMethod,
         pass_key: PassKey<'_>,
-        profile: Option<&'_ str>,
+        profile: Option<String>,
         recreate: bool,
     ) -> Result<SqliteBackend, Error> {
         if recreate && !self.in_memory {
@@ -184,9 +185,7 @@ impl SqliteStoreOptions {
         }
         // else: no 'config' table, assume empty database
 
-        let default_profile = profile
-            .map(str::to_string)
-            .unwrap_or_else(random_profile_name);
+        let default_profile = profile.unwrap_or_else(random_profile_name);
         let key_cache = init_db(&conn_pool, &default_profile, method, pass_key).await?;
 
         Ok(SqliteBackend::new(
@@ -202,7 +201,7 @@ impl SqliteStoreOptions {
         self,
         method: Option<StoreKeyMethod>,
         pass_key: PassKey<'_>,
-        profile: Option<&'_ str>,
+        profile: Option<String>,
     ) -> Result<SqliteBackend, Error> {
         let conn_pool = match self.pool(false).await {
             Ok(pool) => Ok(pool),
@@ -253,7 +252,7 @@ impl<'a> ManageBackend<'a> for SqliteStoreOptions {
         self,
         method: Option<StoreKeyMethod>,
         pass_key: PassKey<'a>,
-        profile: Option<&'a str>,
+        profile: Option<String>,
     ) -> BoxFuture<'a, Result<SqliteBackend, Error>> {
         Box::pin(self.open(method, pass_key, profile))
     }
@@ -262,7 +261,7 @@ impl<'a> ManageBackend<'a> for SqliteStoreOptions {
         self,
         method: StoreKeyMethod,
         pass_key: PassKey<'a>,
-        profile: Option<&'a str>,
+        profile: Option<String>,
         recreate: bool,
     ) -> BoxFuture<'a, Result<SqliteBackend, Error>> {
         Box::pin(self.provision(method, pass_key, profile, recreate))
@@ -366,7 +365,7 @@ async fn open_db(
     conn_pool: SqlitePool,
     method: Option<StoreKeyMethod>,
     pass_key: PassKey<'_>,
-    profile: Option<&str>,
+    profile: Option<String>,
     path: String,
 ) -> Result<SqliteBackend, Error> {
     let mut conn = conn_pool.acquire().await?;
@@ -401,7 +400,6 @@ async fn open_db(
         return Err(err_msg!(Unsupported, "Store version not found"));
     }
     let profile = profile
-        .map(str::to_string)
         .or(default_profile)
         .ok_or_else(|| err_msg!(Unsupported, "Default store profile not found"))?;
     let store_key = if let Some(store_key_ref) = store_key_ref {

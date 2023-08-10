@@ -244,3 +244,37 @@ pub extern "C" fn askar_key_entry_list_load_local(
         Ok(ErrorCode::Success)
     }
 }
+
+pub type StringListHandle = ArcHandle<FfiStringList>;
+
+pub type FfiStringList = FfiResultList<String>;
+
+#[no_mangle]
+pub extern "C" fn askar_string_list_count(handle: StringListHandle, count: *mut i32) -> ErrorCode {
+    catch_err! {
+        check_useful_c_ptr!(count);
+        let results = handle.load()?;
+        unsafe { *count = results.len() };
+        Ok(ErrorCode::Success)
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn askar_string_list_get_item(
+    handle: StringListHandle,
+    index: i32,
+    item: *mut *const c_char,
+) -> ErrorCode {
+    catch_err! {
+        check_useful_c_ptr!(item);
+        let results = handle.load()?;
+        let entry = results.get_row(index)?;
+        unsafe { *item = CString::new(entry.clone()).unwrap().into_raw() };
+        Ok(ErrorCode::Success)
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn askar_string_list_free(handle: StringListHandle) {
+    handle.remove();
+}

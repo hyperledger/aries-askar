@@ -205,6 +205,8 @@ class LibLoad:
     def invoke(self, name, argtypes, *args):
         """Perform a synchronous library function call."""
         method = self.method(name, argtypes, restype=c_int64)
+        if not method:
+            raise ValueError(f"FFI method not found: {name}")
         args = _load_method_arguments(name, argtypes, args)
         result = method(*args)
         if result:
@@ -215,6 +217,8 @@ class LibLoad:
     ) -> asyncio.Future:
         """Perform an asynchronous library function call."""
         method = self.method(name, (*argtypes, c_void_p, c_int64), restype=c_int64)
+        if not method:
+            raise ValueError(f"FFI method not found: {name}")
         loop = asyncio.get_event_loop()
         fut = loop.create_future()
         cb_info = self._cfuncs.get(name)
@@ -406,7 +410,7 @@ class RawBuffer(Structure):
         return bytes(self.array)
 
     def __len__(self) -> int:
-        return int(self.len)
+        return self.len.value
 
     @property
     def array(self) -> Array:

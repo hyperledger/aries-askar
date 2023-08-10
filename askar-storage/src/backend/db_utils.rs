@@ -8,7 +8,7 @@ use sqlx::{
 };
 
 use crate::{
-    entry::{EncEntryTag, Entry, EntryTag, TagFilter},
+    entry::{EncEntryTag, Entry, EntryKind, EntryTag, TagFilter},
     error::Error,
     future::BoxFuture,
     protect::{EntryEncryptor, KeyCache, PassKey, ProfileId, ProfileKey, StoreKey, StoreKeyMethod},
@@ -346,6 +346,7 @@ where
 }
 
 pub struct EncScanEntry {
+    pub kind: EntryKind,
     pub category: Vec<u8>,
     pub name: Vec<u8>,
     pub value: Vec<u8>,
@@ -535,7 +536,7 @@ pub fn decrypt_scan_entry(
     let tags = key.decrypt_entry_tags(
         decode_tags(enc_entry.tags).map_err(|_| err_msg!(Unexpected, "Error decoding tags"))?,
     )?;
-    Ok(Entry::new(category, name, value, tags))
+    Ok(Entry::new(enc_entry.kind, category, name, value, tags))
 }
 
 pub fn expiry_timestamp(expire_ms: i64) -> Result<Expiry, Error> {

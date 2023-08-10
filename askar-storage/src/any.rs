@@ -18,13 +18,15 @@ use super::postgres;
 use super::sqlite;
 
 /// A dynamic store backend instance
-pub type AnyBackend = Arc<dyn Backend<Session = AnyBackendSession>>;
+#[derive(Clone, Debug)]
+pub struct AnyBackend(Arc<dyn Backend<Session = AnyBackendSession>>);
 
 /// Wrap a backend instance into an AnyBackend
 pub fn into_any_backend(inst: impl Backend + 'static) -> AnyBackend {
-    Arc::new(WrapBackend(inst))
+    AnyBackend(Arc::new(WrapBackend(inst)))
 }
 
+/// This structure turns a generic backend into a concrete type
 #[derive(Debug)]
 struct WrapBackend<B: Backend>(B);
 
@@ -37,8 +39,23 @@ impl<B: Backend> Backend for WrapBackend<B> {
     }
 
     #[inline]
-    fn get_profile_name(&self) -> &str {
-        self.0.get_profile_name()
+    fn get_active_profile(&self) -> String {
+        self.0.get_active_profile()
+    }
+
+    #[inline]
+    fn get_default_profile(&self) -> BoxFuture<'_, Result<String, Error>> {
+        self.0.get_default_profile()
+    }
+
+    #[inline]
+    fn set_default_profile(&self, profile: String) -> BoxFuture<'_, Result<(), Error>> {
+        self.0.set_default_profile(profile)
+    }
+
+    #[inline]
+    fn list_profiles(&self) -> BoxFuture<'_, Result<Vec<String>, Error>> {
+        self.0.list_profiles()
     }
 
     #[inline]
@@ -74,6 +91,81 @@ impl<B: Backend> Backend for WrapBackend<B> {
         key: PassKey<'_>,
     ) -> BoxFuture<'_, Result<(), Error>> {
         self.0.rekey(method, key)
+    }
+
+    #[inline]
+    fn close(&self) -> BoxFuture<'_, Result<(), Error>> {
+        self.0.close()
+    }
+}
+
+// Forward to the concrete inner backend instance
+impl Backend for AnyBackend {
+    type Session = AnyBackendSession;
+
+    #[inline]
+    fn create_profile(&self, name: Option<String>) -> BoxFuture<'_, Result<String, Error>> {
+        self.0.create_profile(name)
+    }
+
+    #[inline]
+    fn get_active_profile(&self) -> String {
+        self.0.get_active_profile()
+    }
+
+    #[inline]
+    fn get_default_profile(&self) -> BoxFuture<'_, Result<String, Error>> {
+        self.0.get_default_profile()
+    }
+
+    #[inline]
+    fn set_default_profile(&self, profile: String) -> BoxFuture<'_, Result<(), Error>> {
+        self.0.set_default_profile(profile)
+    }
+
+    #[inline]
+    fn list_profiles(&self) -> BoxFuture<'_, Result<Vec<String>, Error>> {
+        self.0.list_profiles()
+    }
+
+    #[inline]
+    fn remove_profile(&self, name: String) -> BoxFuture<'_, Result<bool, Error>> {
+        self.0.remove_profile(name)
+    }
+
+    #[inline]
+    fn scan(
+        &self,
+        profile: Option<String>,
+        kind: Option<EntryKind>,
+        category: Option<String>,
+        tag_filter: Option<TagFilter>,
+        offset: Option<i64>,
+        limit: Option<i64>,
+    ) -> BoxFuture<'_, Result<Scan<'static, Entry>, Error>> {
+        self.0
+            .scan(profile, kind, category, tag_filter, offset, limit)
+    }
+
+    #[inline]
+    fn session(&self, profile: Option<String>, transaction: bool) -> Result<Self::Session, Error> {
+        Ok(AnyBackendSession(Box::new(
+            self.0.session(profile, transaction)?,
+        )))
+    }
+
+    #[inline]
+    fn rekey(
+        &mut self,
+        method: StoreKeyMethod,
+        key: PassKey<'_>,
+    ) -> BoxFuture<'_, Result<(), Error>> {
+        match Arc::get_mut(&mut self.0) {
+            Some(inner) => inner.rekey(method, key),
+            None => Box::pin(std::future::ready(Err(err_msg!(
+                "Cannot re-key a store with multiple references"
+            )))),
+        }
     }
 
     #[inline]
@@ -160,7 +252,7 @@ impl<'a> ManageBackend<'a> for &'a str {
         self,
         method: Option<StoreKeyMethod>,
         pass_key: PassKey<'a>,
-        profile: Option<&'a str>,
+        profile: Option<String>,
     ) -> BoxFuture<'a, Result<Self::Backend, Error>> {
         Box::pin(async move {
             let opts = self.into_options()?;
@@ -194,7 +286,7 @@ impl<'a> ManageBackend<'a> for &'a str {
         self,
         method: StoreKeyMethod,
         pass_key: PassKey<'a>,
-        profile: Option<&'a str>,
+        profile: Option<String>,
         recreate: bool,
     ) -> BoxFuture<'a, Result<Self::Backend, Error>> {
         Box::pin(async move {

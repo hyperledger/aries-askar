@@ -4,7 +4,7 @@ use std::fmt::Debug;
 
 use crate::{
     entry::{Entry, EntryKind, EntryOperation, EntryTag, Scan, TagFilter},
-    error::Error,
+    error::{Error, ErrorKind},
     future::BoxFuture,
     protect::{PassKey, StoreKeyMethod},
 };
@@ -31,7 +31,16 @@ pub trait Backend: Debug + Send + Sync {
     fn create_profile(&self, name: Option<String>) -> BoxFuture<'_, Result<String, Error>>;
 
     /// Get the name of the active profile
-    fn get_profile_name(&self) -> &str;
+    fn get_active_profile(&self) -> String;
+
+    /// Get the name of the default profile
+    fn get_default_profile(&self) -> BoxFuture<'_, Result<String, Error>>;
+
+    /// Set the the default profile
+    fn set_default_profile(&self, profile: String) -> BoxFuture<'_, Result<(), Error>>;
+
+    /// Get the details of all store profiles
+    fn list_profiles(&self) -> BoxFuture<'_, Result<Vec<String>, Error>>;
 
     /// Remove an existing profile
     fn remove_profile(&self, name: String) -> BoxFuture<'_, Result<bool, Error>>;
@@ -64,14 +73,14 @@ pub trait Backend: Debug + Send + Sync {
 /// Create, open, or remove a generic backend implementation
 pub trait ManageBackend<'a> {
     /// The type of backend being managed
-    type Backend;
+    type Backend: Backend;
 
     /// Open an existing store
     fn open_backend(
         self,
         method: Option<StoreKeyMethod>,
         pass_key: PassKey<'a>,
-        profile: Option<&'a str>,
+        profile: Option<String>,
     ) -> BoxFuture<'a, Result<Self::Backend, Error>>;
 
     /// Provision a new store
@@ -79,7 +88,7 @@ pub trait ManageBackend<'a> {
         self,
         method: StoreKeyMethod,
         pass_key: PassKey<'a>,
-        profile: Option<&'a str>,
+        profile: Option<String>,
         recreate: bool,
     ) -> BoxFuture<'a, Result<Self::Backend, Error>>;
 
@@ -116,6 +125,30 @@ pub trait BackendSession: Debug + Send {
         for_update: bool,
     ) -> BoxFuture<'q, Result<Vec<Entry>, Error>>;
 
+    /// Insert scan results from another profile or store
+    fn import_scan<'q>(
+        &'q mut self,
+        mut scan: Scan<'q, Entry>,
+    ) -> BoxFuture<'_, Result<(), Error>> {
+        Box::pin(async move {
+            while let Some(rows) = scan.fetch_next().await? {
+                for entry in rows {
+                    self.update(
+                        entry.kind,
+                        EntryOperation::Insert,
+                        entry.category.as_str(),
+                        entry.name.as_str(),
+                        Some(entry.value.as_ref()),
+                        Some(entry.tags.as_ref()),
+                        None,
+                    )
+                    .await?;
+                }
+            }
+            Ok(())
+        })
+    }
+
     /// Remove all matching records from the store
     fn remove_all<'q>(
         &'q mut self,
@@ -139,4 +172,48 @@ pub trait BackendSession: Debug + Send {
 
     /// Close the current store session
     fn close(&mut self, commit: bool) -> BoxFuture<'_, Result<(), Error>>;
+}
+
+/// Insert all records from a given profile
+pub async fn copy_profile<A: Backend, B: Backend>(
+    from_backend: &A,
+    to_backend: &B,
+    from_profile: &str,
+    to_profile: &str,
+) -> Result<(), Error> {
+    let scan = from_backend
+        .scan(Some(from_profile.into()), None, None, None, None, None)
+        .await?;
+    if let Err(e) = to_backend.create_profile(Some(to_profile.into())).await {
+        if e.kind() != ErrorKind::Duplicate {
+            return Err(e);
+        }
+    }
+    let mut txn = to_backend.session(Some(to_profile.into()), true)?;
+    let count = txn.count(None, None, None).await?;
+    if count > 0 {
+        return Err(err_msg!(Input, "Profile targeted for import is not empty"));
+    }
+    txn.import_scan(scan).await?;
+    txn.close(true).await?;
+    Ok(())
+}
+
+/// Export an entire Store to another location
+pub async fn copy_store<'m, B: Backend, M: ManageBackend<'m>>(
+    source: &B,
+    target: M,
+    key_method: StoreKeyMethod,
+    pass_key: PassKey<'m>,
+    recreate: bool,
+) -> Result<(), Error> {
+    let default_profile = source.get_default_profile().await?;
+    let profile_ids = source.list_profiles().await?;
+    let target = target
+        .provision_backend(key_method, pass_key, Some(default_profile), recreate)
+        .await?;
+    for profile in profile_ids {
+        copy_profile(source, &target, &profile, &profile).await?;
+    }
+    Ok(())
 }
