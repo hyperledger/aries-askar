@@ -62,5 +62,8 @@
     "remote_path": "v0.2.9",
     "host": "https://github.com/hyperledger/aries-askar/releases/download/",
     "package_name": "library-{platform}-{arch}.tar.gz"
+  },
+  "engines": {
+    "node": ">= 18"
   }
 }
