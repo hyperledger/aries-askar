@@ -14,6 +14,7 @@ FunctionMap AriesAskarTurboModuleHostObject::functionMapping(jsi::Runtime &rt) {
   fMap.insert(
       std::make_tuple("setDefaultLogger", &ariesAskar::setDefaultLogger));
 
+  fMap.insert(std::make_tuple("storeCopyTo", &ariesAskar::storeCopyTo));
   fMap.insert(std::make_tuple("storeOpen", &ariesAskar::storeOpen));
   fMap.insert(
       std::make_tuple("storeGenerateRawKey", &ariesAskar::storeGenerateRawKey));
@@ -26,11 +27,17 @@ FunctionMap AriesAskarTurboModuleHostObject::functionMapping(jsi::Runtime &rt) {
       std::make_tuple("storeGenerateRawKey", &ariesAskar::storeGenerateRawKey));
   fMap.insert(
       std::make_tuple("storeGetProfileName", &ariesAskar::storeGetProfileName));
+  fMap.insert(
+      std::make_tuple("storeGetDefaultProfile",
+                      &ariesAskar::storeGetDefaultProfile));
   fMap.insert(std::make_tuple("storeProvision", &ariesAskar::storeProvision));
   fMap.insert(std::make_tuple("storeRekey", &ariesAskar::storeRekey));
   fMap.insert(std::make_tuple("storeRemove", &ariesAskar::storeRemove));
   fMap.insert(
       std::make_tuple("storeRemoveProfile", &ariesAskar::storeRemoveProfile));
+  fMap.insert(
+      std::make_tuple("storeSetDefaultProfile",
+                      &ariesAskar::storeSetDefaultProfile));
 
   fMap.insert(std::make_tuple("sessionClose", &ariesAskar::sessionClose));
   fMap.insert(std::make_tuple("sessionCount", &ariesAskar::sessionCount));

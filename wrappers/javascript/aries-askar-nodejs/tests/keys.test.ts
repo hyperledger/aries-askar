@@ -77,3 +77,21 @@ describe('keys', () => {
     })
   })
 })
+
+test('p384', () => {
+  const key = Key.generate(KeyAlgs.EcSecp384r1)
+  expect(key.algorithm).toStrictEqual(KeyAlgs.EcSecp384r1)
+  const message = Uint8Array.from(Buffer.from('test message'))
+  const signature = key.signMessage({ message })
+  expect(key.verifySignature({ message, signature })).toStrictEqual(true)
+
+  expect(key.jwkPublic).toMatchObject({
+    kty: 'EC',
+    crv: 'P-384',
+  })
+
+  expect(key.jwkSecret).toMatchObject({
+    kty: 'EC',
+    crv: 'P-384',
+  })
+})

@@ -86,16 +86,24 @@ jsi::Value sessionStart(jsi::Runtime &rt, jsi::Object options);
 jsi::Value sessionUpdate(jsi::Runtime &rt, jsi::Object options);
 jsi::Value sessionUpdateKey(jsi::Runtime &rt, jsi::Object options);
 
+jsi::Value storeCopyTo(jsi::Runtime &rt, jsi::Object options);
 jsi::Value storeOpen(jsi::Runtime &rt, jsi::Object options);
 jsi::Value storeClose(jsi::Runtime &rt, jsi::Object options);
 jsi::Value storeCreateProfile(jsi::Runtime &rt, jsi::Object options);
 jsi::Value storeGenerateRawKey(jsi::Runtime &rt, jsi::Object options);
 jsi::Value storeGetProfileName(jsi::Runtime &rt, jsi::Object options);
+jsi::Value storeGetDefaultProfile(jsi::Runtime &rt, jsi::Object options);
+jsi::Value storeListProfiles(jsi::Runtime &rt, jsi::Object options);
 jsi::Value storeProvision(jsi::Runtime &rt, jsi::Object options);
 jsi::Value storeRekey(jsi::Runtime &rt, jsi::Object options);
 jsi::Value storeRemove(jsi::Runtime &rt, jsi::Object options);
 jsi::Value storeRemoveProfile(jsi::Runtime &rt, jsi::Object options);
+jsi::Value storeSetDefaultProfile(jsi::Runtime &rt, jsi::Object options);
 
 jsi::Value migrateIndySdk(jsi::Runtime &rt, jsi::Object options);
+
+jsi::Value stringListCount(jsi::Runtime &rt, jsi::Object options);
+jsi::Value stringListFree(jsi::Runtime &rt, jsi::Object options);
+jsi::Value stringListGetItem(jsi::Runtime &rt, jsi::Object options);
 
 } // namespace ariesAskar

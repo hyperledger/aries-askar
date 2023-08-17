@@ -37,6 +37,8 @@ typedef struct FfiResultList_Entry FfiResultList_Entry;
 
 typedef struct FfiResultList_KeyEntry FfiResultList_KeyEntry;
 
+typedef struct FfiResultList_String FfiResultList_String;
+
 /**
  * A stored key entry
  */
@@ -220,6 +222,14 @@ typedef struct ArcHandle_FfiKeyEntryList KeyEntryListHandle;
 typedef int64_t CallbackId;
 
 typedef void (*LogCallback)(const void *context, int32_t level, const char *target, const char *message, const char *module_path, const char *file, int32_t line);
+
+typedef struct FfiResultList_String FfiStringList;
+
+typedef struct ArcHandle_FfiStringList {
+  const FfiStringList *_0;
+} ArcHandle_FfiStringList;
+
+typedef struct ArcHandle_FfiStringList StringListHandle;
 
 #ifdef __cplusplus
 extern "C" {
@@ -524,6 +534,14 @@ ErrorCode askar_store_close(StoreHandle handle,
                             void (*cb)(CallbackId cb_id, ErrorCode err),
                             CallbackId cb_id);
 
+ErrorCode askar_store_copy(StoreHandle handle,
+                           FfiStr target_uri,
+                           FfiStr key_method,
+                           FfiStr pass_key,
+                           int8_t recreate,
+                           void (*cb)(CallbackId cb_id, ErrorCode err, StoreHandle handle),
+                           CallbackId cb_id);
+
 ErrorCode askar_store_create_profile(StoreHandle handle,
                                      FfiStr profile,
                                      void (*cb)(CallbackId cb_id, ErrorCode err, const char *result_p),
@@ -531,9 +549,17 @@ ErrorCode askar_store_create_profile(StoreHandle handle,
 
 ErrorCode askar_store_generate_raw_key(struct ByteBuffer seed, const char **out);
 
+ErrorCode askar_store_get_default_profile(StoreHandle handle,
+                                          void (*cb)(CallbackId cb_id, ErrorCode err, const char *profile),
+                                          CallbackId cb_id);
+
 ErrorCode askar_store_get_profile_name(StoreHandle handle,
                                        void (*cb)(CallbackId cb_id, ErrorCode err, const char *name),
                                        CallbackId cb_id);
+
+ErrorCode askar_store_list_profiles(StoreHandle handle,
+                                    void (*cb)(CallbackId cb_id, ErrorCode err, StringListHandle results),
+                                    CallbackId cb_id);
 
 ErrorCode askar_store_open(FfiStr spec_uri,
                            FfiStr key_method,
@@ -564,6 +590,17 @@ ErrorCode askar_store_remove_profile(StoreHandle handle,
                                      FfiStr profile,
                                      void (*cb)(CallbackId cb_id, ErrorCode err, int8_t removed),
                                      CallbackId cb_id);
+
+ErrorCode askar_store_set_default_profile(StoreHandle handle,
+                                          FfiStr profile,
+                                          void (*cb)(CallbackId cb_id, ErrorCode err),
+                                          CallbackId cb_id);
+
+ErrorCode askar_string_list_count(StringListHandle handle, int32_t *count);
+
+void askar_string_list_free(StringListHandle handle);
+
+ErrorCode askar_string_list_get_item(StringListHandle handle, int32_t index, const char **item);
 
 void askar_terminate(void);
 

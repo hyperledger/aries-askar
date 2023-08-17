@@ -32,6 +32,18 @@ export class Store {
     return ariesAskar.storeCreateProfile({ storeHandle: this.handle, profile: name })
   }
 
+  public async getDefaultProfile() {
+    return ariesAskar.storeGetDefaultProfile({ storeHandle: this.handle })
+  }
+
+  public async setDefaultProfile(name: string) {
+    return ariesAskar.storeSetDefaultProfile({ storeHandle: this.handle, profile: name })
+  }
+
+  public async listProfiles() {
+    return ariesAskar.storeListProfiles({ storeHandle: this.handle })
+  }
+
   public async removeProfile(name: string) {
     return await ariesAskar.storeRemoveProfile({ profile: name, storeHandle: this.handle })
   }
@@ -111,5 +123,25 @@ export class Store {
     profile?: string
   }) {
     return new Scan({ ...options, store: this })
+  }
+
+  public async copyTo({
+    uri,
+    keyMethod,
+    passKey,
+    recreate,
+  }: {
+    uri: string
+    keyMethod?: StoreKeyMethod
+    passKey?: string
+    recreate: boolean
+  }) {
+    await ariesAskar.storeCopyTo({
+      storeHandle: this.handle,
+      targetUri: uri,
+      keyMethod: keyMethod?.toUri(),
+      passKey,
+      recreate,
+    })
   }
 }
