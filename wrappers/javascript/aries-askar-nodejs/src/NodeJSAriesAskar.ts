@@ -971,7 +971,7 @@ export class NodeJSAriesAskar implements AriesAskar {
     for (let i = 0; i < count; i++) {
       this.nativeAriesAskar.askar_string_list_get_item(listHandle, i, strval)
       this.handleError()
-      ret.push(strval.deref())
+      ret.push(strval.deref() as string)
     }
     this.nativeAriesAskar.askar_string_list_free(listHandle)
     return ret
