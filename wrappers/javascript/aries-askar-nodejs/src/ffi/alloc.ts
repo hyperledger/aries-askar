@@ -1,4 +1,4 @@
-import { alloc } from 'ref-napi'
+import { alloc } from '@2060.io/ref-napi'
 
 import { FFI_POINTER, FFI_STRING, FFI_INT32, FFI_INT8 } from './primitives'
 import { SecretBufferStruct, EncryptedBufferStruct, AeadParamsStruct } from './structures'

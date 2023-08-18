@@ -34,7 +34,8 @@
     "install": "node-pre-gyp install --target_arch=$(node scripts/arch.js) --target_platform=$(node scripts/platform.js)"
   },
   "devDependencies": {
-    "@types/ffi-napi": "^4.0.5",
+    "@types/2060.io__ffi-napi": "npm:@types/ffi-napi",
+    "@types/2060.io__ref-napi": "npm:@types/ref-napi",
     "@types/jest": "^27.4.1",
     "@types/node": "^17.0.31",
     "@types/ref-array-di": "^1.2.3",
@@ -49,10 +50,10 @@
   "dependencies": {
     "@hyperledger/aries-askar-shared": "0.1.1",
     "@mapbox/node-pre-gyp": "^1.0.10",
-    "ffi-napi": "^4.0.3",
+    "@2060.io/ffi-napi": "4.0.5",
+    "@2060.io/ref-napi": "3.0.4",
     "node-cache": "^5.1.2",
     "ref-array-di": "^1.2.2",
-    "ref-napi": "^3.0.3",
     "ref-struct-di": "^1.1.1"
   },
   "binary": {
@@ -61,5 +62,8 @@
     "remote_path": "v0.2.9",
     "host": "https://github.com/hyperledger/aries-askar/releases/download/",
     "package_name": "library-{platform}-{arch}.tar.gz"
+  },
+  "engines": {
+    "node": ">= 18"
   }
 }

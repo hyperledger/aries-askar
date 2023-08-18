@@ -1,4 +1,4 @@
-import { refType } from 'ref-napi'
+import { refType } from '@2060.io/ref-napi'
 
 import {
   FFI_CALLBACK_ID,

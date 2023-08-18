@@ -1,5 +1,5 @@
+import { default as ref, refType } from '@2060.io/ref-napi'
 import refArray from 'ref-array-di'
-import { default as ref, refType } from 'ref-napi'
 import refStruct from 'ref-struct-di'
 
 import { FFI_INT32, FFI_INT64, FFI_UINT8 } from './primitives'
