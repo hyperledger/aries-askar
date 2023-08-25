@@ -23,7 +23,7 @@ mod log;
 mod result_list;
 mod secret;
 mod store;
-mod tags;
+pub(crate) mod tags;
 
 #[cfg(all(feature = "migration", feature = "sqlite"))]
 mod migration;
