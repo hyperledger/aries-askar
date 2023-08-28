@@ -1,3 +1,4 @@
+#![allow(missing_docs, missing_debug_implementations)]
 use std::marker::PhantomData;
 use std::os::raw::c_char;
 use std::time::Duration;
@@ -23,7 +24,7 @@ mod log;
 mod result_list;
 mod secret;
 mod store;
-mod tags;
+pub mod tags;
 
 #[cfg(all(feature = "migration", feature = "sqlite"))]
 mod migration;

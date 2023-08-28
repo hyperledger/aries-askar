@@ -46,7 +46,7 @@ pub struct KeyEntry {
     /// Thumbprints for the key
     pub(crate) thumbprints: Vec<String>,
     /// Thumbprints for the key
-    pub(crate) tags: Vec<EntryTag>,
+    pub tags: Vec<EntryTag>,
 }
 
 impl KeyEntry {

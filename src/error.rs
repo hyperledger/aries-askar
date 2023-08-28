@@ -1,3 +1,4 @@
+//! Error types
 use std::error::Error as StdError;
 use std::fmt::{self, Display, Formatter};
 

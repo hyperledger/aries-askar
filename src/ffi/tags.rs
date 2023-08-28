@@ -10,7 +10,7 @@ use crate::entry::EntryTag;
 
 /// A wrapper type used for managing (de)serialization of tags
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub(crate) struct EntryTagSet<'e>(Cow<'e, [EntryTag]>);
+pub struct EntryTagSet<'e>(Cow<'e, [EntryTag]>);
 
 impl EntryTagSet<'_> {
     pub fn into_vec(self) -> Vec<EntryTag> {
