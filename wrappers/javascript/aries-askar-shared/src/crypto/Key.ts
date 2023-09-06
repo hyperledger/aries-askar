@@ -1,11 +1,12 @@
 import type { LocalKeyHandle } from './handles'
 import type { KeyAlgs, SigAlgs } from '../enums'
 
+import { Buffer } from 'buffer'
+
 import { ariesAskar } from '../ariesAskar'
 import { KeyMethod, keyAlgFromString } from '../enums'
 
 import { Jwk } from './Jwk'
-import { Buffer } from 'buffer'
 
 export class Key {
   private localKeyHandle: LocalKeyHandle

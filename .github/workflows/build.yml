@@ -393,7 +393,8 @@ jobs:
   build-android:
     name: Build library (Android)
     needs: [checks]
-    # NB: RUST_VERSION must be 1.64+ here for lower NDK support
+    env:
+      RUST_VERSION: "1.67"
 
     runs-on: ubuntu-latest
 
