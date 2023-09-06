@@ -46,7 +46,7 @@ pub struct KeyEntry {
     /// Thumbprints for the key
     pub(crate) thumbprints: Vec<String>,
     /// Thumbprints for the key
-    pub tags: Vec<EntryTag>,
+    pub(crate) tags: Vec<EntryTag>,
 }
 
 impl KeyEntry {
@@ -63,6 +63,11 @@ impl KeyEntry {
     /// Accessor for the key identity
     pub fn name(&self) -> &str {
         self.name.as_str()
+    }
+
+    /// Accessor for the key tags
+    pub fn tags_as_ref(&self) -> &Vec<EntryTag> {
+        &self.tags
     }
 
     /// Determine if a key entry refers to a local or external key
