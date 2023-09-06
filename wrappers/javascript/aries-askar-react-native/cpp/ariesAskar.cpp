@@ -102,7 +102,8 @@ jsi::Value storeCopyTo(jsi::Runtime &rt, jsi::Object options) {
   state->rt = &rt;
 
   ErrorCode code = askar_store_copy(
-      targetUri.c_str(), keyMethod.length() ? keyMethod.c_str() : nullptr,
+      storeHandle, targetUri.c_str(),
+      keyMethod.length() ? keyMethod.c_str() : nullptr,
       passKey.length() ? passKey.c_str() : nullptr,
       recreate, callbackWithResponse, CallbackId(state));
 
