@@ -1,6 +1,8 @@
 import type { LocalKeyHandle } from './handles'
 import type { KeyAlgs, SigAlgs } from '../enums'
 
+import { Buffer } from 'buffer'
+
 import { ariesAskar } from '../ariesAskar'
 import { KeyMethod, keyAlgFromString } from '../enums'
 
@@ -75,13 +77,8 @@ export class Key {
   }
 
   public get jwkSecret() {
-    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-    // @ts-ignore
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call
-    const decoder = new TextDecoder()
     const secretBytes = ariesAskar.keyGetJwkSecret({ localKeyHandle: this.handle })
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
-    return Jwk.fromString(decoder.decode(secretBytes))
+    return Jwk.fromString(Buffer.from(secretBytes).toString())
   }
 
   public get jwkThumbprint() {

@@ -1,7 +1,7 @@
 name: "Aries-Askar"
 
 env:
-  RUST_VERSION: "1.65.0"
+  RUST_VERSION: "1.70.0"
   CROSS_VERSION: "0.2.4"
 
 concurrency:
@@ -393,7 +393,8 @@ jobs:
   build-android:
     name: Build library (Android)
     needs: [checks]
-    # NB: RUST_VERSION must be 1.64+ here for lower NDK support
+    env:
+      RUST_VERSION: "1.67"
 
     runs-on: ubuntu-latest
 
