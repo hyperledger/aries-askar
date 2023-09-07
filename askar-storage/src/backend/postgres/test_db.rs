@@ -66,8 +66,14 @@ impl TestDB {
         reset_db(&mut init_txn).await?;
 
         // create tables and add default profile
-        let profile_id =
-            init_db(init_txn, &default_profile, store_key_ref, enc_profile_key).await?;
+        let profile_id = init_db(
+            init_txn,
+            &default_profile,
+            store_key_ref,
+            enc_profile_key,
+            &opts.username,
+        )
+        .await?;
 
         let mut key_cache = KeyCache::new(store_key);
         key_cache.add_profile_mut(default_profile.clone(), profile_id, profile_key);
