@@ -222,7 +222,7 @@ impl KeySigVerify for P384KeyPair {
         sig_type: Option<SignatureType>,
     ) -> Result<bool, Error> {
         match sig_type {
-            None | Some(SignatureType::ES256) => Ok(self.verify_signature(message, signature)),
+            None | Some(SignatureType::ES384) => Ok(self.verify_signature(message, signature)),
             #[allow(unreachable_patterns)]
             _ => Err(err_msg!(Unsupported, "Unsupported signature type")),
         }

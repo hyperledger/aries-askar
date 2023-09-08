@@ -49,15 +49,9 @@ android/keystores/debug.keystore
 .expo/*
 .expo-shared/*
 
-# Native Libraries 
-aries-askar-react-native/ios/Frameworks
-aries-askar-react-native/android/libs
-
 # Test wallet
 aries-askar-nodejs/tests/indy_wallet_sqlite_upgraded.db
 
-# Example app
-react-native-example
 
 # Test
 tmp

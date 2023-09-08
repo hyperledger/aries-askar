@@ -18,7 +18,7 @@ use crate::{
         ManageBackend,
     },
     error::Error,
-    future::{unblock, BoxFuture},
+    future::{sleep, unblock, BoxFuture},
     options::{IntoOptions, Options},
     protect::{KeyCache, PassKey, StoreKeyMethod, StoreKeyReference},
 };
@@ -431,10 +431,27 @@ async fn open_db(
 }
 
 async fn try_remove_file(path: String) -> Result<bool, Error> {
-    unblock(|| match remove_file(path) {
-        Ok(()) => Ok(true),
-        Err(err) if err.kind() == IoErrorKind::NotFound => Ok(false),
-        Err(err) => Err(err_msg!(Backend, "Error removing file").with_cause(err)),
-    })
-    .await
+    let mut retries = 0;
+    loop {
+        let path = path.clone();
+        if let Some(res) = unblock(move || match remove_file(path) {
+            Ok(()) => Ok(Some(true)),
+            Err(err) if err.kind() == IoErrorKind::NotFound => Ok(Some(false)),
+            #[cfg(target_os = "windows")]
+            // database file in use: it seems that in current versions, sqlx may return from close()
+            // before all connections to the database have been closed.
+            Err(err) if err.raw_os_error() == Some(32) => Ok(None),
+            Err(err) => Err(err_msg!(Backend, "Error removing file").with_cause(err)),
+        })
+        .await?
+        {
+            break Ok(res);
+        } else {
+            sleep(Duration::from_millis(50)).await;
+            retries += 1;
+            if retries >= 10 {
+                return Err(err_msg!(Backend, "Error removing file: still in use"));
+            }
+        }
+    }
 }

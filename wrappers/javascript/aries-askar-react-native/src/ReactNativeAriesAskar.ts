@@ -65,14 +65,18 @@ import type {
   SetCustomLoggerOptions,
   SetMaxLogLevelOptions,
   StoreCloseOptions,
+  StoreCopyToOptions,
   StoreCreateProfileOptions,
   StoreGenerateRawKeyOptions,
+  StoreGetDefaultProfileOptions,
   StoreGetProfileNameOptions,
+  StoreListProfilesOptions,
   StoreOpenOptions,
   StoreProvisionOptions,
   StoreRekeyOptions,
   StoreRemoveOptions,
   StoreRemoveProfileOptions,
+  StoreSetDefaultProfileOptions,
 } from '@hyperledger/aries-askar-shared'
 
 import {
@@ -601,6 +605,11 @@ export class ReactNativeAriesAskar implements AriesAskar {
     return this.promisify((cb) => this.handleError(this.ariesAskar.storeClose({ cb, ...serializedOptions })))
   }
 
+  public storeCopyTo(options: StoreCopyToOptions): Promise<void> {
+    const serializedOptions = serializeArguments(options)
+    return this.promisify((cb) => this.handleError(this.ariesAskar.storeCopyTo({ cb, ...serializedOptions })))
+  }
+
   public async storeCreateProfile(options: StoreCreateProfileOptions): Promise<string> {
     const serializedOptions = serializeArguments(options)
     const response = await this.promisifyWithResponse<string>((cb) =>
@@ -622,6 +631,31 @@ export class ReactNativeAriesAskar implements AriesAskar {
     )
 
     return handleInvalidNullResponse(response)
+  }
+
+  public async storeGetDefaultProfile(options: StoreGetDefaultProfileOptions): Promise<string> {
+    const serializedOptions = serializeArguments(options)
+    const response = await this.promisifyWithResponse<string>((cb) =>
+      this.handleError(this.ariesAskar.storeGetDefaultProfile({ cb, ...serializedOptions }))
+    )
+
+    return handleInvalidNullResponse(response)
+  }
+
+  public async storeListProfiles(options: StoreListProfilesOptions): Promise<string[]> {
+    const serializedOptions = serializeArguments(options)
+    const stringListHandle = handleInvalidNullResponse(
+      await this.promisifyWithResponse<string>((cb) =>
+        this.handleError(this.ariesAskar.storeListProfiles({ cb, ...serializedOptions }))
+      )
+    )
+    const ret = []
+    const count = this.handleError(this.ariesAskar.stringListCount({ stringListHandle }))
+    for (let index = 0; index < count; index++) {
+      ret.push(this.handleError(this.ariesAskar.stringListGetItem({ stringListHandle, index })))
+    }
+    this.handleError(this.ariesAskar.stringListFree({ stringListHandle }))
+    return ret
   }
 
   public async storeOpen(options: StoreOpenOptions): Promise<StoreHandle> {
@@ -660,6 +694,15 @@ export class ReactNativeAriesAskar implements AriesAskar {
     const serializedOptions = serializeArguments(options)
     const response = await this.promisifyWithResponse<number>((cb) =>
       this.handleError(this.ariesAskar.storeRemoveProfile({ cb, ...serializedOptions }))
+    )
+
+    return handleInvalidNullResponse(response)
+  }
+
+  public async storeSetDefaultProfile(options: StoreSetDefaultProfileOptions): Promise<void> {
+    const serializedOptions = serializeArguments(options)
+    const response = await this.promisifyWithResponse<void>((cb) =>
+      this.handleError(this.ariesAskar.storeSetDefaultProfile({ cb, ...serializedOptions }))
     )
 
     return handleInvalidNullResponse(response)

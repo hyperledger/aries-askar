@@ -1,5 +1,7 @@
 import type { EntryListHandle } from '../crypto'
 
+import { Buffer } from 'buffer'
+
 export type EntryObject = {
   name: string
   value: Record<string, unknown> | string
@@ -25,12 +27,7 @@ export class Entry {
   }
 
   public get value(): string {
-    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-    // @ts-ignore
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call
-    const decoder = new TextDecoder()
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
-    return decoder.decode(this.rawValue)
+    return Buffer.from(this.rawValue).toString()
   }
 
   private get rawValue() {
