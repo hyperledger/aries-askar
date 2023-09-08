@@ -143,11 +143,17 @@ export interface NativeBindings {
 
   storeClose(options: unknown): ReturnObject<never>
 
+  storeCopyTo(options: unknown): ReturnObject<never>
+
   storeCreateProfile(options: unknown): ReturnObject<never>
 
   storeGenerateRawKey(options: { seed?: ArrayBuffer }): ReturnObject<string>
 
+  storeGetDefaultProfile(options: unknown): ReturnObject<never>
+
   storeGetProfileName(options: unknown): ReturnObject<never>
+
+  storeListProfiles(options: unknown): ReturnObject<never>
 
   storeOpen(options: {
     specUri: string
@@ -165,5 +171,11 @@ export interface NativeBindings {
 
   storeRemoveProfile(options: unknown): ReturnObject<never>
 
+  storeSetDefaultProfile(options: unknown): ReturnObject<never>
+
   migrateIndySdk(options: unknown): ReturnObject<never>
+
+  stringListCount(options: { stringListHandle: string }): ReturnObject<number>
+  stringListFree(options: { stringListHandle: string }): ReturnObject<never>
+  stringListGetItem(options: { stringListHandle: string; index: number }): ReturnObject<string>
 }

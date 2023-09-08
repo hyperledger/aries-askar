@@ -226,7 +226,7 @@ describe('Store and Session', () => {
     found.forEach((entry) => entry.key.handle.free())
   })
 
-  test('profile', async () => {
+  test('Profile', async () => {
     const session = await store.openSession()
     await session.insert(firstEntry)
     await session.close()
@@ -258,6 +258,11 @@ describe('Store and Session', () => {
     await expect(session4.count(firstEntry)).resolves.toStrictEqual(1)
     await session4.close()
 
+    await store.setDefaultProfile(profile)
+    await expect(store.getDefaultProfile()).resolves.toStrictEqual(profile)
+
+    await expect(store.listProfiles()).resolves.toContain(profile)
+
     await store.removeProfile(profile)
 
     // Profile key is cached
@@ -273,5 +278,16 @@ describe('Store and Session', () => {
     const session7 = await store.session(profile).open()
     await expect(session7.count(firstEntry)).resolves.toStrictEqual(0)
     await session7.close()
+  })
+
+  test('Copy', async () => {
+    const key = getRawKey()
+
+    await store.copyTo({
+      uri: 'sqlite://:memory:',
+      keyMethod: new StoreKeyMethod(KdfMethod.Raw),
+      passKey: key,
+      recreate: true,
+    })
   })
 })

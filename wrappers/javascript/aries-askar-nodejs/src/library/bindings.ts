@@ -18,6 +18,7 @@ import {
   FFI_STORE_HANDLE,
   FFI_STRING,
   FFI_STRING_PTR,
+  FFI_STRING_LIST_HANDLE,
   SecretBufferStruct,
   SecretBufferStructPtr,
   ByteBufferStruct,
@@ -41,6 +42,10 @@ export const nativeBindings = {
   askar_entry_list_get_name: [FFI_ERROR_CODE, [FFI_ENTRY_LIST_HANDLE, FFI_INT32, FFI_STRING_PTR]],
   askar_entry_list_get_tags: [FFI_ERROR_CODE, [FFI_ENTRY_LIST_HANDLE, FFI_INT32, FFI_STRING_PTR]],
   askar_entry_list_get_value: [FFI_ERROR_CODE, [FFI_ENTRY_LIST_HANDLE, FFI_INT32, SecretBufferStructPtr]],
+
+  askar_string_list_count: [FFI_ERROR_CODE, [FFI_STRING_LIST_HANDLE, FFI_INT32_PTR]],
+  askar_string_list_free: [FFI_ERROR_CODE, [FFI_STRING_LIST_HANDLE]],
+  askar_string_list_get_item: [FFI_ERROR_CODE, [FFI_STRING_LIST_HANDLE, FFI_INT32, FFI_STRING_PTR]],
 
   askar_key_aead_decrypt: [
     FFI_ERROR_CODE,
@@ -183,9 +188,15 @@ export const nativeBindings = {
   ],
 
   askar_store_close: [FFI_ERROR_CODE, [FFI_STORE_HANDLE, FFI_CALLBACK_PTR, FFI_CALLBACK_ID]],
+  askar_store_copy: [
+    FFI_ERROR_CODE,
+    [FFI_STORE_HANDLE, FFI_STRING, FFI_STRING, FFI_STRING, FFI_INT8, FFI_CALLBACK_PTR, FFI_CALLBACK_ID],
+  ],
   askar_store_create_profile: [FFI_ERROR_CODE, [FFI_STORE_HANDLE, FFI_STRING, FFI_CALLBACK_PTR, FFI_CALLBACK_ID]],
   askar_store_generate_raw_key: [FFI_ERROR_CODE, [ByteBufferStruct, FFI_STRING_PTR]],
   askar_store_get_profile_name: [FFI_ERROR_CODE, [FFI_STORE_HANDLE, FFI_CALLBACK_PTR, FFI_CALLBACK_ID]],
+  askar_store_get_default_profile: [FFI_ERROR_CODE, [FFI_STORE_HANDLE, FFI_CALLBACK_PTR, FFI_CALLBACK_ID]],
+  askar_store_list_profiles: [FFI_ERROR_CODE, [FFI_STORE_HANDLE, FFI_CALLBACK_PTR, FFI_CALLBACK_ID]],
   askar_store_open: [
     FFI_ERROR_CODE,
     [FFI_STRING, FFI_STRING, FFI_STRING, FFI_STRING, FFI_CALLBACK_PTR, FFI_CALLBACK_ID],
@@ -197,6 +208,7 @@ export const nativeBindings = {
   askar_store_rekey: [FFI_ERROR_CODE, [FFI_STORE_HANDLE, FFI_STRING, FFI_STRING, FFI_CALLBACK_PTR, FFI_CALLBACK_ID]],
   askar_store_remove: [FFI_ERROR_CODE, [FFI_STRING, FFI_CALLBACK_PTR, FFI_CALLBACK_ID]],
   askar_store_remove_profile: [FFI_ERROR_CODE, [FFI_STORE_HANDLE, FFI_STRING, FFI_CALLBACK_PTR, FFI_CALLBACK_ID]],
+  askar_store_set_default_profile: [FFI_ERROR_CODE, [FFI_STORE_HANDLE, FFI_STRING, FFI_CALLBACK_PTR, FFI_CALLBACK_ID]],
 
   askar_migrate_indy_sdk: [
     FFI_ERROR_CODE,

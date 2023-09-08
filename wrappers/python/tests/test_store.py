@@ -344,6 +344,8 @@ async def test_profile(store: Store):
 
     await store.remove_profile(profile)
 
+    assert set(await store.list_profiles()) == {active_profile}
+
     # profile key is cached
     async with store.session(profile) as session:
         assert (
