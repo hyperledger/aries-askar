@@ -1,4 +1,3 @@
-#![allow(missing_docs, missing_debug_implementations)]
 use std::marker::PhantomData;
 use std::os::raw::c_char;
 use std::time::Duration;

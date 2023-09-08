@@ -1,4 +1,3 @@
-//! module for askar store and session
 use askar_storage::backend::copy_profile;
 
 use crate::{

@@ -4,7 +4,7 @@
 #![deny(missing_docs, missing_debug_implementations, rust_2018_idioms)]
 
 #[macro_use]
-pub mod error;
+mod error;
 pub use self::error::{Error, ErrorKind};
 
 #[cfg(any(test, feature = "log"))]
@@ -22,7 +22,7 @@ pub use askar_storage as storage;
 pub use askar_storage::future;
 
 #[cfg(feature = "ffi")]
-pub mod ffi;
+mod ffi;
 
 pub mod kms;
 
