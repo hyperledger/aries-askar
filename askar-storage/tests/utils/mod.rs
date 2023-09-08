@@ -34,6 +34,7 @@ pub async fn db_create_remove_profile(db: AnyBackend) {
     sess.ping()
         .await
         .expect_err("Expected connection to removed session to fail");
+    sess.close(false).await.unwrap();
     assert!(!db
         .remove_profile("not a profile".to_string())
         .await
