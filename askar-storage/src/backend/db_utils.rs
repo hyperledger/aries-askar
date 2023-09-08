@@ -114,8 +114,9 @@ impl<DB: ExtDatabase> DbSession<DB> {
                 let cache = cache.clone();
                 let mut get_profile = String::new();
                 std::mem::swap(profile, &mut get_profile);
+                let in_txn = self.in_transaction();
                 let (profile_id, key) = init_key
-                    .call_once(self.connection_mut().unwrap(), cache, get_profile)
+                    .call_once(self.connection_mut().unwrap(), cache, get_profile, in_txn)
                     .await?;
                 self.profile_key = DbSessionKey::Active { profile_id, key };
                 profile_id
@@ -177,12 +178,13 @@ pub(crate) trait GetProfileKey<'a, DB: Database> {
         conn: &'a mut PoolConnection<DB>,
         cache: Arc<KeyCache>,
         profile: String,
+        in_txn: bool,
     ) -> Self::Fut;
 }
 
 impl<'a, DB: Database, F, Fut> GetProfileKey<'a, DB> for F
 where
-    F: FnOnce(&'a mut PoolConnection<DB>, Arc<KeyCache>, String) -> Fut,
+    F: FnOnce(&'a mut PoolConnection<DB>, Arc<KeyCache>, String, bool) -> Fut,
     Fut: Future<Output = Result<(ProfileId, Arc<ProfileKey>), Error>> + 'a,
 {
     type Fut = Fut;
@@ -191,8 +193,9 @@ where
         conn: &'a mut PoolConnection<DB>,
         cache: Arc<KeyCache>,
         profile: String,
+        in_txn: bool,
     ) -> Self::Fut {
-        self(conn, cache, profile)
+        self(conn, cache, profile, in_txn)
     }
 }
 

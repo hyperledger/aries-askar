@@ -517,6 +517,22 @@ impl BackendSession for DbSession<Sqlite> {
         }
     }
 
+    fn ping(&mut self) -> BoxFuture<'_, Result<(), Error>> {
+        Box::pin(async move {
+            let mut sess = acquire_session(&mut *self).await?;
+            let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM profiles WHERE id=$1")
+                .bind(sess.profile_id)
+                .fetch_one(sess.connection_mut())
+                .await
+                .map_err(err_map!(Backend, "Error pinging session"))?;
+            if count == 0 {
+                Err(err_msg!(NotFound, "Session profile has been removed"))
+            } else {
+                Ok(())
+            }
+        })
+    }
+
     fn close(&mut self, commit: bool) -> BoxFuture<'_, Result<(), Error>> {
         Box::pin(self.close(commit))
     }
@@ -546,12 +562,8 @@ impl ExtDatabase for Sqlite {
 async fn acquire_key(
     session: &mut DbSession<Sqlite>,
 ) -> Result<(ProfileId, Arc<ProfileKey>), Error> {
-    if let Some(ret) = session.profile_and_key() {
-        Ok(ret)
-    } else {
-        session.make_active(&resolve_profile_key).await?;
-        Ok(session.profile_and_key().unwrap())
-    }
+    acquire_session(session).await?;
+    Ok(session.profile_and_key().unwrap())
 }
 
 async fn acquire_session(
@@ -564,6 +576,7 @@ async fn resolve_profile_key(
     conn: &mut PoolConnection<Sqlite>,
     cache: Arc<KeyCache>,
     profile: String,
+    _in_txn: bool,
 ) -> Result<(ProfileId, Arc<ProfileKey>), Error> {
     if let Some((pid, key)) = cache.get_profile(profile.as_str()).await {
         Ok((pid, key))

@@ -170,6 +170,9 @@ pub trait BackendSession: Debug + Send {
         expiry_ms: Option<i64>,
     ) -> BoxFuture<'q, Result<(), Error>>;
 
+    /// Test the connection to the store
+    fn ping(&mut self) -> BoxFuture<'_, Result<(), Error>>;
+
     /// Close the current store session
     fn close(&mut self, commit: bool) -> BoxFuture<'_, Result<(), Error>>;
 }

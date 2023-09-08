@@ -545,6 +545,26 @@ impl BackendSession for DbSession<Postgres> {
         }
     }
 
+    fn ping(&mut self) -> BoxFuture<'_, Result<(), Error>> {
+        Box::pin(async move {
+            let mut sess = acquire_session(&mut *self).await?;
+            if sess.in_transaction() {
+                // the profile row is locked, perform a typical ping
+                sqlx::Connection::ping(sess.connection_mut()).await?;
+            } else {
+                let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM profiles WHERE id=$1")
+                    .bind(sess.profile_id)
+                    .fetch_one(sess.connection_mut())
+                    .await
+                    .map_err(err_map!(Backend, "Error pinging session"))?;
+                if count == 0 {
+                    return Err(err_msg!(NotFound, "Session profile has been removed"));
+                }
+            }
+            Ok(())
+        })
+    }
+
     fn close(&mut self, commit: bool) -> BoxFuture<'_, Result<(), Error>> {
         Box::pin(self.close(commit))
     }
@@ -582,12 +602,8 @@ impl QueryPrepare for PostgresBackend {
 async fn acquire_key(
     session: &mut DbSession<Postgres>,
 ) -> Result<(ProfileId, Arc<ProfileKey>), Error> {
-    if let Some(ret) = session.profile_and_key() {
-        Ok(ret)
-    } else {
-        session.make_active(&resolve_profile_key).await?;
-        Ok(session.profile_and_key().unwrap())
-    }
+    acquire_session(session).await?;
+    Ok(session.profile_and_key().unwrap())
 }
 
 async fn acquire_session(
@@ -600,13 +616,26 @@ async fn resolve_profile_key(
     conn: &mut PoolConnection<Postgres>,
     cache: Arc<KeyCache>,
     profile: String,
+    in_txn: bool,
 ) -> Result<(ProfileId, Arc<ProfileKey>), Error> {
     if let Some((pid, key)) = cache.get_profile(profile.as_str()).await {
+        if in_txn {
+            // lock the profile row to prevent it from being removed
+            let check: Option<i64> =
+                sqlx::query_scalar("SELECT id FROM profiles WHERE id=$1 FOR NO KEY UPDATE")
+                    .bind(pid)
+                    .fetch_optional(conn.as_mut())
+                    .await?;
+            if check.is_none() {
+                return Err(err_msg!(NotFound, "Session profile has been removed"));
+            }
+        }
         Ok((pid, key))
-    } else if let Some(row) = sqlx::query("SELECT id, profile_key FROM profiles WHERE name=$1")
-        .bind(profile.as_str())
-        .fetch_optional(conn.as_mut())
-        .await?
+    } else if let Some(row) =
+        sqlx::query("SELECT id, profile_key FROM profiles WHERE name=$1 FOR NO KEY UPDATE")
+            .bind(profile.as_str())
+            .fetch_optional(conn.as_mut())
+            .await?
     {
         let pid = row.try_get(0)?;
         let key = Arc::new(cache.load_key(row.try_get(1)?).await?);

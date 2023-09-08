@@ -142,12 +142,16 @@ impl Store {
 
     /// Create a new session against the store
     pub async fn session(&self, profile: Option<String>) -> Result<Session, Error> {
-        Ok(Session::new(self.0.session(profile, false)?))
+        let mut sess = Session::new(self.0.session(profile, false)?);
+        sess.ping().await?;
+        Ok(sess)
     }
 
     /// Create a new transaction session against the store
     pub async fn transaction(&self, profile: Option<String>) -> Result<Session, Error> {
-        Ok(Session::new(self.0.session(profile, true)?))
+        let mut txn = Session::new(self.0.session(profile, true)?);
+        txn.ping().await?;
+        Ok(txn)
     }
 
     /// Close the store instance, waiting for any shutdown procedures to complete.
@@ -502,6 +506,11 @@ impl Session {
             .await?;
 
         Ok(())
+    }
+
+    /// Test the connection to the store
+    pub async fn ping(&mut self) -> Result<(), Error> {
+        Ok(self.0.ping().await?)
     }
 
     /// Commit the pending transaction
