@@ -346,13 +346,12 @@ async def test_profile(store: Store):
 
     assert set(await store.list_profiles()) == {active_profile}
 
-    # profile key is cached
-    async with store.session(profile) as session:
-        assert (
+    # opening removed profile should fail
+    with raises(AskarError, match="removed"):
+        async with store.session(profile) as session:
             await session.count(
                 TEST_ENTRY["category"], {"~plaintag": "a", "enctag": "b"}
             )
-        ) == 0
 
     with raises(AskarError, match="not found"):
         async with store.session("unknown profile") as session:
