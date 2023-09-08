@@ -66,8 +66,8 @@ impl KeyEntry {
     }
 
     /// Accessor for the key tags
-    pub fn tags_as_ref(&self) -> &Vec<EntryTag> {
-        &self.tags
+    pub fn tags_as_slice(&self) -> &[EntryTag] {
+        self.tags.as_slice()
     }
 
     /// Determine if a key entry refers to a local or external key

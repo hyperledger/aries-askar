@@ -26,5 +26,5 @@ pub mod ffi;
 
 pub mod kms;
 
-pub mod store;
+mod store;
 pub use store::{entry, PassKey, Session, Store, StoreKeyMethod};
