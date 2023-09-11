@@ -150,7 +150,8 @@ impl Backend for SqliteBackend {
             let profile: Option<String> = sqlx::query_scalar(CONFIG_FETCH_QUERY)
                 .bind("default_profile")
                 .fetch_one(conn.as_mut())
-                .await?;
+                .await
+                .map_err(err_map!(Backend, "Error fetching default profile name"))?;
             Ok(profile.unwrap_or_default())
         })
     }
@@ -162,7 +163,8 @@ impl Backend for SqliteBackend {
                 .bind("default_profile")
                 .bind(profile)
                 .execute(conn.as_mut())
-                .await?;
+                .await
+                .map_err(err_map!(Backend, "Error setting default profile name"))?;
             Ok(())
         })
     }
@@ -172,7 +174,8 @@ impl Backend for SqliteBackend {
             let mut conn = self.conn_pool.acquire().await?;
             let rows = sqlx::query("SELECT name FROM profiles")
                 .fetch_all(conn.as_mut())
-                .await?;
+                .await
+                .map_err(err_map!(Backend, "Error fetching profile list"))?;
             let names = rows.into_iter().flat_map(|r| r.try_get(0)).collect();
             Ok(names)
         })
@@ -184,7 +187,8 @@ impl Backend for SqliteBackend {
             Ok(sqlx::query("DELETE FROM profiles WHERE name=?")
                 .bind(&name)
                 .execute(conn.as_mut())
-                .await?
+                .await
+                .map_err(err_map!(Backend, "Error removing profile"))?
                 .rows_affected()
                 != 0)
         })
@@ -323,7 +327,8 @@ impl BackendSession for DbSession<Sqlite> {
             let mut active = acquire_session(&mut *self).await?;
             let count = sqlx::query_scalar_with(query.as_str(), params)
                 .fetch_one(active.connection_mut())
-                .await?;
+                .await
+                .map_err(err_map!(Backend, "Error performing count query"))?;
             Ok(count)
         })
     }
@@ -359,7 +364,8 @@ impl BackendSession for DbSession<Sqlite> {
                 .bind(enc_category)
                 .bind(enc_name)
                 .fetch_optional(active.connection_mut())
-                .await?
+                .await
+                .map_err(err_map!(Backend, "Error performing fetch query"))?
             {
                 let value = row.try_get(1)?;
                 let tags = row.try_get(2)?;
@@ -583,7 +589,8 @@ async fn resolve_profile_key(
     } else if let Some(row) = sqlx::query("SELECT id, profile_key FROM profiles WHERE name=?1")
         .bind(profile.as_str())
         .fetch_optional(conn.as_mut())
-        .await?
+        .await
+        .map_err(err_map!(Backend, "Error fetching profile key"))?
     {
         let pid = row.try_get(0)?;
         let key = Arc::new(cache.load_key(row.try_get(1)?).await?);
@@ -615,9 +622,10 @@ async fn perform_insert(
             .bind(enc_value)
             .bind(expiry_ms.map(expiry_timestamp).transpose()?)
             .execute(active.connection_mut())
-            .await?;
+            .await
+            .map_err(err_map!(Backend, "Error inserting new entry"))?;
         if done.rows_affected() == 0 {
-            return Err(err_msg!(Duplicate, "Duplicate row"));
+            return Err(err_msg!(Duplicate, "Duplicate entry"));
         }
         done.last_insert_rowid()
     } else {
@@ -631,11 +639,12 @@ async fn perform_insert(
             .bind(expiry_ms.map(expiry_timestamp).transpose()?)
             .fetch_one(active.connection_mut())
             .await
-            .map_err(|_| err_msg!(NotFound, "Error updating existing row"))?;
+            .map_err(|_| err_msg!(NotFound, "Error updating existing entry"))?;
         sqlx::query(TAG_DELETE_QUERY)
             .bind(row_id)
             .execute(active.connection_mut())
-            .await?;
+            .await
+            .map_err(err_map!(Backend, "Error removing existing entry tags"))?;
         row_id
     };
     if let Some(tags) = enc_tags {
@@ -646,7 +655,8 @@ async fn perform_insert(
                 .bind(&tag.value)
                 .bind(tag.plaintext as i16)
                 .execute(active.connection_mut())
-                .await?;
+                .await
+                .map_err(err_map!(Backend, "Error inserting entry tags"))?;
         }
     }
     Ok(())
@@ -666,7 +676,8 @@ async fn perform_remove<'q>(
         .bind(enc_category)
         .bind(enc_name)
         .execute(active.connection_mut())
-        .await?;
+        .await
+        .map_err(err_map!(Backend, "Error removing entry"))?;
     if done.rows_affected() == 0 && !ignore_error {
         Err(err_msg!(NotFound, "Entry not found"))
     } else {

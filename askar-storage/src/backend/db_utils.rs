@@ -102,10 +102,15 @@ impl<DB: ExtDatabase> DbSession<DB> {
     {
         if let DbSessionState::Pending { pool, transaction } = &self.state {
             debug!("Acquire pool connection");
-            let mut conn = pool.acquire().await?;
+            let mut conn = pool
+                .acquire()
+                .await
+                .map_err(err_map!(Backend, "Error acquiring pool connection"))?;
             if *transaction {
                 debug!("Start transaction");
-                DB::start_transaction(&mut conn, false).await?;
+                DB::start_transaction(&mut conn, false)
+                    .await
+                    .map_err(err_map!(Backend, "Error starting transaction"))?;
                 self.txn_depth += 1;
             }
             self.state = DbSessionState::Active { conn };
@@ -274,7 +279,9 @@ impl<'q, DB: ExtDatabase> DbSessionActive<'q, DB> {
         'q: 't,
     {
         debug!("Start nested transaction");
-        DB::start_transaction(self.connection_mut(), true).await?;
+        DB::start_transaction(self.connection_mut(), true)
+            .await
+            .map_err(err_map!(Backend, "Error starting nested transaction"))?;
         self.inner.txn_depth += 1;
         Ok(DbSessionTxn {
             inner: &mut *self.inner,
@@ -289,7 +296,9 @@ impl<'q, DB: ExtDatabase> DbSessionActive<'q, DB> {
     {
         if self.inner.txn_depth == 0 {
             debug!("Start transaction");
-            DB::start_transaction(self.connection_mut(), false).await?;
+            DB::start_transaction(self.connection_mut(), false)
+                .await
+                .map_err(err_map!(Backend, "Error starting transaction"))?;
             self.inner.txn_depth += 1;
             Ok(DbSessionTxn {
                 inner: &mut *self.inner,
@@ -323,7 +332,9 @@ impl<'a, DB: ExtDatabase> DbSessionTxn<'a, DB> {
             self.inner.txn_depth -= 1;
             let conn = self.connection_mut();
             debug!("Commit transaction");
-            DB::TransactionManager::commit(conn).await?;
+            DB::TransactionManager::commit(conn)
+                .await
+                .map_err(err_map!(Backend, "Error committing transaction"))?;
         }
         Ok(())
     }
