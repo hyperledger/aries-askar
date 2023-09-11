@@ -349,15 +349,12 @@ async def test_profile(store: Store):
     # opening removed profile should fail
     with raises(AskarError, match="removed"):
         async with store.session(profile) as session:
-            await session.count(
-                TEST_ENTRY["category"], {"~plaintag": "a", "enctag": "b"}
-            )
+            pass
 
+    # opening unknown profile should fail
     with raises(AskarError, match="not found"):
         async with store.session("unknown profile") as session:
-            await session.count(
-                TEST_ENTRY["category"], {"~plaintag": "a", "enctag": "b"}
-            )
+            pass
 
     await store.create_profile(profile)
 
