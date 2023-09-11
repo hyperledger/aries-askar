@@ -209,7 +209,7 @@ pub async fn copy_store<'m, B: Backend, M: ManageBackend<'m>>(
     key_method: StoreKeyMethod,
     pass_key: PassKey<'m>,
     recreate: bool,
-) -> Result<(), Error> {
+) -> Result<<M as ManageBackend<'m>>::Backend, Error> {
     let default_profile = source.get_default_profile().await?;
     let profile_ids = source.list_profiles().await?;
     let target = target
@@ -218,5 +218,5 @@ pub async fn copy_store<'m, B: Backend, M: ManageBackend<'m>>(
     for profile in profile_ids {
         copy_profile(source, &target, &profile, &profile).await?;
     }
-    Ok(())
+    Ok(target)
 }
