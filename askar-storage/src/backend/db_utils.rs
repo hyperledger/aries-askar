@@ -29,6 +29,7 @@ pub(crate) type Connection<DB> = <DB as Database>::Connection;
 pub(crate) enum DbSessionState<DB: ExtDatabase> {
     Active { conn: PoolConnection<DB> },
     Pending { pool: Pool<DB>, transaction: bool },
+    Closed,
 }
 
 unsafe impl<DB: ExtDatabase> Sync for DbSessionState<DB> where DB::Connection: Send {}
@@ -140,17 +141,20 @@ impl<DB: ExtDatabase> DbSession<DB> {
     }
 
     pub(crate) async fn close(&mut self, commit: bool) -> Result<(), Error> {
+        let state = std::mem::replace(&mut self.state, DbSessionState::Closed);
         if self.txn_depth > 0 {
             self.txn_depth = 0;
-            if let Some(conn) = self.connection_mut() {
+            if let DbSessionState::Active { mut conn, .. } = state {
                 if commit {
                     debug!("Commit transaction on close");
-                    DB::TransactionManager::commit(conn).await
+                    DB::TransactionManager::commit(&mut conn).await
                 } else {
                     debug!("Roll-back transaction on close");
-                    DB::TransactionManager::rollback(conn).await
+                    DB::TransactionManager::rollback(&mut conn).await
                 }
                 .map_err(err_map!(Backend, "Error closing transaction"))?;
+            } else {
+                warn!("Could not close out transaction: session not active");
             }
         }
         Ok(())
@@ -253,7 +257,10 @@ pub(crate) struct DbSessionActive<'a, DB: ExtDatabase> {
 impl<'q, DB: ExtDatabase> DbSessionActive<'q, DB> {
     #[inline]
     pub fn connection_mut(&mut self) -> &mut Connection<DB> {
-        self.inner.connection_mut().unwrap().as_mut()
+        self.inner
+            .connection_mut()
+            .expect("Tried to fetch connection from closed session")
+            .as_mut()
     }
 
     #[allow(unused)]
