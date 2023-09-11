@@ -206,9 +206,18 @@ export type SessionUpdateKeyOptions = {
 }
 
 export type StoreCloseOptions = { storeHandle: StoreHandle }
+export type StoreCopyToOptions = {
+  storeHandle: StoreHandle
+  targetUri: string
+  keyMethod?: string
+  passKey?: string
+  recreate?: boolean
+}
 export type StoreCreateProfileOptions = { storeHandle: StoreHandle; profile?: string }
 export type StoreGenerateRawKeyOptions = { seed?: Uint8Array }
 export type StoreGetProfileNameOptions = { storeHandle: StoreHandle }
+export type StoreGetDefaultProfileOptions = { storeHandle: StoreHandle }
+export type StoreListProfilesOptions = { storeHandle: StoreHandle }
 export type StoreOpenOptions = { specUri: string; keyMethod?: string; passKey?: string; profile?: string }
 export type StoreProvisionOptions = {
   specUri: string
@@ -220,6 +229,7 @@ export type StoreProvisionOptions = {
 export type StoreRekeyOptions = { storeHandle: StoreHandle; keyMethod?: string; passKey: string }
 export type StoreRemoveOptions = { specUri: string }
 export type StoreRemoveProfileOptions = { storeHandle: StoreHandle; profile: string }
+export type StoreSetDefaultProfileOptions = { storeHandle: StoreHandle; profile: string }
 
 export type MigrateIndySdkOptions = { specUri: string; walletName: string; walletKey: string; kdfLevel: string }
 
@@ -296,14 +306,18 @@ export type AriesAskar = {
   sessionUpdateKey(options: SessionUpdateKeyOptions): Promise<void>
 
   storeClose(options: StoreCloseOptions): Promise<void>
+  storeCopyTo(options: StoreCopyToOptions): Promise<void>
   storeCreateProfile(options: StoreCreateProfileOptions): Promise<string>
   storeGenerateRawKey(options: StoreGenerateRawKeyOptions): string
+  storeGetDefaultProfile(options: StoreGetDefaultProfileOptions): Promise<string>
   storeGetProfileName(options: StoreGetProfileNameOptions): Promise<string>
+  storeListProfiles(options: StoreListProfilesOptions): Promise<string[]>
   storeOpen(options: StoreOpenOptions): Promise<StoreHandle>
   storeProvision(options: StoreProvisionOptions): Promise<StoreHandle>
   storeRekey(options: StoreRekeyOptions): Promise<void>
   storeRemove(options: StoreRemoveOptions): Promise<number>
   storeRemoveProfile(options: StoreRemoveProfileOptions): Promise<number>
+  storeSetDefaultProfile(options: StoreSetDefaultProfileOptions): Promise<void>
 
   migrateIndySdk(options: MigrateIndySdkOptions): Promise<void>
 }

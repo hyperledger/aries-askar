@@ -65,6 +65,11 @@ impl KeyEntry {
         self.name.as_str()
     }
 
+    /// Accessor for the key tags
+    pub fn tags_as_slice(&self) -> &[EntryTag] {
+        self.tags.as_slice()
+    }
+
     /// Determine if a key entry refers to a local or external key
     pub fn is_local(&self) -> bool {
         self.params.reference.is_none()

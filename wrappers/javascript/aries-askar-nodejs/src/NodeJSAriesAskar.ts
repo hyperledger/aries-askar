@@ -68,6 +68,7 @@ import type {
   SetCustomLoggerOptions,
   SetMaxLogLevelOptions,
   StoreCloseOptions,
+  StoreCopyToOptions,
   StoreCreateProfileOptions,
   StoreGenerateRawKeyOptions,
   StoreGetProfileNameOptions,
@@ -80,6 +81,9 @@ import type {
   AriesAskarErrorObject,
   AeadParamsOptions,
   MigrateIndySdkOptions,
+  StoreGetDefaultProfileOptions,
+  StoreSetDefaultProfileOptions,
+  StoreListProfilesOptions,
 } from '@hyperledger/aries-askar-shared'
 
 import {
@@ -117,6 +121,7 @@ import {
   FFI_SESSION_HANDLE,
   FFI_STORE_HANDLE,
   FFI_INT8,
+  FFI_STRING_LIST_HANDLE,
 } from './ffi'
 import { getNativeAriesAskar } from './library'
 
@@ -902,6 +907,14 @@ export class NodeJSAriesAskar implements AriesAskar {
     return this.promisify((cb, cbId) => this.nativeAriesAskar.askar_store_close(storeHandle, cb, cbId))
   }
 
+  public storeCopyTo(options: StoreCopyToOptions): Promise<void> {
+    const { storeHandle, targetUri, passKey, keyMethod, recreate } = serializeArguments(options)
+
+    return this.promisify((cb, cbId) =>
+      this.nativeAriesAskar.askar_store_copy(storeHandle, targetUri, keyMethod, passKey, recreate, cb, cbId)
+    )
+  }
+
   public async storeCreateProfile(options: StoreCreateProfileOptions): Promise<string> {
     const { storeHandle, profile } = serializeArguments(options)
     const response = await this.promisifyWithResponse<string>(
@@ -922,6 +935,15 @@ export class NodeJSAriesAskar implements AriesAskar {
     return ret.deref() as string
   }
 
+  public async storeGetDefaultProfile(options: StoreGetDefaultProfileOptions): Promise<string> {
+    const { storeHandle } = serializeArguments(options)
+    const response = await this.promisifyWithResponse<string>((cb, cbId) =>
+      this.nativeAriesAskar.askar_store_get_default_profile(storeHandle, cb, cbId)
+    )
+
+    return handleInvalidNullResponse(response)
+  }
+
   public async storeGetProfileName(options: StoreGetProfileNameOptions): Promise<string> {
     const { storeHandle } = serializeArguments(options)
     const response = await this.promisifyWithResponse<string>((cb, cbId) =>
@@ -929,6 +951,30 @@ export class NodeJSAriesAskar implements AriesAskar {
     )
 
     return handleInvalidNullResponse(response)
+  }
+
+  public async storeListProfiles(options: StoreListProfilesOptions): Promise<string[]> {
+    const { storeHandle } = serializeArguments(options)
+    const listHandle = await this.promisifyWithResponse<Buffer>(
+      (cb, cbId) => this.nativeAriesAskar.askar_store_list_profiles(storeHandle, cb, cbId),
+      FFI_STRING_LIST_HANDLE
+    )
+    if (listHandle === null) {
+      throw AriesAskarError.customError({ message: 'Invalid handle' })
+    }
+    const counti32 = allocateInt32Buffer()
+    this.nativeAriesAskar.askar_string_list_count(listHandle, counti32)
+    this.handleError()
+    const count = counti32.deref() as number
+    const ret = []
+    const strval = allocateStringBuffer()
+    for (let i = 0; i < count; i++) {
+      this.nativeAriesAskar.askar_string_list_get_item(listHandle, i, strval)
+      this.handleError()
+      ret.push(strval.deref() as string)
+    }
+    this.nativeAriesAskar.askar_string_list_free(listHandle)
+    return ret
   }
 
   public async storeOpen(options: StoreOpenOptions): Promise<StoreHandle> {
@@ -981,6 +1027,14 @@ export class NodeJSAriesAskar implements AriesAskar {
     )
 
     return handleInvalidNullResponse(response)
+  }
+
+  public async storeSetDefaultProfile(options: StoreSetDefaultProfileOptions): Promise<void> {
+    const { storeHandle, profile } = serializeArguments(options)
+
+    return this.promisify((cb, cbId) =>
+      this.nativeAriesAskar.askar_store_set_default_profile(storeHandle, profile, cb, cbId)
+    )
   }
 
   public async migrateIndySdk(options: MigrateIndySdkOptions): Promise<void> {

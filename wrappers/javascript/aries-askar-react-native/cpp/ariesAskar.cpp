@@ -8,19 +8,19 @@ namespace ariesAskar {
 
 jsi::Value version(jsi::Runtime &rt, jsi::Object options) {
   return jsi::String::createFromAscii(rt, askar_version());
-};
+}
 
 jsi::Value getCurrentError(jsi::Runtime &rt, jsi::Object options) {
   const char *error;
   askar_get_current_error(&error);
   return jsi::String::createFromAscii(rt, error);
-};
+}
 
 jsi::Value setDefaultLogger(jsi::Runtime &rt, jsi::Object options) {
   ErrorCode code = askar_set_default_logger();
 
   return createReturnValue(rt, code, nullptr);
-};
+}
 
 jsi::Value entryListCount(jsi::Runtime &rt, jsi::Object options) {
   auto entryListHandle =
@@ -31,7 +31,8 @@ jsi::Value entryListCount(jsi::Runtime &rt, jsi::Object options) {
   ErrorCode code = askar_entry_list_count(entryListHandle, &out);
 
   return createReturnValue(rt, code, &out);
-};
+}
+
 jsi::Value entryListFree(jsi::Runtime &rt, jsi::Object options) {
   auto entryListHandle =
       jsiToValue<EntryListHandle>(rt, options, "entryListHandle");
@@ -87,6 +88,26 @@ jsi::Value entryListGetName(jsi::Runtime &rt, jsi::Object options) {
   ErrorCode code = askar_entry_list_get_name(entryListHandle, index, &out);
 
   return createReturnValue(rt, code, &out);
+}
+
+jsi::Value storeCopyTo(jsi::Runtime &rt, jsi::Object options) {
+  auto storeHandle = jsiToValue<int64_t>(rt, options, "storeHandle");
+  auto targetUri = jsiToValue<std::string>(rt, options, "targetUri");
+  auto keyMethod = jsiToValue<std::string>(rt, options, "keyMethod", true);
+  auto passKey = jsiToValue<std::string>(rt, options, "passKey", true);
+  auto recreate = jsiToValue<int8_t>(rt, options, "recreate");
+
+  jsi::Function cb = options.getPropertyAsFunction(rt, "cb");
+  State *state = new State(&cb);
+  state->rt = &rt;
+
+  ErrorCode code = askar_store_copy(
+      storeHandle, targetUri.c_str(),
+      keyMethod.length() ? keyMethod.c_str() : nullptr,
+      passKey.length() ? passKey.c_str() : nullptr,
+      recreate, callbackWithResponse, CallbackId(state));
+
+  return createReturnValue(rt, code, nullptr);
 }
 
 jsi::Value storeOpen(jsi::Runtime &rt, jsi::Object options) {
@@ -177,6 +198,32 @@ jsi::Value storeGetProfileName(jsi::Runtime &rt, jsi::Object options) {
   return createReturnValue(rt, code, nullptr);
 }
 
+jsi::Value storeGetDefaultProfile(jsi::Runtime &rt, jsi::Object options) {
+  auto storeHandle = jsiToValue<int64_t>(rt, options, "storeHandle");
+
+  jsi::Function cb = options.getPropertyAsFunction(rt, "cb");
+  State *state = new State(&cb);
+  state->rt = &rt;
+
+  ErrorCode code = askar_store_get_default_profile(
+      storeHandle, callbackWithResponse, CallbackId(state));
+
+  return createReturnValue(rt, code, nullptr);
+}
+
+jsi::Value storeListProfiles(jsi::Runtime &rt, jsi::Object options) {
+  auto storeHandle = jsiToValue<int64_t>(rt, options, "storeHandle");
+
+  jsi::Function cb = options.getPropertyAsFunction(rt, "cb");
+  State *state = new State(&cb);
+  state->rt = &rt;
+
+  ErrorCode code = askar_store_list_profiles(
+      storeHandle, callbackWithResponse, CallbackId(state));
+
+  return createReturnValue(rt, code, nullptr);
+}
+
 jsi::Value storeRekey(jsi::Runtime &rt, jsi::Object options) {
   auto storeHandle = jsiToValue<int64_t>(rt, options, "storeHandle");
   auto keyMethod = jsiToValue<std::string>(rt, options, "keyMethod", true);
@@ -215,6 +262,20 @@ jsi::Value storeRemoveProfile(jsi::Runtime &rt, jsi::Object options) {
   state->rt = &rt;
 
   ErrorCode code = askar_store_remove_profile(
+      storeHandle, profile.c_str(), callbackWithResponse, CallbackId(state));
+
+  return createReturnValue(rt, code, nullptr);
+}
+
+jsi::Value storeSetDefaultProfile(jsi::Runtime &rt, jsi::Object options) {
+  auto storeHandle = jsiToValue<int64_t>(rt, options, "storeHandle");
+  auto profile = jsiToValue<std::string>(rt, options, "profile");
+
+  jsi::Function cb = options.getPropertyAsFunction(rt, "cb");
+  State *state = new State(&cb);
+  state->rt = &rt;
+
+  ErrorCode code = askar_store_set_default_profile(
       storeHandle, profile.c_str(), callbackWithResponse, CallbackId(state));
 
   return createReturnValue(rt, code, nullptr);
@@ -976,6 +1037,38 @@ jsi::Value migrateIndySdk(jsi::Runtime &rt, jsi::Object options) {
                                           callback, CallbackId(state));
 
   return createReturnValue(rt, code, nullptr);
+}
+
+jsi::Value stringListCount(jsi::Runtime &rt, jsi::Object options) {
+  auto stringListHandle =
+      jsiToValue<EntryListHandle>(rt, options, "stringListHandle");
+
+  int32_t out;
+
+  ErrorCode code = askar_string_list_count(stringListHandle, &out);
+
+  return createReturnValue(rt, code, &out);
+}
+
+jsi::Value stringListFree(jsi::Runtime &rt, jsi::Object options) {
+  auto stringListHandle =
+      jsiToValue<EntryListHandle>(rt, options, "stringListHandle");
+
+  askar_string_list_free(stringListHandle);
+
+  return createReturnValue(rt, ErrorCode::Success, nullptr);
+}
+
+jsi::Value stringListGetItem(jsi::Runtime &rt, jsi::Object options) {
+  auto stringListHandle =
+      jsiToValue<StringListHandle>(rt, options, "stringListHandle");
+  auto index = jsiToValue<int32_t>(rt, options, "index");
+
+  const char *out;
+
+  ErrorCode code = askar_string_list_get_item(stringListHandle, index, &out);
+
+  return createReturnValue(rt, code, &out);
 }
 
 } // namespace ariesAskar
