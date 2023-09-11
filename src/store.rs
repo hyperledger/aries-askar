@@ -143,15 +143,23 @@ impl Store {
     /// Create a new session against the store
     pub async fn session(&self, profile: Option<String>) -> Result<Session, Error> {
         let mut sess = Session::new(self.0.session(profile, false)?);
-        sess.ping().await?;
-        Ok(sess)
+        if let Err(e) = sess.ping().await {
+            sess.0.close(false).await?;
+            Err(e)
+        } else {
+            Ok(sess)
+        }
     }
 
     /// Create a new transaction session against the store
     pub async fn transaction(&self, profile: Option<String>) -> Result<Session, Error> {
         let mut txn = Session::new(self.0.session(profile, true)?);
-        txn.ping().await?;
-        Ok(txn)
+        if let Err(e) = txn.ping().await {
+            txn.0.close(false).await?;
+            Err(e)
+        } else {
+            Ok(txn)
+        }
     }
 
     /// Close the store instance, waiting for any shutdown procedures to complete.
