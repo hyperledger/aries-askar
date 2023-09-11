@@ -95,7 +95,6 @@ impl Store {
             .provision_backend(key_method, pass_key, Some(default_profile), recreate)
             .await?;
         for profile in profile_ids {
-            println!("copy profile: {}", profile);
             copy_profile(&self.0, &target, &profile, &profile).await?;
         }
         Ok(Self::new(target))
