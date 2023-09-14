@@ -156,7 +156,8 @@ impl Backend for PostgresBackend {
             let profile: Option<String> = sqlx::query_scalar(CONFIG_FETCH_QUERY)
                 .bind("default_profile")
                 .fetch_one(conn.as_mut())
-                .await?;
+                .await
+                .map_err(err_map!(Backend, "Error fetching default profile name"))?;
             Ok(profile.unwrap_or_default())
         })
     }
@@ -168,7 +169,8 @@ impl Backend for PostgresBackend {
                 .bind("default_profile")
                 .bind(profile)
                 .execute(conn.as_mut())
-                .await?;
+                .await
+                .map_err(err_map!(Backend, "Error setting default profile name"))?;
             Ok(())
         })
     }
@@ -178,7 +180,8 @@ impl Backend for PostgresBackend {
             let mut conn = self.conn_pool.acquire().await?;
             let rows = sqlx::query("SELECT name FROM profiles")
                 .fetch_all(conn.as_mut())
-                .await?;
+                .await
+                .map_err(err_map!(Backend, "Error fetching profile list"))?;
             let names = rows.into_iter().flat_map(|r| r.try_get(0)).collect();
             Ok(names)
         })
@@ -190,7 +193,8 @@ impl Backend for PostgresBackend {
             Ok(sqlx::query("DELETE FROM profiles WHERE name=$1")
                 .bind(&name)
                 .execute(conn.as_mut())
-                .await?
+                .await
+                .map_err(err_map!(Backend, "Error removing profile"))?
                 .rows_affected()
                 != 0)
         })
@@ -340,7 +344,8 @@ impl BackendSession for DbSession<Postgres> {
             let mut active = acquire_session(&mut *self).await?;
             let count = sqlx::query_scalar_with(query.as_str(), params)
                 .fetch_one(active.connection_mut())
-                .await?;
+                .await
+                .map_err(err_map!(Backend, "Error performing count query"))?;
             Ok(count)
         })
     }
@@ -380,7 +385,8 @@ impl BackendSession for DbSession<Postgres> {
             .bind(enc_category)
             .bind(enc_name)
             .fetch_optional(active.connection_mut())
-            .await?
+            .await
+            .map_err(err_map!(Backend, "Error performing fetch query"))?
             {
                 let value = row.try_get(1)?;
                 let tags = row.try_get::<Option<String>, _>(2)?.map(String::into_bytes);
@@ -545,6 +551,28 @@ impl BackendSession for DbSession<Postgres> {
         }
     }
 
+    fn ping(&mut self) -> BoxFuture<'_, Result<(), Error>> {
+        Box::pin(async move {
+            let mut sess = acquire_session(&mut *self).await?;
+            if sess.in_transaction() {
+                // the profile row is locked, perform a typical ping
+                sqlx::Connection::ping(sess.connection_mut())
+                    .await
+                    .map_err(err_map!(Backend, "Error pinging session"))?;
+            } else {
+                let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM profiles WHERE id=$1")
+                    .bind(sess.profile_id)
+                    .fetch_one(sess.connection_mut())
+                    .await
+                    .map_err(err_map!(Backend, "Error pinging session"))?;
+                if count == 0 {
+                    return Err(err_msg!(NotFound, "Session profile has been removed"));
+                }
+            }
+            Ok(())
+        })
+    }
+
     fn close(&mut self, commit: bool) -> BoxFuture<'_, Result<(), Error>> {
         Box::pin(self.close(commit))
     }
@@ -582,12 +610,8 @@ impl QueryPrepare for PostgresBackend {
 async fn acquire_key(
     session: &mut DbSession<Postgres>,
 ) -> Result<(ProfileId, Arc<ProfileKey>), Error> {
-    if let Some(ret) = session.profile_and_key() {
-        Ok(ret)
-    } else {
-        session.make_active(&resolve_profile_key).await?;
-        Ok(session.profile_and_key().unwrap())
-    }
+    acquire_session(session).await?;
+    Ok(session.profile_and_key().unwrap())
 }
 
 async fn acquire_session(
@@ -600,13 +624,26 @@ async fn resolve_profile_key(
     conn: &mut PoolConnection<Postgres>,
     cache: Arc<KeyCache>,
     profile: String,
+    in_txn: bool,
 ) -> Result<(ProfileId, Arc<ProfileKey>), Error> {
     if let Some((pid, key)) = cache.get_profile(profile.as_str()).await {
+        if in_txn {
+            // lock the profile row to prevent it from being removed
+            let check: Option<i64> =
+                sqlx::query_scalar("SELECT id FROM profiles WHERE id=$1 FOR NO KEY UPDATE")
+                    .bind(pid)
+                    .fetch_optional(conn.as_mut())
+                    .await?;
+            if check.is_none() {
+                return Err(err_msg!(NotFound, "Session profile has been removed"));
+            }
+        }
         Ok((pid, key))
-    } else if let Some(row) = sqlx::query("SELECT id, profile_key FROM profiles WHERE name=$1")
-        .bind(profile.as_str())
-        .fetch_optional(conn.as_mut())
-        .await?
+    } else if let Some(row) =
+        sqlx::query("SELECT id, profile_key FROM profiles WHERE name=$1 FOR NO KEY UPDATE")
+            .bind(profile.as_str())
+            .fetch_optional(conn.as_mut())
+            .await?
     {
         let pid = row.try_get(0)?;
         let key = Arc::new(cache.load_key(row.try_get(1)?).await?);
@@ -639,7 +676,7 @@ async fn perform_insert(
             .bind(expiry_ms.map(expiry_timestamp).transpose()?)
             .fetch_optional(active.connection_mut())
             .await?
-            .ok_or_else(|| err_msg!(Duplicate, "Duplicate row"))?
+            .ok_or_else(|| err_msg!(Duplicate, "Duplicate entry"))?
     } else {
         trace!("Update entry");
         let row_id: i64 = sqlx::query_scalar(UPDATE_QUERY)
@@ -651,11 +688,12 @@ async fn perform_insert(
             .bind(expiry_ms.map(expiry_timestamp).transpose()?)
             .fetch_one(active.connection_mut())
             .await
-            .map_err(|_| err_msg!(NotFound, "Error updating existing row"))?;
+            .map_err(|_| err_msg!(NotFound, "Error updating existing entry"))?;
         sqlx::query(TAG_DELETE_QUERY)
             .bind(row_id)
             .execute(active.connection_mut())
-            .await?;
+            .await
+            .map_err(err_map!(Backend, "Error removing existing entry tags"))?;
         row_id
     };
     if let Some(tags) = enc_tags {
@@ -666,7 +704,8 @@ async fn perform_insert(
                 .bind(&tag.value)
                 .bind(tag.plaintext as i16)
                 .execute(active.connection_mut())
-                .await?;
+                .await
+                .map_err(err_map!(Backend, "Error inserting entry tags"))?;
         }
     }
     Ok(())
@@ -686,7 +725,8 @@ async fn perform_remove<'q>(
         .bind(enc_category)
         .bind(enc_name)
         .execute(active.connection_mut())
-        .await?;
+        .await
+        .map_err(err_map!(Backend, "Error removing entry"))?;
     if done.rows_affected() == 0 && !ignore_error {
         Err(err_msg!(NotFound, "Entry not found"))
     } else {

@@ -265,15 +265,13 @@ describe('Store and Session', () => {
 
     await store.removeProfile(profile)
 
-    // Profile key is cached
-    const session5 = await store.session(profile).open()
-    await expect(session5.count(firstEntry)).resolves.toStrictEqual(0)
-    await session5.close()
+    // Opening removed profile should fail
+    await expect(store.session(profile).open()).rejects.toThrowError(AriesAskarError)
 
-    // Unknown profile
-    const session6 = await store.session('unknown profile').open()
-    await expect(session6.count(firstEntry)).rejects.toThrowError(AriesAskarError)
-    await session6.close()
+    // Unknown unknown profile should fail
+    await expect(store.session('unknown profile').open()).rejects.toThrowError(AriesAskarError)
+
+    await expect(store.createProfile(profile)).resolves.toStrictEqual(profile)
 
     const session7 = await store.session(profile).open()
     await expect(session7.count(firstEntry)).resolves.toStrictEqual(0)

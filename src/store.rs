@@ -95,7 +95,6 @@ impl Store {
             .provision_backend(key_method, pass_key, Some(default_profile), recreate)
             .await?;
         for profile in profile_ids {
-            println!("copy profile: {}", profile);
             copy_profile(&self.0, &target, &profile, &profile).await?;
         }
         Ok(Self::new(target))
@@ -142,12 +141,24 @@ impl Store {
 
     /// Create a new session against the store
     pub async fn session(&self, profile: Option<String>) -> Result<Session, Error> {
-        Ok(Session::new(self.0.session(profile, false)?))
+        let mut sess = Session::new(self.0.session(profile, false)?);
+        if let Err(e) = sess.ping().await {
+            sess.0.close(false).await?;
+            Err(e)
+        } else {
+            Ok(sess)
+        }
     }
 
     /// Create a new transaction session against the store
     pub async fn transaction(&self, profile: Option<String>) -> Result<Session, Error> {
-        Ok(Session::new(self.0.session(profile, true)?))
+        let mut txn = Session::new(self.0.session(profile, true)?);
+        if let Err(e) = txn.ping().await {
+            txn.0.close(false).await?;
+            Err(e)
+        } else {
+            Ok(txn)
+        }
     }
 
     /// Close the store instance, waiting for any shutdown procedures to complete.
@@ -502,6 +513,11 @@ impl Session {
             .await?;
 
         Ok(())
+    }
+
+    /// Test the connection to the store
+    pub async fn ping(&mut self) -> Result<(), Error> {
+        Ok(self.0.ping().await?)
     }
 
     /// Commit the pending transaction

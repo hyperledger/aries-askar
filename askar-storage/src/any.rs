@@ -239,6 +239,11 @@ impl BackendSession for AnyBackendSession {
             .update(kind, operation, category, name, value, tags, expiry_ms)
     }
 
+    /// Test the connection to the store
+    fn ping(&mut self) -> BoxFuture<'_, Result<(), Error>> {
+        self.0.ping()
+    }
+
     /// Close the current store session
     fn close(&mut self, commit: bool) -> BoxFuture<'_, Result<(), Error>> {
         self.0.close(commit)

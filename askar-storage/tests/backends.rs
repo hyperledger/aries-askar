@@ -243,7 +243,7 @@ mod sqlite {
                 .await
                 .expect("Error fetching default profile");
 
-            copy_store(
+            let target = copy_store(
                 &source,
                 url_target.as_str(),
                 StoreKeyMethod::RawKey,
@@ -252,6 +252,7 @@ mod sqlite {
             )
             .await
             .expect("Error copying store");
+            target.close().await.expect("Error closing copied store");
 
             source.close().await.expect("Error closing store");
             SqliteStoreOptions::new(fname_source.as_str())

@@ -29,6 +29,7 @@ pub(crate) type Connection<DB> = <DB as Database>::Connection;
 pub(crate) enum DbSessionState<DB: ExtDatabase> {
     Active { conn: PoolConnection<DB> },
     Pending { pool: Pool<DB>, transaction: bool },
+    Closed,
 }
 
 unsafe impl<DB: ExtDatabase> Sync for DbSessionState<DB> where DB::Connection: Send {}
@@ -101,10 +102,15 @@ impl<DB: ExtDatabase> DbSession<DB> {
     {
         if let DbSessionState::Pending { pool, transaction } = &self.state {
             debug!("Acquire pool connection");
-            let mut conn = pool.acquire().await?;
+            let mut conn = pool
+                .acquire()
+                .await
+                .map_err(err_map!(Backend, "Error acquiring pool connection"))?;
             if *transaction {
                 debug!("Start transaction");
-                DB::start_transaction(&mut conn, false).await?;
+                DB::start_transaction(&mut conn, false)
+                    .await
+                    .map_err(err_map!(Backend, "Error starting transaction"))?;
                 self.txn_depth += 1;
             }
             self.state = DbSessionState::Active { conn };
@@ -114,8 +120,9 @@ impl<DB: ExtDatabase> DbSession<DB> {
                 let cache = cache.clone();
                 let mut get_profile = String::new();
                 std::mem::swap(profile, &mut get_profile);
+                let in_txn = self.in_transaction();
                 let (profile_id, key) = init_key
-                    .call_once(self.connection_mut().unwrap(), cache, get_profile)
+                    .call_once(self.connection_mut().unwrap(), cache, get_profile, in_txn)
                     .await?;
                 self.profile_key = DbSessionKey::Active { profile_id, key };
                 profile_id
@@ -139,17 +146,20 @@ impl<DB: ExtDatabase> DbSession<DB> {
     }
 
     pub(crate) async fn close(&mut self, commit: bool) -> Result<(), Error> {
+        let state = std::mem::replace(&mut self.state, DbSessionState::Closed);
         if self.txn_depth > 0 {
             self.txn_depth = 0;
-            if let Some(conn) = self.connection_mut() {
+            if let DbSessionState::Active { mut conn, .. } = state {
                 if commit {
                     debug!("Commit transaction on close");
-                    DB::TransactionManager::commit(conn).await
+                    DB::TransactionManager::commit(&mut conn).await
                 } else {
                     debug!("Roll-back transaction on close");
-                    DB::TransactionManager::rollback(conn).await
+                    DB::TransactionManager::rollback(&mut conn).await
                 }
                 .map_err(err_map!(Backend, "Error closing transaction"))?;
+            } else {
+                warn!("Could not close out transaction: session not active");
             }
         }
         Ok(())
@@ -177,12 +187,13 @@ pub(crate) trait GetProfileKey<'a, DB: Database> {
         conn: &'a mut PoolConnection<DB>,
         cache: Arc<KeyCache>,
         profile: String,
+        in_txn: bool,
     ) -> Self::Fut;
 }
 
 impl<'a, DB: Database, F, Fut> GetProfileKey<'a, DB> for F
 where
-    F: FnOnce(&'a mut PoolConnection<DB>, Arc<KeyCache>, String) -> Fut,
+    F: FnOnce(&'a mut PoolConnection<DB>, Arc<KeyCache>, String, bool) -> Fut,
     Fut: Future<Output = Result<(ProfileId, Arc<ProfileKey>), Error>> + 'a,
 {
     type Fut = Fut;
@@ -191,8 +202,9 @@ where
         conn: &'a mut PoolConnection<DB>,
         cache: Arc<KeyCache>,
         profile: String,
+        in_txn: bool,
     ) -> Self::Fut {
-        self(conn, cache, profile)
+        self(conn, cache, profile, in_txn)
     }
 }
 
@@ -250,7 +262,10 @@ pub(crate) struct DbSessionActive<'a, DB: ExtDatabase> {
 impl<'q, DB: ExtDatabase> DbSessionActive<'q, DB> {
     #[inline]
     pub fn connection_mut(&mut self) -> &mut Connection<DB> {
-        self.inner.connection_mut().unwrap().as_mut()
+        self.inner
+            .connection_mut()
+            .expect("Tried to fetch connection from closed session")
+            .as_mut()
     }
 
     #[allow(unused)]
@@ -264,7 +279,9 @@ impl<'q, DB: ExtDatabase> DbSessionActive<'q, DB> {
         'q: 't,
     {
         debug!("Start nested transaction");
-        DB::start_transaction(self.connection_mut(), true).await?;
+        DB::start_transaction(self.connection_mut(), true)
+            .await
+            .map_err(err_map!(Backend, "Error starting nested transaction"))?;
         self.inner.txn_depth += 1;
         Ok(DbSessionTxn {
             inner: &mut *self.inner,
@@ -279,7 +296,9 @@ impl<'q, DB: ExtDatabase> DbSessionActive<'q, DB> {
     {
         if self.inner.txn_depth == 0 {
             debug!("Start transaction");
-            DB::start_transaction(self.connection_mut(), false).await?;
+            DB::start_transaction(self.connection_mut(), false)
+                .await
+                .map_err(err_map!(Backend, "Error starting transaction"))?;
             self.inner.txn_depth += 1;
             Ok(DbSessionTxn {
                 inner: &mut *self.inner,
@@ -313,7 +332,9 @@ impl<'a, DB: ExtDatabase> DbSessionTxn<'a, DB> {
             self.inner.txn_depth -= 1;
             let conn = self.connection_mut();
             debug!("Commit transaction");
-            DB::TransactionManager::commit(conn).await?;
+            DB::TransactionManager::commit(conn)
+                .await
+                .map_err(err_map!(Backend, "Error committing transaction"))?;
         }
         Ok(())
     }

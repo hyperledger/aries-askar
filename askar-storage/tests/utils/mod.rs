@@ -23,14 +23,22 @@ const ERR_SCAN_NEXT: &str = "Error fetching scan rows";
 
 pub async fn db_create_remove_profile(db: AnyBackend) {
     let profile = db.create_profile(None).await.expect(ERR_PROFILE);
+    let mut sess = db.session(Some(profile.clone()), false).expect(ERR_PROFILE);
+    sess.ping().await.expect(ERR_PROFILE);
+    sess.close(false).await.unwrap();
     assert!(db
-        .remove_profile(profile)
+        .remove_profile(profile.clone())
         .await
-        .expect("Error removing profile"),);
+        .expect("Error removing profile"));
+    let mut sess = db.session(Some(profile.clone()), false).expect(ERR_PROFILE);
+    sess.ping()
+        .await
+        .expect_err("Expected connection to removed session to fail");
+    sess.close(false).await.unwrap();
     assert!(!db
         .remove_profile("not a profile".to_string())
         .await
-        .expect("Error removing profile"),);
+        .expect("Error removing profile"));
 }
 
 pub async fn db_fetch_fail(db: AnyBackend) {
