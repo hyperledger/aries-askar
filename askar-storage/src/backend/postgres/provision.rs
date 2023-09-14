@@ -1,6 +1,5 @@
 use std::borrow::Cow;
 use std::str::FromStr;
-use std::sync::Arc;
 use std::time::Duration;
 
 use sqlx::{
@@ -126,28 +125,18 @@ impl PostgresStoreOptions {
         {
             conn_opts = conn_opts
                 .log_statements(log::LevelFilter::Debug)
-                .log_slow_statements(log::LevelFilter::Debug, Default::default())
+                .log_slow_statements(log::LevelFilter::Debug, Default::default());
         }
-        let set_params = self
-            .schema
-            .as_ref()
+        if let Some(s) = self.schema.as_ref() {
             // NB: schema is a validated identifier
-            .map(|s| Arc::new(format!(r#"SET search_path = "{}""#, s)));
+            conn_opts = conn_opts.options([("search_path", s)]);
+        }
         PgPoolOptions::default()
             .acquire_timeout(self.connect_timeout)
             .idle_timeout(self.idle_timeout)
             .max_connections(self.max_connections)
             .min_connections(self.min_connections)
             .test_before_acquire(false)
-            .after_connect(move |conn, _meta| {
-                let set_params = set_params.clone();
-                Box::pin(async move {
-                    if let Some(stmt) = set_params.as_ref() {
-                        conn.execute(stmt.as_str()).await?;
-                    }
-                    Ok(())
-                })
-            })
             .connect_with(conn_opts)
             .await
     }
