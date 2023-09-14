@@ -1,6 +1,6 @@
 {
   "name": "@hyperledger/aries-askar-nodejs",
-  "version": "0.1.1",
+  "version": "0.2.0-dev.1",
   "license": "Apache-2.0",
   "description": "Nodejs wrapper for Aries Askar",
   "source": "src/index",
@@ -46,10 +46,10 @@
     "typescript": "4.5.5"
   },
   "dependencies": {
-    "@hyperledger/aries-askar-shared": "0.1.1",
-    "@mapbox/node-pre-gyp": "^1.0.10",
     "@2060.io/ffi-napi": "4.0.8",
     "@2060.io/ref-napi": "3.0.6",
+    "@hyperledger/aries-askar-shared": "0.2.0-dev.1",
+    "@mapbox/node-pre-gyp": "^1.0.10",
     "node-cache": "^5.1.2",
     "ref-array-di": "^1.2.2",
     "ref-struct-di": "^1.1.1"
@@ -57,7 +57,7 @@
   "binary": {
     "module_name": "aries_askar",
     "module_path": "native",
-    "remote_path": "v0.2.9",
+    "remote_path": "v0.3.0-dev.1",
     "host": "https://github.com/hyperledger/aries-askar/releases/download/",
     "package_name": "library-{platform}-{arch}.tar.gz"
   },

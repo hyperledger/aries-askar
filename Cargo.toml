@@ -3,7 +3,7 @@ members = ["askar-crypto", "askar-storage"]
 
 [package]
 name = "aries-askar"
-version = "0.2.9"
+version = "0.3.0-dev.1"
 authors = ["Hyperledger Aries Contributors <aries@lists.hyperledger.org>"]
 edition = "2021"
 description = "Hyperledger Aries Askar secure storage"
