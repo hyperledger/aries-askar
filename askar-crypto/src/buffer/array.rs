@@ -1,4 +1,5 @@
 use core::{
+    array::TryFromSliceError,
     fmt::{self, Debug, Formatter},
     hash,
     marker::{PhantomData, PhantomPinned},
@@ -123,6 +124,15 @@ impl<L: ArrayLength<u8>> From<GenericArray<u8, L>> for ArrayKey<L> {
     #[inline(always)]
     fn from(key: GenericArray<u8, L>) -> Self {
         Self(key, PhantomPinned)
+    }
+}
+
+impl<'a, L: ArrayLength<u8>, const N: usize> TryFrom<&'a ArrayKey<L>> for &'a [u8; N] {
+    type Error = TryFromSliceError;
+
+    #[inline(always)]
+    fn try_from(key: &ArrayKey<L>) -> Result<&[u8; N], TryFromSliceError> {
+        key.0.as_slice().try_into()
     }
 }
 

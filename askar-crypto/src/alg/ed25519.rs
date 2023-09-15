@@ -5,11 +5,15 @@ use core::{
     fmt::{self, Debug, Formatter},
 };
 
-use curve25519_dalek::edwards::CompressedEdwardsY;
-use ed25519_dalek::{ExpandedSecretKey, PublicKey, SecretKey, Signature};
+use curve25519_dalek::{edwards::CompressedEdwardsY, scalar::clamp_integer};
+use ed25519_dalek::{
+    SecretKey, Signature, Signer, SigningKey, VerifyingKey, KEYPAIR_LENGTH, PUBLIC_KEY_LENGTH,
+    SECRET_KEY_LENGTH, SIGNATURE_LENGTH as EDDSA_SIGNATURE_LENGTH,
+};
 use sha2::Digest;
 use subtle::ConstantTimeEq;
 use x25519_dalek::{PublicKey as XPublicKey, StaticSecret as XSecretKey};
+use zeroize::{Zeroize, ZeroizeOnDrop};
 
 use super::{x25519::X25519KeyPair, HasKeyAlg, KeyAlg};
 use crate::{
@@ -22,40 +26,31 @@ use crate::{
     sign::{KeySigVerify, KeySign, SignatureType},
 };
 
-/// The length of an EdDSA signature
-pub const EDDSA_SIGNATURE_LENGTH: usize = 64;
-
-/// The length of a public key in bytes
-pub const PUBLIC_KEY_LENGTH: usize = 32;
-/// The length of a secret key in bytes
-pub const SECRET_KEY_LENGTH: usize = 32;
-/// The length of a keypair in bytes
-pub const KEYPAIR_LENGTH: usize = SECRET_KEY_LENGTH + PUBLIC_KEY_LENGTH;
-
 /// The 'kty' value of an Ed25519 JWK
 pub static JWK_KEY_TYPE: &str = "OKP";
 /// The 'crv' value of an Ed25519 JWK
 pub static JWK_CURVE: &str = "Ed25519";
 
 /// An Ed25519 public key or keypair
+#[derive(Clone)]
 pub struct Ed25519KeyPair {
-    // SECURITY: SecretKey zeroizes on drop
-    secret: Option<SecretKey>,
-    public: PublicKey,
+    secret: Option<[u8; SECRET_KEY_LENGTH]>,
+    public: [u8; PUBLIC_KEY_LENGTH],
 }
 
 impl Ed25519KeyPair {
     #[inline]
-    pub(crate) fn from_secret_key(sk: SecretKey) -> Self {
-        let public = PublicKey::from(&sk);
+    pub(crate) fn from_secret_key(secret: &SecretKey) -> Self {
+        let sk = SigningKey::from(secret);
+        let vk = VerifyingKey::from(&sk);
         Self {
-            secret: Some(sk),
-            public,
+            secret: Some(*secret),
+            public: vk.to_bytes(),
         }
     }
 
     pub(crate) fn check_public_bytes(&self, pk: &[u8]) -> Result<(), Error> {
-        if self.public.as_bytes().ct_eq(pk).into() {
+        if self.public.ct_eq(pk).into() {
             Ok(())
         } else {
             Err(err_msg!(InvalidKeyData, "invalid ed25519 keypair"))
@@ -63,23 +58,24 @@ impl Ed25519KeyPair {
     }
 
     /// Create a signing key from the secret key
-    pub fn to_signing_key(&self) -> Option<Ed25519SigningKey<'_>> {
+    pub fn to_signing_key(&self) -> Option<Ed25519SigningKey> {
         self.secret
             .as_ref()
-            .map(|sk| Ed25519SigningKey(ExpandedSecretKey::from(sk), &self.public))
+            .map(|sk| Ed25519SigningKey(SigningKey::from(sk)))
     }
 
     /// Convert this keypair to an X25519 keypair
     pub fn to_x25519_keypair(&self) -> X25519KeyPair {
         if let Some(secret) = self.secret.as_ref() {
-            let hash = sha2::Sha512::digest(secret.as_bytes());
-            // clamp result
-            let secret = XSecretKey::from(TryInto::<[u8; 32]>::try_into(&hash[..32]).unwrap());
+            let hash = sha2::Sha512::digest(secret);
+            // clamp result: we manually clamp the secret key for consistency with older versions,
+            // although it is not strictly necessary.
+            let secret = XSecretKey::from(clamp_integer(hash[..32].try_into().unwrap()));
             let public = XPublicKey::from(&secret);
             X25519KeyPair::new(Some(secret), public)
         } else {
             let public = XPublicKey::from(
-                CompressedEdwardsY(self.public.to_bytes())
+                CompressedEdwardsY(self.public)
                     .decompress()
                     .unwrap()
                     .to_montgomery()
@@ -97,21 +93,10 @@ impl Ed25519KeyPair {
     /// Verify a signature against the public key
     pub fn verify_signature(&self, message: &[u8], signature: &[u8]) -> bool {
         if let Ok(sig) = Signature::try_from(signature) {
-            self.public.verify_strict(message, &sig).is_ok()
+            let vk = VerifyingKey::from_bytes(&self.public).unwrap();
+            vk.verify_strict(message, &sig).is_ok()
         } else {
             false
-        }
-    }
-}
-
-impl Clone for Ed25519KeyPair {
-    fn clone(&self) -> Self {
-        Self {
-            secret: self
-                .secret
-                .as_ref()
-                .map(|sk| SecretKey::from_bytes(&sk.as_bytes()[..]).unwrap()),
-            public: self.public,
         }
     }
 }
@@ -135,10 +120,7 @@ impl Debug for Ed25519KeyPair {
 impl KeyGen for Ed25519KeyPair {
     fn generate(rng: impl KeyMaterial) -> Result<Self, Error> {
         let sk = ArrayKey::<U32>::generate(rng);
-        // NB: from_bytes is infallible if the slice is the right length
-        Ok(Self::from_secret_key(
-            SecretKey::from_bytes(sk.as_ref()).unwrap(),
-        ))
+        Ok(Self::from_secret_key((&sk).try_into().unwrap()))
     }
 }
 
@@ -154,15 +136,12 @@ impl KeyMeta for Ed25519KeyPair {
 
 impl KeySecretBytes for Ed25519KeyPair {
     fn from_secret_bytes(key: &[u8]) -> Result<Self, Error> {
-        if key.len() != SECRET_KEY_LENGTH {
-            return Err(err_msg!(InvalidKeyData));
-        }
-        let sk = SecretKey::from_bytes(key).expect("Error loading ed25519 key");
+        let sk: &[u8; SECRET_KEY_LENGTH] = key.try_into().map_err(|_| err_msg!(InvalidKeyData))?;
         Ok(Self::from_secret_key(sk))
     }
 
     fn with_secret_bytes<O>(&self, f: impl FnOnce(Option<&[u8]>) -> O) -> O {
-        f(self.secret.as_ref().map(|sk| &sk.as_bytes()[..]))
+        f(self.secret.as_ref().map(|sk| &sk[..]))
     }
 }
 
@@ -185,8 +164,8 @@ impl KeypairBytes for Ed25519KeyPair {
     fn with_keypair_bytes<O>(&self, f: impl FnOnce(Option<&[u8]>) -> O) -> O {
         if let Some(secret) = self.secret.as_ref() {
             ArrayKey::<<Self as KeypairMeta>::KeypairSize>::temp(|arr| {
-                arr[..SECRET_KEY_LENGTH].copy_from_slice(secret.as_bytes());
-                arr[SECRET_KEY_LENGTH..].copy_from_slice(self.public.as_bytes());
+                arr[..SECRET_KEY_LENGTH].copy_from_slice(secret);
+                arr[SECRET_KEY_LENGTH..].copy_from_slice(&self.public[..]);
                 f(Some(&*arr))
             })
         } else {
@@ -197,17 +176,19 @@ impl KeypairBytes for Ed25519KeyPair {
 
 impl KeyPublicBytes for Ed25519KeyPair {
     fn from_public_bytes(key: &[u8]) -> Result<Self, Error> {
-        if key.len() != PUBLIC_KEY_LENGTH {
-            return Err(err_msg!(InvalidKeyData));
-        }
+        let vk = key
+            .try_into()
+            .ok()
+            .and_then(|k| VerifyingKey::from_bytes(k).ok())
+            .ok_or_else(|| err_msg!(InvalidKeyData))?;
         Ok(Self {
             secret: None,
-            public: PublicKey::from_bytes(key).map_err(|_| err_msg!(InvalidKeyData))?,
+            public: vk.to_bytes(),
         })
     }
 
     fn with_public_bytes<O>(&self, f: impl FnOnce(&[u8]) -> O) -> O {
-        f(&self.public.to_bytes()[..])
+        f(&self.public[..])
     }
 }
 
@@ -295,25 +276,28 @@ impl FromJwk for Ed25519KeyPair {
     }
 }
 
+impl Drop for Ed25519KeyPair {
+    fn drop(&mut self) {
+        self.secret.zeroize();
+        self.public.zeroize();
+    }
+}
+
+impl ZeroizeOnDrop for Ed25519KeyPair {}
+
 /// An Ed25519 expanded secret key used for signing
 // SECURITY: ExpandedSecretKey zeroizes on drop
-pub struct Ed25519SigningKey<'p>(ExpandedSecretKey, &'p PublicKey);
+#[derive(Debug, Clone)]
+pub struct Ed25519SigningKey(SigningKey);
 
-impl Ed25519SigningKey<'_> {
+impl Ed25519SigningKey {
     /// Sign a message with the secret key
     pub fn sign(&self, message: &[u8]) -> [u8; EDDSA_SIGNATURE_LENGTH] {
-        self.0.sign(message, self.1).to_bytes()
+        self.0.sign(message).to_bytes()
     }
 }
 
-impl Debug for Ed25519SigningKey<'_> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Ed25519SigningKey")
-            .field("secret", &"<secret>")
-            .field("public", &self.1)
-            .finish()
-    }
-}
+impl ZeroizeOnDrop for Ed25519SigningKey {}
 
 #[cfg(test)]
 mod tests {

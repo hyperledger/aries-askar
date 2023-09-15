@@ -100,9 +100,7 @@ impl KeyMeta for X25519KeyPair {
 impl KeyGen for X25519KeyPair {
     fn generate(rng: impl KeyMaterial) -> Result<Self, Error> {
         let sk = ArrayKey::<U32>::generate(rng);
-        let sk = SecretKey::from(
-            TryInto::<[u8; SECRET_KEY_LENGTH]>::try_into(&sk.as_ref()[..]).unwrap(),
-        );
+        let sk = SecretKey::from(*<&[u8; SECRET_KEY_LENGTH]>::try_from(&sk).unwrap());
         let pk = PublicKey::from(&sk);
         Ok(Self::new(Some(sk), pk))
     }
@@ -110,12 +108,8 @@ impl KeyGen for X25519KeyPair {
 
 impl KeySecretBytes for X25519KeyPair {
     fn from_secret_bytes(key: &[u8]) -> Result<Self, Error> {
-        if key.len() != SECRET_KEY_LENGTH {
-            return Err(err_msg!(InvalidKeyData));
-        }
-        Ok(Self::from_secret_key(SecretKey::from(
-            TryInto::<[u8; SECRET_KEY_LENGTH]>::try_into(key).unwrap(),
-        )))
+        let sk: &[u8; SECRET_KEY_LENGTH] = key.try_into().map_err(|_| err_msg!(InvalidKeyData))?;
+        Ok(Self::from_secret_key(SecretKey::from(*sk)))
     }
 
     fn with_secret_bytes<O>(&self, f: impl FnOnce(Option<&[u8]>) -> O) -> O {
@@ -146,8 +140,7 @@ impl KeypairBytes for X25519KeyPair {
     fn with_keypair_bytes<O>(&self, f: impl FnOnce(Option<&[u8]>) -> O) -> O {
         if let Some(secret) = self.secret.as_ref() {
             ArrayKey::<<Self as KeypairMeta>::KeypairSize>::temp(|arr| {
-                let b = Zeroizing::new(secret.to_bytes());
-                arr[..SECRET_KEY_LENGTH].copy_from_slice(&b[..]);
+                arr[..SECRET_KEY_LENGTH].copy_from_slice(secret.as_bytes());
                 arr[SECRET_KEY_LENGTH..].copy_from_slice(self.public.as_bytes());
                 f(Some(&*arr))
             })
@@ -159,13 +152,8 @@ impl KeypairBytes for X25519KeyPair {
 
 impl KeyPublicBytes for X25519KeyPair {
     fn from_public_bytes(key: &[u8]) -> Result<Self, Error> {
-        if key.len() != PUBLIC_KEY_LENGTH {
-            return Err(err_msg!(InvalidKeyData));
-        }
-        Ok(Self::new(
-            None,
-            PublicKey::from(TryInto::<[u8; PUBLIC_KEY_LENGTH]>::try_into(key).unwrap()),
-        ))
+        let pk: &[u8; PUBLIC_KEY_LENGTH] = key.try_into().map_err(|_| err_msg!(InvalidKeyData))?;
+        Ok(Self::new(None, PublicKey::from(*pk)))
     }
 
     fn with_public_bytes<O>(&self, f: impl FnOnce(&[u8]) -> O) -> O {
