@@ -263,7 +263,7 @@ impl<'a> ManageBackend<'a> for &'a str {
             let opts = self.into_options()?;
             debug!("Open store with options: {:?}", &opts);
 
-            match opts.schema.as_ref() {
+            match opts.scheme.as_ref() {
                 #[cfg(feature = "postgres")]
                 "postgres" => {
                     let opts = postgres::PostgresStoreOptions::new(opts)?;
@@ -281,7 +281,7 @@ impl<'a> ManageBackend<'a> for &'a str {
                 _ => Err(err_msg!(
                     Unsupported,
                     "Unsupported backend: {}",
-                    &opts.schema
+                    &opts.scheme
                 )),
             }
         })
@@ -298,7 +298,7 @@ impl<'a> ManageBackend<'a> for &'a str {
             let opts = self.into_options()?;
             debug!("Provision store with options: {:?}", &opts);
 
-            match opts.schema.as_ref() {
+            match opts.scheme.as_ref() {
                 #[cfg(feature = "postgres")]
                 "postgres" => {
                     let opts = postgres::PostgresStoreOptions::new(opts)?;
@@ -316,7 +316,7 @@ impl<'a> ManageBackend<'a> for &'a str {
                 _ => Err(err_msg!(
                     Unsupported,
                     "Unsupported backend: {}",
-                    &opts.schema
+                    &opts.scheme
                 )),
             }
         })
@@ -327,7 +327,7 @@ impl<'a> ManageBackend<'a> for &'a str {
             let opts = self.into_options()?;
             debug!("Remove store with options: {:?}", &opts);
 
-            match opts.schema.as_ref() {
+            match opts.scheme.as_ref() {
                 #[cfg(feature = "postgres")]
                 "postgres" => {
                     let opts = postgres::PostgresStoreOptions::new(opts)?;
@@ -343,7 +343,7 @@ impl<'a> ManageBackend<'a> for &'a str {
                 _ => Err(err_msg!(
                     Unsupported,
                     "Unsupported backend: {}",
-                    &opts.schema
+                    &opts.scheme
                 )),
             }
         })

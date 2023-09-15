@@ -9,7 +9,7 @@ use crate::error::Error;
 /// Parsed representation of database connection URI
 pub struct Options<'a> {
     /// The URI schema
-    pub schema: Cow<'a, str>,
+    pub scheme: Cow<'a, str>,
     /// The authenticating user name
     pub user: Cow<'a, str>,
     /// The authenticating user password
@@ -30,19 +30,19 @@ impl<'a> Options<'a> {
         let mut fragment_and_remain = uri.splitn(2, '#');
         let uri = fragment_and_remain.next().unwrap_or_default();
         let fragment = percent_decode(fragment_and_remain.next().unwrap_or_default());
-        let mut schema_and_remain = uri.splitn(2, ':');
-        let schema = schema_and_remain.next().unwrap_or_default();
+        let mut scheme_and_remain = uri.splitn(2, ':');
+        let scheme = scheme_and_remain.next().unwrap_or_default();
 
-        let (schema, host_and_query) = if let Some(remain) = schema_and_remain.next() {
-            if schema.is_empty() {
+        let (scheme, host_and_query) = if let Some(remain) = scheme_and_remain.next() {
+            if scheme.is_empty() {
                 ("", uri)
             } else {
-                (schema, remain.trim_start_matches("//"))
+                (scheme, remain.trim_start_matches("//"))
             }
         } else {
             ("", uri)
         };
-        let schema = percent_decode(schema);
+        let scheme = percent_decode(scheme);
 
         let mut host_and_query = host_and_query.splitn(2, '?');
         let (user, password, host) = {
@@ -82,7 +82,7 @@ impl<'a> Options<'a> {
             password,
             host,
             path,
-            schema,
+            scheme,
             query,
             fragment,
         })
@@ -91,8 +91,8 @@ impl<'a> Options<'a> {
     /// Convert an options structure back into a string
     pub fn into_uri(self) -> String {
         let mut uri = String::new();
-        if !self.schema.is_empty() {
-            percent_encode_into(&mut uri, &self.schema);
+        if !self.scheme.is_empty() {
+            percent_encode_into(&mut uri, &self.scheme);
             uri.push_str("://");
         }
         if !self.user.is_empty() || !self.password.is_empty() {
@@ -160,14 +160,14 @@ mod tests {
 
     #[test]
     fn options_basic() {
-        let opts = Options::parse_uri("schema://user%2E:pass@host/dbname?a+1=b#frag").unwrap();
+        let opts = Options::parse_uri("scheme://user%2E:pass@host/dbname?a+1=b#frag").unwrap();
         let bs = Cow::Borrowed;
         assert_eq!(
             opts,
             Options {
                 user: bs("user."),
                 password: bs("pass"),
-                schema: bs("schema"),
+                scheme: bs("scheme"),
                 host: bs("host"),
                 path: bs("/dbname"),
                 query: HashMap::from_iter(vec![("a 1".to_owned(), "b".to_owned())]),
@@ -184,7 +184,7 @@ mod tests {
             Options {
                 user: Default::default(),
                 password: Default::default(),
-                schema: Default::default(),
+                scheme: Default::default(),
                 host: Cow::Borrowed("dbname"),
                 path: Cow::Borrowed("/path"),
                 query: HashMap::from_iter(vec![("a".to_owned(), "".to_owned())]),
