@@ -4,9 +4,7 @@
   "npmClient": "yarn",
   "command": {
     "version": {
-      "allowBranch": [
-        "main"
-      ]
+      "allowBranch": ["main"]
     }
   }
 }
