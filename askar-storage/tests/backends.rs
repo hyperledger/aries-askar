@@ -265,7 +265,7 @@ mod sqlite {
                 .expect("Error initializing sqlite store options")
                 .open_backend(Some(StoreKeyMethod::RawKey), key_target.as_ref(), None)
                 .await
-                .expect("Error opening rekeyed store");
+                .expect("Error opening copied store");
             assert_eq!(copied.get_active_profile(), profile);
             copied.close().await.expect("Error closing store");
 
