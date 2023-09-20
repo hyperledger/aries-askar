@@ -12,7 +12,7 @@ use futures_lite::{
 use sqlx::{
     pool::PoolConnection,
     postgres::{PgPool, Postgres},
-    Row,
+    Acquire, Row,
 };
 
 use super::{
@@ -127,15 +127,16 @@ impl Backend for PostgresBackend {
             })
             .await?;
             let mut conn = self.conn_pool.acquire().await?;
-            if let Some(pid) = sqlx::query_scalar(
+            let res = sqlx::query_scalar(
                 "INSERT INTO profiles (name, profile_key) VALUES ($1, $2) 
                 ON CONFLICT DO NOTHING RETURNING id",
             )
             .bind(&name)
             .bind(enc_key)
             .fetch_optional(conn.as_mut())
-            .await?
-            {
+            .await?;
+            conn.return_to_pool().await;
+            if let Some(pid) = res {
                 self.key_cache
                     .add_profile(name.clone(), pid, Arc::new(profile_key))
                     .await;
@@ -158,6 +159,7 @@ impl Backend for PostgresBackend {
                 .fetch_one(conn.as_mut())
                 .await
                 .map_err(err_map!(Backend, "Error fetching default profile name"))?;
+            conn.return_to_pool().await;
             Ok(profile.unwrap_or_default())
         })
     }
@@ -171,6 +173,7 @@ impl Backend for PostgresBackend {
                 .execute(conn.as_mut())
                 .await
                 .map_err(err_map!(Backend, "Error setting default profile name"))?;
+            conn.return_to_pool().await;
             Ok(())
         })
     }
@@ -183,6 +186,7 @@ impl Backend for PostgresBackend {
                 .await
                 .map_err(err_map!(Backend, "Error fetching profile list"))?;
             let names = rows.into_iter().flat_map(|r| r.try_get(0)).collect();
+            conn.return_to_pool().await;
             Ok(names)
         })
     }
@@ -190,13 +194,15 @@ impl Backend for PostgresBackend {
     fn remove_profile(&self, name: String) -> BoxFuture<'_, Result<bool, Error>> {
         Box::pin(async move {
             let mut conn = self.conn_pool.acquire().await?;
-            Ok(sqlx::query("DELETE FROM profiles WHERE name=$1")
+            let ret = sqlx::query("DELETE FROM profiles WHERE name=$1")
                 .bind(&name)
                 .execute(conn.as_mut())
                 .await
                 .map_err(err_map!(Backend, "Error removing profile"))?
                 .rows_affected()
-                != 0)
+                != 0;
+            conn.return_to_pool().await;
+            Ok(ret)
         })
     }
 
@@ -209,7 +215,8 @@ impl Backend for PostgresBackend {
         Box::pin(async move {
             let (store_key, store_key_ref) = unblock(move || method.resolve(pass_key)).await?;
             let store_key = Arc::new(store_key);
-            let mut txn = self.conn_pool.begin().await?;
+            let mut conn = self.conn_pool.acquire().await?;
+            let mut txn = conn.begin().await?;
             let mut rows = sqlx::query("SELECT id, profile_key FROM profiles").fetch(txn.as_mut());
             let mut upd_keys = BTreeMap::<ProfileId, Vec<u8>>::new();
             while let Some(row) = rows.next().await {
@@ -247,6 +254,7 @@ impl Backend for PostgresBackend {
                 return Err(err_msg!(Backend, "Error updating store key"));
             }
             txn.commit().await?;
+            conn.return_to_pool().await;
             self.key_cache = Arc::new(KeyCache::new(store_key));
             Ok(())
         })
@@ -784,6 +792,9 @@ fn perform_scan(
             }
         }
         drop(rows);
+        if active.is_owned() {
+            active.close(false).await?;
+        }
         drop(active);
 
         if !batch.is_empty() {

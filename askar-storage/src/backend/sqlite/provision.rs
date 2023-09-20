@@ -169,23 +169,26 @@ impl SqliteStoreOptions {
             .await
             .map_err(err_map!(Backend, "Error creating database pool"))?;
 
-        if !recreate
-            && sqlx::query_scalar::<_, i64>(
+        if !recreate {
+            let mut conn = conn_pool.acquire().await?;
+            let found = sqlx::query_scalar::<_, i64>(
                 "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='config'",
             )
-            .fetch_one(&conn_pool)
+            .fetch_one(conn.as_mut())
             .await
             .map_err(err_map!(Backend, "Error checking for existing store"))?
-                == 1
-        {
-            return open_db(
-                conn_pool,
-                Some(method),
-                pass_key,
-                profile,
-                self.path.to_string(),
-            )
-            .await;
+                == 1;
+            conn.return_to_pool().await;
+            if found {
+                return open_db(
+                    conn_pool,
+                    Some(method),
+                    pass_key,
+                    profile,
+                    self.path.to_string(),
+                )
+                .await;
+            }
         }
         // else: no 'config' table, assume empty database
 
@@ -354,14 +357,15 @@ async fn init_db(
     .execute(conn.as_mut())
     .await.map_err(err_map!(Backend, "Error creating database tables"))?;
 
-    let mut key_cache = KeyCache::new(store_key);
-
     let row = sqlx::query("SELECT id FROM profiles WHERE name = ?1")
         .persistent(false)
         .bind(profile_name)
         .fetch_one(conn.as_mut())
         .await
         .map_err(err_map!(Backend, "Error checking for existing profile"))?;
+    conn.return_to_pool().await;
+
+    let mut key_cache = KeyCache::new(store_key);
     key_cache.add_profile_mut(profile_name.to_string(), row.try_get(0)?, profile_key);
 
     Ok(key_cache)
@@ -424,14 +428,15 @@ async fn open_db(
     } else {
         return Err(err_msg!(Unsupported, "Store key not found"));
     };
-    let mut key_cache = KeyCache::new(store_key);
 
+    let mut key_cache = KeyCache::new(store_key);
     let row = sqlx::query("SELECT id, profile_key FROM profiles WHERE name = ?1")
         .bind(&profile)
         .fetch_one(conn.as_mut())
         .await?;
     let profile_id = row.try_get(0)?;
     let profile_key = key_cache.load_key(row.try_get(1)?).await?;
+    conn.return_to_pool().await;
     key_cache.add_profile_mut(profile.clone(), profile_id, profile_key);
 
     Ok(SqliteBackend::new(conn_pool, profile, key_cache, path))
