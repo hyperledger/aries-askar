@@ -158,6 +158,7 @@ impl<DB: ExtDatabase> DbSession<DB> {
                     DB::TransactionManager::rollback(&mut conn).await
                 }
                 .map_err(err_map!(Backend, "Error closing transaction"))?;
+                conn.return_to_pool().await;
             } else {
                 warn!("Could not close out transaction: session not active");
             }
@@ -232,6 +233,12 @@ pub trait ExtDatabase: Database {
 pub enum DbSessionRef<'q, DB: ExtDatabase> {
     Owned(DbSession<DB>),
     Borrowed(&'q mut DbSession<DB>),
+}
+
+impl<DB: ExtDatabase> DbSessionRef<'_, DB> {
+    pub fn is_owned(&self) -> bool {
+        matches!(self, Self::Owned(_))
+    }
 }
 
 impl<'q, DB: ExtDatabase> Deref for DbSessionRef<'q, DB> {

@@ -191,7 +191,8 @@ impl PostgresStoreOptions {
         recreate: bool,
     ) -> Result<PostgresBackend, Error> {
         let conn_pool = self.create_db_pool().await?;
-        let mut txn = conn_pool.begin().await?;
+        let mut conn = conn_pool.acquire().await?;
+        let mut txn = conn.begin().await?;
 
         if recreate {
             // remove expected tables
@@ -248,6 +249,8 @@ impl PostgresStoreOptions {
             self.schema.as_ref().unwrap_or(&self.username),
         )
         .await?;
+        conn.return_to_pool().await;
+
         let mut key_cache = KeyCache::new(store_key);
         key_cache.add_profile_mut(default_profile.clone(), profile_id, profile_key);
 
@@ -290,14 +293,16 @@ impl PostgresStoreOptions {
         // any character except NUL is allowed in an identifier.
         // double quotes must be escaped, but we just disallow those
         let drop_q = format!("DROP DATABASE \"{}\"", self.name);
-        match admin_conn.execute(drop_q.as_str()).await {
+        let res = match admin_conn.execute(drop_q.as_str()).await {
             Ok(_) => Ok(true),
             Err(SqlxError::Database(db_err)) if db_err.code() == Some(Cow::Borrowed("3D000")) => {
                 // invalid catalog name is raised if the database does not exist
                 Ok(false)
             }
             Err(err) => Err(err_msg!(Backend, "Error removing database").with_cause(err)),
-        }
+        }?;
+        admin_conn.close().await?;
+        Ok(res)
     }
 }
 
@@ -485,14 +490,16 @@ pub(crate) async fn open_db(
     } else {
         return Err(err_msg!(Unsupported, "Store key not found"));
     };
-    let mut key_cache = KeyCache::new(store_key);
 
+    let mut key_cache = KeyCache::new(store_key);
     let row = sqlx::query("SELECT id, profile_key FROM profiles WHERE name = $1")
         .bind(&profile)
         .fetch_one(conn.as_mut())
         .await?;
     let profile_id = row.try_get(0)?;
     let profile_key = key_cache.load_key(row.try_get(1)?).await?;
+    conn.return_to_pool().await;
+
     key_cache.add_profile_mut(profile.clone(), profile_id, profile_key);
 
     Ok(PostgresBackend::new(
