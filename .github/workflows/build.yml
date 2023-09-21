@@ -536,7 +536,7 @@ jobs:
   build-success:
     # see https://github.community/t/status-check-for-a-matrix-jobs/127354/7
     name: Successful build
-    needs: [build-release, build-py, build-javascript]
+    needs: [tests, build-release, build-py, build-javascript]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     steps:
