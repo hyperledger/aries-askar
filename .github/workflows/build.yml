@@ -3,6 +3,7 @@ name: "Aries-Askar"
 env:
   RUST_VERSION: "1.70.0"
   CROSS_VERSION: "0.2.4"
+  TEST_FEATURES: ""
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -531,3 +532,21 @@ jobs:
         with:
           file: library-ios-android.tar.gz
           asset_name: "library-ios-android.tar.gz"
+
+  build-success:
+    # see https://github.community/t/status-check-for-a-matrix-jobs/127354/7
+    name: Successful build
+    needs: [build-release, build-py, build-javascript]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check all job status
+        # see https://docs.github.com/en/actions/reference/context-and-expression-syntax-for-github-actions#needs-context
+        # see https://stackoverflow.com/a/67532120/4907315
+        if: >-
+          ${{
+            contains(needs.*.result, 'failure')
+            || contains(needs.*.result, 'cancelled')
+            || contains(needs.*.result, 'skipped')
+          }}
+        run: exit 1
