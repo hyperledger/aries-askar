@@ -11,7 +11,7 @@ use futures_lite::{
 use sqlx::{
     pool::PoolConnection,
     sqlite::{Sqlite, SqlitePool},
-    Database, Error as SqlxError, Row, TransactionManager,
+    Acquire, Database, Error as SqlxError, Row, TransactionManager,
 };
 
 use super::{
@@ -126,6 +126,7 @@ impl Backend for SqliteBackend {
                     .bind(enc_key)
                     .execute(conn.as_mut())
                     .await?;
+            conn.return_to_pool().await;
             if done.rows_affected() == 0 {
                 return Err(err_msg!(Duplicate, "Duplicate profile name"));
             }
@@ -152,6 +153,7 @@ impl Backend for SqliteBackend {
                 .fetch_one(conn.as_mut())
                 .await
                 .map_err(err_map!(Backend, "Error fetching default profile name"))?;
+            conn.return_to_pool().await;
             Ok(profile.unwrap_or_default())
         })
     }
@@ -165,6 +167,7 @@ impl Backend for SqliteBackend {
                 .execute(conn.as_mut())
                 .await
                 .map_err(err_map!(Backend, "Error setting default profile name"))?;
+            conn.return_to_pool().await;
             Ok(())
         })
     }
@@ -176,6 +179,7 @@ impl Backend for SqliteBackend {
                 .fetch_all(conn.as_mut())
                 .await
                 .map_err(err_map!(Backend, "Error fetching profile list"))?;
+            conn.return_to_pool().await;
             let names = rows.into_iter().flat_map(|r| r.try_get(0)).collect();
             Ok(names)
         })
@@ -184,13 +188,15 @@ impl Backend for SqliteBackend {
     fn remove_profile(&self, name: String) -> BoxFuture<'_, Result<bool, Error>> {
         Box::pin(async move {
             let mut conn = self.conn_pool.acquire().await?;
-            Ok(sqlx::query("DELETE FROM profiles WHERE name=?")
+            let ret = sqlx::query("DELETE FROM profiles WHERE name=?")
                 .bind(&name)
                 .execute(conn.as_mut())
                 .await
                 .map_err(err_map!(Backend, "Error removing profile"))?
                 .rows_affected()
-                != 0)
+                != 0;
+            conn.return_to_pool().await;
+            Ok(ret)
         })
     }
 
@@ -203,7 +209,8 @@ impl Backend for SqliteBackend {
         Box::pin(async move {
             let (store_key, store_key_ref) = unblock(move || method.resolve(pass_key)).await?;
             let store_key = Arc::new(store_key);
-            let mut txn = self.conn_pool.begin().await?;
+            let mut conn = self.conn_pool.acquire().await?;
+            let mut txn = conn.begin().await?;
             let mut rows = sqlx::query("SELECT id, profile_key FROM profiles").fetch(txn.as_mut());
             let mut upd_keys = BTreeMap::<ProfileId, Vec<u8>>::new();
             while let Some(row) = rows.next().await {
@@ -241,6 +248,7 @@ impl Backend for SqliteBackend {
                 return Err(err_msg!(Backend, "Error updating store key"));
             }
             txn.commit().await?;
+            conn.return_to_pool().await;
             self.key_cache = Arc::new(KeyCache::new(store_key));
             Ok(())
         })
@@ -729,6 +737,9 @@ fn perform_scan(
             }
         }
         drop(rows);
+        if active.is_owned() {
+            active.close(false).await?;
+        }
         drop(active);
 
         if !batch.is_empty() {
