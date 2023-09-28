@@ -24,7 +24,7 @@ use crate::{
 };
 
 const DEFAULT_MIN_CONNECTIONS: usize = 1;
-const DEFAULT_LOWER_MAX_CONNECTIONS: usize = 2;
+const DEFAULT_LOWER_MAX_CONNECTIONS: usize = 4;
 const DEFAULT_UPPER_MAX_CONNECTIONS: usize = 8;
 const DEFAULT_BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 const DEFAULT_JOURNAL_MODE: SqliteJournalMode = SqliteJournalMode::Wal;
