@@ -227,6 +227,15 @@ jsi::Value createReturnValue(jsi::Runtime &rt, ErrorCode code,
 
 template <>
 jsi::Value createReturnValue(jsi::Runtime &rt, ErrorCode code,
+                             StringListHandle const *value) {
+  auto isNullptr = value == nullptr || value->_0 == nullptr;
+  return isNullptr
+             ? createReturnValue(rt, code, nullptr)
+             : createReturnValue(rt, code, std::to_string(int64_t(intptr_t(value->_0))));
+}
+
+template <>
+jsi::Value createReturnValue(jsi::Runtime &rt, ErrorCode code,
                              EncryptedBuffer *value) {
   auto object = jsi::Object(rt);
 
@@ -332,6 +341,20 @@ void callbackWithResponse(CallbackId result, ErrorCode code,
 template <>
 void callbackWithResponse(CallbackId result, ErrorCode code,
                           KeyEntryListHandle response) {
+  invoker->invokeAsync([result, code, response]() {
+    State *_state = reinterpret_cast<State *>(result);
+    State *state = static_cast<State *>(_state);
+    jsi::Function *cb = &state->cb;
+    jsi::Runtime *rt = reinterpret_cast<jsi::Runtime *>(state->rt);
+
+    auto out = createReturnValue(*rt, code, &response);
+    cb->call(*rt, out);
+  });
+}
+
+template <>
+void callbackWithResponse(CallbackId result, ErrorCode code,
+                          StringListHandle response) {
   invoker->invokeAsync([result, code, response]() {
     State *_state = reinterpret_cast<State *>(result);
     State *state = static_cast<State *>(_state);
@@ -484,6 +507,17 @@ EntryListHandle jsiToValue(jsi::Runtime &rt, jsi::Object &options,
   EntryListHandle entryListHandle = EntryListHandle{._0 = ffiEntryListPtr};
 
   return entryListHandle;
+};
+
+template <>
+StringListHandle jsiToValue(jsi::Runtime &rt, jsi::Object &options,
+                           const char *name, bool optional) {
+  std::string handle = jsiToValue<std::string>(rt, options, name, optional);
+  FfiStringList *ffiStringListPtr =
+      reinterpret_cast<FfiStringList *>(std::stol(handle));
+  StringListHandle stringListHandle = StringListHandle{._0 = ffiStringListPtr};
+
+  return stringListHandle;
 };
 
 template <>
