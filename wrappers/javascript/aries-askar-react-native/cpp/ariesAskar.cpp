@@ -275,7 +275,7 @@ jsi::Value storeSetDefaultProfile(jsi::Runtime &rt, jsi::Object options) {
   state->rt = &rt;
 
   ErrorCode code = askar_store_set_default_profile(
-      storeHandle, profile.c_str(), callbackWithResponse, CallbackId(state));
+      storeHandle, profile.c_str(), callback, CallbackId(state));
 
   return createReturnValue(rt, code, nullptr);
 }
@@ -1040,7 +1040,7 @@ jsi::Value migrateIndySdk(jsi::Runtime &rt, jsi::Object options) {
 
 jsi::Value stringListCount(jsi::Runtime &rt, jsi::Object options) {
   auto stringListHandle =
-      jsiToValue<EntryListHandle>(rt, options, "stringListHandle");
+      jsiToValue<StringListHandle>(rt, options, "stringListHandle");
 
   int32_t out;
 
@@ -1051,7 +1051,7 @@ jsi::Value stringListCount(jsi::Runtime &rt, jsi::Object options) {
 
 jsi::Value stringListFree(jsi::Runtime &rt, jsi::Object options) {
   auto stringListHandle =
-      jsiToValue<EntryListHandle>(rt, options, "stringListHandle");
+      jsiToValue<StringListHandle>(rt, options, "stringListHandle");
 
   askar_string_list_free(stringListHandle);
 
