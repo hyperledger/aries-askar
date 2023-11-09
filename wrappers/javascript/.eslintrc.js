@@ -71,6 +71,18 @@ module.exports = {
   },
   overrides: [
     {
+      files: ['**/scripts/*.js'],
+      env: {
+        node: true,
+      },
+      rules: {
+        '@typescript-eslint/no-unsafe-assignment': 'off',
+        'no-console': 'off',
+        '@typescript-eslint/no-var-requires': 'off',
+        '@typescript-eslint/restrict-template-expressions': 'off',
+      },
+    },
+    {
       files: ['.eslintrc.js', 'babel.config.js'],
       env: {
         node: true,
