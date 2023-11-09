@@ -1,6 +1,6 @@
 {
   "name": "@hyperledger/aries-askar-nodejs",
-  "version": "0.2.0-dev.1",
+  "version": "0.2.0-dev.2",
   "license": "Apache-2.0",
   "description": "Nodejs wrapper for Aries Askar",
   "source": "src/index",
@@ -31,7 +31,7 @@
     "example": "yarn --cwd example",
     "release": "release-it",
     "test": "jest",
-    "install": "node-pre-gyp install --target_arch=$(node scripts/arch.js) --target_platform=$(node scripts/platform.js)"
+    "install": "node scripts/install.js"
   },
   "devDependencies": {
     "@types/jest": "^27.4.1",
@@ -48,7 +48,7 @@
   "dependencies": {
     "@2060.io/ffi-napi": "4.0.8",
     "@2060.io/ref-napi": "3.0.6",
-    "@hyperledger/aries-askar-shared": "0.2.0-dev.1",
+    "@hyperledger/aries-askar-shared": "0.2.0-dev.2",
     "@mapbox/node-pre-gyp": "^1.0.10",
     "node-cache": "^5.1.2",
     "ref-array-di": "^1.2.2",
