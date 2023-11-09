@@ -164,6 +164,11 @@ jobs:
         run: |
           if [ -n "${{ matrix.use_cross }}" ]; then
             cargo install --bins --git https://github.com/rust-embedded/cross --tag v${{ env.CROSS_VERSION }} cross
+            # Required for compatibility with manylinux2014.
+            # https://github.com/briansmith/ring/issues/1728
+            if [ "${{ matrix.architecture }}" = "linux-aarch64" ]; then
+              export CFLAGS="-D__ARM_ARCH=8"
+            fi
             cross build --lib --release --target ${{ matrix.target }}
           elif [ "${{ matrix.architecture }}" == "darwin-universal" ]; then
             ./build-universal.sh
@@ -427,6 +432,11 @@ jobs:
       - name: Build
         run: |
           cargo install --bins --git https://github.com/rust-embedded/cross --tag v${{ env.CROSS_VERSION }} cross
+          # Required for compatibility with manylinux2014:
+          # https://github.com/briansmith/ring/issues/1728
+          if [ "${{ matrix.target }}" = "aarch64-linux-android" ]; then
+            export CFLAGS="-D__ARM_ARCH=8"
+          fi
           cross build --lib --release --target ${{matrix.target}}
 
       - name: Upload artifacts
