@@ -49,20 +49,58 @@ const COUNT_QUERY: &str = "SELECT COUNT(*) FROM items i
     AND (expiry IS NULL OR expiry > CURRENT_TIMESTAMP)";
 const DELETE_QUERY: &str = "DELETE FROM items
     WHERE profile_id = $1 AND kind = $2 AND category = $3 AND name = $4";
-const FETCH_QUERY: &str = "SELECT id, value,
-    (SELECT ARRAY_TO_STRING(ARRAY_AGG(it.plaintext || ':'
-        || ENCODE(it.name, 'hex') || ':' || ENCODE(it.value, 'hex')), ',')
-        FROM items_tags it WHERE it.item_id = i.id) tags
-    FROM items i
-    WHERE profile_id = $1 AND kind = $2 AND category = $3 AND name = $4
-    AND (expiry IS NULL OR expiry > CURRENT_TIMESTAMP)";
-const FETCH_QUERY_UPDATE: &str = "SELECT id, value,
-    (SELECT ARRAY_TO_STRING(ARRAY_AGG(it.plaintext || ':'
-        || ENCODE(it.name, 'hex') || ':' || ENCODE(it.value, 'hex')), ',')
-        FROM items_tags it WHERE it.item_id = i.id) tags
-    FROM items i
-    WHERE profile_id = $1 AND kind = $2 AND category = $3 AND name = $4
-    AND (expiry IS NULL OR expiry > CURRENT_TIMESTAMP) FOR NO KEY UPDATE";
+const FETCH_QUERY: &str = "
+    SELECT
+        i.id,
+        i.value,
+        ARRAY_TO_STRING(
+            ARRAY_AGG(
+                it.plaintext || ':' || ENCODE(it.name, 'hex') || ':' || ENCODE(it.value, 'hex')
+            ),
+            ','
+        ) as tags
+    FROM
+        items i
+    LEFT JOIN
+        items_tags it
+        ON it.item_id = i.id
+    WHERE
+        i.profile_id = $1
+        AND i.kind = $2
+        AND i.category = $3
+        AND i.name = $4
+        AND (i.expiry IS NULL OR i.expiry > CURRENT_TIMESTAMP)
+    GROUP BY
+        i.id,
+        i.value";
+const FETCH_QUERY_UPDATE: &str = "
+    WITH fetched_data AS (
+        SELECT
+            i.id,
+            i.value,
+            ARRAY_TO_STRING(
+                ARRAY_AGG(it.plaintext || ':' || ENCODE(it.name, 'hex') || ':' || ENCODE(it.value, 'hex')), ','
+            ) as tags
+        FROM
+            items i
+        LEFT JOIN
+            items_tags it
+            ON it.item_id = i.id
+        WHERE
+            i.profile_id = $1
+            AND i.kind = $2
+            AND i.category = $3
+            AND i.name = $4
+            AND (i.expiry IS NULL OR i.expiry > CURRENT_TIMESTAMP)
+        GROUP BY
+            i.id,
+            i.value
+    )
+    SELECT
+        *
+    FROM
+        fetched_data
+    FOR NO KEY UPDATE";
 const INSERT_QUERY: &str = "INSERT INTO items (profile_id, kind, category, name, value, expiry)
     VALUES ($1, $2, $3, $4, $5, $6)
     ON CONFLICT DO NOTHING RETURNING id";
@@ -128,7 +166,7 @@ impl Backend for PostgresBackend {
             .await?;
             let mut conn = self.conn_pool.acquire().await?;
             let res = sqlx::query_scalar(
-                "INSERT INTO profiles (name, profile_key) VALUES ($1, $2) 
+                "INSERT INTO profiles (name, profile_key) VALUES ($1, $2)
                 ON CONFLICT DO NOTHING RETURNING id",
             )
             .bind(&name)
