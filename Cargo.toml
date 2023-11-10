@@ -3,7 +3,7 @@ members = ["askar-crypto", "askar-storage"]
 
 [package]
 name = "aries-askar"
-version = "0.3.0-dev.1"
+version = "0.3.0"
 authors = ["Hyperledger Aries Contributors <aries@lists.hyperledger.org>"]
 edition = "2021"
 description = "Hyperledger Aries Askar secure storage"
@@ -48,7 +48,7 @@ serde_json = "1.0"
 zeroize = "1.5"
 
 [dependencies.askar-crypto]
-version = "0.2.5"
+version = "0.3"
 path = "./askar-crypto"
 features = ["all_keys", "any_key", "argon2", "crypto_box", "std"]
 
