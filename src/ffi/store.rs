@@ -5,13 +5,13 @@ use ffi_support::{rust_string_to_c, ByteBuffer, FfiStr};
 use once_cell::sync::Lazy;
 
 use super::{
-    error::set_last_error,
+    error::{store_error, ErrorHandle},
     key::LocalKeyHandle,
     result_list::{
         EntryListHandle, FfiEntryList, FfiKeyEntryList, KeyEntryListHandle, StringListHandle,
     },
     tags::EntryTagSet,
-    CallbackId, EnsureCallback, ErrorCode, ResourceHandle,
+    CallbackId, EnsureCallback, ResourceHandle,
 };
 use crate::{
     entry::{Entry, EntryOperation, Scan, TagFilter},
@@ -131,7 +131,7 @@ where
 pub extern "C" fn askar_store_generate_raw_key(
     seed: ByteBuffer,
     out: *mut *const c_char,
-) -> ErrorCode {
+) -> ErrorHandle {
     catch_err! {
         trace!("Create raw store key");
         let seed = match seed.as_slice() {
@@ -140,7 +140,7 @@ pub extern "C" fn askar_store_generate_raw_key(
         };
         let key = Store::new_raw_key(seed)?;
         unsafe { *out = rust_string_to_c(key.to_string()); }
-        Ok(ErrorCode::Success)
+        Ok(ErrorHandle::OK)
     }
 }
 
@@ -151,9 +151,9 @@ pub extern "C" fn askar_store_provision(
     pass_key: FfiStr<'_>,
     profile: FfiStr<'_>,
     recreate: i8,
-    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, handle: StoreHandle)>,
+    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorHandle, handle: StoreHandle)>,
     cb_id: CallbackId,
-) -> ErrorCode {
+) -> ErrorHandle {
     catch_err! {
         trace!("Provision store");
         let cb = cb.ok_or_else(|| err_msg!("No callback provided"))?;
@@ -168,9 +168,9 @@ pub extern "C" fn askar_store_provision(
             match result {
                 Ok(sid) => {
                     debug!("Provisioned store {}", sid);
-                    cb(cb_id, ErrorCode::Success, sid)
+                    cb(cb_id, ErrorHandle::OK, sid)
                 }
-                Err(err) => cb(cb_id, set_last_error(Some(err)), StoreHandle::invalid()),
+                Err(err) => cb(cb_id, store_error(err), StoreHandle::invalid()),
             }
         );
         spawn_ok(async move {
@@ -186,7 +186,7 @@ pub extern "C" fn askar_store_provision(
             }.await;
             cb.resolve(result);
         });
-        Ok(ErrorCode::Success)
+        Ok(ErrorHandle::OK)
     }
 }
 
@@ -196,9 +196,9 @@ pub extern "C" fn askar_store_open(
     key_method: FfiStr<'_>,
     pass_key: FfiStr<'_>,
     profile: FfiStr<'_>,
-    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, handle: StoreHandle)>,
+    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorHandle, handle: StoreHandle)>,
     cb_id: CallbackId,
-) -> ErrorCode {
+) -> ErrorHandle {
     catch_err! {
         trace!("Open store");
         let cb = cb.ok_or_else(|| err_msg!("No callback provided"))?;
@@ -213,9 +213,9 @@ pub extern "C" fn askar_store_open(
             match result {
                 Ok(sid) => {
                     debug!("Opened store {}", sid);
-                    cb(cb_id, ErrorCode::Success, sid)
+                    cb(cb_id, ErrorHandle::OK, sid)
                 }
-                Err(err) => cb(cb_id, set_last_error(Some(err)), StoreHandle::invalid()),
+                Err(err) => cb(cb_id, store_error(err), StoreHandle::invalid()),
             }
         );
         spawn_ok(async move {
@@ -230,31 +230,31 @@ pub extern "C" fn askar_store_open(
             }.await;
             cb.resolve(result);
         });
-        Ok(ErrorCode::Success)
+        Ok(ErrorHandle::OK)
     }
 }
 
 #[no_mangle]
 pub extern "C" fn askar_store_remove(
     spec_uri: FfiStr<'_>,
-    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, i8)>,
+    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorHandle, i8)>,
     cb_id: CallbackId,
-) -> ErrorCode {
+) -> ErrorHandle {
     catch_err! {
         trace!("Remove store");
         let cb = cb.ok_or_else(|| err_msg!("No callback provided"))?;
         let spec_uri = spec_uri.into_opt_string().ok_or_else(|| err_msg!("No store URI provided"))?;
         let cb = EnsureCallback::new(move |result: Result<bool,Error>|
             match result {
-                Ok(removed) => cb(cb_id, ErrorCode::Success, removed as i8),
-                Err(err) => cb(cb_id, set_last_error(Some(err)), 0),
+                Ok(removed) => cb(cb_id, ErrorHandle::OK, removed as i8),
+                Err(err) => cb(cb_id, store_error(err), 0),
             }
         );
         spawn_ok(async move {
             let result = Store::remove(spec_uri.as_str()).await;
             cb.resolve(result);
         });
-        Ok(ErrorCode::Success)
+        Ok(ErrorHandle::OK)
     }
 }
 
@@ -262,17 +262,17 @@ pub extern "C" fn askar_store_remove(
 pub extern "C" fn askar_store_create_profile(
     handle: StoreHandle,
     profile: FfiStr<'_>,
-    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, result_p: *const c_char)>,
+    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorHandle, result_p: *const c_char)>,
     cb_id: CallbackId,
-) -> ErrorCode {
+) -> ErrorHandle {
     catch_err! {
         trace!("Create profile");
         let cb = cb.ok_or_else(|| err_msg!("No callback provided"))?;
         let profile = profile.into_opt_string();
         let cb = EnsureCallback::new(move |result|
             match result {
-                Ok(name) => cb(cb_id, ErrorCode::Success, rust_string_to_c(name)),
-                Err(err) => cb(cb_id, set_last_error(Some(err)), ptr::null()),
+                Ok(name) => cb(cb_id, ErrorHandle::OK, rust_string_to_c(name)),
+                Err(err) => cb(cb_id, store_error(err), ptr::null()),
             }
         );
         spawn_ok(async move {
@@ -283,23 +283,23 @@ pub extern "C" fn askar_store_create_profile(
             }.await;
             cb.resolve(result);
         });
-        Ok(ErrorCode::Success)
+        Ok(ErrorHandle::OK)
     }
 }
 
 #[no_mangle]
 pub extern "C" fn askar_store_get_profile_name(
     handle: StoreHandle,
-    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, name: *const c_char)>,
+    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorHandle, name: *const c_char)>,
     cb_id: CallbackId,
-) -> ErrorCode {
+) -> ErrorHandle {
     catch_err! {
         trace!("Get profile name");
         let cb = cb.ok_or_else(|| err_msg!("No callback provided"))?;
         let cb = EnsureCallback::new(move |result|
             match result {
-                Ok(name) => cb(cb_id, ErrorCode::Success, rust_string_to_c(name)),
-                Err(err) => cb(cb_id, set_last_error(Some(err)), ptr::null_mut()),
+                Ok(name) => cb(cb_id, ErrorHandle::OK, rust_string_to_c(name)),
+                Err(err) => cb(cb_id, store_error(err), ptr::null_mut()),
             }
         );
         spawn_ok(async move {
@@ -309,16 +309,16 @@ pub extern "C" fn askar_store_get_profile_name(
             }.await;
             cb.resolve(result);
         });
-        Ok(ErrorCode::Success)
+        Ok(ErrorHandle::OK)
     }
 }
 
 #[no_mangle]
 pub extern "C" fn askar_store_list_profiles(
     handle: StoreHandle,
-    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, results: StringListHandle)>,
+    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorHandle, results: StringListHandle)>,
     cb_id: CallbackId,
-) -> ErrorCode {
+) -> ErrorHandle {
     catch_err! {
         trace!("List profiles");
         let cb = cb.ok_or_else(|| err_msg!("No callback provided"))?;
@@ -326,9 +326,9 @@ pub extern "C" fn askar_store_list_profiles(
             match result {
                 Ok(rows) => {
                     let res = StringListHandle::create(FfiStringList::from(rows));
-                    cb(cb_id, ErrorCode::Success, res)
+                    cb(cb_id, ErrorHandle::OK, res)
                 },
-                Err(err) => cb(cb_id, set_last_error(Some(err)), StringListHandle::invalid()),
+                Err(err) => cb(cb_id, store_error(err), StringListHandle::invalid()),
             }
         );
         spawn_ok(async move {
@@ -339,7 +339,7 @@ pub extern "C" fn askar_store_list_profiles(
             }.await;
             cb.resolve(result);
         });
-        Ok(ErrorCode::Success)
+        Ok(ErrorHandle::OK)
     }
 }
 
@@ -347,17 +347,17 @@ pub extern "C" fn askar_store_list_profiles(
 pub extern "C" fn askar_store_remove_profile(
     handle: StoreHandle,
     profile: FfiStr<'_>,
-    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, removed: i8)>,
+    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorHandle, removed: i8)>,
     cb_id: CallbackId,
-) -> ErrorCode {
+) -> ErrorHandle {
     catch_err! {
         trace!("Remove profile");
         let cb = cb.ok_or_else(|| err_msg!("No callback provided"))?;
         let profile = profile.into_opt_string().ok_or_else(|| err_msg!("Profile name not provided"))?;
         let cb = EnsureCallback::new(move |result|
             match result {
-                Ok(removed) => cb(cb_id, ErrorCode::Success, removed as i8),
-                Err(err) => cb(cb_id, set_last_error(Some(err)), 0),
+                Ok(removed) => cb(cb_id, ErrorHandle::OK, removed as i8),
+                Err(err) => cb(cb_id, store_error(err), 0),
             }
         );
         spawn_ok(async move {
@@ -367,24 +367,24 @@ pub extern "C" fn askar_store_remove_profile(
             }.await;
             cb.resolve(result);
         });
-        Ok(ErrorCode::Success)
+        Ok(ErrorHandle::OK)
     }
 }
 
 #[no_mangle]
 pub extern "C" fn askar_store_get_default_profile(
     handle: StoreHandle,
-    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, profile: *const c_char)>,
+    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorHandle, profile: *const c_char)>,
     cb_id: CallbackId,
-) -> ErrorCode {
+) -> ErrorHandle {
     catch_err! {
         trace!("Get default profile");
         let cb = cb.ok_or_else(|| err_msg!("No callback provided"))?;
         let cb = EnsureCallback::new(move |result: Result<String, Error>|
             match result {
-                Ok(name) => cb(cb_id, ErrorCode::Success,
+                Ok(name) => cb(cb_id, ErrorHandle::OK,
                     CString::new(name.as_str()).unwrap().into_raw() as *const c_char),
-                Err(err) => cb(cb_id, set_last_error(Some(err)), ptr::null()),
+                Err(err) => cb(cb_id, store_error(err), ptr::null()),
             }
         );
         spawn_ok(async move {
@@ -394,7 +394,7 @@ pub extern "C" fn askar_store_get_default_profile(
             }.await;
             cb.resolve(result);
         });
-        Ok(ErrorCode::Success)
+        Ok(ErrorHandle::OK)
     }
 }
 
@@ -402,17 +402,17 @@ pub extern "C" fn askar_store_get_default_profile(
 pub extern "C" fn askar_store_set_default_profile(
     handle: StoreHandle,
     profile: FfiStr<'_>,
-    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode)>,
+    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorHandle)>,
     cb_id: CallbackId,
-) -> ErrorCode {
+) -> ErrorHandle {
     catch_err! {
         trace!("Set default profile");
         let cb = cb.ok_or_else(|| err_msg!("No callback provided"))?;
         let profile = profile.into_opt_string().ok_or_else(|| err_msg!("Profile name not provided"))?;
         let cb = EnsureCallback::new(move |result|
             match result {
-                Ok(_) => cb(cb_id, ErrorCode::Success),
-                Err(err) => cb(cb_id, set_last_error(Some(err))),
+                Ok(_) => cb(cb_id, ErrorHandle::OK),
+                Err(err) => cb(cb_id, store_error(err)),
             }
         );
         spawn_ok(async move {
@@ -422,7 +422,7 @@ pub extern "C" fn askar_store_set_default_profile(
             }.await;
             cb.resolve(result);
         });
-        Ok(ErrorCode::Success)
+        Ok(ErrorHandle::OK)
     }
 }
 
@@ -431,9 +431,9 @@ pub extern "C" fn askar_store_rekey(
     handle: StoreHandle,
     key_method: FfiStr<'_>,
     pass_key: FfiStr<'_>,
-    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode)>,
+    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorHandle)>,
     cb_id: CallbackId,
-) -> ErrorCode {
+) -> ErrorHandle {
     catch_err! {
         trace!("Re-key store");
         let cb = cb.ok_or_else(|| err_msg!("No callback provided"))?;
@@ -444,8 +444,8 @@ pub extern "C" fn askar_store_rekey(
         let pass_key = PassKey::from(pass_key.as_opt_str()).into_owned();
         let cb = EnsureCallback::new(move |result|
             match result {
-                Ok(_) => cb(cb_id, ErrorCode::Success),
-                Err(err) => cb(cb_id, set_last_error(Some(err))),
+                Ok(_) => cb(cb_id, ErrorHandle::OK),
+                Err(err) => cb(cb_id, store_error(err)),
             }
         );
         spawn_ok(async move {
@@ -457,7 +457,7 @@ pub extern "C" fn askar_store_rekey(
             }.await;
             cb.resolve(result);
         });
-        Ok(ErrorCode::Success)
+        Ok(ErrorHandle::OK)
     }
 }
 
@@ -468,9 +468,9 @@ pub extern "C" fn askar_store_copy(
     key_method: FfiStr<'_>,
     pass_key: FfiStr<'_>,
     recreate: i8,
-    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, handle: StoreHandle)>,
+    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorHandle, handle: StoreHandle)>,
     cb_id: CallbackId,
-) -> ErrorCode {
+) -> ErrorHandle {
     catch_err! {
         trace!("Copy store");
         let cb = cb.ok_or_else(|| err_msg!("No callback provided"))?;
@@ -482,8 +482,8 @@ pub extern "C" fn askar_store_copy(
         let pass_key = PassKey::from(pass_key.as_opt_str()).into_owned();
         let cb = EnsureCallback::new(move |result|
             match result {
-                Ok(handle) => cb(cb_id, ErrorCode::Success, handle),
-                Err(err) => cb(cb_id, set_last_error(Some(err)), StoreHandle::invalid()),
+                Ok(handle) => cb(cb_id, ErrorHandle::OK, handle),
+                Err(err) => cb(cb_id, store_error(err), StoreHandle::invalid()),
             }
         );
         spawn_ok(async move {
@@ -495,23 +495,23 @@ pub extern "C" fn askar_store_copy(
             }.await;
             cb.resolve(result);
         });
-        Ok(ErrorCode::Success)
+        Ok(ErrorHandle::OK)
     }
 }
 
 #[no_mangle]
 pub extern "C" fn askar_store_close(
     handle: StoreHandle,
-    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode)>,
+    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorHandle)>,
     cb_id: CallbackId,
-) -> ErrorCode {
+) -> ErrorHandle {
     catch_err! {
         trace!("Close store");
         let cb = cb.map(|cb| {
             EnsureCallback::new(move |result|
                 match result {
-                    Ok(_) => cb(cb_id, ErrorCode::Success),
-                    Err(err) => cb(cb_id, set_last_error(Some(err))),
+                    Ok(_) => cb(cb_id, ErrorHandle::OK),
+                    Err(err) => cb(cb_id, store_error(err)),
                 }
             )
         });
@@ -534,7 +534,7 @@ pub extern "C" fn askar_store_close(
                 error!("{}", err);
             }
         });
-        Ok(ErrorCode::Success)
+        Ok(ErrorHandle::OK)
     }
 }
 
@@ -546,9 +546,9 @@ pub extern "C" fn askar_scan_start(
     tag_filter: FfiStr<'_>,
     offset: i64,
     limit: i64,
-    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, handle: ScanHandle)>,
+    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorHandle, handle: ScanHandle)>,
     cb_id: CallbackId,
-) -> ErrorCode {
+) -> ErrorHandle {
     catch_err! {
         trace!("Scan store start");
         let cb = cb.ok_or_else(|| err_msg!("No callback provided"))?;
@@ -559,9 +559,9 @@ pub extern "C" fn askar_scan_start(
             match result {
                 Ok(scan_handle) => {
                     debug!("Started scan {} on store {}", scan_handle, handle);
-                    cb(cb_id, ErrorCode::Success, scan_handle)
+                    cb(cb_id, ErrorHandle::OK, scan_handle)
                 }
-                Err(err) => cb(cb_id, set_last_error(Some(err)), ScanHandle::invalid()),
+                Err(err) => cb(cb_id, store_error(err), ScanHandle::invalid()),
             }
         );
         spawn_ok(async move {
@@ -572,16 +572,16 @@ pub extern "C" fn askar_scan_start(
             }.await;
             cb.resolve(result);
         });
-        Ok(ErrorCode::Success)
+        Ok(ErrorHandle::OK)
     }
 }
 
 #[no_mangle]
 pub extern "C" fn askar_scan_next(
     handle: ScanHandle,
-    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, results: EntryListHandle)>,
+    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorHandle, results: EntryListHandle)>,
     cb_id: CallbackId,
-) -> ErrorCode {
+) -> ErrorHandle {
     catch_err! {
         trace!("Scan store next");
         let cb = cb.ok_or_else(|| err_msg!("No callback provided"))?;
@@ -589,10 +589,10 @@ pub extern "C" fn askar_scan_next(
             match result {
                 Ok(Some(entries)) => {
                     let results = EntryListHandle::create(FfiEntryList::from(entries));
-                    cb(cb_id, ErrorCode::Success, results)
+                    cb(cb_id, ErrorHandle::OK, results)
                 },
-                Ok(None) => cb(cb_id, ErrorCode::Success, EntryListHandle::invalid()),
-                Err(err) => cb(cb_id, set_last_error(Some(err)), EntryListHandle::invalid()),
+                Ok(None) => cb(cb_id, ErrorHandle::OK, EntryListHandle::invalid()),
+                Err(err) => cb(cb_id, store_error(err), EntryListHandle::invalid()),
             }
         );
         spawn_ok(async move {
@@ -603,12 +603,12 @@ pub extern "C" fn askar_scan_next(
             }.await;
             cb.resolve(result);
         });
-        Ok(ErrorCode::Success)
+        Ok(ErrorHandle::OK)
     }
 }
 
 #[no_mangle]
-pub extern "C" fn askar_scan_free(handle: ScanHandle) -> ErrorCode {
+pub extern "C" fn askar_scan_free(handle: ScanHandle) -> ErrorHandle {
     catch_err! {
         trace!("Close scan");
         spawn_ok(async move {
@@ -620,7 +620,7 @@ pub extern "C" fn askar_scan_free(handle: ScanHandle) -> ErrorCode {
                 debug!("Scan not found for closing: {}", handle);
             }
         });
-        Ok(ErrorCode::Success)
+        Ok(ErrorHandle::OK)
     }
 }
 
@@ -629,9 +629,9 @@ pub extern "C" fn askar_session_start(
     handle: StoreHandle,
     profile: FfiStr<'_>,
     as_transaction: i8,
-    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, handle: SessionHandle)>,
+    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorHandle, handle: SessionHandle)>,
     cb_id: CallbackId,
-) -> ErrorCode {
+) -> ErrorHandle {
     catch_err! {
         trace!("Session start");
         let profile = profile.into_opt_string();
@@ -640,9 +640,9 @@ pub extern "C" fn askar_session_start(
             match result {
                 Ok(sess_handle) => {
                     debug!("Started session {} on store {} (txn: {})", sess_handle, handle, as_transaction != 0);
-                    cb(cb_id, ErrorCode::Success, sess_handle)
+                    cb(cb_id, ErrorHandle::OK, sess_handle)
                 }
-                Err(err) => cb(cb_id, set_last_error(Some(err)), SessionHandle::invalid()),
+                Err(err) => cb(cb_id, store_error(err), SessionHandle::invalid()),
             }
         );
         spawn_ok(async move {
@@ -657,7 +657,7 @@ pub extern "C" fn askar_session_start(
             }.await;
             cb.resolve(result);
         });
-        Ok(ErrorCode::Success)
+        Ok(ErrorHandle::OK)
     }
 }
 
@@ -666,9 +666,9 @@ pub extern "C" fn askar_session_count(
     handle: SessionHandle,
     category: FfiStr<'_>,
     tag_filter: FfiStr<'_>,
-    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, count: i64)>,
+    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorHandle, count: i64)>,
     cb_id: CallbackId,
-) -> ErrorCode {
+) -> ErrorHandle {
     catch_err! {
         trace!("Count from store");
         let cb = cb.ok_or_else(|| err_msg!("No callback provided"))?;
@@ -676,8 +676,8 @@ pub extern "C" fn askar_session_count(
         let tag_filter = tag_filter.as_opt_str().map(TagFilter::from_str).transpose()?;
         let cb = EnsureCallback::new(move |result: Result<i64,Error>|
             match result {
-                Ok(count) => cb(cb_id, ErrorCode::Success, count),
-                Err(err) => cb(cb_id, set_last_error(Some(err)), 0),
+                Ok(count) => cb(cb_id, ErrorHandle::OK, count),
+                Err(err) => cb(cb_id, store_error(err), 0),
             }
         );
         spawn_ok(async move {
@@ -687,7 +687,7 @@ pub extern "C" fn askar_session_count(
             }.await;
             cb.resolve(result);
         });
-        Ok(ErrorCode::Success)
+        Ok(ErrorHandle::OK)
     }
 }
 
@@ -697,9 +697,9 @@ pub extern "C" fn askar_session_fetch(
     category: FfiStr<'_>,
     name: FfiStr<'_>,
     for_update: i8,
-    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, results: EntryListHandle)>,
+    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorHandle, results: EntryListHandle)>,
     cb_id: CallbackId,
-) -> ErrorCode {
+) -> ErrorHandle {
     catch_err! {
         trace!("Fetch from store");
         let cb = cb.ok_or_else(|| err_msg!("No callback provided"))?;
@@ -709,10 +709,10 @@ pub extern "C" fn askar_session_fetch(
             match result {
                 Ok(Some(entry)) => {
                     let results = EntryListHandle::create(FfiEntryList::from(entry));
-                    cb(cb_id, ErrorCode::Success, results)
+                    cb(cb_id, ErrorHandle::OK, results)
                 },
-                Ok(None) => cb(cb_id, ErrorCode::Success, EntryListHandle::invalid()),
-                Err(err) => cb(cb_id, set_last_error(Some(err)), EntryListHandle::invalid()),
+                Ok(None) => cb(cb_id, ErrorHandle::OK, EntryListHandle::invalid()),
+                Err(err) => cb(cb_id, store_error(err), EntryListHandle::invalid()),
             }
         );
         spawn_ok(async move {
@@ -722,7 +722,7 @@ pub extern "C" fn askar_session_fetch(
             }.await;
             cb.resolve(result);
         });
-        Ok(ErrorCode::Success)
+        Ok(ErrorHandle::OK)
     }
 }
 
@@ -733,9 +733,9 @@ pub extern "C" fn askar_session_fetch_all(
     tag_filter: FfiStr<'_>,
     limit: i64,
     for_update: i8,
-    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, results: EntryListHandle)>,
+    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorHandle, results: EntryListHandle)>,
     cb_id: CallbackId,
-) -> ErrorCode {
+) -> ErrorHandle {
     catch_err! {
         trace!("Count from store");
         let cb = cb.ok_or_else(|| err_msg!("No callback provided"))?;
@@ -746,9 +746,9 @@ pub extern "C" fn askar_session_fetch_all(
             match result {
                 Ok(rows) => {
                     let results = EntryListHandle::create(FfiEntryList::from(rows));
-                    cb(cb_id, ErrorCode::Success, results)
+                    cb(cb_id, ErrorHandle::OK, results)
                 }
-                Err(err) => cb(cb_id, set_last_error(Some(err)), EntryListHandle::invalid()),
+                Err(err) => cb(cb_id, store_error(err), EntryListHandle::invalid()),
             }
         );
         spawn_ok(async move {
@@ -758,7 +758,7 @@ pub extern "C" fn askar_session_fetch_all(
             }.await;
             cb.resolve(result);
         });
-        Ok(ErrorCode::Success)
+        Ok(ErrorHandle::OK)
     }
 }
 
@@ -767,9 +767,9 @@ pub extern "C" fn askar_session_remove_all(
     handle: SessionHandle,
     category: FfiStr<'_>,
     tag_filter: FfiStr<'_>,
-    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, removed: i64)>,
+    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorHandle, removed: i64)>,
     cb_id: CallbackId,
-) -> ErrorCode {
+) -> ErrorHandle {
     catch_err! {
         trace!("Count from store");
         let cb = cb.ok_or_else(|| err_msg!("No callback provided"))?;
@@ -778,9 +778,9 @@ pub extern "C" fn askar_session_remove_all(
         let cb = EnsureCallback::new(move |result|
             match result {
                 Ok(removed) => {
-                    cb(cb_id, ErrorCode::Success, removed)
+                    cb(cb_id, ErrorHandle::OK, removed)
                 }
-                Err(err) => cb(cb_id, set_last_error(Some(err)), 0),
+                Err(err) => cb(cb_id, store_error(err), 0),
             }
         );
         spawn_ok(async move {
@@ -790,7 +790,7 @@ pub extern "C" fn askar_session_remove_all(
             }.await;
             cb.resolve(result);
         });
-        Ok(ErrorCode::Success)
+        Ok(ErrorHandle::OK)
     }
 }
 
@@ -803,9 +803,9 @@ pub extern "C" fn askar_session_update(
     value: ByteBuffer,
     tags: FfiStr<'_>,
     expiry_ms: i64,
-    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode)>,
+    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorHandle)>,
     cb_id: CallbackId,
-) -> ErrorCode {
+) -> ErrorHandle {
     catch_err! {
         trace!("Update store");
         let cb = cb.ok_or_else(|| err_msg!("No callback provided"))?;
@@ -834,8 +834,8 @@ pub extern "C" fn askar_session_update(
         };
         let cb = EnsureCallback::new(move |result|
             match result {
-                Ok(_) => cb(cb_id, ErrorCode::Success),
-                Err(err) => cb(cb_id, set_last_error(Some(err))),
+                Ok(_) => cb(cb_id, ErrorHandle::OK),
+                Err(err) => cb(cb_id, store_error(err)),
             }
         );
         spawn_ok(async move {
@@ -845,7 +845,7 @@ pub extern "C" fn askar_session_update(
             }.await;
             cb.resolve(result);
         });
-        Ok(ErrorCode::Success)
+        Ok(ErrorHandle::OK)
     }
 }
 
@@ -857,9 +857,9 @@ pub extern "C" fn askar_session_insert_key(
     metadata: FfiStr<'_>,
     tags: FfiStr<'_>,
     expiry_ms: i64,
-    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode)>,
+    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorHandle)>,
     cb_id: CallbackId,
-) -> ErrorCode {
+) -> ErrorHandle {
     catch_err! {
         trace!("Insert key");
         let cb = cb.ok_or_else(|| err_msg!("No callback provided"))?;
@@ -883,9 +883,9 @@ pub extern "C" fn askar_session_insert_key(
         let cb = EnsureCallback::new(move |result|
             match result {
                 Ok(_) => {
-                    cb(cb_id, ErrorCode::Success)
+                    cb(cb_id, ErrorHandle::OK)
                 }
-                Err(err) => cb(cb_id, set_last_error(Some(err))),
+                Err(err) => cb(cb_id, store_error(err)),
             }
         );
 
@@ -902,7 +902,7 @@ pub extern "C" fn askar_session_insert_key(
             }.await;
             cb.resolve(result);
         });
-        Ok(ErrorCode::Success)
+        Ok(ErrorHandle::OK)
     }
 }
 
@@ -911,9 +911,9 @@ pub extern "C" fn askar_session_fetch_key(
     handle: SessionHandle,
     name: FfiStr<'_>,
     for_update: i8,
-    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, results: KeyEntryListHandle)>,
+    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorHandle, results: KeyEntryListHandle)>,
     cb_id: CallbackId,
-) -> ErrorCode {
+) -> ErrorHandle {
     catch_err! {
         trace!("Fetch key");
         let cb = cb.ok_or_else(|| err_msg!("No callback provided"))?;
@@ -923,12 +923,12 @@ pub extern "C" fn askar_session_fetch_key(
             match result {
                 Ok(Some(entry)) => {
                     let results = KeyEntryListHandle::create(FfiKeyEntryList::from(entry));
-                    cb(cb_id, ErrorCode::Success, results)
+                    cb(cb_id, ErrorHandle::OK, results)
                 }
                 Ok(None) => {
-                    cb(cb_id, ErrorCode::Success, KeyEntryListHandle::invalid())
+                    cb(cb_id, ErrorHandle::OK, KeyEntryListHandle::invalid())
                 }
-                Err(err) => cb(cb_id, set_last_error(Some(err)), KeyEntryListHandle::invalid()),
+                Err(err) => cb(cb_id, store_error(err), KeyEntryListHandle::invalid()),
             }
         );
 
@@ -942,7 +942,7 @@ pub extern "C" fn askar_session_fetch_key(
             }.await;
             cb.resolve(result);
         });
-        Ok(ErrorCode::Success)
+        Ok(ErrorHandle::OK)
     }
 }
 
@@ -954,9 +954,9 @@ pub extern "C" fn askar_session_fetch_all_keys(
     tag_filter: FfiStr<'_>,
     limit: i64,
     for_update: i8,
-    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, results: KeyEntryListHandle)>,
+    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorHandle, results: KeyEntryListHandle)>,
     cb_id: CallbackId,
-) -> ErrorCode {
+) -> ErrorHandle {
     catch_err! {
         trace!("Fetch all keys");
         let cb = cb.ok_or_else(|| err_msg!("No callback provided"))?;
@@ -969,9 +969,9 @@ pub extern "C" fn askar_session_fetch_all_keys(
             match result {
                 Ok(entries) => {
                     let results = KeyEntryListHandle::create(FfiKeyEntryList::from(entries));
-                    cb(cb_id, ErrorCode::Success, results)
+                    cb(cb_id, ErrorHandle::OK, results)
                 }
-                Err(err) => cb(cb_id, set_last_error(Some(err)), KeyEntryListHandle::invalid()),
+                Err(err) => cb(cb_id, store_error(err), KeyEntryListHandle::invalid()),
             }
         );
 
@@ -988,7 +988,7 @@ pub extern "C" fn askar_session_fetch_all_keys(
             }.await;
             cb.resolve(result);
         });
-        Ok(ErrorCode::Success)
+        Ok(ErrorHandle::OK)
     }
 }
 
@@ -999,9 +999,9 @@ pub extern "C" fn askar_session_update_key(
     metadata: FfiStr<'_>,
     tags: FfiStr<'_>,
     expiry_ms: i64,
-    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode)>,
+    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorHandle)>,
     cb_id: CallbackId,
-) -> ErrorCode {
+) -> ErrorHandle {
     catch_err! {
         trace!("Update key");
         let cb = cb.ok_or_else(|| err_msg!("No callback provided"))?;
@@ -1024,9 +1024,9 @@ pub extern "C" fn askar_session_update_key(
         let cb = EnsureCallback::new(move |result|
             match result {
                 Ok(_) => {
-                    cb(cb_id, ErrorCode::Success)
+                    cb(cb_id, ErrorHandle::OK)
                 }
-                Err(err) => cb(cb_id, set_last_error(Some(err))),
+                Err(err) => cb(cb_id, store_error(err)),
             }
         );
 
@@ -1043,7 +1043,7 @@ pub extern "C" fn askar_session_update_key(
             }.await;
             cb.resolve(result);
         });
-        Ok(ErrorCode::Success)
+        Ok(ErrorHandle::OK)
     }
 }
 
@@ -1051,9 +1051,9 @@ pub extern "C" fn askar_session_update_key(
 pub extern "C" fn askar_session_remove_key(
     handle: SessionHandle,
     name: FfiStr<'_>,
-    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode)>,
+    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorHandle)>,
     cb_id: CallbackId,
-) -> ErrorCode {
+) -> ErrorHandle {
     catch_err! {
         trace!("Remove key");
         let cb = cb.ok_or_else(|| err_msg!("No callback provided"))?;
@@ -1061,9 +1061,9 @@ pub extern "C" fn askar_session_remove_key(
         let cb = EnsureCallback::new(move |result|
             match result {
                 Ok(_) => {
-                    cb(cb_id, ErrorCode::Success)
+                    cb(cb_id, ErrorHandle::OK)
                 }
-                Err(err) => cb(cb_id, set_last_error(Some(err))),
+                Err(err) => cb(cb_id, store_error(err)),
             }
         );
 
@@ -1076,7 +1076,7 @@ pub extern "C" fn askar_session_remove_key(
             }.await;
             cb.resolve(result);
         });
-        Ok(ErrorCode::Success)
+        Ok(ErrorHandle::OK)
     }
 }
 
@@ -1084,17 +1084,17 @@ pub extern "C" fn askar_session_remove_key(
 pub extern "C" fn askar_session_close(
     handle: SessionHandle,
     commit: i8,
-    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode)>,
+    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorHandle)>,
     cb_id: CallbackId,
-) -> ErrorCode {
+) -> ErrorHandle {
     catch_err! {
         trace!("Close session");
         let cb = cb.map(|cb| {
             EnsureCallback::new(move |result|
                 match result {
-                    Ok(_) => cb(cb_id, ErrorCode::Success),
+                    Ok(_) => cb(cb_id, ErrorHandle::OK),
                     Err(err) => {
-                        cb(cb_id, set_last_error(Some(err)))
+                        cb(cb_id, store_error(err))
                     }
                 }
             )
@@ -1124,6 +1124,6 @@ pub extern "C" fn askar_session_close(
                 error!("{}", err);
             }
         });
-        Ok(ErrorCode::Success)
+        Ok(ErrorHandle::OK)
     }
 }

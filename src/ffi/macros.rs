@@ -3,11 +3,11 @@ macro_rules! catch_err {
         match std::panic::catch_unwind(move || -> Result<_, $crate::error::Error> {$($e)*}) {
             Ok(Ok(a)) => a,
             Ok(Err(err)) => { // lib error
-                $crate::ffi::error::set_last_error(Some(err))
+                $crate::ffi::error::store_error(err)
             }
             Err(_) => { // panic error
                 let err: $crate::error::Error = err_msg!(Unexpected, "Panic during execution");
-                $crate::ffi::error::set_last_error(Some(err))
+                $crate::ffi::error::store_error(err)
             }
         }
     }
