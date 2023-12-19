@@ -24,27 +24,28 @@ import {
   ByteBufferStruct,
   AeadParamsStructPtr,
   EncryptedBufferStructPtr,
+  FFI_VOID,
 } from '../ffi'
 
 export const nativeBindings = {
   // first element is method return type, second element is list of method argument types
   askar_version: [FFI_STRING, []],
   askar_get_current_error: [FFI_ERROR_CODE, [FFI_STRING_PTR]],
-  askar_buffer_free: [FFI_ERROR_CODE, [SecretBufferStruct]],
-  askar_clear_custom_logger: [FFI_ERROR_CODE, []],
+  askar_buffer_free: [FFI_VOID, [SecretBufferStruct]],
+  askar_clear_custom_logger: [FFI_VOID, []],
   askar_set_custom_logger: [FFI_ERROR_CODE, [FFI_INT32, FFI_CALLBACK_PTR, FFI_INT32, FFI_INT32, FFI_INT32]],
   askar_set_default_logger: [FFI_ERROR_CODE, []],
   askar_set_max_log_level: [FFI_ERROR_CODE, [FFI_INT32]],
 
   askar_entry_list_count: [FFI_ERROR_CODE, [FFI_ENTRY_LIST_HANDLE, FFI_INT32_PTR]],
-  askar_entry_list_free: [FFI_ERROR_CODE, [FFI_ENTRY_LIST_HANDLE]],
+  askar_entry_list_free: [FFI_VOID, [FFI_ENTRY_LIST_HANDLE]],
   askar_entry_list_get_category: [FFI_ERROR_CODE, [FFI_ENTRY_LIST_HANDLE, FFI_INT32, FFI_STRING_PTR]],
   askar_entry_list_get_name: [FFI_ERROR_CODE, [FFI_ENTRY_LIST_HANDLE, FFI_INT32, FFI_STRING_PTR]],
   askar_entry_list_get_tags: [FFI_ERROR_CODE, [FFI_ENTRY_LIST_HANDLE, FFI_INT32, FFI_STRING_PTR]],
   askar_entry_list_get_value: [FFI_ERROR_CODE, [FFI_ENTRY_LIST_HANDLE, FFI_INT32, SecretBufferStructPtr]],
 
   askar_string_list_count: [FFI_ERROR_CODE, [FFI_STRING_LIST_HANDLE, FFI_INT32_PTR]],
-  askar_string_list_free: [FFI_ERROR_CODE, [FFI_STRING_LIST_HANDLE]],
+  askar_string_list_free: [FFI_VOID, [FFI_STRING_LIST_HANDLE]],
   askar_string_list_get_item: [FFI_ERROR_CODE, [FFI_STRING_LIST_HANDLE, FFI_INT32, FFI_STRING_PTR]],
 
   askar_key_aead_decrypt: [
@@ -99,13 +100,13 @@ export const nativeBindings = {
     ],
   ],
   askar_key_entry_list_count: [FFI_ERROR_CODE, [FFI_KEY_ENTRY_LIST_HANDLE, FFI_INT32_PTR]],
-  askar_key_entry_list_free: [FFI_ERROR_CODE, [FFI_KEY_ENTRY_LIST_HANDLE]],
+  askar_key_entry_list_free: [FFI_VOID, [FFI_KEY_ENTRY_LIST_HANDLE]],
   askar_key_entry_list_get_algorithm: [FFI_ERROR_CODE, [FFI_KEY_ENTRY_LIST_HANDLE, FFI_INT32, FFI_STRING_PTR]],
   askar_key_entry_list_get_metadata: [FFI_ERROR_CODE, [FFI_KEY_ENTRY_LIST_HANDLE, FFI_INT32, FFI_STRING_PTR]],
   askar_key_entry_list_get_name: [FFI_ERROR_CODE, [FFI_KEY_ENTRY_LIST_HANDLE, FFI_INT32, FFI_STRING_PTR]],
   askar_key_entry_list_get_tags: [FFI_ERROR_CODE, [FFI_KEY_ENTRY_LIST_HANDLE, FFI_INT32, FFI_STRING_PTR]],
   askar_key_entry_list_load_local: [FFI_ERROR_CODE, [FFI_KEY_ENTRY_LIST_HANDLE, FFI_INT32, refType(FFI_POINTER)]],
-  askar_key_free: [FFI_ERROR_CODE, [FFI_POINTER]],
+  askar_key_free: [FFI_VOID, [FFI_POINTER]],
   askar_key_from_jwk: [FFI_ERROR_CODE, [ByteBufferStruct, refType(FFI_POINTER)]],
   askar_key_from_key_exchange: [FFI_ERROR_CODE, [FFI_STRING, FFI_POINTER, FFI_POINTER, FFI_LOCAL_KEY_HANDLE]],
   askar_key_from_public_bytes: [FFI_ERROR_CODE, [FFI_STRING, ByteBufferStruct, FFI_LOCAL_KEY_HANDLE]],
