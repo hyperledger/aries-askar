@@ -62,8 +62,6 @@ import type {
   SessionStartOptions,
   SessionUpdateKeyOptions,
   SessionUpdateOptions,
-  SetCustomLoggerOptions,
-  SetMaxLogLevelOptions,
   StoreCloseOptions,
   StoreCopyToOptions,
   StoreCreateProfileOptions,
@@ -102,21 +100,19 @@ export class ReactNativeAriesAskar implements AriesAskar {
   }
 
   private handleError<T>({ errorCode, value }: ReturnObject<T>): T {
-    if (errorCode !== 0) {
-      throw new AriesAskarError(JSON.parse(this.getCurrentError()) as AriesAskarErrorObject)
-    }
-
-    return value as T
+    if (errorCode === 0) return value as T
+    throw new AriesAskarError(this.getCurrentError())
   }
 
   private promisify = (method: (cb: Callback) => void): Promise<void> => {
     return new Promise((resolve, reject) => {
       const _cb: Callback = ({ errorCode }) => {
         if (errorCode !== 0) {
-          reject(new AriesAskarError(JSON.parse(this.getCurrentError()) as AriesAskarErrorObject))
-        } else {
-          resolve()
+          const error = this.getCurrentError()
+          reject(new AriesAskarError(error))
         }
+
+        resolve()
       }
 
       method(_cb)
@@ -129,7 +125,8 @@ export class ReactNativeAriesAskar implements AriesAskar {
     return new Promise((resolve, reject) => {
       const _cb: CallbackWithResponse<Return> = ({ errorCode, value }) => {
         if (errorCode !== 0) {
-          reject(new AriesAskarError(JSON.parse(this.getCurrentError()) as AriesAskarErrorObject))
+          const error = this.getCurrentError()
+          reject(new AriesAskarError(error))
         } else {
           if (value === undefined) {
             reject(
@@ -148,16 +145,16 @@ export class ReactNativeAriesAskar implements AriesAskar {
     return handleInvalidNullResponse(this.ariesAskar.version({}))
   }
 
-  public getCurrentError(): string {
-    return handleInvalidNullResponse(this.ariesAskar.getCurrentError({}))
+  public getCurrentError(): AriesAskarErrorObject {
+    const serializedError = handleInvalidNullResponse(this.ariesAskar.getCurrentError({}))
+    return JSON.parse(serializedError) as AriesAskarErrorObject
   }
 
   public clearCustomLogger(): void {
     throw new Error('Method not implemented. clearCustomLogger')
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  public setCustomLogger(_: SetCustomLoggerOptions): void {
+  public setCustomLogger(): void {
     throw new Error('Method not implemented. setCustomLogger')
   }
 
@@ -165,8 +162,7 @@ export class ReactNativeAriesAskar implements AriesAskar {
     this.ariesAskar.setDefaultLogger({})
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  public setMaxLogLevel(_: SetMaxLogLevelOptions): void {
+  public setMaxLogLevel(): void {
     throw new Error('Method not implemented. setMaxLogLevel')
   }
 

@@ -1,17 +1,14 @@
 export type AriesAskarErrorObject = {
   code: number
-  extra?: string
-  message: string
+  message: string | null
 }
 
 export class AriesAskarError extends Error {
   public readonly code: number
-  public readonly extra?: string
 
-  public constructor({ code, message, extra }: AriesAskarErrorObject) {
-    super(message)
+  public constructor({ code, message }: AriesAskarErrorObject) {
+    super(message ?? 'No message provided from Aries Askar')
     this.code = code
-    this.extra = extra
   }
 
   public static customError({ message }: { message: string }) {

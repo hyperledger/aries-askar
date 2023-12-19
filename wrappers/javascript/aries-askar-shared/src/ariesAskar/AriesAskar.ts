@@ -9,6 +9,7 @@ import type {
   StoreHandle,
 } from '../crypto'
 import type { KeyAlgs, LogLevel, SigAlgs } from '../enums'
+import type { AriesAskarErrorObject } from '../error'
 import type { AeadParams, EncryptedBuffer } from '../types'
 
 export type ErrorCode = number
@@ -235,7 +236,7 @@ export type MigrateIndySdkOptions = { specUri: string; walletName: string; walle
 
 export type AriesAskar = {
   version(): string
-  getCurrentError(): string
+  getCurrentError(): AriesAskarErrorObject
   clearCustomLogger(): void
 
   setCustomLogger(options: SetCustomLoggerOptions): void
