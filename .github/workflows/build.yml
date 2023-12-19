@@ -68,7 +68,7 @@ jobs:
       - if: ${{ runner.os == 'Linux' }}
         name: Pre-install cross
         run: |
-          cargo install --bins --git https://github.com/rust-embedded/cross --tag v${{ env.CROSS_VERSION }} cross
+          cargo install --bins --git https://github.com/rust-embedded/cross --locked --tag v${{ env.CROSS_VERSION }} cross
 
   tests:
     name: Run tests
@@ -163,7 +163,7 @@ jobs:
         shell: sh
         run: |
           if [ -n "${{ matrix.use_cross }}" ]; then
-            cargo install --bins --git https://github.com/rust-embedded/cross --tag v${{ env.CROSS_VERSION }} cross
+            cargo install --bins --git https://github.com/rust-embedded/cross --locked --tag v${{ env.CROSS_VERSION }} cross
             # Required for compatibility with manylinux2014.
             # https://github.com/briansmith/ring/issues/1728
             if [ "${{ matrix.architecture }}" = "linux-aarch64" ]; then
@@ -431,7 +431,7 @@ jobs:
 
       - name: Build
         run: |
-          cargo install --bins --git https://github.com/rust-embedded/cross --tag v${{ env.CROSS_VERSION }} cross
+          cargo install --bins --git https://github.com/rust-embedded/cross --locked --tag v${{ env.CROSS_VERSION }} cross
           # Required for compatibility with manylinux2014:
           # https://github.com/briansmith/ring/issues/1728
           if [ "${{ matrix.target }}" = "aarch64-linux-android" ]; then
