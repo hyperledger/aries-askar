@@ -200,7 +200,11 @@ export class NodeJSAriesAskar implements AriesAskar {
     if (errorCode === 0) return
 
     const error = this.getCurrentError()
-    if (error.code === 0) return
+    if (error.code !== errorCode) {
+      throw AriesAskarError.customError({
+        message: `Error code mismatch. Function received: '${errorCode}', but after fetch it was '${error.code}'`,
+      })
+    }
 
     throw new AriesAskarError(error)
   }

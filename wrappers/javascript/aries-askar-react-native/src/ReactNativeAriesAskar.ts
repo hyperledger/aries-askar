@@ -104,24 +104,22 @@ export class ReactNativeAriesAskar implements AriesAskar {
     throw new AriesAskarError(this.getCurrentError())
   }
 
-  private promisify = (method: (cb: Callback) => void): Promise<void> => {
+  private promisify(method: (cb: Callback) => void): Promise<void> {
     return new Promise((resolve, reject) => {
       const _cb: Callback = ({ errorCode }) => {
-        if (errorCode !== 0) {
-          const error = this.getCurrentError()
-          reject(new AriesAskarError(error))
+        try {
+          this.handleError({ errorCode })
+          resolve()
+        } catch (e) {
+          reject(e)
         }
-
-        resolve()
       }
 
       method(_cb)
     })
   }
 
-  private promisifyWithResponse = <Return>(
-    method: (cb: CallbackWithResponse<Return>) => void
-  ): Promise<Return | null> => {
+  private promisifyWithResponse<Return>(method: (cb: CallbackWithResponse<Return>) => void): Promise<Return | null> {
     return new Promise((resolve, reject) => {
       const _cb: CallbackWithResponse<Return> = ({ errorCode, value }) => {
         if (errorCode !== 0) {
