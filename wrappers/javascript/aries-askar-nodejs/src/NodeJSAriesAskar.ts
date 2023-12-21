@@ -166,8 +166,8 @@ export class NodeJSAriesAskar implements AriesAskar {
         deallocateCallbackBuffer(id)
 
         if (errorCode !== 0) {
-          const error = this.getCurrentError()
-          reject(new AriesAskarError(error))
+          const error = this.getAriesAskarError(errorCode)
+          reject(error)
         }
 
         if (typeof response === 'string') {
@@ -196,9 +196,15 @@ export class NodeJSAriesAskar implements AriesAskar {
     })
   }
 
-  private handleError(errorCode: number) {
-    if (errorCode === 0) return
-
+  /**
+   * Fetch the error from the native library and throw it as a JS error
+   *
+   * Checks whether the error code of the returned error matches the error code that was passed to the function.
+   * This tries to partially solve the issue described here:
+   * https://github.com/openwallet-foundation/agent-framework-javascript/pull/1629#issuecomment-1856052292
+   *
+   */
+  private getAriesAskarError(errorCode: number): AriesAskarError {
     const error = this.getCurrentError()
     if (error.code !== errorCode) {
       throw AriesAskarError.customError({
@@ -206,8 +212,15 @@ export class NodeJSAriesAskar implements AriesAskar {
       })
     }
 
-    throw new AriesAskarError(error)
+    return new AriesAskarError(error)
   }
+
+  private handleError(errorCode: number) {
+    if (errorCode === 0) return
+
+    throw this.getAriesAskarError(errorCode)
+  }
+
   public get nativeAriesAskar() {
     return getNativeAriesAskar()
   }

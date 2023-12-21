@@ -99,9 +99,28 @@ export class ReactNativeAriesAskar implements AriesAskar {
     this.ariesAskar = bindings
   }
 
+  /**
+   * Fetch the error from the native library and throw it as a JS error
+   *
+   * Checks whether the error code of the returned error matches the error code that was passed to the function.
+   * This tries to partially solve the issue described here:
+   * https://github.com/openwallet-foundation/agent-framework-javascript/pull/1629#issuecomment-1856052292
+   *
+   */
+  private getAriesAskarError(errorCode: number): AriesAskarError {
+    const error = this.getCurrentError()
+    if (error.code !== errorCode) {
+      throw AriesAskarError.customError({
+        message: `Error code mismatch. Function received: '${errorCode}', but after fetch it was '${error.code}'`,
+      })
+    }
+
+    return new AriesAskarError(error)
+  }
+
   private handleError<T>({ errorCode, value }: ReturnObject<T>): T {
     if (errorCode === 0) return value as T
-    throw new AriesAskarError(this.getCurrentError())
+    throw this.getAriesAskarError(errorCode)
   }
 
   private promisify(method: (cb: Callback) => void): Promise<void> {
@@ -123,8 +142,8 @@ export class ReactNativeAriesAskar implements AriesAskar {
     return new Promise((resolve, reject) => {
       const _cb: CallbackWithResponse<Return> = ({ errorCode, value }) => {
         if (errorCode !== 0) {
-          const error = this.getCurrentError()
-          reject(new AriesAskarError(error))
+          const error = this.getAriesAskarError(errorCode)
+          reject(error)
         } else {
           if (value === undefined) {
             reject(
@@ -172,7 +191,7 @@ export class ReactNativeAriesAskar implements AriesAskar {
   public entryListFree(options: EntryListFreeOptions): void {
     const serializedOptions = serializeArguments(options)
 
-    // null resopnse is expected as we're freeing the object
+    // null response is expected as we're freeing the object
     this.handleError(this.ariesAskar.entryListFree(serializedOptions))
   }
 
