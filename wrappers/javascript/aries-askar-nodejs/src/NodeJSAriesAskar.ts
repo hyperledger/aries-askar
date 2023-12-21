@@ -199,16 +199,20 @@ export class NodeJSAriesAskar implements AriesAskar {
   /**
    * Fetch the error from the native library and throw it as a JS error
    *
+   * NOTE:
    * Checks whether the error code of the returned error matches the error code that was passed to the function.
-   * This tries to partially solve the issue described here:
-   * https://github.com/openwallet-foundation/agent-framework-javascript/pull/1629#issuecomment-1856052292
+   * If it doesn't, we throw an error with the original errorCode, and a custom message explaining we weren't able
+   * to retrieve the error message from the native library. This should however not break functionality as long as
+   * error codes are used rather than error messages for error handling.
    *
    */
   private getAriesAskarError(errorCode: number): AriesAskarError {
     const error = this.getCurrentError()
     if (error.code !== errorCode) {
-      throw AriesAskarError.customError({
-        message: `Error code mismatch. Function received: '${errorCode}', but after fetch it was '${error.code}'`,
+      return new AriesAskarError({
+        code: errorCode,
+        message:
+          'Error details have already been overwritten on the native side, unable to retrieve error message for the error',
       })
     }
 
