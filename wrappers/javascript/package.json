@@ -24,8 +24,7 @@
     "shared": "yarn --cwd aries-askar-shared",
     "nodejs": "yarn --cwd aries-askar-nodejs",
     "test": "cross-env yarn nodejs test",
-    "test:local-build": "cross-env LIB_ARIES_ASKAR_PATH=../../../target/release yarn test",
-    "set-version": "npx lerna version --exact --no-git-tag-version --no-push --yes"
+    "test:local-build": "cross-env LIB_ARIES_ASKAR_PATH=../../../target/release yarn test"
   },
   "repository": {
     "type": "git",
