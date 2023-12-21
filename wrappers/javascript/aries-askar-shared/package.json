@@ -1,6 +1,6 @@
 {
   "name": "@hyperledger/aries-askar-shared",
-  "version": "0.2.0-dev.3",
+  "version": "0.2.0-dev.4",
   "license": "Apache-2.0",
   "description": "Shared library for using Aries Askar with NodeJS and React Native",
   "main": "build/index",
