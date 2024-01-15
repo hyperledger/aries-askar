@@ -358,15 +358,16 @@ jobs:
           echo "registry=https://registry.npmjs.org/" >> .npmrc
           echo "always-auth=true" >> .npmrc
 
-      # TODO: this will currently publish the version as defined in the package.json. If the version already
-      # exists on NPM it will skip the publishing. This means if a new version is released, but the version hasn't been
-      # updated in the package.json files yet, it won't publish to NPM (which is kinda nice). We should however add a check
-      # to see if the JS version matches the release version (do we want to keep the js and rust version in sync?)
-      - name: Publish
+      - name: Publish JavaScript Wrapper
         if: |
           github.event_name == 'release' ||
           (github.event_name == 'workflow_dispatch' && github.event.inputs.publish-javascript-wrapper == 'true')
-        run: npx lerna publish from-package --no-push --no-private --yes --no-git-tag-version
+        run: |
+          if [[ $(cat lerna.json | grep version | head -1 | grep dev) ]]; then
+            npx lerna publish from-package --no-push --no-private --yes --no-git-tag-version --dist-tag=alpha
+          else
+            npx lerna publish from-package --no-push --no-private --yes --no-git-tag-version
+          fi
 
   build-ios:
     name: Build library (iOS)
