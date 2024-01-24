@@ -159,6 +159,21 @@ mod tests {
     }
 
     #[test]
+    fn crypto_box_open_too_short() {
+        let sk = X25519KeyPair::from_secret_bytes(&hex!(
+            "a8bdb9830f8790d242f66e04b11cc2a14c752a7b63c073f3c68e9adb151cc854"
+        ))
+        .unwrap();
+        let pk = X25519KeyPair::from_public_bytes(&hex!(
+            "07d0b594683bdb6af5f4eacb1a392687d580a58db196a752dca316dedb7d251c"
+        ))
+        .unwrap();
+        let mut buffer = SecretBytes::from_slice(b"0000000000");
+        let nonce = b"012345678912012345678912";
+        assert!(crypto_box_open(&sk, &pk, &mut buffer, nonce).is_err());
+    }
+
+    #[test]
     fn crypto_box_seal_round_trip() {
         let recip = X25519KeyPair::random().unwrap();
 
@@ -185,5 +200,15 @@ mod tests {
             5526296482fd0fd013d71d50ce4ce5ebe9c2fa1c230298419a9"
         );
         crypto_box_seal_open(&recip, &ciphertext).unwrap();
+    }
+
+    #[test]
+    fn crypto_box_unseal_too_short() {
+        use crate::alg::ed25519::Ed25519KeyPair;
+        let recip = Ed25519KeyPair::from_secret_bytes(b"testseed000000000000000000000001")
+            .unwrap()
+            .to_x25519_keypair();
+        let ciphertext = hex!("ed443c0377a0");
+        assert!(crypto_box_seal_open(&recip, &ciphertext).is_err());
     }
 }
