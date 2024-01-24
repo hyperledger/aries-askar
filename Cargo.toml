@@ -1,5 +1,6 @@
 [workspace]
 members = ["askar-crypto", "askar-storage"]
+resolver = "2"
 
 [package]
 name = "aries-askar"
@@ -28,9 +29,9 @@ rustdoc-args = ["--cfg", "docsrs"]
 [features]
 default = ["all_backends", "ffi", "logger", "migration"]
 all_backends = ["postgres", "sqlite"]
-ffi = ["ffi-support", "logger"]
-jemalloc = ["jemallocator"]
-logger = ["env_logger", "log", "askar-storage/log"]
+ffi = ["dep:ffi-support", "logger"]
+jemalloc = ["dep:jemallocator"]
+logger = ["dep:env_logger", "dep:log", "askar-storage/log"]
 postgres = ["askar-storage/postgres"]
 sqlite = ["askar-storage/sqlite"]
 pg_test = ["askar-storage/pg_test"]
@@ -59,14 +60,15 @@ path = "./askar-storage"
 default-features = false
 features = ["any"]
 
+[dev-dependencies]
+criterion = { version = "0.5", features = ["html_reports"] }
+rand = { version = "0.8" }
+
 [profile.release]
 codegen-units = 1
 lto = true
 panic = "abort"
-
-[dev-dependencies]
-criterion = { version = "0.5", features = ["html_reports"] }
-rand = { version = "0.8" }
+strip = "debuginfo"
 
 [[bench]]
 name = "benchmark"
