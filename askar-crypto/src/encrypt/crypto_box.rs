@@ -119,6 +119,9 @@ pub fn crypto_box_seal_open(
     recip_sk: &X25519KeyPair,
     ciphertext: &[u8],
 ) -> Result<SecretBytes, Error> {
+    if ciphertext.len() < CBOX_KEY_LENGTH + CBOX_TAG_LENGTH {
+        return Err(err_msg!(Encryption, "Invalid size for encrypted data"));
+    }
     let ephem_pk = X25519KeyPair::from_public_bytes(&ciphertext[..CBOX_KEY_LENGTH])?;
     let mut buffer = SecretBytes::from_slice(&ciphertext[CBOX_KEY_LENGTH..]);
     let nonce = crypto_box_seal_nonce(ephem_pk.public.as_bytes(), recip_sk.public.as_bytes())?;
