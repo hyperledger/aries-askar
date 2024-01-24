@@ -7,7 +7,7 @@
 mod error;
 pub use self::error::{Error, ErrorKind};
 
-#[cfg(any(test, feature = "log"))]
+#[cfg(any(test, feature = "logger"))]
 #[macro_use]
 extern crate log;
 
