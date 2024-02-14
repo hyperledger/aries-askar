@@ -45,7 +45,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@master
@@ -81,7 +81,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@master
@@ -146,7 +146,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@master
@@ -177,7 +177,7 @@ jobs:
           fi
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: library-${{ matrix.architecture }}
           path: target/${{ matrix.target }}/release/${{ matrix.lib }}
@@ -190,7 +190,7 @@ jobs:
           mkdir release-artifacts
           cp target/${{ matrix.target }}/release/${{ matrix.lib }} release-artifacts/
 
-      - uses: a7ul/tar-action@v1.1.2
+      - uses: a7ul/tar-action@v1.1.3
         if: |
           github.event_name == 'release' ||
           (github.event_name == 'workflow_dispatch' && github.event.inputs.publish-binaries == 'true')
@@ -236,10 +236,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
 
@@ -249,7 +249,7 @@ jobs:
           pip install setuptools wheel twine auditwheel
 
       - name: Fetch library artifacts
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: library-${{ matrix.architecture }}
           path: wrappers/python/aries_askar/
@@ -316,15 +316,15 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Set up Node.JS 18.x
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           node-version: 18.x
 
       - name: Fetch library artifacts
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: library-linux-x86_64
 
@@ -379,7 +379,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@master
@@ -392,7 +392,7 @@ jobs:
           cargo build --lib --release --target ${{matrix.target}}
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: library-${{ matrix.target }}
           path: target/${{ matrix.target }}/release/libaries_askar.a
@@ -417,7 +417,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@master
@@ -441,7 +441,7 @@ jobs:
           cross build --lib --release --target ${{matrix.target}}
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: library-${{ matrix.target }}
           path: target/${{ matrix.target }}/release/libaries_askar.so
@@ -453,10 +453,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Fetch static libraries
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
 
       - run: >
           ./build-xcframework.sh library-aarch64-apple-ios \
@@ -465,12 +465,12 @@ jobs:
                                  include
 
       - name: Save xcframework
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: aries_askar.xcframework
           path: ./out
 
-      - uses: geekyeggo/delete-artifact@v2
+      - uses: geekyeggo/delete-artifact@v4
         with:
           name: |
             library-aarch64-apple-ios
@@ -484,7 +484,7 @@ jobs:
     needs: [build-android]
     steps:
       - name: Fetch libraries
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
 
       - run: |
           sudo mkdir ./libs
@@ -494,12 +494,12 @@ jobs:
           sudo mv library-x86_64-linux-android    ./libs/x86_64
 
       - name: Save Android library
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: android-libraries
           path: ./libs
 
-      - uses: geekyeggo/delete-artifact@v2
+      - uses: geekyeggo/delete-artifact@v4
         with:
           name: |
             library-aarch64-linux-android
@@ -521,18 +521,18 @@ jobs:
 
     steps:
       - name: Fetch Android libraries
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: android-libraries
           path: mobile/android/
 
       - name: Fetch iOS Framework
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: aries_askar.xcframework
           path: mobile/ios/
 
-      - uses: a7ul/tar-action@v1.1.2
+      - uses: a7ul/tar-action@v1.1.3
         with:
           command: c
           files: ./mobile
