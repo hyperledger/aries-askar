@@ -473,7 +473,7 @@ jobs:
           name: aries_askar.xcframework
           path: ./out
 
-      - uses: geekyeggo/delete-artifact@v4
+      - uses: geekyeggo/delete-artifact@v5
         with:
           name: |
             library-aarch64-apple-ios
@@ -502,7 +502,7 @@ jobs:
           name: android-libraries
           path: ./libs
 
-      - uses: geekyeggo/delete-artifact@v4
+      - uses: geekyeggo/delete-artifact@v5
         with:
           name: |
             library-aarch64-linux-android
