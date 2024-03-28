@@ -4,7 +4,7 @@ use crate::storage::future::spawn_ok;
 use crate::storage::migration::IndySdkToAriesAskarMigration;
 
 use super::{
-    error::{set_last_error, ErrorCode},
+    error::{store_error, ErrorHandle},
     CallbackId, EnsureCallback,
 };
 
@@ -24,9 +24,9 @@ pub extern "C" fn askar_migrate_indy_sdk(
     wallet_name: FfiStr<'_>,
     wallet_key: FfiStr<'_>,
     kdf_level: FfiStr<'_>,
-    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode)>,
+    cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorHandle)>,
     cb_id: CallbackId,
-) -> ErrorCode {
+) -> ErrorHandle {
     catch_err!(
         trace!("Migrate sqlite wallet from indy-sdk structure to aries-askar");
         let cb = cb.ok_or_else(|| err_msg!("No callback provided"))?;
@@ -37,8 +37,8 @@ pub extern "C" fn askar_migrate_indy_sdk(
 
         let cb = EnsureCallback::new(move |result|
             match result {
-                Ok(_) => cb(cb_id, ErrorCode::Success),
-                Err(err) => cb(cb_id, set_last_error(Some(err))),
+                Ok(_) => cb(cb_id, ErrorHandle::OK),
+                Err(err) => cb(cb_id, store_error(err)),
         });
 
         spawn_ok(async move {
@@ -49,6 +49,6 @@ pub extern "C" fn askar_migrate_indy_sdk(
             }.await;
             cb.resolve(result);
         });
-        Ok(ErrorCode::Success)
+        Ok(ErrorHandle::OK)
     )
 }
