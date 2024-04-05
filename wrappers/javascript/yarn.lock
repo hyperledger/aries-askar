@@ -2,10 +2,10 @@
 # yarn lockfile v1
 
 
-"@2060.io/ffi-napi@4.0.8":
-  version "4.0.8"
-  resolved "https://registry.yarnpkg.com/@2060.io/ffi-napi/-/ffi-napi-4.0.8.tgz#ec3424d9ec979491b41b8d82514ae82a647da8b0"
-  integrity sha512-sONRKLtxFKN5PXuZaa41b/kTN+R5qAh6PAL15/fnafnvAKQ5WBoxRIy8xRh8jo9mydywtt4IrWtatB93w0+3cA==
+"@2060.io/ffi-napi@4.0.9":
+  version "4.0.9"
+  resolved "https://registry.yarnpkg.com/@2060.io/ffi-napi/-/ffi-napi-4.0.9.tgz#194fca2132932ba02e62d716c786d20169b20b8d"
+  integrity sha512-JfVREbtkJhMXSUpya3JCzDumdjeZDCKv4PemiWK+pts5CYgdoMidxeySVlFeF5pHqbBpox4I0Be7sDwAq4N0VQ==
   dependencies:
     "@2060.io/ref-napi" "^3.0.6"
     debug "^4.1.1"
