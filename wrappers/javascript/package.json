@@ -21,6 +21,7 @@
     "reset": "find . -type dir -name node_modules | xargs rm -rf && rm -rf yarn.lock",
     "example": "yarn --cwd  react-native-example",
     "react-native": "yarn --cwd aries-askar-react-native",
+    "set-version": "npx lerna version --exact --no-git-tag-version --no-push --yes",    
     "shared": "yarn --cwd aries-askar-shared",
     "nodejs": "yarn --cwd aries-askar-nodejs",
     "test": "cross-env yarn nodejs test",
