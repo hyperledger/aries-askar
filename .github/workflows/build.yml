@@ -193,7 +193,7 @@ jobs:
           mkdir release-artifacts
           cp target/${{ matrix.target }}/release/${{ matrix.lib }} release-artifacts/
 
-      - uses: a7ul/tar-action@v1.1.3
+      - uses: a7ul/tar-action@v1.2.0
         if: |
           github.event_name == 'release' ||
           (github.event_name == 'workflow_dispatch' && github.event.inputs.publish-binaries == 'true')
@@ -535,7 +535,7 @@ jobs:
           name: aries_askar.xcframework
           path: mobile/ios/
 
-      - uses: a7ul/tar-action@v1.1.3
+      - uses: a7ul/tar-action@v1.2.0
         with:
           command: c
           files: ./mobile
