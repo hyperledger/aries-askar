@@ -46,7 +46,7 @@
     "typescript": "4.5.5"
   },
   "dependencies": {
-    "@2060.io/ffi-napi": "4.0.8",
+    "@2060.io/ffi-napi": "4.0.9",
     "@2060.io/ref-napi": "3.0.6",
     "@hyperledger/aries-askar-shared": "0.2.0",
     "@mapbox/node-pre-gyp": "^1.0.10",
