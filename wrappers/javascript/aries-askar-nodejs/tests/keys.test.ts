@@ -57,8 +57,10 @@ describe('keys', () => {
     const key = Key.generate(KeyAlgs.Ed25519)
     expect(key.algorithm).toStrictEqual(KeyAlgs.Ed25519)
     const message = Uint8Array.from(Buffer.from('test message'))
+    const messageBuffer = Buffer.from('test message')
     const signature = key.signMessage({ message })
     expect(key.verifySignature({ message, signature })).toStrictEqual(true)
+    expect(key.verifySignature({ message: messageBuffer, signature })).toStrictEqual(true)
 
     const x25519Key = key.convertkey({ algorithm: KeyAlgs.X25519 })
     const x25519Key2 = Key.generate(KeyAlgs.X25519)
