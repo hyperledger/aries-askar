@@ -89,7 +89,7 @@ const serialize = (arg: Argument): SerializedArgument => {
       } else if (arg instanceof Key) {
         return arg.handle.handle
       } else if (arg instanceof Buffer) {
-        return arg
+        return uint8arrayToByteBufferStruct(arg) as unknown as Buffer
       } else if (arg instanceof Uint8Array) {
         return uint8arrayToByteBufferStruct(Buffer.from(arg)) as unknown as Buffer
       } else if (arg instanceof Jwk) {
