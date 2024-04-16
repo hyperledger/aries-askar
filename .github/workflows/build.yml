@@ -316,7 +316,7 @@ jobs:
     strategy:
       matrix:
         architecture:
-          [linux-aarch64, linux-x86_64, darwin-universal, windows-x86_64]
+          [linux-aarch64, linux-x86_64, darwin-universal]
         include:
           - os: ubuntu-latest
             architecture: linux-aarch64
@@ -324,8 +324,6 @@ jobs:
             architecture: linux-x86_64
           - os: macos-latest
             architecture: darwin-universal
-          - os: windows-latest
-            architecture: windows-x86_64
 
     runs-on: ${{ matrix.os }}
     
