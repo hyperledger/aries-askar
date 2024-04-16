@@ -312,7 +312,21 @@ jobs:
   build-javascript:
     name: Build and test JavaScript wrapper
     needs: [build-release]
-    runs-on: ubuntu-latest
+    
+    strategy:
+      matrix:
+        architecture:
+          [linux-aarch64, linux-x86_64, darwin-universal]
+        include:
+          - os: ubuntu-latest
+            architecture: linux-aarch64
+          - os: ubuntu-latest
+            architecture: linux-x86_64
+          - os: macos-latest
+            architecture: darwin-universal
+
+    runs-on: ${{ matrix.os }}
+    
     defaults:
       run:
         working-directory: wrappers/javascript
@@ -329,7 +343,12 @@ jobs:
       - name: Fetch library artifacts
         uses: actions/download-artifact@v4
         with:
-          name: library-linux-x86_64
+          name: library-${{ matrix.architecture }}
+
+      - name: Install python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install setuptools wheel twine auditwheel
 
       - name: Install dependencies
         run: yarn install
@@ -347,6 +366,7 @@ jobs:
         run: yarn check-types
 
       - name: Run tests
+        if: ${{ matrix.architecture != 'linux-aarch64' }}
         env:
           # binary is downloaded to root of repository
           LIB_ARIES_ASKAR_PATH: ../../../
