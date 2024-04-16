@@ -312,7 +312,23 @@ jobs:
   build-javascript:
     name: Build and test JavaScript wrapper
     needs: [build-release]
-    runs-on: ubuntu-latest
+    
+    strategy:
+      matrix:
+        architecture:
+          [linux-aarch64, linux-x86_64, darwin-universal, windows-x86_64]
+        include:
+          - os: ubuntu-latest
+            architecture: linux-aarch64
+          - os: ubuntu-latest
+            architecture: linux-x86_64
+          - os: macos-latest
+            architecture: darwin-universal
+          - os: windows-latest
+            architecture: windows-x86_64
+
+    runs-on: ${{ matrix.os }}
+    
     defaults:
       run:
         working-directory: wrappers/javascript
