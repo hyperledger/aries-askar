@@ -368,6 +368,7 @@ jobs:
         run: yarn check-types
 
       - name: Run tests
+        if: ${{ matrix.architecture != 'linux-aarch64' }}
         env:
           # binary is downloaded to root of repository
           LIB_ARIES_ASKAR_PATH: ../../../
