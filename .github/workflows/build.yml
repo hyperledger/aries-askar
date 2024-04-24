@@ -423,6 +423,7 @@ jobs:
   build-android:
     name: Build library (Android)
     needs: [checks]
+    # NB: RUST_VERSION must be <1.68 here to support NDK 17
     env:
       RUST_VERSION: "1.67"
 

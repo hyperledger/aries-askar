@@ -6,7 +6,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use log::{LevelFilter, Metadata, Record};
 use once_cell::sync::OnceCell;
 
-use super::error::ErrorCode;
+use super::error::ErrorHandle;
 use crate::error::Error;
 
 static LOGGER: OnceCell<CustomLogger> = OnceCell::new();
@@ -111,7 +111,7 @@ pub extern "C" fn askar_set_custom_logger(
     enabled: Option<EnabledCallback>,
     flush: Option<FlushCallback>,
     max_level: i32,
-) -> ErrorCode {
+) -> ErrorHandle {
     catch_err! {
         let max_level = get_level_filter(max_level)?;
         if LOGGER.set(CustomLogger::new(context, enabled, log, flush)).is_err() {
@@ -121,7 +121,7 @@ pub extern "C" fn askar_set_custom_logger(
             |_| err_msg!(Input, "Repeated logger initialization"))?;
         log::set_max_level(max_level);
         debug!("Initialized custom logger");
-        Ok(ErrorCode::Success)
+        Ok(ErrorHandle::OK)
     }
 }
 
@@ -134,20 +134,20 @@ pub extern "C" fn askar_clear_custom_logger() {
 }
 
 #[no_mangle]
-pub extern "C" fn askar_set_default_logger() -> ErrorCode {
+pub extern "C" fn askar_set_default_logger() -> ErrorHandle {
     catch_err! {
         env_logger::try_init().map_err(
             |_| err_msg!(Input, "Repeated logger initialization"))?;
         debug!("Initialized default logger");
-        Ok(ErrorCode::Success)
+        Ok(ErrorHandle::OK)
     }
 }
 
 #[no_mangle]
-pub extern "C" fn askar_set_max_log_level(max_level: i32) -> ErrorCode {
+pub extern "C" fn askar_set_max_log_level(max_level: i32) -> ErrorHandle {
     catch_err! {
         log::set_max_level(get_level_filter(max_level)?);
-        Ok(ErrorCode::Success)
+        Ok(ErrorHandle::OK)
     }
 }
 

@@ -1,7 +1,8 @@
 use std::{ffi::CString, os::raw::c_char, ptr};
 
 use super::{
-    handle::ArcHandle, key::LocalKeyHandle, secret::SecretBuffer, tags::EntryTagSet, ErrorCode,
+    error::ErrorHandle, handle::ArcHandle, key::LocalKeyHandle, secret::SecretBuffer,
+    tags::EntryTagSet,
 };
 use crate::{entry::Entry, error::Error, kms::KeyEntry};
 
@@ -54,12 +55,12 @@ pub type EntryListHandle = ArcHandle<FfiEntryList>;
 pub type FfiEntryList = FfiResultList<Entry>;
 
 #[no_mangle]
-pub extern "C" fn askar_entry_list_count(handle: EntryListHandle, count: *mut i32) -> ErrorCode {
+pub extern "C" fn askar_entry_list_count(handle: EntryListHandle, count: *mut i32) -> ErrorHandle {
     catch_err! {
         check_useful_c_ptr!(count);
         let results = handle.load()?;
         unsafe { *count = results.len() };
-        Ok(ErrorCode::Success)
+        Ok(ErrorHandle::OK)
     }
 }
 
@@ -68,13 +69,13 @@ pub extern "C" fn askar_entry_list_get_category(
     handle: EntryListHandle,
     index: i32,
     category: *mut *const c_char,
-) -> ErrorCode {
+) -> ErrorHandle {
     catch_err! {
         check_useful_c_ptr!(category);
         let results = handle.load()?;
         let entry = results.get_row(index)?;
         unsafe { *category = CString::new(entry.category.as_str()).unwrap().into_raw() };
-        Ok(ErrorCode::Success)
+        Ok(ErrorHandle::OK)
     }
 }
 
@@ -83,13 +84,13 @@ pub extern "C" fn askar_entry_list_get_name(
     handle: EntryListHandle,
     index: i32,
     name: *mut *const c_char,
-) -> ErrorCode {
+) -> ErrorHandle {
     catch_err! {
         check_useful_c_ptr!(name);
         let results = handle.load()?;
         let entry = results.get_row(index)?;
         unsafe { *name = CString::new(entry.name.as_str()).unwrap().into_raw() };
-        Ok(ErrorCode::Success)
+        Ok(ErrorHandle::OK)
     }
 }
 
@@ -98,13 +99,13 @@ pub extern "C" fn askar_entry_list_get_value(
     handle: EntryListHandle,
     index: i32,
     value: *mut SecretBuffer,
-) -> ErrorCode {
+) -> ErrorHandle {
     catch_err! {
         check_useful_c_ptr!(value);
         let results = handle.load()?;
         let entry = results.get_row(index)?;
         unsafe { *value = SecretBuffer::from_secret(entry.value.as_ref()); }
-        Ok(ErrorCode::Success)
+        Ok(ErrorHandle::OK)
     }
 }
 
@@ -113,7 +114,7 @@ pub extern "C" fn askar_entry_list_get_tags(
     handle: EntryListHandle,
     index: i32,
     tags: *mut *const c_char,
-) -> ErrorCode {
+) -> ErrorHandle {
     catch_err! {
         check_useful_c_ptr!(tags);
         let results = handle.load()?;
@@ -124,7 +125,7 @@ pub extern "C" fn askar_entry_list_get_tags(
             let tag_json = serde_json::to_vec(&EntryTagSet::from(entry.tags.as_slice())).unwrap();
             unsafe { *tags = CString::new(tag_json).unwrap().into_raw() };
         }
-        Ok(ErrorCode::Success)
+        Ok(ErrorHandle::OK)
     }
 }
 
@@ -141,12 +142,12 @@ pub type FfiKeyEntryList = FfiResultList<KeyEntry>;
 pub extern "C" fn askar_key_entry_list_count(
     handle: KeyEntryListHandle,
     count: *mut i32,
-) -> ErrorCode {
+) -> ErrorHandle {
     catch_err! {
         check_useful_c_ptr!(count);
         let results = handle.load()?;
         unsafe { *count = results.len() };
-        Ok(ErrorCode::Success)
+        Ok(ErrorHandle::OK)
     }
 }
 
@@ -160,7 +161,7 @@ pub extern "C" fn askar_key_entry_list_get_algorithm(
     handle: KeyEntryListHandle,
     index: i32,
     alg: *mut *const c_char,
-) -> ErrorCode {
+) -> ErrorHandle {
     catch_err! {
         check_useful_c_ptr!(alg);
         let results = handle.load()?;
@@ -170,7 +171,7 @@ pub extern "C" fn askar_key_entry_list_get_algorithm(
         } else {
             unsafe { *alg = ptr::null() };
         }
-        Ok(ErrorCode::Success)
+        Ok(ErrorHandle::OK)
     }
 }
 
@@ -179,13 +180,13 @@ pub extern "C" fn askar_key_entry_list_get_name(
     handle: KeyEntryListHandle,
     index: i32,
     name: *mut *const c_char,
-) -> ErrorCode {
+) -> ErrorHandle {
     catch_err! {
         check_useful_c_ptr!(name);
         let results = handle.load()?;
         let entry = results.get_row(index)?;
         unsafe { *name = CString::new(entry.name.as_str()).unwrap().into_raw() };
-        Ok(ErrorCode::Success)
+        Ok(ErrorHandle::OK)
     }
 }
 
@@ -194,7 +195,7 @@ pub extern "C" fn askar_key_entry_list_get_metadata(
     handle: KeyEntryListHandle,
     index: i32,
     metadata: *mut *const c_char,
-) -> ErrorCode {
+) -> ErrorHandle {
     catch_err! {
         check_useful_c_ptr!(metadata);
         let results = handle.load()?;
@@ -204,7 +205,7 @@ pub extern "C" fn askar_key_entry_list_get_metadata(
         } else {
             unsafe { *metadata = ptr::null(); }
         }
-        Ok(ErrorCode::Success)
+        Ok(ErrorHandle::OK)
     }
 }
 
@@ -213,7 +214,7 @@ pub extern "C" fn askar_key_entry_list_get_tags(
     handle: KeyEntryListHandle,
     index: i32,
     tags: *mut *const c_char,
-) -> ErrorCode {
+) -> ErrorHandle {
     catch_err! {
         check_useful_c_ptr!(tags);
         let results = handle.load()?;
@@ -224,7 +225,7 @@ pub extern "C" fn askar_key_entry_list_get_tags(
             let tag_json = serde_json::to_vec(&EntryTagSet::from(entry.tags.as_slice())).unwrap();
             unsafe { *tags = CString::new(tag_json).unwrap().into_raw() };
         }
-        Ok(ErrorCode::Success)
+        Ok(ErrorHandle::OK)
     }
 }
 
@@ -233,7 +234,7 @@ pub extern "C" fn askar_key_entry_list_load_local(
     handle: KeyEntryListHandle,
     index: i32,
     out: *mut LocalKeyHandle,
-) -> ErrorCode {
+) -> ErrorHandle {
     catch_err! {
         trace!("Load key");
         check_useful_c_ptr!(out);
@@ -241,7 +242,7 @@ pub extern "C" fn askar_key_entry_list_load_local(
         let entry = results.get_row(index)?;
         let key = entry.load_local_key()?;
         unsafe { *out = LocalKeyHandle::create(key) };
-        Ok(ErrorCode::Success)
+        Ok(ErrorHandle::OK)
     }
 }
 
@@ -250,12 +251,15 @@ pub type StringListHandle = ArcHandle<FfiStringList>;
 pub type FfiStringList = FfiResultList<String>;
 
 #[no_mangle]
-pub extern "C" fn askar_string_list_count(handle: StringListHandle, count: *mut i32) -> ErrorCode {
+pub extern "C" fn askar_string_list_count(
+    handle: StringListHandle,
+    count: *mut i32,
+) -> ErrorHandle {
     catch_err! {
         check_useful_c_ptr!(count);
         let results = handle.load()?;
         unsafe { *count = results.len() };
-        Ok(ErrorCode::Success)
+        Ok(ErrorHandle::OK)
     }
 }
 
@@ -264,13 +268,13 @@ pub extern "C" fn askar_string_list_get_item(
     handle: StringListHandle,
     index: i32,
     item: *mut *const c_char,
-) -> ErrorCode {
+) -> ErrorHandle {
     catch_err! {
         check_useful_c_ptr!(item);
         let results = handle.load()?;
         let entry = results.get_row(index)?;
         unsafe { *item = CString::new(entry.clone()).unwrap().into_raw() };
-        Ok(ErrorCode::Success)
+        Ok(ErrorHandle::OK)
     }
 }
 

@@ -28,7 +28,6 @@ mod tags;
 #[cfg(all(feature = "migration", feature = "sqlite"))]
 mod migration;
 
-use self::error::ErrorCode;
 use crate::error::Error;
 
 pub type CallbackId = i64;

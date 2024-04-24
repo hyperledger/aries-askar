@@ -44,6 +44,15 @@ LOG_LEVELS = {
 }
 
 
+class ErrorHandle(Structure):
+    _fields_ = [
+        ("value", c_int64),
+    ]
+
+    def __bool__(self) -> bool:
+        return self.value != 0
+
+
 def _convert_log_level(level: Union[str, int, None]):
     if level is None or level == "-1":
         return -1
@@ -187,14 +196,15 @@ class LibLoad:
             (c_void_p, c_void_p, c_void_p, c_void_p, c_int32),
             restype=c_int64,
         )
-        if set_logger(
+        err = set_logger(
             None,  # context
             self._log_cb,
             self._log_enabled_cb,
             None,  # flush
             level,
-        ):
-            raise self.get_current_error(True)
+        )
+        if err:
+            raise self.fetch_error(err)
 
         try:
             finalize(self, self.method("askar_clear_custom_logger", None, restype=None))
@@ -204,19 +214,19 @@ class LibLoad:
 
     def invoke(self, name, argtypes, *args):
         """Perform a synchronous library function call."""
-        method = self.method(name, argtypes, restype=c_int64)
+        method = self.method(name, argtypes, restype=ErrorHandle)
         if not method:
             raise ValueError(f"FFI method not found: {name}")
         args = _load_method_arguments(name, argtypes, args)
-        result = method(*args)
-        if result:
-            raise self.get_current_error(True)
+        err = method(*args)
+        if err:
+            raise self.fetch_error(err)
 
     def invoke_async(
         self, name: str, argtypes, *args, return_type=None
     ) -> asyncio.Future:
         """Perform an asynchronous library function call."""
-        method = self.method(name, (*argtypes, c_void_p, c_int64), restype=c_int64)
+        method = self.method(name, (*argtypes, c_void_p, c_int64), restype=ErrorHandle)
         if not method:
             raise ValueError(f"FFI method not found: {name}")
         loop = asyncio.get_event_loop()
@@ -225,7 +235,7 @@ class LibLoad:
         if cb_info:
             cb = cb_info[1]
         else:
-            cb_args = [c_int64, c_int64]
+            cb_args = [c_int64, ErrorHandle]
             if return_type:
                 cb_args.append(return_type)
             cb_type = CFUNCTYPE(None, *cb_args)
@@ -236,10 +246,10 @@ class LibLoad:
         args = _load_method_arguments(name, argtypes, args)
         cb_id = next(self._cb_id)
         self._callbacks[cb_id] = (loop, fut, name)
-        result = method(*args, cb, cb_id)
-        if result:
+        err = method(*args, cb, cb_id)
+        if err:
             # FFI must not execute the callback if an error is returned
-            err = self.get_current_error(True)
+            err = self.fetch_error(err)
             if self._callbacks.pop(cb_id, None):
                 self._fulfill_future(fut, None, err)
         return fut
@@ -249,8 +259,8 @@ class LibLoad:
         if method:
             method(*values)
 
-    def _handle_callback(self, cb_id: int, err: int, result=None):
-        exc = self.get_current_error(True) if err else None
+    def _handle_callback(self, cb_id: int, err: ErrorHandle, result=None):
+        exc = self.fetch_error(err) if err else None
         cb = self._callbacks.pop(cb_id, None)
         if not cb:
             LOGGER.info("Callback already fulfilled: %s", cb_id)
@@ -267,7 +277,7 @@ class LibLoad:
         else:
             fut.set_result(result)
 
-    def get_current_error(self, expect: bool = False) -> Optional[AskarError]:
+    def fetch_error(self, handle: ErrorHandle) -> Optional[AskarError]:
         """
         Get the error result from the previous failed API method.
 
@@ -276,20 +286,23 @@ class LibLoad:
         """
         err_json = StrBuffer()
         method = self.method(
-            "askar_get_current_error", (POINTER(StrBuffer),), restype=c_int64
+            "askar_fetch_error",
+            (
+                ErrorHandle,
+                POINTER(StrBuffer),
+            ),
+            restype=c_int64,
         )
-        if not method(byref(err_json)):
+        if not method(handle, byref(err_json)):
             try:
                 msg = json.loads(err_json.value)
             except json.JSONDecodeError:
-                LOGGER.warning("JSON decode error for askar_get_current_error")
+                LOGGER.warning("JSON decode error for askar_fetch_error")
                 msg = None
             if msg and "message" in msg and "code" in msg:
                 return AskarError(
                     AskarErrorCode(msg["code"]), msg["message"], msg.get("extra")
                 )
-            if not expect:
-                return None
         return AskarError(AskarErrorCode.WRAPPER, "Unknown error")
 
     def method(self, name, argtypes, *, restype=None):
