@@ -29,6 +29,7 @@ ec_curves = ["dep:elliptic-curve", "dep:k256", "dep:p256", "dep:p384"]
 ed25519 = ["dep:curve25519-dalek", "dep:ed25519-dalek", "dep:x25519-dalek"]
 getrandom = ["rand/getrandom"]
 std_rng = ["getrandom", "rand/std", "rand/std_rng"]
+secure_env = ["dep:secure-env"]
 
 [dev-dependencies]
 base64 = { version = "0.21", default-features = false, features = ["alloc"] }
@@ -53,6 +54,7 @@ aes-core = { package = "aes", version = "0.8", default-features = false, optiona
 aes-gcm = { version = "0.10", default-features = false, features = [
     "aes",
 ], optional = true }
+secure-env = { package = "animo-secure-env", version = "0.1", optional = true }
 arbitrary = { version = "1.0", optional = true, features = ["derive"] }
 argon2 = { version = "0.5", default-features = false, features = [
     "alloc",
