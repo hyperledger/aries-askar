@@ -428,7 +428,7 @@ jobs:
     name: Build library (Android)
     needs: [checks]
     env:
-      RUST_VERSION: "1.67"
+      RUST_VERSION: "1.68"
       FEATURES: "secure_env"
 
     runs-on: ubuntu-latest
