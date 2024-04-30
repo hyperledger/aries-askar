@@ -429,6 +429,7 @@ jobs:
     needs: [checks]
 
     env:
+      RUST_VERSION: "1.68"
       FEATURES: "secure_env"
 
     runs-on: ubuntu-latest
