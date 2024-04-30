@@ -15,27 +15,27 @@ categories = ["cryptography", "database"]
 keywords = ["hyperledger", "aries", "ssi", "verifiable", "credentials"]
 rust-version = "1.65"
 
-[lib]
-name = "aries_askar"
-path = "src/lib.rs"
-crate-type = ["staticlib", "rlib", "cdylib"]
-bench = false
-
 [package.metadata.docs.rs]
 features = ["all_backends"]
 no-default-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
+[lib]
+bench = false
+crate-type = ["staticlib", "rlib", "cdylib"]
+name = "aries_askar"
+path = "src/lib.rs"
+
 [features]
-default = ["all_backends", "ffi", "logger", "migration"]
 all_backends = ["postgres", "sqlite"]
+default = ["all_backends", "ffi", "logger", "migration"]
 ffi = ["dep:ffi-support", "logger"]
 jemalloc = ["dep:jemallocator"]
 logger = ["dep:env_logger", "dep:log", "askar-storage/log"]
+migration = ["askar-storage/migration"]
+pg_test = ["askar-storage/pg_test"]
 postgres = ["askar-storage/postgres"]
 sqlite = ["askar-storage/sqlite"]
-pg_test = ["askar-storage/pg_test"]
-migration = ["askar-storage/migration"]
 
 [dependencies]
 async-lock = "3.0"
@@ -50,15 +50,15 @@ serde_json = "1.0"
 zeroize = "1.5"
 
 [dependencies.askar-crypto]
-version = "0.3"
-path = "./askar-crypto"
 features = ["all_keys", "any_key", "argon2", "crypto_box", "std"]
+path = "./askar-crypto"
+version = "0.3"
 
 [dependencies.askar-storage]
-version = "0.1.0"
-path = "./askar-storage"
 default-features = false
 features = ["any"]
+path = "./askar-storage"
+version = "0.1.0"
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }
@@ -71,5 +71,5 @@ panic = "abort"
 strip = "debuginfo"
 
 [[bench]]
-name = "benchmark"
 harness = false
+name = "benchmark"
