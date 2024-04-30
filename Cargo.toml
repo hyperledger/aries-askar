@@ -13,7 +13,7 @@ readme = "README.md"
 repository = "https://github.com/hyperledger/aries-askar/"
 categories = ["cryptography", "database"]
 keywords = ["hyperledger", "aries", "ssi", "verifiable", "credentials"]
-rust-version = "1.65"
+rust-version = "1.70"
 
 [package.metadata.docs.rs]
 features = ["all_backends"]
@@ -35,6 +35,7 @@ logger = ["dep:env_logger", "dep:log", "askar-storage/log"]
 migration = ["askar-storage/migration"]
 pg_test = ["askar-storage/pg_test"]
 postgres = ["askar-storage/postgres"]
+secure_env = ["askar-crypto/secure_env"]
 sqlite = ["askar-storage/sqlite"]
 
 [dependencies]
