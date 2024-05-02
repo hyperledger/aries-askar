@@ -110,7 +110,7 @@ impl Store {
         Ok(self.0.list_profiles().await?)
     }
 
-    /// Remove an existing profile with the given profile name
+    /// Remove an existing profile with the given profile namestore.r
     pub async fn remove_profile(&self, name: String) -> Result<bool, Error> {
         Ok(self.0.remove_profile(name).await?)
     }
@@ -341,13 +341,14 @@ impl Session {
         name: &str,
         key: &LocalKey,
         metadata: Option<&str>,
+        reference: Option<&str>,
         tags: Option<&[EntryTag]>,
         expiry_ms: Option<i64>,
     ) -> Result<(), Error> {
         let data = key.encode()?;
         let params = KeyParams {
             metadata: metadata.map(str::to_string),
-            reference: None,
+            reference: reference.map(str::to_string),
             data: Some(data),
         };
         let value = params.to_bytes()?;

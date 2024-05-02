@@ -24,7 +24,8 @@ fn store_copy() {
         .await
         .expect(ERR_OPEN);
 
-        let keypair = LocalKey::generate(KeyAlg::Ed25519, false).expect("Error creating keypair");
+        let keypair =
+            LocalKey::generate_with_rng(KeyAlg::Ed25519, false).expect("Error creating keypair");
 
         let mut conn = db.session(None).await.expect(ERR_SESSION);
 

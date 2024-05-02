@@ -30,16 +30,31 @@ pub struct LocalKey {
 
 impl LocalKey {
     /// Create a new random key or keypair
-    pub fn generate(alg: KeyAlg, ephemeral: bool) -> Result<Self, Error> {
+    pub fn generate_with_rng(alg: KeyAlg, ephemeral: bool) -> Result<Self, Error> {
         let inner = Box::<AnyKey>::random(alg)?;
         Ok(Self { inner, ephemeral })
+    }
+
+    /// Create a new random keypair with an id
+    pub fn generate_with_id(alg: KeyAlg, id: &str, ephemeral: bool) -> Result<Self, Error> {
+        let inner = Box::<AnyKey>::generate_with_id(alg, id)?;
+        Ok(Self { inner, ephemeral })
+    }
+
+    /// Get a local key by id
+    pub fn from_id(alg: KeyAlg, id: &str) -> Result<Self, Error> {
+        let inner = Box::<AnyKey>::get_with_id(alg, id)?;
+        Ok(Self {
+            inner,
+            ephemeral: false,
+        })
     }
 
     /// Create a new deterministic key or keypair
     pub fn from_seed(alg: KeyAlg, seed: &[u8], method: Option<&str>) -> Result<Self, Error> {
         let inner = match method {
-            Some("bls_keygen") => Box::<AnyKey>::generate(alg, BlsKeyGen::new(seed)?)?,
-            None | Some("") => Box::<AnyKey>::generate(alg, RandomDet::new(seed))?,
+            Some("bls_keygen") => Box::<AnyKey>::generate_with_rng(alg, BlsKeyGen::new(seed)?)?,
+            None | Some("") => Box::<AnyKey>::generate_with_rng(alg, RandomDet::new(seed))?,
             _ => {
                 return Err(err_msg!(
                     Unsupported,
@@ -277,6 +292,16 @@ impl LocalKey {
         let mut buf = ciphertext.into().into_secret();
         self.inner.decrypt_in_place(&mut buf, nonce, &[])?;
         Self::from_secret_bytes(alg, buf.as_ref())
+    }
+
+    /// Check whether the key is hardware backed by checking the type id of the underlying
+    /// structure
+    pub fn is_hardware_backed(&self) -> bool {
+        #[cfg(feature = "mobile_secure_element")]
+        return self.inner.downcast_ref::<P256HardwareKeyPair>().ok();
+
+        #[cfg(not(feature = "mobile_secure_element"))]
+        false
     }
 }
 

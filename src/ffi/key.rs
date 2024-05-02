@@ -20,9 +20,11 @@ pub struct AeadParams {
     tag_length: i32,
 }
 
+/// id is an optional argument only required for hardware-bound keys
 #[no_mangle]
 pub extern "C" fn askar_key_generate(
     alg: FfiStr<'_>,
+    id: FfiStr<'_>,
     ephemeral: i8,
     out: *mut LocalKeyHandle,
 ) -> ErrorCode {
@@ -31,7 +33,10 @@ pub extern "C" fn askar_key_generate(
         trace!("Generate key: {}", alg);
         check_useful_c_ptr!(out);
         let alg = KeyAlg::from_str(alg)?;
-        let key = LocalKey::generate(alg, ephemeral != 0)?;
+        let key = match id.as_opt_str() {
+            Some(id) => LocalKey::generate_with_id(alg, id, ephemeral != 0),
+            None => LocalKey::generate_with_rng(alg, ephemeral != 0)
+        }?;
         unsafe { *out = LocalKeyHandle::create(key) };
         Ok(ErrorCode::Success)
     }
