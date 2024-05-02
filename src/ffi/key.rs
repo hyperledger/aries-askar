@@ -1,6 +1,6 @@
-use std::{os::raw::c_char, str::FromStr};
-
 use ffi_support::{rust_string_to_c, ByteBuffer, FfiStr};
+use std::{os::raw::c_char, str::FromStr};
+use uuid::Uuid;
 
 use super::{
     handle::ArcHandle,
@@ -24,7 +24,7 @@ pub struct AeadParams {
 #[no_mangle]
 pub extern "C" fn askar_key_generate(
     alg: FfiStr<'_>,
-    id: FfiStr<'_>,
+    hardware_backed: i8,
     ephemeral: i8,
     out: *mut LocalKeyHandle,
 ) -> ErrorCode {
@@ -33,9 +33,11 @@ pub extern "C" fn askar_key_generate(
         trace!("Generate key: {}", alg);
         check_useful_c_ptr!(out);
         let alg = KeyAlg::from_str(alg)?;
-        let key = match id.as_opt_str() {
-            Some(id) => LocalKey::generate_with_id(alg, id, ephemeral != 0),
-            None => LocalKey::generate_with_rng(alg, ephemeral != 0)
+        let key = if hardware_backed != 0 {
+            let id = Uuid::new_v4().to_string();
+            LocalKey::generate_with_id(alg, &id, ephemeral != 0)
+        } else {
+            LocalKey::generate_with_rng(alg, ephemeral != 0)
         }?;
         unsafe { *out = LocalKeyHandle::create(key) };
         Ok(ErrorCode::Success)

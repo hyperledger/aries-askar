@@ -18,6 +18,7 @@ use crate::{
     error::Error,
     ffi::result_list::FfiStringList,
     future::spawn_ok,
+    kms::KeyReference,
     store::{PassKey, Session, Store, StoreKeyMethod},
 };
 
@@ -849,8 +850,6 @@ pub extern "C" fn askar_session_update(
     }
 }
 
-/// TODO: handle storing hardware backed key
-/// When we store the key we should set the reference to remote.
 #[no_mangle]
 pub extern "C" fn askar_session_insert_key(
     handle: SessionHandle,
@@ -891,7 +890,7 @@ pub extern "C" fn askar_session_insert_key(
             }
         );
 
-        let reference = key.is_hardware_backed().then_some("mobile_secure_element");
+        let reference = key.is_hardware_backed().then_some(KeyReference::MobileSecureElement);
 
         spawn_ok(async move {
             let result = async {
@@ -900,7 +899,7 @@ pub extern "C" fn askar_session_insert_key(
                     name.as_str(),
                     &key,
                     metadata.as_deref(),
-                    reference.as_deref(),
+                    reference,
                     tags.as_deref(),
                     expiry_ms,
                 ).await
@@ -911,9 +910,6 @@ pub extern "C" fn askar_session_insert_key(
     }
 }
 
-// TODO: fetch a key from the secure enclave here.
-// `session.fetch_key()` takes a name, we can use this to fetch the row, check whether it is
-// hardware-backed and then use `SecureEnvrinoment`
 #[no_mangle]
 pub extern "C" fn askar_session_fetch_key(
     handle: SessionHandle,

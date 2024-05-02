@@ -2,7 +2,7 @@ use askar_storage::backend::copy_profile;
 
 use crate::{
     error::Error,
-    kms::{KeyEntry, KeyParams, KmsCategory, LocalKey},
+    kms::{KeyEntry, KeyParams, KeyReference, KmsCategory, LocalKey},
     storage::{
         any::{AnyBackend, AnyBackendSession},
         backend::{Backend, BackendSession, ManageBackend},
@@ -341,14 +341,14 @@ impl Session {
         name: &str,
         key: &LocalKey,
         metadata: Option<&str>,
-        reference: Option<&str>,
+        reference: Option<KeyReference>,
         tags: Option<&[EntryTag]>,
         expiry_ms: Option<i64>,
     ) -> Result<(), Error> {
         let data = key.encode()?;
         let params = KeyParams {
             metadata: metadata.map(str::to_string),
-            reference: reference.map(str::to_string),
+            reference,
             data: Some(data),
         };
         let value = params.to_bytes()?;

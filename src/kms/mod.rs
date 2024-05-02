@@ -19,7 +19,7 @@ pub use self::envelope::{
 };
 
 mod entry;
-pub use self::entry::{KeyEntry, KeyParams};
+pub use self::entry::{KeyEntry, KeyParams, KeyReference};
 
 mod local_key;
 pub use self::local_key::{KeyAlg, LocalKey};

@@ -6,6 +6,34 @@ use crate::{
 };
 use std::str::FromStr;
 
+/// Key reference variant
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+pub enum KeyReference {
+    /// Stored in a mobile secure element
+    MobileSecureElement,
+
+    /// Any other reference as fallback
+    Any(String),
+}
+
+impl From<&str> for KeyReference {
+    fn from(value: &str) -> Self {
+        match value {
+            "mobile_secure_element" => Self::MobileSecureElement,
+            any => Self::Any(String::from(any)),
+        }
+    }
+}
+
+impl Into<String> for KeyReference {
+    fn into(self) -> String {
+        match self {
+            Self::MobileSecureElement => String::from("mobile_secure_element"),
+            Self::Any(s) => s,
+        }
+    }
+}
+
 /// Parameters defining a stored key
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 pub struct KeyParams {
@@ -15,7 +43,7 @@ pub struct KeyParams {
 
     /// An optional external reference for the key
     #[serde(default, rename = "ref", skip_serializing_if = "Option::is_none")]
-    pub reference: Option<String>,
+    pub reference: Option<KeyReference>,
 
     /// The associated key data
     /// - Stored as a JWK for software-backed keys
@@ -124,20 +152,26 @@ impl KeyEntry {
     /// Create a local key instance from this key storage entry
     pub fn load_local_key(&self) -> Result<LocalKey, Error> {
         if let Some(key_data) = self.params.data.as_ref() {
-            match Box::<AnyKey>::from_jwk_slice(key_data.as_ref()) {
-                Ok(key) => Ok(LocalKey {
-                    inner: key,
+            match &self.params.reference {
+                Some(r) => match r {
+                    KeyReference::MobileSecureElement => {
+                        let id = self.params.to_id()?;
+                        let alg = self
+                            .alg
+                            .as_ref()
+                            .ok_or(err_msg!(Input, "Algorithm is required to get key by id"))?;
+                        let alg = KeyAlg::from_str(&alg)?;
+                        Ok(LocalKey::from_id(alg, &id)?)
+                    }
+                    _ => Ok(LocalKey {
+                        inner: Box::<AnyKey>::from_jwk_slice(key_data.as_ref())?,
+                        ephemeral: false,
+                    }),
+                },
+                None => Ok(LocalKey {
+                    inner: Box::<AnyKey>::from_jwk_slice(key_data.as_ref())?,
                     ephemeral: false,
                 }),
-                Err(_) => {
-                    let id = self.params.to_id()?;
-                    let alg = self
-                        .alg
-                        .as_ref()
-                        .ok_or(err_msg!(Input, "Algorithm is required to get key by id"))?;
-                    let alg = KeyAlg::from_str(&alg)?;
-                    Ok(LocalKey::from_id(alg, &id)?)
-                }
             }
         } else {
             Err(err_msg!("Missing key data"))
