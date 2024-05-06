@@ -20,7 +20,6 @@ pub struct AeadParams {
     tag_length: i32,
 }
 
-/// id is an optional argument only required for hardware-bound keys
 #[no_mangle]
 pub extern "C" fn askar_key_generate(
     alg: FfiStr<'_>,

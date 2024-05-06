@@ -368,9 +368,6 @@ ErrorCode askar_key_from_seed(FfiStr alg,
                               FfiStr method,
                               LocalKeyHandle *out);
 
-/**
- * id is an optional argument only required for hardware-bound keys
- */
 ErrorCode askar_key_generate(FfiStr alg, FfiStr key_backend, int8_t ephemeral, LocalKeyHandle *out);
 
 ErrorCode askar_key_get_algorithm(LocalKeyHandle handle, const char **out);
