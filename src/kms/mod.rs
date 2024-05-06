@@ -22,7 +22,7 @@ mod entry;
 pub use self::entry::{KeyEntry, KeyParams, KeyReference};
 
 mod local_key;
-pub use self::local_key::{KeyAlg, LocalKey};
+pub use self::local_key::{KeyAlg, KeyBackend, LocalKey};
 
 /// Supported categories of KMS entries
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Zeroize)]

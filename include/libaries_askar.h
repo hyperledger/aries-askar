@@ -371,10 +371,7 @@ ErrorCode askar_key_from_seed(FfiStr alg,
 /**
  * id is an optional argument only required for hardware-bound keys
  */
-ErrorCode askar_key_generate(FfiStr alg,
-                             int8_t hardware_backed,
-                             int8_t ephemeral,
-                             LocalKeyHandle *out);
+ErrorCode askar_key_generate(FfiStr alg, FfiStr key_backend, int8_t ephemeral, LocalKeyHandle *out);
 
 ErrorCode askar_key_get_algorithm(LocalKeyHandle handle, const char **out);
 
@@ -494,10 +491,6 @@ ErrorCode askar_session_fetch_key(SessionHandle handle,
                                              KeyEntryListHandle results),
                                   CallbackId cb_id);
 
-/**
- * TODO: handle storing hardware backed key
- * When we store the key we should set the reference to remote.
- */
 ErrorCode askar_session_insert_key(SessionHandle handle,
                                    LocalKeyHandle key_handle,
                                    FfiStr name,

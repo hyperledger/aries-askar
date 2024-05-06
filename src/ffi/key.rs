@@ -9,7 +9,7 @@ use super::{
 };
 use crate::kms::{
     crypto_box, crypto_box_open, crypto_box_random_nonce, crypto_box_seal, crypto_box_seal_open,
-    derive_key_ecdh_1pu, derive_key_ecdh_es, KeyAlg, LocalKey,
+    derive_key_ecdh_1pu, derive_key_ecdh_es, KeyAlg, KeyBackend, LocalKey,
 };
 
 pub type LocalKeyHandle = ArcHandle<LocalKey>;
@@ -24,21 +24,27 @@ pub struct AeadParams {
 #[no_mangle]
 pub extern "C" fn askar_key_generate(
     alg: FfiStr<'_>,
-    hardware_backed: i8,
+    key_backend: FfiStr<'_>,
     ephemeral: i8,
     out: *mut LocalKeyHandle,
 ) -> ErrorCode {
     catch_err! {
         let alg = alg.as_opt_str().unwrap_or_default();
-        trace!("Generate key: {}", alg);
+        let key_backend = key_backend.as_opt_str().unwrap_or_default();
+        let backend = KeyBackend::from_str(key_backend).unwrap_or_default();
+        trace!("Generate key: {} for {} backend", alg, backend);
         check_useful_c_ptr!(out);
+
         let alg = KeyAlg::from_str(alg)?;
-        let key = if hardware_backed != 0 {
-            let id = Uuid::new_v4().to_string();
-            LocalKey::generate_with_id(alg, &id, ephemeral != 0)
-        } else {
-            LocalKey::generate_with_rng(alg, ephemeral != 0)
+
+        let key = match backend {
+            KeyBackend::Software => LocalKey::generate_with_rng(alg, ephemeral != 0),
+            KeyBackend::SecureElement =>  {
+                let id = Uuid::new_v4().to_string();
+                LocalKey::generate_with_id(alg, &id, ephemeral != 0)
+            }
         }?;
+
         unsafe { *out = LocalKeyHandle::create(key) };
         Ok(ErrorCode::Success)
     }

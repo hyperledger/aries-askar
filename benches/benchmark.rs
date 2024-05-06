@@ -55,9 +55,16 @@ fn populate_database_keys_profiles(db: &Store, n: u64) {
                 .map(char::from)
                 .collect::<String>();
 
-            conn.insert_key(&key_name, &keypair, Some(metadata.as_str()), None, None)
-                .await
-                .expect("Error inserting key");
+            conn.insert_key(
+                &key_name,
+                &keypair,
+                Some(metadata.as_str()),
+                None,
+                None,
+                None,
+            )
+            .await
+            .expect("Error inserting key");
 
             let found = conn
                 .fetch_key(&key_name, false)

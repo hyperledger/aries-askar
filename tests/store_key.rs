@@ -31,7 +31,7 @@ fn keypair_create_fetch() {
 
         let key_name = "testkey";
         let metadata = "meta";
-        conn.insert_key(key_name, &keypair, Some(metadata), None, None)
+        conn.insert_key(key_name, &keypair, Some(metadata), None, None, None)
             .await
             .expect("Error inserting key");
 
