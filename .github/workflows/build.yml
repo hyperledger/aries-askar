@@ -398,7 +398,7 @@ jobs:
     runs-on: macos-latest
 
     env:
-      FEATURES: "secure_env"
+      FEATURES: "mobile_secure_element"
 
     strategy:
       matrix:
@@ -430,7 +430,7 @@ jobs:
 
     env:
       RUST_VERSION: "1.68"
-      FEATURES: "secure_env"
+      FEATURES: "mobile_secure_element"
 
     runs-on: ubuntu-latest
 
