@@ -246,8 +246,8 @@ describe('jose ecdh', () => {
       secretKey: Uint8Array.from(
         Buffer.from(
           'fffefdfcfbfaf9f8f7f6f5f4f3f2f1f0efeeedecebeae9e8e7e6e5e4e3e2e1e0dfdedddcdbdad9d8d7d6d5d4d3d2d1d0cfcecdcccbcac9c8c7c6c5c4c3c2c1c0',
-          'hex'
-        )
+          'hex',
+        ),
       ),
     })
 
@@ -281,9 +281,9 @@ describe('jose ecdh', () => {
       Uint8Array.from(
         Buffer.from(
           'pOMVA9_PtoRe7xXW1139NzzN1UhiFoio8lGto9cf0t8PyU-sjNXH8-LIRLycq8CHJQbDwvQeU1cSl55cQ0hGezJu2N9IY0QN',
-          'base64url'
-        )
-      )
+          'base64url',
+        ),
+      ),
     )
 
     const encryptedKey2 = new Ecdh1PU({

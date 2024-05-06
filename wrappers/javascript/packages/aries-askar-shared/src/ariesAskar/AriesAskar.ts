@@ -9,7 +9,7 @@ import type {
   StoreHandle,
 } from '../crypto'
 import type { KeyAlg, LogLevel, SigAlgs } from '../enums'
-import { KeyBackend } from '../enums/KeyBackend'
+import type { KeyBackend } from '../enums/KeyBackend'
 import type { AriesAskarErrorObject } from '../error'
 import type { AeadParams, EncryptedBuffer } from '../types'
 

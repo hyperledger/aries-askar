@@ -1,6 +1,7 @@
+import { Migration } from '@hyperledger/aries-askar-shared'
 import fs from 'fs'
 import path from 'path'
-import { Migration } from '@hyperledger/aries-askar-shared'
+
 import { setup } from './utils'
 
 const DB_TEMPLATE_PATH = path.join(__dirname, 'indy_wallet_sqlite.db')
