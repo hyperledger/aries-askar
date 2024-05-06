@@ -9,8 +9,9 @@
     "lib": ["ESNext"],
     "types": [],
     "esModuleInterop": true,
-    "allowSyntheticDefaultImports": true,
-    "resolveJsonModule": true
+    "resolveJsonModule": true,
+    "forceConsistentCasingInFileNames": true,
+    "baseUrl": "."
   },
-  "exclude": ["node_modules", "**/build"]
+  "exclude": ["node_modules", "build", "**/build/**", "tests", "**/tests/**"]
 }

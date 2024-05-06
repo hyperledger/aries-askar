@@ -340,6 +340,10 @@ jobs:
         with:
           node-version: 18.x
 
+      - uses: pnpm/action-setup@v3
+        with:
+          version: 8
+
       - name: Fetch library artifacts
         uses: actions/download-artifact@v4
         with:
@@ -351,26 +355,26 @@ jobs:
           pip install setuptools wheel twine auditwheel
 
       - name: Install dependencies
-        run: yarn install
+        run: pnpm install
 
       - name: Build
-        run: yarn build
+        run: pnpm build
 
       - name: Lint
-        run: yarn lint
+        run: pnpm lint
 
       - name: Check format
-        run: yarn check-format
+        run: pnpm check-format
 
       - name: Check types
-        run: yarn check-types
+        run: pnpm check-types
 
       - name: Run tests
         if: ${{ matrix.architecture != 'linux-aarch64' }}
         env:
           # binary is downloaded to root of repository
           LIB_ARIES_ASKAR_PATH: ../../../
-        run: yarn test
+        run: pnpm test
 
       - name: Set NPM config
         if: |

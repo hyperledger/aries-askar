@@ -1,0 +1,34 @@
+{
+  "name": "@hyperledger/aries-askar-shared",
+  "version": "0.2.1",
+  "license": "Apache-2.0",
+  "description": "Shared library for using Aries Askar with NodeJS and React Native",
+  "main": "build/index",
+  "source": "src/index",
+  "types": "build/index",
+  "homepage": "https://github.com/hyperledger/aries-askar/tree/main/wrappers/javascript/packages/aries-askar-shared",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/hyperledger/aries-askar",
+    "directory": "wrappers/javascript/packages/aries-askar-shared"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "build"
+  ],
+  "scripts": {
+    "check-types": "pnpm compile --noEmit",
+    "build": "pnpm clean && pnpm compile",
+    "clean": "rimraf -rf ./build",
+    "compile": "tsc -p ./tsconfig.build.json"
+  },
+  "dependencies": {
+    "buffer": "^6.0.3"
+  },
+  "devDependencies": {
+    "rimraf": "3.0.2",
+    "typescript": "~5.2.2"
+  }
+}

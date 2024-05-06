@@ -1,50 +1,47 @@
 {
-  "name": "aries-askar-js",
+  "name": "@hyperledger/aries-askar-js",
   "private": true,
   "license": "Apache-2.0",
-  "workspaces": {
-    "packages": [
-      "aries-askar-shared",
-      "aries-askar-react-native",
-      "aries-askar-nodejs"
-    ]
-  },
-  "scripts": {
-    "check-types": "yarn workspaces run tsc --noEmit -p tsconfig.json",
-    "build": "yarn workspaces run build",
-    "clean": "yarn workspaces run clean",
-    "prettier": "prettier --ignore-path .gitignore '**/*.+(js|json|ts|md|yml|yaml)'",
-    "format": "yarn prettier --write",
-    "check-format": "yarn prettier --list-different",
-    "lint": "eslint .",
-    "validate": "yarn lint && yarn check-types && yarn check-format",
-    "reset": "find . -type dir -name node_modules | xargs rm -rf && rm -rf yarn.lock",
-    "example": "yarn --cwd  react-native-example",
-    "react-native": "yarn --cwd aries-askar-react-native",
-    "set-version": "npx lerna version --exact --no-git-tag-version --no-push --yes",
-    "shared": "yarn --cwd aries-askar-shared",
-    "nodejs": "yarn --cwd aries-askar-nodejs",
-    "test": "cross-env yarn nodejs test",
-    "test:local-build": "cross-env LIB_ARIES_ASKAR_PATH=../../../target/release yarn test"
-  },
   "repository": {
     "type": "git",
     "url": "https://github.com/hyperledger/aries-askar",
     "directory": "wrappers/javascript"
   },
+  "engines": {
+    "node": ">= 18"
+  },
+  "scripts": {
+    "lint": "eslint .",
+    "test": "jest",
+    "check-types": "pnpm -r check-types",
+    "check-format": "pnpm prettier --list-different",
+    "build": "pnpm -r build",
+    "clean": "pnpm -r clean",
+    "prettier": "prettier --ignore-path .gitignore '**/*.+(js|json|ts|md|yml|yaml)'",
+    "format": "pnpm prettier --write",
+    "validate": "pnpm lint && pnpm check-types && pnpm check-format",
+    "test:local-build": "LIB_ARIES_ASKAR_PATH=../../target/release pnpm test",
+    "set-version": "npx lerna version --exact --no-git-tag-version --no-push --yes"
+  },
   "devDependencies": {
-    "@types/eslint": "^8.4.1",
-    "@typescript-eslint/eslint-plugin": "^5.11.0",
-    "@typescript-eslint/parser": "^5.11.0",
-    "cross-env": "^7.0.3",
-    "eslint": "^8.8.0",
-    "eslint-config-prettier": "^8.3.0",
-    "eslint-import-resolver-typescript": "^2.5.0",
-    "eslint-plugin-import": "^2.25.4",
-    "eslint-plugin-prettier": "^4.0.0",
-    "lerna": "^7.2.0",
-    "prettier": "^2.5.1",
-    "ts-jest": "^29.0.5",
-    "typescript": "^4.5.5"
+    "@pnpm/eslint-config": "^1.1.0",
+    "@types/eslint": "^8.44.2",
+    "@types/jest": "^29.5.4",
+    "@types/node": "^20.6.1",
+    "@typescript-eslint/eslint-plugin": "^6.7.0",
+    "@typescript-eslint/parser": "^6.7.0",
+    "eslint": "^8.49.0",
+    "eslint-config-prettier": "^9.0.0",
+    "eslint-import-resolver-typescript": "^3.6.0",
+    "eslint-plugin-import": "^2.28.1",
+    "eslint-plugin-prettier": "^5.0.0",
+    "jest": "^29.7.0",
+    "lerna": "7.2.0",
+    "prettier": "^3.0.3",
+    "rimraf": "3.0.2",
+    "ts-jest": "^29.1.1",
+    "ts-node": "^10.9.1",
+    "tsconfig-paths": "^4.2.0",
+    "typescript": "~5.2.2"
   }
 }
