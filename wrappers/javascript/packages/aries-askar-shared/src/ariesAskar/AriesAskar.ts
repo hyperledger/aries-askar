@@ -8,7 +8,8 @@ import type {
   SessionHandle,
   StoreHandle,
 } from '../crypto'
-import type { KeyAlgs, LogLevel, SigAlgs } from '../enums'
+import type { KeyAlg, LogLevel, SigAlgs } from '../enums'
+import { KeyBackend } from '../enums/KeyBackend'
 import type { AriesAskarErrorObject } from '../error'
 import type { AeadParams, EncryptedBuffer } from '../types'
 
@@ -55,7 +56,7 @@ export type KeyAeadEncryptOptions = {
 export type KeyAeadGetPaddingOptions = { localKeyHandle: LocalKeyHandle; msgLen: number }
 export type KeyAeadGetParamsOptions = { localKeyHandle: LocalKeyHandle }
 export type KeyAeadRandomNonceOptions = { localKeyHandle: LocalKeyHandle }
-export type KeyConvertOptions = { localKeyHandle: LocalKeyHandle; algorithm: KeyAlgs }
+export type KeyConvertOptions = { localKeyHandle: LocalKeyHandle; algorithm: KeyAlg }
 export type KeyCryptoBoxOptions = {
   recipientKey: Key
   senderKey: Key
@@ -71,7 +72,7 @@ export type KeyCryptoBoxOpenOptions = {
 export type KeyCryptoBoxSealOptions = { localKeyHandle: LocalKeyHandle; message: Uint8Array }
 export type KeyCryptoBoxSealOpenOptions = { localKeyHandle: LocalKeyHandle; ciphertext: Uint8Array }
 export type KeyDeriveEcdh1puOptions = {
-  algorithm: KeyAlgs
+  algorithm: KeyAlg
   ephemeralKey: Key
   senderKey: Key
   recipientKey: Key
@@ -82,7 +83,7 @@ export type KeyDeriveEcdh1puOptions = {
   receive: boolean
 }
 export type KeyDeriveEcdhEsOptions = {
-  algorithm: KeyAlgs
+  algorithm: KeyAlg
   ephemeralKey: Key
   recipientKey: Key
   algId: Uint8Array
@@ -100,14 +101,14 @@ export type KeyEntryListLoadLocalOptions = { keyEntryListHandle: KeyEntryListHan
 export type KeyFreeOptions = { localKeyHandle: LocalKeyHandle }
 export type KeyFromJwkOptions = { jwk: Jwk }
 export type KeyFromKeyExchangeOptions = {
-  algorithm: KeyAlgs
+  algorithm: KeyAlg
   skHandle: LocalKeyHandle
   pkHandle: LocalKeyHandle
 }
-export type KeyFromPublicBytesOptions = { algorithm: KeyAlgs; publicKey: Uint8Array }
-export type KeyFromSecretBytesOptions = { algorithm: KeyAlgs; secretKey: Uint8Array }
-export type KeyFromSeedOptions = { algorithm: KeyAlgs; seed: Uint8Array; method: string }
-export type KeyGenerateOptions = { algorithm: KeyAlgs; ephemeral: boolean }
+export type KeyFromPublicBytesOptions = { algorithm: KeyAlg; publicKey: Uint8Array }
+export type KeyFromSecretBytesOptions = { algorithm: KeyAlg; secretKey: Uint8Array }
+export type KeyFromSeedOptions = { algorithm: KeyAlg; seed: Uint8Array; method: string }
+export type KeyGenerateOptions = { algorithm: KeyAlg; keyBackend?: KeyBackend; ephemeral: boolean }
 export type KeyGetAlgorithmOptions = { localKeyHandle: LocalKeyHandle }
 export type KeyGetEphemeralOptions = { localKeyHandle: LocalKeyHandle }
 export type KeyGetJwkPublicOptions = { localKeyHandle: LocalKeyHandle; algorithm: string }
@@ -118,7 +119,7 @@ export type KeyGetSecretBytesOptions = { localKeyHandle: LocalKeyHandle }
 export type KeySignMessageOptions = { localKeyHandle: LocalKeyHandle; message: Uint8Array; sigType?: SigAlgs }
 export type KeyUnwrapKeyOptions = {
   localKeyHandle: LocalKeyHandle
-  algorithm: KeyAlgs
+  algorithm: KeyAlg
   ciphertext: Uint8Array
   nonce?: Uint8Array
   tag?: Uint8Array

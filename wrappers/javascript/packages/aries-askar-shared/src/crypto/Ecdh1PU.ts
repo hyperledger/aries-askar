@@ -1,4 +1,4 @@
-import type { KeyAlgs } from '../enums'
+import type { KeyAlg } from '../enums'
 
 import { ariesAskar } from '../ariesAskar'
 
@@ -24,7 +24,7 @@ export class Ecdh1PU {
     receive,
     ccTag,
   }: {
-    encAlg: KeyAlgs
+    encAlg: KeyAlg
     ephemeralKey: Key
     recipientKey: Key
     senderKey: Key
@@ -55,7 +55,7 @@ export class Ecdh1PU {
     aad,
     nonce,
   }: {
-    encAlg: KeyAlgs
+    encAlg: KeyAlg
     ephemeralKey: Key
     recipientKey: Key
     senderKey: Key
@@ -79,7 +79,7 @@ export class Ecdh1PU {
     tag,
     aad,
   }: {
-    encAlg: KeyAlgs
+    encAlg: KeyAlg
     ephemeralKey: Key
     recipientKey: Key
     senderKey: Key
@@ -102,7 +102,7 @@ export class Ecdh1PU {
     cek,
     ccTag,
   }: {
-    wrapAlg: KeyAlgs
+    wrapAlg: KeyAlg
     ephemeralKey: Key
     recipientKey: Key
     senderKey: Key
@@ -133,8 +133,8 @@ export class Ecdh1PU {
     tag,
     ccTag,
   }: {
-    wrapAlg: KeyAlgs
-    encAlg: KeyAlgs
+    wrapAlg: KeyAlg
+    encAlg: KeyAlg
     ephemeralKey: Key
     recipientKey: Key
     senderKey: Key

@@ -1,4 +1,4 @@
-import { Ecdh1PU, EcdhEs, Jwk, Key, KeyAlgs } from '@hyperledger/aries-askar-shared'
+import { Ecdh1PU, EcdhEs, Jwk, Key, KeyAlg } from '@hyperledger/aries-askar-shared'
 
 import { base64url, setup } from './utils'
 
@@ -6,16 +6,16 @@ describe('jose ecdh', () => {
   beforeAll(setup)
 
   test('ecdh es direct', () => {
-    const bobKey = Key.generate(KeyAlgs.EcSecp256r1)
+    const bobKey = Key.generate(KeyAlg.EcSecp256r1)
     const bobJwk = bobKey.jwkPublic
-    const ephemeralKey = Key.generate(KeyAlgs.EcSecp256r1)
+    const ephemeralKey = Key.generate(KeyAlg.EcSecp256r1)
     const ephemeralJwk = ephemeralKey.jwkPublic
     const messageString = 'Helo there'
     const message = Uint8Array.from(Buffer.from(messageString))
     const alg = 'ECDH-ES'
     const apu = 'Alice'
     const apv = 'Bob'
-    const encAlg = KeyAlgs.AesA256Gcm
+    const encAlg = KeyAlg.AesA256Gcm
 
     const protectedJson = {
       alg,
@@ -59,9 +59,9 @@ describe('jose ecdh', () => {
   })
 
   test('ecdh es wrapped', () => {
-    const bobKey = Key.generate(KeyAlgs.X25519)
+    const bobKey = Key.generate(KeyAlg.X25519)
     const bobJwk = bobKey.jwkPublic
-    const ephemeralKey = Key.generate(KeyAlgs.X25519)
+    const ephemeralKey = Key.generate(KeyAlg.X25519)
     const ephemeralJwk = ephemeralKey.jwkPublic
     const message = Uint8Array.from(Buffer.from('Hello there'))
     const alg = 'ECDH-ES+A128KW'
@@ -80,16 +80,19 @@ describe('jose ecdh', () => {
     const protectedB64 = Buffer.from(protectedString).toString('base64url')
     const protectedB64Bytes = Uint8Array.from(Buffer.from(protectedB64))
 
-    const cek = Key.generate(KeyAlgs.AesA256Gcm)
+    const cek = Key.generate(KeyAlg.AesA256Gcm)
 
-    const encryptedMessage = cek.aeadEncrypt({ message, aad: protectedB64Bytes })
+    const encryptedMessage = cek.aeadEncrypt({
+      message,
+      aad: protectedB64Bytes,
+    })
     const { tag, nonce, ciphertext } = encryptedMessage.parts
     const encryptedKey = new EcdhEs({
       algId: Uint8Array.from(Buffer.from(alg)),
       apu: Uint8Array.from(Buffer.from(apu)),
       apv: Uint8Array.from(Buffer.from(apv)),
     }).senderWrapKey({
-      wrapAlg: KeyAlgs.AesA128Kw,
+      wrapAlg: KeyAlg.AesA128Kw,
       ephemeralKey,
       recipientKey: Key.fromJwk({ jwk: bobJwk }),
       cek,
@@ -100,14 +103,19 @@ describe('jose ecdh', () => {
       apu: Uint8Array.from(Buffer.from(apu)),
       apv: Uint8Array.from(Buffer.from(apv)),
     }).receiverUnwrapKey({
-      wrapAlg: KeyAlgs.AesA128Kw,
-      encAlg: KeyAlgs.AesA256Gcm,
+      wrapAlg: KeyAlg.AesA128Kw,
+      encAlg: KeyAlg.AesA256Gcm,
       ephemeralKey: Key.fromJwk({ jwk: ephemeralJwk }),
       recipientKey: bobKey,
       ciphertext: encryptedKey,
     })
 
-    const messageReceived = cekReceiver.aeadDecrypt({ ciphertext, tag, nonce, aad: protectedB64Bytes })
+    const messageReceived = cekReceiver.aeadDecrypt({
+      ciphertext,
+      tag,
+      nonce,
+      aad: protectedB64Bytes,
+    })
 
     expect(messageReceived).toStrictEqual(message)
     ephemeralKey.handle.free()
@@ -117,11 +125,11 @@ describe('jose ecdh', () => {
   })
 
   test('ecdh 1pu direct', () => {
-    const aliceKey = Key.generate(KeyAlgs.EcSecp256r1)
+    const aliceKey = Key.generate(KeyAlg.EcSecp256r1)
     const aliceJwk = aliceKey.jwkPublic
-    const bobKey = Key.generate(KeyAlgs.EcSecp256r1)
+    const bobKey = Key.generate(KeyAlg.EcSecp256r1)
     const bobJwk = bobKey.jwkPublic
-    const ephemeralKey = Key.generate(KeyAlgs.EcSecp256r1)
+    const ephemeralKey = Key.generate(KeyAlg.EcSecp256r1)
     const ephemeralJwk = ephemeralKey.jwkPublic
     const message = Uint8Array.from(Buffer.from('Hello there'))
     const alg = 'ECDH-1PU'
@@ -144,7 +152,7 @@ describe('jose ecdh', () => {
       apu: Uint8Array.from(Buffer.from(apu)),
       apv: Uint8Array.from(Buffer.from(apv)),
     }).encryptDirect({
-      encAlg: KeyAlgs.AesA256Gcm,
+      encAlg: KeyAlg.AesA256Gcm,
       ephemeralKey,
       message,
       senderKey: aliceKey,
@@ -159,7 +167,7 @@ describe('jose ecdh', () => {
       apu: Uint8Array.from(Buffer.from(apu)),
       apv: Uint8Array.from(Buffer.from(apv)),
     }).decryptDirect({
-      encAlg: KeyAlgs.AesA256Gcm,
+      encAlg: KeyAlg.AesA256Gcm,
       ephemeralKey,
       senderKey: Key.fromJwk({ jwk: aliceJwk }),
       recipientKey: bobKey,
@@ -223,19 +231,23 @@ describe('jose ecdh', () => {
       enc: 'A256CBC-HS512',
       apu: 'QWxpY2U',
       apv: 'Qm9iIGFuZCBDaGFybGll',
-      epk: { kty: 'OKP', crv: 'X25519', x: 'k9of_cpAajy0poW5gaixXGs9nHkwg1AFqUAFa39dyBc' },
+      epk: {
+        kty: 'OKP',
+        crv: 'X25519',
+        x: 'k9of_cpAajy0poW5gaixXGs9nHkwg1AFqUAFa39dyBc',
+      },
     }
     const protectedString = JSON.stringify(protectedJson)
     const protectedB64 = Buffer.from(protectedString).toString('base64url')
     const protectedB64Bytes = Uint8Array.from(Buffer.from(protectedB64))
 
     const cek = Key.fromSecretBytes({
-      algorithm: KeyAlgs.AesA256CbcHs512,
+      algorithm: KeyAlg.AesA256CbcHs512,
       secretKey: Uint8Array.from(
         Buffer.from(
           'fffefdfcfbfaf9f8f7f6f5f4f3f2f1f0efeeedecebeae9e8e7e6e5e4e3e2e1e0dfdedddcdbdad9d8d7d6d5d4d3d2d1d0cfcecdcccbcac9c8c7c6c5c4c3c2c1c0',
-          'hex',
-        ),
+          'hex'
+        )
       ),
     })
 
@@ -254,7 +266,7 @@ describe('jose ecdh', () => {
       apu: Uint8Array.from(Buffer.from(apu)),
       algId: Uint8Array.from(Buffer.from(alg)),
     }).deriveKey({
-      encAlg: KeyAlgs.AesA128Kw,
+      encAlg: KeyAlg.AesA128Kw,
       recipientKey: bob,
       senderKey: alice,
       ccTag,
@@ -269,9 +281,9 @@ describe('jose ecdh', () => {
       Uint8Array.from(
         Buffer.from(
           'pOMVA9_PtoRe7xXW1139NzzN1UhiFoio8lGto9cf0t8PyU-sjNXH8-LIRLycq8CHJQbDwvQeU1cSl55cQ0hGezJu2N9IY0QN',
-          'base64url',
-        ),
-      ),
+          'base64url'
+        )
+      )
     )
 
     const encryptedKey2 = new Ecdh1PU({
@@ -279,7 +291,7 @@ describe('jose ecdh', () => {
       apu: Uint8Array.from(Buffer.from(apu)),
       algId: Uint8Array.from(Buffer.from(alg)),
     }).senderWrapKey({
-      wrapAlg: KeyAlgs.AesA128Kw,
+      wrapAlg: KeyAlg.AesA128Kw,
       cek,
       ephemeralKey: ephemeral,
       ccTag,
@@ -294,7 +306,7 @@ describe('jose ecdh', () => {
       apu: Uint8Array.from(Buffer.from(apu)),
       algId: Uint8Array.from(Buffer.from(alg)),
     }).deriveKey({
-      encAlg: KeyAlgs.AesA128Kw,
+      encAlg: KeyAlg.AesA128Kw,
       ephemeralKey: ephemeral,
       senderKey: alice,
       recipientKey: bob,
@@ -302,7 +314,10 @@ describe('jose ecdh', () => {
       receive: true,
     })
 
-    const cekReceiver = derivedReceiver.unwrapKey({ algorithm: KeyAlgs.AesA256CbcHs512, ciphertext: encryptedKey })
+    const cekReceiver = derivedReceiver.unwrapKey({
+      algorithm: KeyAlg.AesA256CbcHs512,
+      ciphertext: encryptedKey,
+    })
 
     const messageReceived = cekReceiver.aeadDecrypt({
       ciphertext,
@@ -318,8 +333,8 @@ describe('jose ecdh', () => {
       apu: Uint8Array.from(Buffer.from(apu)),
       algId: Uint8Array.from(Buffer.from(alg)),
     }).receiverUnwrapKey({
-      wrapAlg: KeyAlgs.AesA128Kw,
-      encAlg: KeyAlgs.AesA256CbcHs512,
+      wrapAlg: KeyAlg.AesA128Kw,
+      encAlg: KeyAlg.AesA256CbcHs512,
       ephemeralKey: ephemeral,
       senderKey: alice,
       recipientKey: bob,

@@ -1,5 +1,5 @@
 import type { Key, SessionHandle } from '../crypto'
-import type { KeyAlgs } from '../enums'
+import type { KeyAlg } from '../enums'
 
 import { Buffer } from 'buffer'
 
@@ -208,7 +208,7 @@ export class Session {
     tagFilter,
     thumbprint,
   }: {
-    algorithm?: KeyAlgs
+    algorithm?: KeyAlg
     thumbprint?: string
     tagFilter?: Record<string, unknown>
     limit?: number

@@ -1,4 +1,4 @@
-import type { KeyAlgs } from '../enums'
+import type { KeyAlg } from '../enums'
 
 import { ariesAskar } from '../ariesAskar'
 
@@ -23,7 +23,7 @@ export class EcdhEs {
     recipientKey,
     receive,
   }: {
-    encAlg: KeyAlgs
+    encAlg: KeyAlg
     ephemeralKey: Key
     recipientKey: Key
     receive: boolean
@@ -49,7 +49,7 @@ export class EcdhEs {
     aad,
     nonce,
   }: {
-    encAlg: KeyAlgs
+    encAlg: KeyAlg
     ephemeralKey: Key | Jwk
     recipientKey: Key | Jwk
     message: Uint8Array
@@ -73,7 +73,7 @@ export class EcdhEs {
     tag,
     aad,
   }: {
-    encAlg: KeyAlgs
+    encAlg: KeyAlg
     ephemeralKey: Key | Jwk
     recipientKey: Key | Jwk
     ciphertext: Uint8Array
@@ -95,7 +95,7 @@ export class EcdhEs {
     recipientKey,
     cek,
   }: {
-    wrapAlg: KeyAlgs
+    wrapAlg: KeyAlg
     ephemeralKey: Key
     recipientKey: Key
     cek: Key
@@ -115,8 +115,8 @@ export class EcdhEs {
     nonce,
     tag,
   }: {
-    wrapAlg: KeyAlgs
-    encAlg: KeyAlgs
+    wrapAlg: KeyAlg
+    encAlg: KeyAlg
     ephemeralKey: Key
     recipientKey: Key
     ciphertext: Uint8Array

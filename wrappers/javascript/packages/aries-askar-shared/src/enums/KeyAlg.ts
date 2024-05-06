@@ -1,6 +1,6 @@
 import { AriesAskarError } from '../error'
 
-export enum KeyAlgs {
+export enum KeyAlg {
   AesA128Gcm = 'a128gcm',
   AesA256Gcm = 'a256gcm',
   AesA128CbcHs256 = 'a128cbchs256',
@@ -19,15 +19,15 @@ export enum KeyAlgs {
   EcSecp384r1 = 'p384',
 }
 
-export const keyAlgFromString = (alg: string): KeyAlgs => {
-  const keyAlg = Object.entries(KeyAlgs).find(([, value]) => value === alg)
+export const keyAlgFromString = (alg: string): KeyAlg => {
+  const keyAlg = Object.entries(KeyAlg).find(([, value]) => value === alg)
   if (keyAlg) return keyAlg[1]
 
   throw AriesAskarError.customError({ message: `Algorithm: ${alg} is not supported!` })
 }
 
-export const keyAlgToString = (alg: KeyAlgs): string => {
-  const keyAlg = Object.entries(KeyAlgs).find(([key]) => key === alg)
+export const keyAlgToString = (alg: KeyAlg): string => {
+  const keyAlg = Object.entries(KeyAlg).find(([key]) => key === alg)
   if (keyAlg) return keyAlg[0]
 
   throw AriesAskarError.customError({ message: `Algorithm: ${alg} is not supported!` })

@@ -1,5 +1,5 @@
-import { promises } from 'fs'
-import { AriesAskarError, KdfMethod, Key, KeyAlgs, Store, StoreKeyMethod } from '@hyperledger/aries-askar-shared'
+import { AriesAskarError, KdfMethod, Key, KeyAlg, Store, StoreKeyMethod } from '@hyperledger/aries-askar-shared'
+import { promises } from 'node:fs'
 
 import { firstEntry, getRawKey, secondEntry, setup, setupWallet, testStoreUri } from './utils'
 
@@ -78,7 +78,7 @@ describe('Store and Session', () => {
         keyMethod: new StoreKeyMethod(KdfMethod.Raw),
         passKey: initialKey,
       }),
-    ).rejects.toThrowError(AriesAskarError)
+    ).rejects.toThrow(AriesAskarError)
 
     newStore = await Store.open({
       profile: 'rekey',
@@ -187,7 +187,7 @@ describe('Store and Session', () => {
   test('Key store', async () => {
     const session = await store.openSession()
 
-    const key = Key.generate(KeyAlgs.Ed25519)
+    const key = Key.generate(KeyAlg.Ed25519)
 
     const keyName = 'testKey'
 
@@ -220,7 +220,7 @@ describe('Store and Session', () => {
     expect(key.jwkThumbprint === fetchedKey1?.key.jwkThumbprint).toBeTruthy()
 
     const found = await session.fetchAllKeys({
-      algorithm: KeyAlgs.Ed25519,
+      algorithm: KeyAlg.Ed25519,
       thumbprint: key.jwkThumbprint,
       tagFilter: { a: 'c' },
     })
@@ -273,7 +273,7 @@ describe('Store and Session', () => {
       await store2.close()
     }
 
-    await expect(store.createProfile(profile)).rejects.toThrowError(AriesAskarError)
+    await expect(store.createProfile(profile)).rejects.toThrow(AriesAskarError)
 
     // Check if profile is still usable
     const session4 = await store.session(profile).open()
@@ -288,10 +288,10 @@ describe('Store and Session', () => {
     await store.removeProfile(profile)
 
     // Opening removed profile should fail
-    await expect(store.session(profile).open()).rejects.toThrowError(AriesAskarError)
+    await expect(store.session(profile).open()).rejects.toThrow(AriesAskarError)
 
     // Unknown unknown profile should fail
-    await expect(store.session('unknown profile').open()).rejects.toThrowError(AriesAskarError)
+    await expect(store.session('unknown profile').open()).rejects.toThrow(AriesAskarError)
 
     await expect(store.createProfile(profile)).resolves.toStrictEqual(profile)
 

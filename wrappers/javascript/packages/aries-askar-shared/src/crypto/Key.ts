@@ -1,5 +1,5 @@
 import type { LocalKeyHandle } from './handles'
-import type { KeyAlgs, SigAlgs } from '../enums'
+import type { KeyAlg, SigAlgs } from '../enums'
 
 import { Buffer } from 'buffer'
 
@@ -15,7 +15,7 @@ export class Key {
     this.localKeyHandle = handle
   }
 
-  public static generate(algorithm: KeyAlgs, ephemeral = false) {
+  public static generate(algorithm: KeyAlg, ephemeral = false) {
     return new Key(ariesAskar.keyGenerate({ algorithm, ephemeral }))
   }
 
@@ -24,18 +24,18 @@ export class Key {
     algorithm,
     seed,
   }: {
-    algorithm: KeyAlgs
+    algorithm: KeyAlg
     seed: Uint8Array
     method?: KeyMethod
   }) {
     return new Key(ariesAskar.keyFromSeed({ algorithm, method, seed }))
   }
 
-  public static fromSecretBytes(options: { algorithm: KeyAlgs; secretKey: Uint8Array }) {
+  public static fromSecretBytes(options: { algorithm: KeyAlg; secretKey: Uint8Array }) {
     return new Key(ariesAskar.keyFromSecretBytes(options))
   }
 
-  public static fromPublicBytes(options: { algorithm: KeyAlgs; publicKey: Uint8Array }) {
+  public static fromPublicBytes(options: { algorithm: KeyAlg; publicKey: Uint8Array }) {
     return new Key(ariesAskar.keyFromPublicBytes(options))
   }
 
@@ -43,11 +43,11 @@ export class Key {
     return new Key(ariesAskar.keyFromJwk(options))
   }
 
-  public convertkey(options: { algorithm: KeyAlgs }) {
+  public convertkey(options: { algorithm: KeyAlg }) {
     return new Key(ariesAskar.keyConvert({ localKeyHandle: this.handle, ...options }))
   }
 
-  public keyFromKeyExchange({ algorithm, publicKey }: { algorithm: KeyAlgs; publicKey: Key }) {
+  public keyFromKeyExchange({ algorithm, publicKey }: { algorithm: KeyAlg; publicKey: Key }) {
     return new Key(ariesAskar.keyFromKeyExchange({ skHandle: this.handle, pkHandle: publicKey.handle, algorithm }))
   }
 
@@ -113,7 +113,7 @@ export class Key {
     return ariesAskar.keyWrapKey({ localKeyHandle: this.handle, other: other.handle, nonce })
   }
 
-  public unwrapKey(options: { algorithm: KeyAlgs; tag?: Uint8Array; ciphertext: Uint8Array; nonce?: Uint8Array }) {
+  public unwrapKey(options: { algorithm: KeyAlg; tag?: Uint8Array; ciphertext: Uint8Array; nonce?: Uint8Array }) {
     return new Key(ariesAskar.keyUnwrapKey({ localKeyHandle: this.handle, ...options }))
   }
 }
