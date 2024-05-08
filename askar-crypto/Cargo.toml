@@ -9,43 +9,44 @@ readme = "README.md"
 repository = "https://github.com/hyperledger/aries-askar/"
 categories = ["cryptography", "no-std"]
 keywords = ["hyperledger", "aries", "didcomm", "ssi"]
-rust-version = "1.65"
+rust-version = "1.67"
 
 [package.metadata.docs.rs]
 features = ["argon2", "std"]
 rustdoc-args = ["--cfg", "docsrs"]
 
 [features]
-default = ["alloc", "any_key", "all_keys", "crypto_box"]
-alloc = []
-std = ["alloc", "serde/std", "serde-json-core/std", "std_rng"]
-all_keys = ["aes", "bls", "chacha", "ec_curves", "ed25519"]
-any_key = ["alloc"]
 aes = ["aes-core", "aes-gcm", "block-modes", "cbc", "cipher", "hmac"]
+all_keys = ["aes", "bls", "chacha", "ec_curves", "ed25519"]
+alloc = []
+any_key = ["alloc"]
 bls = ["bls12_381", "hkdf"]
 chacha = ["chacha20poly1305"]
 crypto_box = ["alloc", "crypto_box_rs", "ed25519", "getrandom"]
+default = ["alloc", "any_key", "all_keys", "crypto_box"]
 ec_curves = ["elliptic-curve", "k256", "p256", "p384"]
 ed25519 = ["curve25519-dalek", "ed25519-dalek", "x25519-dalek"]
 getrandom = ["rand/getrandom"]
+p256_hardware = ["secure-env", "p256", "uuid", "getrandom"]
+std = ["alloc", "serde/std", "serde-json-core/std", "std_rng", "uuid/std"]
 std_rng = ["getrandom", "rand/std", "rand/std_rng"]
 
 [dev-dependencies]
 base64 = { version = "0.21", default-features = false, features = ["alloc"] }
 criterion = "0.5"
 hex-literal = "0.4"
-serde_cbor = "0.11"
 serde-json-core = { version = "0.5", default-features = false, features = [
     "std",
 ] }
+serde_cbor = "0.11"
 
 [[bench]]
+harness = false
 name = "enc"
-harness = false
 
 [[bench]]
-name = "kdf"
 harness = false
+name = "kdf"
 
 [dependencies]
 aead = "0.5"
@@ -75,11 +76,11 @@ crypto_box_rs = { package = "crypto_box", version = "0.9", default-features = fa
     "salsa20",
 ], optional = true }
 curve25519-dalek = { version = "4", default-features = false, optional = true }
+digest = "0.10"
 ed25519-dalek = { version = "2", default-features = false, features = [
     "zeroize",
 ], optional = true }
 elliptic-curve = { version = "0.13", optional = true }
-digest = "0.10"
 group = "0.13"
 hkdf = { version = "0.12", optional = true }
 hmac = { version = "0.12", optional = true }
@@ -100,10 +101,12 @@ p384 = { version = "0.13", default-features = false, features = [
     "ecdh",
 ], optional = true }
 rand = { version = "0.8", default-features = false }
+secure-env = { package = "animo-secure-env", version = "0.2", optional = true }
 serde = { version = "1.0", default-features = false, features = ["derive"] }
 serde-json-core = { version = "0.5", default-features = false }
-subtle = "2.4"
 sha2 = { version = "0.10", default-features = false }
+subtle = "2.4"
+uuid = { version = "1.8", default-features = false, optional = true, features = ["v4"] }
 x25519-dalek = { version = "2", default-features = false, features = [
     "static_secrets",
     "zeroize",
