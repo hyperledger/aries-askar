@@ -1,8 +1,17 @@
 import { Key, KeyAlgs, KeyMethod } from '@hyperledger/aries-askar-shared'
 
+import { ariesAskarNodeJS } from '../src'
+
 describe('keys', () => {
   beforeAll(() => {
     require('@hyperledger/aries-askar-nodejs')
+  })
+
+  test('supported backends', () => {
+    const backends = ariesAskarNodeJS.keyGetSupportedBackends()
+
+    expect(backends.length).toStrictEqual(1)
+    expect(backends).toStrictEqual(expect.arrayContaining(['software']))
   })
 
   test('aes cbc hmac', () => {

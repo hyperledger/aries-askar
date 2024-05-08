@@ -99,6 +99,7 @@ import {
 } from '@hyperledger/aries-askar-shared'
 
 import {
+  allocateStringListHandle,
   serializeArguments,
   encryptedBufferStructToClass,
   deallocateCallbackBuffer,
@@ -616,10 +617,10 @@ export class NodeJSAriesAskar implements AriesAskar {
   }
 
   public keyGenerate(options: KeyGenerateOptions): LocalKeyHandle {
-    const { algorithm, ephemeral } = serializeArguments(options)
+    const { algorithm, ephemeral, backend } = serializeArguments(options)
     const ret = allocatePointer()
 
-    const errorCode = this.nativeAriesAskar.askar_key_generate(algorithm, ephemeral, ret)
+    const errorCode = this.nativeAriesAskar.askar_key_generate(algorithm, backend, ephemeral, ret)
     this.handleError(errorCode)
 
     const handle = handleReturnPointer<Uint8Array>(ret)
@@ -740,6 +741,31 @@ export class NodeJSAriesAskar implements AriesAskar {
 
     const encryptedBuffer = handleReturnPointer<EncryptedBufferType>(ret)
     return encryptedBufferStructToClass(encryptedBuffer)
+  }
+
+  public keyGetSupportedBackends(): Array<string> {
+    const stringListHandlePtr = allocateStringListHandle()
+
+    const keyGetSupportedBackendsErrorCode = this.nativeAriesAskar.askar_key_get_supported_backends(stringListHandlePtr)
+    this.handleError(keyGetSupportedBackendsErrorCode)
+    const stringListHandle = stringListHandlePtr.deref() as Buffer
+
+    const listCountPtr = allocateInt32Buffer()
+    const stringListCountErrorCode = this.nativeAriesAskar.askar_string_list_count(stringListHandle, listCountPtr)
+    this.handleError(stringListCountErrorCode)
+    const count = listCountPtr.deref() as number
+
+    const supportedBackends = []
+
+    for (let i = 0; i < count; i++) {
+      const strPtr = allocateStringBuffer()
+      const errorCode = this.nativeAriesAskar.askar_string_list_get_item(stringListHandle, i, strPtr)
+      this.handleError(errorCode)
+      supportedBackends.push(strPtr.deref() as string)
+    }
+    this.nativeAriesAskar.askar_string_list_free(stringListHandle)
+
+    return supportedBackends
   }
 
   public scanFree(options: ScanFreeOptions): void {
