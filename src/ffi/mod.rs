@@ -20,7 +20,7 @@ mod macros;
 mod error;
 mod key;
 mod log;
-mod result_list;
+pub(crate) mod result_list;
 mod secret;
 mod store;
 mod tags;
