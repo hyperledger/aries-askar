@@ -1,16 +1,15 @@
-use std::{os::raw::c_char, str::FromStr};
-
-use ffi_support::{rust_string_to_c, ByteBuffer, FfiStr};
-
 use super::{
     handle::ArcHandle,
+    result_list::{FfiStringList, StringListHandle},
     secret::{EncryptedBuffer, SecretBuffer},
     ErrorCode,
 };
 use crate::kms::{
     crypto_box, crypto_box_open, crypto_box_random_nonce, crypto_box_seal, crypto_box_seal_open,
-    derive_key_ecdh_1pu, derive_key_ecdh_es, KeyAlg, LocalKey,
+    derive_key_ecdh_1pu, derive_key_ecdh_es, KeyAlg, KeyBackend, LocalKey,
 };
+use ffi_support::{rust_string_to_c, ByteBuffer, FfiStr};
+use std::{os::raw::c_char, str::FromStr};
 
 pub type LocalKeyHandle = ArcHandle<LocalKey>;
 
@@ -23,15 +22,24 @@ pub struct AeadParams {
 #[no_mangle]
 pub extern "C" fn askar_key_generate(
     alg: FfiStr<'_>,
+    key_backend: FfiStr<'_>,
     ephemeral: i8,
     out: *mut LocalKeyHandle,
 ) -> ErrorCode {
     catch_err! {
         let alg = alg.as_opt_str().unwrap_or_default();
-        trace!("Generate key: {}", alg);
+        let key_backend = key_backend.as_opt_str().unwrap_or_default();
+        let backend = KeyBackend::from_str(key_backend).unwrap_or_default();
+        trace!("Generate key: {} for {} backend", alg, backend);
         check_useful_c_ptr!(out);
+
         let alg = KeyAlg::from_str(alg)?;
-        let key = LocalKey::generate(alg, ephemeral != 0)?;
+
+        let key = match backend {
+            KeyBackend::Software => LocalKey::generate_with_rng(alg, ephemeral != 0),
+            KeyBackend::SecureElement => LocalKey::generate_for_hardware(alg, ephemeral != 0)
+        }?;
+
         unsafe { *out = LocalKeyHandle::create(key) };
         Ok(ErrorCode::Success)
     }
@@ -566,6 +574,32 @@ pub extern "C" fn askar_key_derive_ecdh_1pu(
             receive == 1
         )?;
         unsafe { *out = LocalKeyHandle::create(key) };
+        Ok(ErrorCode::Success)
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn askar_key_get_supported_backends(out: *mut StringListHandle) -> ErrorCode {
+    catch_err! {
+        trace!("Retrieving supported key backends");
+        check_useful_c_ptr!(out);
+
+        let mut backends = vec![KeyBackend::Software];
+
+        if cfg!(feature = "mobile_secure_element") {
+            backends.push(KeyBackend::SecureElement);
+        }
+
+        let backends: Vec<String> = backends
+            .iter()
+            .map(|b| <KeyBackend as Into<&str>>::into(b.clone()).to_owned())
+            .collect();
+
+        let string_list = StringListHandle::create(FfiStringList::from(backends));
+
+
+        unsafe { *out = string_list };
+
         Ok(ErrorCode::Success)
     }
 }
