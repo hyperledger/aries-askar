@@ -127,9 +127,9 @@ checksum = "4b46cbb362ab8752921c97e041f5e366ee6297bd428a31275b9fcf1e380f7299"
 
 [[package]]
 name = "animo-secure-env"
-version = "0.2.2"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "06a821aecfed714bbadb45bd610203782f6e15429a97d5a99c85d07dc471107c"
+checksum = "8ac0649cf766da50afbf5566e8458edc3caf19c43fc26d8eabd18642e181377d"
 dependencies = [
  "android-activity",
  "jni",

@@ -1,13 +1,12 @@
 {
-  "extends": "./tsconfig.build.json",
+  "extends": "./tsconfig.json",
   "compilerOptions": {
     "baseUrl": ".",
+    "noEmit": true,
     "paths": {
-      "@hyperledger/aries-askar-shared": ["aries-askar-shared/src"],
-      "@hyperledger/aries-askar-react-native": ["aries-askar-react-native/src"],
-      "@hyperledger/aries-askar-nodejs": ["aries-askar-nodejs/src"]
+      "@hyperledger/*": ["packages/*/src"]
     }
   },
-  "include": [".eslintrc.js", "jest.config.ts"],
+  "include": ["packages", "jest.config.ts"],
   "exclude": ["node_modules", "build"]
 }
