@@ -22,28 +22,33 @@ use secure_env::{
 
 impl From<SecureEnvError> for Error {
     fn from(err: SecureEnvError) -> Self {
-        let kind = match err {
-            SecureEnvError::UnableToGenerateKey(_) => ErrorKind::Invalid,
-            SecureEnvError::UnableToGetKeyPairById(_) => ErrorKind::Invalid,
-            SecureEnvError::UnableToCreateSignature(_) => ErrorKind::Invalid,
-            SecureEnvError::UnableToGetPublicKey(_) => ErrorKind::Invalid,
-            SecureEnvError::HardwareBackedKeysAreNotSupported(_) => ErrorKind::Custom,
+        let (kind, _msg) = match err {
+            SecureEnvError::UnableToGenerateKey(s) => (ErrorKind::Invalid, s),
+            SecureEnvError::UnableToGetKeyPairById(s) => (ErrorKind::Invalid, s),
+            SecureEnvError::UnableToCreateSignature(s) => (ErrorKind::Invalid, s),
+            SecureEnvError::UnableToGetPublicKey(s) => (ErrorKind::Invalid, s),
 
             #[cfg(target_os = "android")]
-            SecureEnvError::UnableToCreateJavaValue(_) => ErrorKind::Custom,
+            SecureEnvError::HardwareBackedKeysAreNotSupported(s) => (ErrorKind::Custom, s),
             #[cfg(target_os = "android")]
-            SecureEnvError::UnableToAttachJVMToThread(_) => ErrorKind::Custom,
+            SecureEnvError::UnableToCreateJavaValue(s) => (ErrorKind::Custom, s),
+            #[cfg(target_os = "android")]
+            SecureEnvError::UnableToAttachJVMToThread(s) => (ErrorKind::Custom, s),
         };
 
-        Self {
+        #[cfg(feature = "alloc")]
+        return Self::from_msg(kind, alloc::boxed::Box::leak(_msg.into_boxed_str()));
+        #[cfg(not(feature = "alloc"))]
+        return Self {
             kind,
             message: None,
+            #[cfg(feature = "std")]
             cause: None,
-        }
+        };
     }
 }
 
-/// A P-256 (secp256r1) public key and reference to secret key stored in hardware
+/// A P-256 (secp256r1) reference to a key pair stored in hardware
 #[derive(Debug)]
 pub struct P256HardwareKeyPair(P256HardwareKeyReference);
 
