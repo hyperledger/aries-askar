@@ -1,5 +1,6 @@
 import json
 
+from aries_askar.types import KeyBackend
 import pytest
 
 from aries_askar import (
@@ -7,6 +8,12 @@ from aries_askar import (
     Key,
     SeedMethod,
 )
+
+
+def test_get_supported_backends():
+    backends = Key.get_supported_backends()
+
+    assert backends == [str(KeyBackend.Software)]
 
 
 def test_aes_cbc_hmac():

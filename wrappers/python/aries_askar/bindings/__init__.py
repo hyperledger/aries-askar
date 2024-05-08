@@ -7,7 +7,7 @@ import logging
 from ctypes import POINTER, byref, c_int8, c_int32, c_int64
 from typing import Optional, Sequence, Union
 
-from ..types import EntryOperation, KeyAlg, SeedMethod
+from ..types import EntryOperation, KeyAlg, KeyBackend, SeedMethod
 
 from .lib import (
     AeadParams,
@@ -78,7 +78,10 @@ def version() -> str:
 
 
 async def store_open(
-    uri: str, key_method: str = None, pass_key: str = None, profile: str = None
+    uri: str,
+    key_method: Optional[str] = None,
+    pass_key: Optional[str] = None,
+    profile: Optional[str] = None,
 ) -> StoreHandle:
     """Open an existing Store and return the open handle."""
     return await invoke_async(
@@ -94,9 +97,9 @@ async def store_open(
 
 async def store_provision(
     uri: str,
-    key_method: str = None,
-    pass_key: str = None,
-    profile: str = None,
+    key_method: Optional[str] = None,
+    pass_key: Optional[str] = None,
+    profile: Optional[str] = None,
     recreate: bool = False,
 ) -> StoreHandle:
     """Provision a new Store and return the open handle."""
@@ -112,7 +115,7 @@ async def store_provision(
     )
 
 
-async def store_create_profile(handle: StoreHandle, name: str = None) -> str:
+async def store_create_profile(handle: StoreHandle, name: Optional[str] = None) -> str:
     """Create a new profile in a Store."""
     return str(
         await invoke_async(
@@ -199,13 +202,14 @@ async def store_list_profiles(handle: StoreHandle) -> Sequence[str]:
             byref(buf),
         )
         ret.append(str(buf))
+
     return ret
 
 
 async def store_rekey(
     handle: StoreHandle,
-    key_method: str = None,
-    pass_key: str = None,
+    key_method: Optional[str] = None,
+    pass_key: Optional[str] = None,
 ) -> StoreHandle:
     """Replace the store key on a Store."""
     return await invoke_async(
@@ -221,8 +225,8 @@ async def store_rekey(
 async def store_copy(
     handle: StoreHandle,
     target_uri: str,
-    key_method: str = None,
-    pass_key: str = None,
+    key_method: Optional[str] = None,
+    pass_key: Optional[str] = None,
     recreate: bool = False,
 ) -> StoreHandle:
     """Copy the Store contents to a new location."""
@@ -267,7 +271,9 @@ async def session_start(
 
 
 async def session_count(
-    handle: SessionHandle, category: str = None, tag_filter: Union[str, dict] = None
+    handle: SessionHandle,
+    category: Optional[str] = None,
+    tag_filter: Optional[Union[str, dict]] = None,
 ) -> int:
     """Count rows in the Store."""
     return int(
@@ -299,9 +305,9 @@ async def session_fetch(
 
 async def session_fetch_all(
     handle: SessionHandle,
-    category: str = None,
-    tag_filter: Union[str, dict] = None,
-    limit: int = None,
+    category: Optional[str] = None,
+    tag_filter: Optional[Union[str, dict]] = None,
+    limit: Optional[int] = None,
     for_update: bool = False,
 ) -> EntryListHandle:
     """Fetch all matching rows in the Store."""
@@ -319,8 +325,8 @@ async def session_fetch_all(
 
 async def session_remove_all(
     handle: SessionHandle,
-    category: str = None,
-    tag_filter: Union[str, dict] = None,
+    category: Optional[str] = None,
+    tag_filter: Optional[Union[str, dict]] = None,
 ) -> int:
     """Remove all matching rows in the Store."""
     return int(
@@ -340,8 +346,8 @@ async def session_update(
     operation: EntryOperation,
     category: str,
     name: str,
-    value: Union[str, bytes] = None,
-    tags: dict = None,
+    value: Optional[Union[str, bytes]] = None,
+    tags: Optional[dict] = None,
     expiry_ms: Optional[int] = None,
 ):
     """Update a Store by inserting, updating, or removing a record."""
@@ -362,8 +368,8 @@ async def session_insert_key(
     handle: SessionHandle,
     key_handle: LocalKeyHandle,
     name: str,
-    metadata: str = None,
-    tags: dict = None,
+    metadata: Optional[str] = None,
+    tags: Optional[dict] = None,
     expiry_ms: Optional[int] = None,
 ):
     return await invoke_async(
@@ -393,10 +399,10 @@ async def session_fetch_key(
 
 async def session_fetch_all_keys(
     handle: SessionHandle,
-    alg: Union[str, KeyAlg] = None,
-    thumbprint: str = None,
-    tag_filter: Union[str, dict] = None,
-    limit: int = None,
+    alg: Optional[Union[str, KeyAlg]] = None,
+    thumbprint: Optional[str] = None,
+    tag_filter: Optional[Union[str, dict]] = None,
+    limit: Optional[int] = None,
     for_update: bool = False,
 ) -> KeyEntryListHandle:
     """Fetch all matching keys in the Store."""
@@ -418,8 +424,8 @@ async def session_fetch_all_keys(
 async def session_update_key(
     handle: SessionHandle,
     name: str,
-    metadata: str = None,
-    tags: dict = None,
+    metadata: Optional[str] = None,
+    tags: Optional[dict] = None,
     expiry_ms: Optional[int] = None,
 ):
     await invoke_async(
@@ -445,10 +451,10 @@ async def session_remove_key(handle: SessionHandle, name: str):
 async def scan_start(
     handle: StoreHandle,
     profile: Optional[str],
-    category: str = None,
-    tag_filter: Union[str, dict] = None,
-    offset: int = None,
-    limit: int = None,
+    category: Optional[str] = None,
+    tag_filter: Optional[Union[str, dict]] = None,
+    offset: Optional[int] = None,
+    limit: Optional[int] = None,
 ) -> ScanHandle:
     """Create a new Scan against the Store."""
     return await invoke_async(
@@ -492,14 +498,21 @@ def key_entry_list_count(handle: KeyEntryListHandle) -> int:
     return len.value
 
 
-def key_generate(alg: Union[str, KeyAlg], ephemeral: bool = False) -> LocalKeyHandle:
+def key_generate(
+    alg: Union[str, KeyAlg],
+    backend: Optional[Union[KeyBackend, str]] = None,
+    ephemeral: bool = False,
+) -> LocalKeyHandle:
     handle = LocalKeyHandle()
     if isinstance(alg, KeyAlg):
         alg = alg.value
+    if isinstance(backend, KeyBackend):
+        backend = backend.value
     invoke(
         "askar_key_generate",
-        (FfiStr, c_int8, POINTER(LocalKeyHandle)),
+        (FfiStr, FfiStr, c_int8, POINTER(LocalKeyHandle)),
         alg,
+        backend,
         ephemeral,
         byref(handle),
     )
@@ -509,7 +522,7 @@ def key_generate(alg: Union[str, KeyAlg], ephemeral: bool = False) -> LocalKeyHa
 def key_from_seed(
     alg: Union[str, KeyAlg],
     seed: Union[str, bytes, ByteBuffer],
-    method: Union[str, SeedMethod] = None,
+    method: Optional[Union[str, SeedMethod]] = None,
 ) -> LocalKeyHandle:
     handle = LocalKeyHandle()
     if isinstance(alg, KeyAlg):
@@ -647,7 +660,9 @@ def key_get_ephemeral(handle: LocalKeyHandle) -> bool:
     return eph.value != 0
 
 
-def key_get_jwk_public(handle: LocalKeyHandle, alg: Union[str, KeyAlg] = None) -> str:
+def key_get_jwk_public(
+    handle: LocalKeyHandle, alg: Optional[Union[str, KeyAlg]] = None
+) -> str:
     jwk = StrBuffer()
     if isinstance(alg, KeyAlg):
         alg = alg.value
@@ -673,7 +688,7 @@ def key_get_jwk_secret(handle: LocalKeyHandle) -> ByteBuffer:
 
 
 def key_get_jwk_thumbprint(
-    handle: LocalKeyHandle, alg: Union[str, KeyAlg] = None
+    handle: LocalKeyHandle, alg: Optional[Union[str, KeyAlg]] = None
 ) -> str:
     thumb = StrBuffer()
     if isinstance(alg, KeyAlg):
@@ -849,6 +864,33 @@ def key_unwrap_key(
         byref(result),
     )
     return result
+
+
+def key_get_supported_backends() -> Sequence[str]:
+    handle = StringListHandle()
+    invoke(
+        "askar_key_get_supported_backends", (POINTER(StringListHandle),), byref(handle)
+    )
+    count = c_int32()
+    invoke(
+        "askar_string_list_count",
+        (StringListHandle, POINTER(c_int32)),
+        handle,
+        byref(count),
+    )
+    ret = []
+    for idx in range(count.value):
+        buf = StrBuffer()
+        invoke(
+            "askar_string_list_get_item",
+            (StringListHandle, c_int32, POINTER(StrBuffer)),
+            handle,
+            idx,
+            byref(buf),
+        )
+        ret.append(str(buf))
+
+    return ret
 
 
 def key_crypto_box_random_nonce() -> ByteBuffer:
