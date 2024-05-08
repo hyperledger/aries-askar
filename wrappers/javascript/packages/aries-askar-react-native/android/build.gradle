@@ -85,7 +85,7 @@ android {
   }
   
   defaultConfig {
-    minSdkVersion getExtWithFallback('minSdkVersion', '21') 
+    minSdkVersion getExtWithFallback('minSdkVersion', 21) 
     targetSdkVersion getExt('targetSdkVersion')
     
     externalNativeBuild {
