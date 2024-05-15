@@ -14,14 +14,14 @@
     "assetBundlePatterns": ["**/*"],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "org.hyperledger.aries_askar.example"
+      "bundleIdentifier": "org.hyperledger.ariesaskar.example"
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "package": "org.hyperledger.aries_askar.example"
+      "package": "org.hyperledger.ariesaskar.example"
     }
   }
 }

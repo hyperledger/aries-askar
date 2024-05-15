@@ -617,10 +617,10 @@ export class NodeJSAriesAskar implements AriesAskar {
   }
 
   public keyGenerate(options: KeyGenerateOptions): LocalKeyHandle {
-    const { algorithm, ephemeral, backend } = serializeArguments(options)
+    const { algorithm, ephemeral, keyBackend } = serializeArguments(options)
     const ret = allocatePointer()
 
-    const errorCode = this.nativeAriesAskar.askar_key_generate(algorithm, backend, ephemeral, ret)
+    const errorCode = this.nativeAriesAskar.askar_key_generate(algorithm, keyBackend, ephemeral, ret)
     this.handleError(errorCode)
 
     const handle = handleReturnPointer<Uint8Array>(ret)

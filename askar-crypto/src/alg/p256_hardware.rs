@@ -5,7 +5,7 @@
 
 use super::{
     p256::{self, P256KeyPair, ES256_SIGNATURE_LENGTH},
-    EcCurves, HasKeyAlg, KeyAlg,
+    EcCurves, HasKeyAlg, HasKeyBackend, KeyAlg, KeyBackend,
 };
 use crate::{
     buffer::WriteBuffer,
@@ -66,7 +66,7 @@ impl P256HardwareKeyPair {
     /// Verify a signature with the public key
     pub fn verify_signature(&self, message: &[u8], signature: &[u8]) -> bool {
         if let Ok(keypair) = self.get_p256_keypair() {
-            return keypair.verify_signature(message, signature);
+            keypair.verify_signature(message, signature)
         } else {
             false
         }
@@ -129,6 +129,12 @@ impl KeySign for P256HardwareKeyPair {
             #[allow(unreachable_patterns)]
             _ => Err(err_msg!(Unsupported, "Unsupported signature type")),
         }
+    }
+}
+
+impl HasKeyBackend for P256HardwareKeyPair {
+    fn key_backend(&self) -> KeyBackend {
+        KeyBackend::SecureElement
     }
 }
 

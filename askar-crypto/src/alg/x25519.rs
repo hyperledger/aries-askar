@@ -9,7 +9,7 @@ use subtle::ConstantTimeEq;
 use x25519_dalek::{PublicKey, StaticSecret as SecretKey};
 use zeroize::Zeroizing;
 
-use super::{ed25519::Ed25519KeyPair, HasKeyAlg, KeyAlg};
+use super::{ed25519::Ed25519KeyPair, HasKeyAlg, HasKeyBackend, KeyAlg};
 use crate::{
     buffer::{ArrayKey, WriteBuffer},
     error::Error,
@@ -86,6 +86,8 @@ impl Debug for X25519KeyPair {
             .finish()
     }
 }
+
+impl HasKeyBackend for X25519KeyPair {}
 
 impl HasKeyAlg for X25519KeyPair {
     fn algorithm(&self) -> KeyAlg {

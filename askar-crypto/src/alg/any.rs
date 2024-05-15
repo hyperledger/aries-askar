@@ -40,8 +40,9 @@ use super::p384::{self, P384KeyPair};
 #[cfg(feature = "p256_hardware")]
 use super::p256_hardware::P256HardwareKeyPair;
 
-use super::{HasKeyAlg, KeyAlg};
+use super::{HasKeyAlg, HasKeyBackend, KeyAlg};
 use crate::{
+    backend::KeyBackend,
     buffer::{ResizeBuffer, WriteBuffer},
     encrypt::{KeyAeadInPlace, KeyAeadParams},
     error::Error,
@@ -72,6 +73,10 @@ pub type AnyKey = KeyT<dyn AnyKeyAlg + Send + Sync + RefUnwindSafe + UnwindSafe>
 impl AnyKey {
     pub fn algorithm(&self) -> KeyAlg {
         self.0.algorithm()
+    }
+
+    pub fn backend(&self) -> KeyBackend {
+        self.0.key_backend()
     }
 
     fn assume<K: AnyKeyAlg>(&self) -> &K {
@@ -118,7 +123,9 @@ pub trait AnyKeyCreate: Sized {
     fn from_secret_bytes(alg: KeyAlg, secret: &[u8]) -> Result<Self, Error>;
 
     /// Convert from a concrete key instance
-    fn from_key<K: HasKeyAlg + Send + Sync + RefUnwindSafe + UnwindSafe + 'static>(key: K) -> Self;
+    fn from_key<K: HasKeyAlg + HasKeyBackend + Send + Sync + RefUnwindSafe + UnwindSafe + 'static>(
+        key: K,
+    ) -> Self;
 
     /// Create a new key instance from a key exchange
     fn from_key_exchange<Sk, Pk>(alg: KeyAlg, secret: &Sk, public: &Pk) -> Result<Self, Error>
@@ -155,7 +162,11 @@ impl AnyKeyCreate for Box<AnyKey> {
     }
 
     #[inline(always)]
-    fn from_key<K: HasKeyAlg + Send + Sync + RefUnwindSafe + UnwindSafe + 'static>(key: K) -> Self {
+    fn from_key<
+        K: HasKeyAlg + HasKeyBackend + Send + Sync + RefUnwindSafe + UnwindSafe + 'static,
+    >(
+        key: K,
+    ) -> Self {
         Box::new(KeyT(key))
     }
 
@@ -198,7 +209,11 @@ impl AnyKeyCreate for Arc<AnyKey> {
     }
 
     #[inline(always)]
-    fn from_key<K: HasKeyAlg + Send + Sync + RefUnwindSafe + UnwindSafe + 'static>(key: K) -> Self {
+    fn from_key<
+        K: HasKeyAlg + HasKeyBackend + Send + Sync + RefUnwindSafe + UnwindSafe + 'static,
+    >(
+        key: K,
+    ) -> Self {
         Arc::new(KeyT(key))
     }
 
@@ -288,10 +303,10 @@ fn generate_any_for_hardware<R: AllocKey>(alg: KeyAlg) -> Result<R, Error> {
 }
 
 #[inline]
-fn get_any_with_id<R: AllocKey>(alg: KeyAlg, id: &str) -> Result<R, Error> {
+fn get_any_with_id<R: AllocKey>(alg: KeyAlg, _id: &str) -> Result<R, Error> {
     let key = match alg {
         #[cfg(feature = "p256_hardware")]
-        KeyAlg::EcCurve(EcCurves::Secp256r1) => P256HardwareKeyPair::from_id(id).map(R::alloc_key),
+        KeyAlg::EcCurve(EcCurves::Secp256r1) => P256HardwareKeyPair::from_id(_id).map(R::alloc_key),
         _ => Err(err_msg!(
             Unsupported,
             "Unsupported algorithm for key retrieval by id"
@@ -688,14 +703,14 @@ macro_rules! match_key_alg {
     }};
     (@ P256 $($rest:ident)*; $key:ident, $alg:ident) => {{
         #[cfg(feature = "p256")]
-        if $alg == KeyAlg::EcCurve(EcCurves::Secp256r1) {
+        if $alg == KeyAlg::EcCurve(EcCurves::Secp256r1) && $key.backend() == KeyBackend::Software {
             return Ok($key.assume::<P256KeyPair>())
         }
         match_key_alg!(@ $($rest)*; $key, $alg)
     }};
     (@ P256Hardware $($rest:ident)*; $key:ident, $alg:ident) => {{
         #[cfg(feature = "p256_hardware")]
-        if $alg == KeyAlg::EcCurve(EcCurves::Secp256r1) {
+        if $alg == KeyAlg::EcCurve(EcCurves::Secp256r1) && $key.backend() == KeyBackend::SecureElement {
             return Ok($key.assume::<P256HardwareKeyPair>())
         }
         match_key_alg!(@ $($rest)*; $key, $alg)
@@ -920,12 +935,12 @@ impl AllocKey for Box<AnyKey> {
     }
 }
 
-pub trait AnyKeyAlg: HasKeyAlg + 'static {
+pub trait AnyKeyAlg: HasKeyAlg + HasKeyBackend + 'static {
     fn as_any(&self) -> &dyn Any;
 }
 
 // implement for all concrete key types
-impl<K: HasKeyAlg + Sized + 'static> AnyKeyAlg for K {
+impl<K: HasKeyAlg + HasKeyBackend + Sized + 'static> AnyKeyAlg for K {
     fn as_any(&self) -> &dyn Any {
         self
     }

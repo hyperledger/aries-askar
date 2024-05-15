@@ -598,11 +598,17 @@ jsi::Value keyFromSeed(jsi::Runtime &rt, jsi::Object options) {
 
 jsi::Value keyGenerate(jsi::Runtime &rt, jsi::Object options) {
   auto algorithm = jsiToValue<std::string>(rt, options, "algorithm");
+  auto keyBackend = jsiToValue<std::string>(rt, options, "keyBackend");
   auto ephemeral = jsiToValue<int8_t>(rt, options, "ephemeral");
 
   LocalKeyHandle out;
 
-  ErrorCode code = askar_key_generate(algorithm.c_str(), ephemeral, &out);
+  ErrorCode code = askar_key_generate(
+      algorithm.c_str(), 
+      keyBackend.length() ? keyBackend.c_str() : nullptr, 
+      ephemeral, 
+      &out
+  );
 
   return createReturnValue(rt, code, &out);
 }

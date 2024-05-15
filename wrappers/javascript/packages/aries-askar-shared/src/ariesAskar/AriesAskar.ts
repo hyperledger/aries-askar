@@ -162,7 +162,7 @@ export type KeyFromSeedOptions = {
 }
 export type KeyGenerateOptions = {
   algorithm: KeyAlgs
-  backend?: KeyBackend
+  keyBackend?: KeyBackend
   ephemeral: boolean
 }
 export type KeyGetAlgorithmOptions = { localKeyHandle: LocalKeyHandle }

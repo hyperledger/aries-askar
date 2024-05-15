@@ -1,4 +1,4 @@
-import { ariesAskar } from '@hyperledger/aries-askar-react-native'
+import { Key, KeyAlgs, KeyBackend, ariesAskar } from '@hyperledger/aries-askar-react-native'
 import { StyleSheet, Text, View } from 'react-native'
 
 const styles = StyleSheet.create({
@@ -10,8 +10,13 @@ const styles = StyleSheet.create({
   },
 })
 
-export const App = () => (
-  <View style={styles.container}>
-    <Text>{ariesAskar.version()}</Text>
-  </View>
-)
+export const App = () => {
+  const key = Key.generate(KeyAlgs.EcSecp256r1, KeyBackend.SecureElement)
+
+  return (
+    <View style={styles.container}>
+      <Text>{ariesAskar.version()}</Text>
+      <Text>Key: {key.publicBytes.join(',')}</Text>
+    </View>
+  )
+}

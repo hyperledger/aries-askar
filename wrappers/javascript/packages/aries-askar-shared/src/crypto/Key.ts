@@ -1,5 +1,6 @@
 import type { LocalKeyHandle } from './handles'
 import type { KeyAlgs, SigAlgs } from '../enums'
+import type { KeyBackend } from '../enums'
 
 import { Buffer } from 'buffer'
 
@@ -15,8 +16,8 @@ export class Key {
     this.localKeyHandle = handle
   }
 
-  public static generate(algorithm: KeyAlgs, ephemeral = false) {
-    return new Key(ariesAskar.keyGenerate({ algorithm, ephemeral }))
+  public static generate(algorithm: KeyAlgs, keyBackend?: KeyBackend, ephemeral = false) {
+    return new Key(ariesAskar.keyGenerate({ algorithm, keyBackend, ephemeral }))
   }
 
   public static fromSeed({
@@ -48,7 +49,13 @@ export class Key {
   }
 
   public keyFromKeyExchange({ algorithm, publicKey }: { algorithm: KeyAlgs; publicKey: Key }) {
-    return new Key(ariesAskar.keyFromKeyExchange({ skHandle: this.handle, pkHandle: publicKey.handle, algorithm }))
+    return new Key(
+      ariesAskar.keyFromKeyExchange({
+        skHandle: this.handle,
+        pkHandle: publicKey.handle,
+        algorithm,
+      }),
+    )
   }
 
   public get handle() {
@@ -73,16 +80,26 @@ export class Key {
   }
 
   public get jwkPublic(): Jwk {
-    return Jwk.fromString(ariesAskar.keyGetJwkPublic({ localKeyHandle: this.handle, algorithm: this.algorithm }))
+    return Jwk.fromString(
+      ariesAskar.keyGetJwkPublic({
+        localKeyHandle: this.handle,
+        algorithm: this.algorithm,
+      }),
+    )
   }
 
   public get jwkSecret() {
-    const secretBytes = ariesAskar.keyGetJwkSecret({ localKeyHandle: this.handle })
+    const secretBytes = ariesAskar.keyGetJwkSecret({
+      localKeyHandle: this.handle,
+    })
     return Jwk.fromString(Buffer.from(secretBytes).toString())
   }
 
   public get jwkThumbprint() {
-    return ariesAskar.keyGetJwkThumbprint({ localKeyHandle: this.handle, algorithm: this.algorithm })
+    return ariesAskar.keyGetJwkThumbprint({
+      localKeyHandle: this.handle,
+      algorithm: this.algorithm,
+    })
   }
 
   public get aeadParams() {
@@ -94,23 +111,39 @@ export class Key {
   }
 
   public aeadEncrypt(options: { message: Uint8Array; nonce?: Uint8Array; aad?: Uint8Array }) {
-    return ariesAskar.keyAeadEncrypt({ localKeyHandle: this.handle, ...options })
+    return ariesAskar.keyAeadEncrypt({
+      localKeyHandle: this.handle,
+      ...options,
+    })
   }
 
   public aeadDecrypt(options: { ciphertext: Uint8Array; nonce: Uint8Array; tag?: Uint8Array; aad?: Uint8Array }) {
-    return ariesAskar.keyAeadDecrypt({ localKeyHandle: this.handle, ...options })
+    return ariesAskar.keyAeadDecrypt({
+      localKeyHandle: this.handle,
+      ...options,
+    })
   }
 
   public signMessage(options: { message: Uint8Array; sigType?: SigAlgs }) {
-    return ariesAskar.keySignMessage({ localKeyHandle: this.handle, ...options })
+    return ariesAskar.keySignMessage({
+      localKeyHandle: this.handle,
+      ...options,
+    })
   }
 
   public verifySignature(options: { message: Uint8Array; signature: Uint8Array; sigType?: SigAlgs }) {
-    return ariesAskar.keyVerifySignature({ localKeyHandle: this.handle, ...options })
+    return ariesAskar.keyVerifySignature({
+      localKeyHandle: this.handle,
+      ...options,
+    })
   }
 
   public wrapKey({ other, nonce }: { other: Key; nonce?: Uint8Array }) {
-    return ariesAskar.keyWrapKey({ localKeyHandle: this.handle, other: other.handle, nonce })
+    return ariesAskar.keyWrapKey({
+      localKeyHandle: this.handle,
+      other: other.handle,
+      nonce,
+    })
   }
 
   public unwrapKey(options: { algorithm: KeyAlgs; tag?: Uint8Array; ciphertext: Uint8Array; nonce?: Uint8Array }) {

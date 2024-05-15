@@ -10,6 +10,7 @@ use arbitrary::Arbitrary;
 use zeroize::Zeroize;
 
 use crate::{
+    backend::KeyBackend,
     buffer::{WriteBuffer, Writer},
     error::Error,
 };
@@ -268,6 +269,15 @@ pub enum EcCurves {
 pub trait HasKeyAlg: Debug {
     /// Get the corresponding key algorithm.
     fn algorithm(&self) -> KeyAlg;
+}
+
+/// A trait for accessing the backend of a key, used when
+/// converting to generic `AnyKey` instances.
+pub trait HasKeyBackend: Debug {
+    /// Get the corresponding key algorithm.
+    fn key_backend(&self) -> KeyBackend {
+        KeyBackend::default()
+    }
 }
 
 #[cfg(test)]
