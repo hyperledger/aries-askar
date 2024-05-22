@@ -24,13 +24,14 @@ fn store_copy() {
         .await
         .expect(ERR_OPEN);
 
-        let keypair = LocalKey::generate(KeyAlg::Ed25519, false).expect("Error creating keypair");
+        let keypair =
+            LocalKey::generate_with_rng(KeyAlg::Ed25519, false).expect("Error creating keypair");
 
         let mut conn = db.session(None).await.expect(ERR_SESSION);
 
         let key_name = "testkey";
         let metadata = "meta";
-        conn.insert_key(key_name, &keypair, Some(metadata), None, None)
+        conn.insert_key(key_name, &keypair, Some(metadata), None, None, None)
             .await
             .expect("Error inserting key");
 

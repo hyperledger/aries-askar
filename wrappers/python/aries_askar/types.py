@@ -30,6 +30,22 @@ class KeyAlg(Enum):
         return None
 
 
+class KeyBackend(Enum):
+    Software = "software"
+
+    @classmethod
+    def from_key_backend(cls, backend: str) -> Optional["KeyBackend"]:
+        """Get KeyBackend instance from the method identifier."""
+        for cmp_mth in KeyBackend:
+            if cmp_mth.value == backend:
+                return cmp_mth
+
+        return None
+
+    def __str__(self):
+        return self.value
+
+
 class SeedMethod(Enum):
     BlsKeyGen = "bls_keygen"
 

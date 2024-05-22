@@ -19,6 +19,8 @@ export const allocateAeadParams = (): Buffer => alloc(AeadParamsStruct)
 
 export const allocateLocalKeyHandle = allocatePointer
 
+export const allocateStringListHandle = allocatePointer
+
 export const allocateCallbackBuffer = (callback: Buffer) => setTimeout(() => callback, 1000000)
 
 export const deallocateCallbackBuffer = (id: number) => clearTimeout(id as unknown as NodeJS.Timeout)

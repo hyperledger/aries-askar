@@ -42,8 +42,8 @@ fn populate_database_keys_profiles(db: &Store, n: u64) {
         let mut conn = db.session(None).await.expect(ERR_SESSION);
 
         for _ in 0..n {
-            let keypair =
-                LocalKey::generate(KeyAlg::Ed25519, false).expect("Error creating keypair");
+            let keypair = LocalKey::generate_with_rng(KeyAlg::Ed25519, false)
+                .expect("Error creating keypair");
             let key_name = rand::thread_rng()
                 .sample_iter(&Alphanumeric)
                 .take(10)
@@ -55,9 +55,16 @@ fn populate_database_keys_profiles(db: &Store, n: u64) {
                 .map(char::from)
                 .collect::<String>();
 
-            conn.insert_key(&key_name, &keypair, Some(metadata.as_str()), None, None)
-                .await
-                .expect("Error inserting key");
+            conn.insert_key(
+                &key_name,
+                &keypair,
+                Some(metadata.as_str()),
+                None,
+                None,
+                None,
+            )
+            .await
+            .expect("Error inserting key");
 
             let found = conn
                 .fetch_key(&key_name, false)

@@ -1,9 +1,38 @@
 use super::local_key::LocalKey;
 use crate::{
-    crypto::{alg::AnyKey, buffer::SecretBytes, jwk::FromJwk},
+    crypto::{alg::AnyKey, alg::KeyAlg, buffer::SecretBytes, jwk::FromJwk},
     entry::{Entry, EntryTag},
     error::Error,
 };
+use std::str::FromStr;
+
+/// Key reference variant
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+pub enum KeyReference {
+    /// Stored in a mobile secure element
+    MobileSecureElement,
+
+    /// Any other reference as fallback
+    Any(String),
+}
+
+impl From<&str> for KeyReference {
+    fn from(value: &str) -> Self {
+        match value {
+            "mobile_secure_element" => Self::MobileSecureElement,
+            any => Self::Any(String::from(any)),
+        }
+    }
+}
+
+impl Into<String> for KeyReference {
+    fn into(self) -> String {
+        match self {
+            Self::MobileSecureElement => String::from("mobile_secure_element"),
+            Self::Any(s) => s,
+        }
+    }
+}
 
 /// Parameters defining a stored key
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
@@ -14,9 +43,11 @@ pub struct KeyParams {
 
     /// An optional external reference for the key
     #[serde(default, rename = "ref", skip_serializing_if = "Option::is_none")]
-    pub reference: Option<String>,
+    pub reference: Option<KeyReference>,
 
-    /// The associated key data (JWK)
+    /// The associated key data
+    /// - Stored as a JWK for software-backed keys
+    /// - Stored as a key id for hardware-backed keys
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub data: Option<SecretBytes>,
 }
@@ -26,6 +57,16 @@ impl KeyParams {
         serde_cbor::to_vec(self)
             .map(SecretBytes::from)
             .map_err(|e| err_msg!(Unexpected, "Error serializing key params: {}", e))
+    }
+
+    pub(crate) fn to_id(&self) -> Result<String, Error> {
+        self.data
+            .as_ref()
+            .and_then(|d| d.as_opt_str().map(ToOwned::to_owned))
+            .ok_or(err_msg!(
+                Input,
+                "Could not convert key data to string for id"
+            ))
     }
 
     pub(crate) fn from_slice(params: &[u8]) -> Result<KeyParams, Error> {
@@ -111,11 +152,27 @@ impl KeyEntry {
     /// Create a local key instance from this key storage entry
     pub fn load_local_key(&self) -> Result<LocalKey, Error> {
         if let Some(key_data) = self.params.data.as_ref() {
-            let inner = Box::<AnyKey>::from_jwk_slice(key_data.as_ref())?;
-            Ok(LocalKey {
-                inner,
-                ephemeral: false,
-            })
+            match &self.params.reference {
+                Some(r) => match r {
+                    KeyReference::MobileSecureElement => {
+                        let id = self.params.to_id()?;
+                        let alg = self
+                            .alg
+                            .as_ref()
+                            .ok_or(err_msg!(Input, "Algorithm is required to get key by id"))?;
+                        let alg = KeyAlg::from_str(&alg)?;
+                        Ok(LocalKey::from_id(alg, &id)?)
+                    }
+                    _ => Ok(LocalKey {
+                        inner: Box::<AnyKey>::from_jwk_slice(key_data.as_ref())?,
+                        ephemeral: false,
+                    }),
+                },
+                None => Ok(LocalKey {
+                    inner: Box::<AnyKey>::from_jwk_slice(key_data.as_ref())?,
+                    ephemeral: false,
+                }),
+            }
         } else {
             Err(err_msg!("Missing key data"))
         }

@@ -112,7 +112,7 @@ export const nativeBindings = {
   askar_key_from_public_bytes: [FFI_ERROR_CODE, [FFI_STRING, ByteBufferStruct, FFI_LOCAL_KEY_HANDLE]],
   askar_key_from_secret_bytes: [FFI_ERROR_CODE, [FFI_STRING, ByteBufferStruct, refType(FFI_POINTER)]],
   askar_key_from_seed: [FFI_ERROR_CODE, [FFI_STRING, ByteBufferStruct, FFI_STRING, FFI_LOCAL_KEY_HANDLE]],
-  askar_key_generate: [FFI_ERROR_CODE, [FFI_STRING, FFI_INT8, FFI_LOCAL_KEY_HANDLE]],
+  askar_key_generate: [FFI_ERROR_CODE, [FFI_STRING, FFI_STRING, FFI_INT8, FFI_LOCAL_KEY_HANDLE]],
   askar_key_get_algorithm: [FFI_ERROR_CODE, [FFI_POINTER, FFI_STRING_PTR]],
   askar_key_get_ephemeral: [FFI_ERROR_CODE, [FFI_POINTER, FFI_INT8_PTR]],
   askar_key_get_jwk_public: [FFI_ERROR_CODE, [FFI_POINTER, FFI_STRING, FFI_STRING_PTR]],
@@ -130,6 +130,7 @@ export const nativeBindings = {
     [FFI_POINTER, ByteBufferStruct, ByteBufferStruct, FFI_STRING, FFI_INT8_PTR],
   ],
   askar_key_wrap_key: [FFI_ERROR_CODE, [FFI_POINTER, FFI_POINTER, ByteBufferStruct, EncryptedBufferStructPtr]],
+  askar_key_get_supported_backends: [FFI_ERROR_CODE, [FFI_STRING_LIST_HANDLE]],
 
   askar_scan_free: [FFI_ERROR_CODE, [FFI_SCAN_HANDLE]],
   askar_scan_next: [FFI_ERROR_CODE, [FFI_SCAN_HANDLE, FFI_CALLBACK_PTR, FFI_CALLBACK_ID]],
