@@ -211,6 +211,7 @@ jobs:
         with:
           file: library-${{ matrix.architecture }}.tar.gz
           asset_name: "library-${{ matrix.architecture }}.tar.gz"
+          repo_token: ${{secrets.GITHUB_TOKEN}}
 
   build-py:
     name: Build and test Python wrapper
