@@ -8,7 +8,7 @@ import type {
   SessionHandle,
   StoreHandle,
 } from '../crypto'
-import type { KeyAlgs, LogLevel, SigAlgs } from '../enums'
+import type { KeyAlgs, LogLevel, SigAlgs, KeyBackend } from '../enums'
 import type { AriesAskarErrorObject } from '../error'
 import type { AeadParams, EncryptedBuffer } from '../types'
 
@@ -34,10 +34,22 @@ export type SetMaxLogLevelOptions = { logLevel: number }
 
 export type EntryListCountOptions = { entryListHandle: EntryListHandle }
 export type EntryListFreeOptions = { entryListHandle: EntryListHandle }
-export type EntryListGetCategoryOptions = { entryListHandle: EntryListHandle; index: number }
-export type EntryListGetNameOptions = { entryListHandle: EntryListHandle; index: number }
-export type EntryListGetTagsOptions = { entryListHandle: EntryListHandle; index: number }
-export type EntryListGetValueOptions = { entryListHandle: EntryListHandle; index: number }
+export type EntryListGetCategoryOptions = {
+  entryListHandle: EntryListHandle
+  index: number
+}
+export type EntryListGetNameOptions = {
+  entryListHandle: EntryListHandle
+  index: number
+}
+export type EntryListGetTagsOptions = {
+  entryListHandle: EntryListHandle
+  index: number
+}
+export type EntryListGetValueOptions = {
+  entryListHandle: EntryListHandle
+  index: number
+}
 
 export type KeyAeadDecryptOptions = {
   localKeyHandle: LocalKeyHandle
@@ -52,10 +64,16 @@ export type KeyAeadEncryptOptions = {
   nonce?: Uint8Array
   aad?: Uint8Array
 }
-export type KeyAeadGetPaddingOptions = { localKeyHandle: LocalKeyHandle; msgLen: number }
+export type KeyAeadGetPaddingOptions = {
+  localKeyHandle: LocalKeyHandle
+  msgLen: number
+}
 export type KeyAeadGetParamsOptions = { localKeyHandle: LocalKeyHandle }
 export type KeyAeadRandomNonceOptions = { localKeyHandle: LocalKeyHandle }
-export type KeyConvertOptions = { localKeyHandle: LocalKeyHandle; algorithm: KeyAlgs }
+export type KeyConvertOptions = {
+  localKeyHandle: LocalKeyHandle
+  algorithm: KeyAlgs
+}
 export type KeyCryptoBoxOptions = {
   recipientKey: Key
   senderKey: Key
@@ -68,8 +86,14 @@ export type KeyCryptoBoxOpenOptions = {
   message: Uint8Array
   nonce: Uint8Array
 }
-export type KeyCryptoBoxSealOptions = { localKeyHandle: LocalKeyHandle; message: Uint8Array }
-export type KeyCryptoBoxSealOpenOptions = { localKeyHandle: LocalKeyHandle; ciphertext: Uint8Array }
+export type KeyCryptoBoxSealOptions = {
+  localKeyHandle: LocalKeyHandle
+  message: Uint8Array
+}
+export type KeyCryptoBoxSealOpenOptions = {
+  localKeyHandle: LocalKeyHandle
+  ciphertext: Uint8Array
+}
 export type KeyDeriveEcdh1puOptions = {
   algorithm: KeyAlgs
   ephemeralKey: Key
@@ -90,13 +114,32 @@ export type KeyDeriveEcdhEsOptions = {
   apv: Uint8Array
   receive: boolean
 }
-export type KeyEntryListCountOptions = { keyEntryListHandle: KeyEntryListHandle }
-export type KeyEntryListFreeOptions = { keyEntryListHandle: KeyEntryListHandle }
-export type KeyEntryListGetAlgorithmOptions = { keyEntryListHandle: KeyEntryListHandle; index: number }
-export type KeyEntryListGetMetadataOptions = { keyEntryListHandle: KeyEntryListHandle; index: number }
-export type KeyEntryListGetNameOptions = { keyEntryListHandle: KeyEntryListHandle; index: number }
-export type KeyEntryListGetTagsOptions = { keyEntryListHandle: KeyEntryListHandle; index: number }
-export type KeyEntryListLoadLocalOptions = { keyEntryListHandle: KeyEntryListHandle; index: number }
+export type KeyEntryListCountOptions = {
+  keyEntryListHandle: KeyEntryListHandle
+}
+export type KeyEntryListFreeOptions = {
+  keyEntryListHandle: KeyEntryListHandle
+}
+export type KeyEntryListGetAlgorithmOptions = {
+  keyEntryListHandle: KeyEntryListHandle
+  index: number
+}
+export type KeyEntryListGetMetadataOptions = {
+  keyEntryListHandle: KeyEntryListHandle
+  index: number
+}
+export type KeyEntryListGetNameOptions = {
+  keyEntryListHandle: KeyEntryListHandle
+  index: number
+}
+export type KeyEntryListGetTagsOptions = {
+  keyEntryListHandle: KeyEntryListHandle
+  index: number
+}
+export type KeyEntryListLoadLocalOptions = {
+  keyEntryListHandle: KeyEntryListHandle
+  index: number
+}
 export type KeyFreeOptions = { localKeyHandle: LocalKeyHandle }
 export type KeyFromJwkOptions = { jwk: Jwk }
 export type KeyFromKeyExchangeOptions = {
@@ -104,18 +147,42 @@ export type KeyFromKeyExchangeOptions = {
   skHandle: LocalKeyHandle
   pkHandle: LocalKeyHandle
 }
-export type KeyFromPublicBytesOptions = { algorithm: KeyAlgs; publicKey: Uint8Array }
-export type KeyFromSecretBytesOptions = { algorithm: KeyAlgs; secretKey: Uint8Array }
-export type KeyFromSeedOptions = { algorithm: KeyAlgs; seed: Uint8Array; method: string }
-export type KeyGenerateOptions = { algorithm: KeyAlgs; ephemeral: boolean }
+export type KeyFromPublicBytesOptions = {
+  algorithm: KeyAlgs
+  publicKey: Uint8Array
+}
+export type KeyFromSecretBytesOptions = {
+  algorithm: KeyAlgs
+  secretKey: Uint8Array
+}
+export type KeyFromSeedOptions = {
+  algorithm: KeyAlgs
+  seed: Uint8Array
+  method: string
+}
+export type KeyGenerateOptions = {
+  algorithm: KeyAlgs
+  backend?: KeyBackend
+  ephemeral: boolean
+}
 export type KeyGetAlgorithmOptions = { localKeyHandle: LocalKeyHandle }
 export type KeyGetEphemeralOptions = { localKeyHandle: LocalKeyHandle }
-export type KeyGetJwkPublicOptions = { localKeyHandle: LocalKeyHandle; algorithm: string }
+export type KeyGetJwkPublicOptions = {
+  localKeyHandle: LocalKeyHandle
+  algorithm: string
+}
 export type KeyGetJwkSecretOptions = { localKeyHandle: LocalKeyHandle }
-export type KeyGetJwkThumbprintOptions = { localKeyHandle: LocalKeyHandle; algorithm: string }
+export type KeyGetJwkThumbprintOptions = {
+  localKeyHandle: LocalKeyHandle
+  algorithm: string
+}
 export type KeyGetPublicBytesOptions = { localKeyHandle: LocalKeyHandle }
 export type KeyGetSecretBytesOptions = { localKeyHandle: LocalKeyHandle }
-export type KeySignMessageOptions = { localKeyHandle: LocalKeyHandle; message: Uint8Array; sigType?: SigAlgs }
+export type KeySignMessageOptions = {
+  localKeyHandle: LocalKeyHandle
+  message: Uint8Array
+  sigType?: SigAlgs
+}
 export type KeyUnwrapKeyOptions = {
   localKeyHandle: LocalKeyHandle
   algorithm: KeyAlgs
@@ -146,7 +213,10 @@ export type ScanStartOptions = {
   limit?: number
 }
 
-export type SessionCloseOptions = { sessionHandle: SessionHandle; commit: boolean }
+export type SessionCloseOptions = {
+  sessionHandle: SessionHandle
+  commit: boolean
+}
 export type SessionCountOptions = {
   sessionHandle: SessionHandle
   category: string
@@ -173,7 +243,11 @@ export type SessionFetchAllKeysOptions = {
   tagFilter?: Record<string, unknown>
   limit?: number
 }
-export type SessionFetchKeyOptions = { sessionHandle: SessionHandle; name: string; forUpdate: boolean }
+export type SessionFetchKeyOptions = {
+  sessionHandle: SessionHandle
+  name: string
+  forUpdate: boolean
+}
 export type SessionInsertKeyOptions = {
   sessionHandle: SessionHandle
   localKeyHandle: LocalKeyHandle
@@ -187,8 +261,15 @@ export type SessionRemoveAllOptions = {
   category: string
   tagFilter?: Record<string, unknown>
 }
-export type SessionRemoveKeyOptions = { sessionHandle: SessionHandle; name: string }
-export type SessionStartOptions = { storeHandle: StoreHandle; profile?: string; asTransaction: boolean }
+export type SessionRemoveKeyOptions = {
+  sessionHandle: SessionHandle
+  name: string
+}
+export type SessionStartOptions = {
+  storeHandle: StoreHandle
+  profile?: string
+  asTransaction: boolean
+}
 export type SessionUpdateOptions = {
   sessionHandle: SessionHandle
   operation: number
@@ -214,12 +295,20 @@ export type StoreCopyToOptions = {
   passKey?: string
   recreate?: boolean
 }
-export type StoreCreateProfileOptions = { storeHandle: StoreHandle; profile?: string }
+export type StoreCreateProfileOptions = {
+  storeHandle: StoreHandle
+  profile?: string
+}
 export type StoreGenerateRawKeyOptions = { seed?: Uint8Array }
 export type StoreGetProfileNameOptions = { storeHandle: StoreHandle }
 export type StoreGetDefaultProfileOptions = { storeHandle: StoreHandle }
 export type StoreListProfilesOptions = { storeHandle: StoreHandle }
-export type StoreOpenOptions = { specUri: string; keyMethod?: string; passKey?: string; profile?: string }
+export type StoreOpenOptions = {
+  specUri: string
+  keyMethod?: string
+  passKey?: string
+  profile?: string
+}
 export type StoreProvisionOptions = {
   specUri: string
   keyMethod?: string
@@ -227,12 +316,27 @@ export type StoreProvisionOptions = {
   profile?: string
   recreate: boolean
 }
-export type StoreRekeyOptions = { storeHandle: StoreHandle; keyMethod?: string; passKey: string }
+export type StoreRekeyOptions = {
+  storeHandle: StoreHandle
+  keyMethod?: string
+  passKey: string
+}
 export type StoreRemoveOptions = { specUri: string }
-export type StoreRemoveProfileOptions = { storeHandle: StoreHandle; profile: string }
-export type StoreSetDefaultProfileOptions = { storeHandle: StoreHandle; profile: string }
+export type StoreRemoveProfileOptions = {
+  storeHandle: StoreHandle
+  profile: string
+}
+export type StoreSetDefaultProfileOptions = {
+  storeHandle: StoreHandle
+  profile: string
+}
 
-export type MigrateIndySdkOptions = { specUri: string; walletName: string; walletKey: string; kdfLevel: string }
+export type MigrateIndySdkOptions = {
+  specUri: string
+  walletName: string
+  walletKey: string
+  kdfLevel: string
+}
 
 export type AriesAskar = {
   version(): string

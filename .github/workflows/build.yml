@@ -396,6 +396,10 @@ jobs:
     name: Build library (iOS)
     needs: [checks]
     runs-on: macos-latest
+
+    env:
+      FEATURES: "mobile_secure_element"
+
     strategy:
       matrix:
         target: [aarch64-apple-ios, aarch64-apple-ios-sim, x86_64-apple-ios]
@@ -412,7 +416,7 @@ jobs:
 
       - name: Build
         run: |
-          cargo build --lib --release --target ${{matrix.target}}
+          cargo build --lib --release --target ${{matrix.target}} --features ${{ env.FEATURES }}
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -423,8 +427,10 @@ jobs:
   build-android:
     name: Build library (Android)
     needs: [checks]
+
     env:
       RUST_VERSION: "1.67"
+      FEATURES: "mobile_secure_element"
 
     runs-on: ubuntu-latest
 
@@ -461,7 +467,7 @@ jobs:
           if [ "${{ matrix.target }}" = "aarch64-linux-android" ]; then
             export CFLAGS="-D__ARM_ARCH=8"
           fi
-          cross build --lib --release --target ${{matrix.target}}
+          cross build --lib --release --target ${{matrix.target}} --features ${{ env.FEATURES }}
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4

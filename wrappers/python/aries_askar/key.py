@@ -1,10 +1,10 @@
 """Handling of Key instances."""
 
-from typing import Union
+from typing import Union, Optional, Sequence
 
 from . import bindings
 from .bindings import AeadParams, Encrypted, LocalKeyHandle
-from .types import KeyAlg, SeedMethod
+from .types import KeyAlg, KeyBackend, SeedMethod
 
 
 class Key:
@@ -15,8 +15,14 @@ class Key:
         self._handle = handle
 
     @classmethod
-    def generate(cls, alg: Union[str, KeyAlg], *, ephemeral: bool = False) -> "Key":
-        return cls(bindings.key_generate(alg, ephemeral))
+    def generate(
+        cls,
+        alg: Union[str, KeyAlg],
+        *,
+        key_backend: Optional[KeyBackend] = None,
+        ephemeral: bool = False,
+    ) -> "Key":
+        return cls(bindings.key_generate(alg, key_backend, ephemeral))
 
     @classmethod
     def from_seed(
@@ -39,6 +45,10 @@ class Key:
     @classmethod
     def from_jwk(cls, jwk: Union[dict, str, bytes]) -> "Key":
         return cls(bindings.key_from_jwk(jwk))
+
+    @classmethod
+    def get_supported_backends(cls) -> Sequence[str]:
+        return bindings.key_get_supported_backends()
 
     @property
     def handle(self) -> LocalKeyHandle:

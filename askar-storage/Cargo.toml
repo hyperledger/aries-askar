@@ -17,13 +17,13 @@ no-default-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [features]
-default = ["all_backends", "log"]
 all_backends = ["any", "postgres", "sqlite"]
 any = []
+default = ["all_backends", "log"]
 migration = ["dep:rmp-serde", "dep:sqlx", "sqlx?/macros"]
+pg_test = ["postgres"]
 postgres = ["dep:sqlx", "sqlx?/postgres", "sqlx?/tls-rustls"]
 sqlite = ["dep:sqlx", "sqlx?/sqlite"]
-pg_test = ["postgres"]
 
 [dependencies]
 arc-swap = "1.6"
@@ -50,16 +50,16 @@ uuid = { version = "1.2", features = ["v4"] }
 zeroize = "1.5"
 
 [dependencies.askar-crypto]
-version = "0.3"
-path = "../askar-crypto"
 default-features = false
 features = ["alloc", "argon2", "chacha", "std_rng"]
+path = "../askar-crypto"
+version = "0.3"
 
 [dependencies.sqlx]
-version = "0.7.3"
 default-features = false
 features = ["chrono", "runtime-tokio"]
 optional = true
+version = "0.7.3"
 
 [dev-dependencies]
 env_logger = "0.10"

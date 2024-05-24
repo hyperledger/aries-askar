@@ -1,6 +1,4 @@
-import { ariesAskar, AriesAskarError } from '@hyperledger/aries-askar-shared'
-
-import { KeyAlgs } from '../../aries-askar-shared'
+import { AriesAskarError, KeyAlgs, ariesAskar } from '@hyperledger/aries-askar-shared'
 
 import { setupWallet } from './utils'
 
@@ -10,7 +8,12 @@ describe('Error', () => {
   })
 
   test('set error code to 0 after correct call', () => {
-    expect(() => ariesAskar.keyGenerate({ algorithm: KeyAlgs.AesA128CbcHs256, ephemeral: true })).not.toThrowError()
+    expect(() =>
+      ariesAskar.keyGenerate({
+        algorithm: KeyAlgs.AesA128CbcHs256,
+        ephemeral: true,
+      })
+    ).not.toThrowError()
   })
 
   test('set error code to non 0 after incorrect call', () => {
