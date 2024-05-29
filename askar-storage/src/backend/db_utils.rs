@@ -550,6 +550,26 @@ pub fn decrypt_scan_batch(
     Ok(batch)
 }
 
+// pub fn decrypt_scan_batch(
+//     category: Option<String>,
+//     enc_rows: Vec<EncScanEntry>,  // Assuming these entries are now plain and not encrypted
+//     key: &ProfileKey,  // Key may still be used for other processing, if not, this parameter can be removed
+// ) -> Result<Vec<Entry>, Error> {
+//     let mut batch = Vec::with_capacity(enc_rows.len());
+//     for enc_entry in enc_rows {
+//         let entry = Entry {
+//             id: enc_entry.id,
+//             value: enc_entry.value,  // Assuming direct mapping is possible
+//             category: category.clone(),
+//             name: enc_entry.name,
+//             tags: enc_entry.tags,  // Directly using tags if they are stored as strings or similar
+//         };
+//         batch.push(entry);
+//     }
+//     Ok(batch)
+// }
+
+
 pub fn decrypt_scan_entry(
     category: Option<&str>,
     enc_entry: EncScanEntry,
@@ -609,10 +629,10 @@ pub fn prepare_tags(tags: &[EntryTag]) -> Result<Vec<EntryTag>, Error> {
     for tag in tags {
         result.push(match tag {
             EntryTag::Plaintext(name, value) => {
-                EntryTag::Plaintext(_prepare_string(name), value.clone())
+                EntryTag::Plaintext(name.clone(), value.clone())
             }
             EntryTag::Encrypted(name, value) => {
-                EntryTag::Encrypted(_prepare_string(name), _prepare_string(value))
+                EntryTag::Encrypted(name.clone(), value.clone())
             }
         });
     }

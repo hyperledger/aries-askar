@@ -1,0 +1,5 @@
+{
+  "dependencies": {
+    "@hyperledger/aries-askar-nodejs": "^0.2.1"
+  }
+}

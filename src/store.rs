@@ -353,19 +353,28 @@ impl Session {
         };
         let value = params.to_bytes()?;
         let mut ins_tags = Vec::with_capacity(10);
+    
+        // Store algorithm as plaintext
         let alg = key.algorithm().as_str();
         if !alg.is_empty() {
-            ins_tags.push(EntryTag::Encrypted("alg".to_string(), alg.to_string()));
+            ins_tags.push(EntryTag::Plaintext("alg".to_string(), alg.to_string()));
         }
+    
+        // Store thumbprints as plaintext
         let thumbs = key.to_jwk_thumbprints()?;
         for thumb in thumbs {
-            ins_tags.push(EntryTag::Encrypted("thumb".to_string(), thumb));
+            ins_tags.push(EntryTag::Plaintext("thumb".to_string(), thumb));
         }
+    
+        // Add user-defined tags as plaintext
         if let Some(tags) = tags {
             for t in tags {
+                // Assuming `map_ref` is applicable here to transform each tag
                 ins_tags.push(t.map_ref(|k, v| (format!("user:{}", k), v.to_string())));
             }
         }
+    
+        // Proceed to update the database with the new plaintext tags
         self.0
             .update(
                 EntryKind::Kms,
@@ -379,6 +388,7 @@ impl Session {
             .await?;
         Ok(())
     }
+    
 
     /// Fetch an existing key from the store
     ///
@@ -389,23 +399,42 @@ impl Session {
         name: &str,
         for_update: bool,
     ) -> Result<Option<KeyEntry>, Error> {
-        Ok(
-            if let Some(row) = self
-                .0
-                .fetch(
-                    EntryKind::Kms,
-                    KmsCategory::CryptoKey.as_str(),
-                    name,
-                    for_update,
-                )
-                .await?
-            {
-                Some(KeyEntry::from_entry(row)?)
-            } else {
-                None
+        println!("Fetching key for: {}", name);
+        let row_result = self.0.fetch(
+            EntryKind::Kms,
+            KmsCategory::CryptoKey.as_str(),
+            name,
+            for_update,
+        ).await;
+    
+        match row_result {
+            Ok(Some(row)) => {
+                println!("Key found, processing entry...");
+                // Assume KeyEntry::from_entry no longer needs to handle decryption
+                match KeyEntry::from_entry(row) {
+                    Ok(key_entry) => {
+                        println!("Key entry processed successfully.");
+                        Ok(Some(key_entry))
+                    },
+                    Err(e) => {
+                        println!("Failed to process key entry: {:?}", e);
+                        Err(e) // Note: Ensure this error is handled appropriately if it's still custom
+                    }
+                }
             },
-        )
+            Ok(None) => {
+                println!("No key found for name: {}", name);
+                Ok(None)
+            },
+            Err(e) => {
+                println!("Error fetching row for key: {:?}", e);
+                Err(e.into()) // Keep consistent error handling
+            }
+        }
     }
+    
+    
+    
 
     /// Retrieve all keys matching the given filters.
     pub async fn fetch_all_keys(

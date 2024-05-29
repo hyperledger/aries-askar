@@ -1,5 +1,5 @@
 {
-  "name": "@hyperledger/aries-askar-nodejs",
+  "name": "@digicred/aries-askar-nodejs",
   "version": "0.2.1",
   "license": "Apache-2.0",
   "description": "Nodejs wrapper for Aries Askar",

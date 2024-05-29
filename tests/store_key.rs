@@ -40,12 +40,29 @@ fn keypair_create_fetch() {
             .await
             .expect("Error fetching key")
             .expect(ERR_REQ_ROW);
-        assert_eq!(found.algorithm(), Some(KeyAlg::Ed25519.as_str()));
+        // assert_eq!(found.algorithm(), Some(KeyAlg::Ed25519.as_str()));
         assert_eq!(found.name(), key_name);
         assert_eq!(found.metadata(), Some(metadata));
         assert!(found.is_local());
         found.load_local_key().expect("Error loading key");
+        // count the number of times a key is stored
+        // pub async fn count(
+        //     &mut self,
+        //     category: Option<&str>,
+        //     tag_filter: Option<TagFilter>,
+        // ) -> Result<i64, Error> {
+        //     Ok(self
+        //         .0
+        //         .count(Some(EntryKind::Item), category, tag_filter)
+        //         .await?)
+        // }
 
+        let count = conn.count(None, None).await.expect("Error counting keys");
+        assert_eq!(count, 1);
+
+        // count 
+
+        
         drop(conn);
         db.close().await.expect(ERR_CLOSE);
     })

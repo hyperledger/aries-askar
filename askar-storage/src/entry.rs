@@ -159,6 +159,8 @@ impl EntryTag {
     }
 }
 
+
+
 impl Debug for EntryTag {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
@@ -297,6 +299,8 @@ impl TagFilter {
         self.query
     }
 }
+
+
 
 impl From<wql::Query> for TagFilter {
     fn from(query: wql::Query) -> Self {

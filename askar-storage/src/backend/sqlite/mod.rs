@@ -1,7 +1,9 @@
 use std::collections::BTreeMap;
 use std::fmt::{self, Debug, Formatter};
 use std::sync::Arc;
-
+use base64::{encode};
+use sqlx::Column;
+use sqlx::TypeInfo;
 use async_stream::try_stream;
 use futures_lite::{
     pin,
@@ -48,6 +50,22 @@ const FETCH_QUERY: &str = "SELECT i.id, i.value,
     FROM items i WHERE i.profile_id = ?1 AND i.kind = ?2
     AND i.category = ?3 AND i.name = ?4
     AND (i.expiry IS NULL OR i.expiry > DATETIME('now'))";
+const FETCH_QUERY_ALL: &str = "
+    SELECT *
+    FROM items i;
+    ";
+    
+    const COUNT_QUERY_WITH_TAGS: &str = "
+    SELECT COUNT(*)
+    FROM items i
+    JOIN items_tags it ON i.id = it.item_id
+    WHERE i.profile_id = ?1
+    AND (?2 IS NULL OR i.kind = ?2)
+    AND (?3 IS NULL OR i.category = ?3)
+    AND (i.expiry IS NULL OR i.expiry > DATETIME('now'))
+    AND (it.tag = ?4)";
+
+
 const INSERT_QUERY: &str =
     "INSERT OR IGNORE INTO items (profile_id, kind, category, name, value, expiry)
     VALUES (?1, ?2, ?3, ?4, ?5, ?6)";
@@ -304,34 +322,30 @@ impl Backend for SqliteBackend {
 }
 
 impl BackendSession for DbSession<Sqlite> {
+    
+
     fn count<'q>(
         &'q mut self,
         kind: Option<EntryKind>,
         category: Option<&'q str>,
         tag_filter: Option<TagFilter>,
     ) -> BoxFuture<'q, Result<i64, Error>> {
-        let enc_category = category.map(|c| ProfileKey::prepare_input(c.as_bytes()));
-
         Box::pin(async move {
-            let (profile_id, key) = acquire_key(&mut *self).await?;
+            let (profile_id, _key) = acquire_key(&mut *self).await?;
             let mut params = QueryParams::new();
             params.push(profile_id);
             params.push(kind.map(|k| k as i16));
-            let (enc_category, tag_filter) = unblock({
-                let params_len = params.len() + 1; // plus category
-                move || {
-                    Result::<_, Error>::Ok((
-                        enc_category
-                            .map(|c| key.encrypt_entry_category(c))
-                            .transpose()?,
-                        encode_tag_filter::<SqliteBackend>(tag_filter, &key, params_len)?,
-                    ))
-                }
-            })
-            .await?;
-            params.push(enc_category);
-            let query =
-                extend_query::<SqliteBackend>(COUNT_QUERY, &mut params, tag_filter, None, None)?;
+            params.push(category);
+    
+            let query = if let Some(tag_filter) = tag_filter {
+                let params_len = params.len();
+                let tag_filter_query = encode_tag_filter::<SqliteBackend>(Some(tag_filter), &_key, params_len)?;
+                extend_query::<SqliteBackend>(COUNT_QUERY_WITH_TAGS, &mut params, Some(tag_filter_query).expect("REASON"), None, None)?
+                
+            } else {
+                extend_query::<SqliteBackend>(COUNT_QUERY, &mut params, None, None, None)?
+            };
+    
             let mut active = acquire_session(&mut *self).await?;
             let count = sqlx::query_scalar_with(query.as_str(), params)
                 .fetch_one(active.connection_mut())
@@ -341,56 +355,348 @@ impl BackendSession for DbSession<Sqlite> {
         })
     }
 
-    fn fetch(
-        &mut self,
-        kind: EntryKind,
-        category: &str,
-        name: &str,
-        _for_update: bool,
-    ) -> BoxFuture<'_, Result<Option<Entry>, Error>> {
-        let category = category.to_string();
-        let name = name.to_string();
 
+    // vinay remove enc from here this stops the fetchkey
+    // fn fetch(
+    //     &mut self,
+    //     kind: EntryKind,
+    //     category: &str,
+    //     name: &str,
+    //     _for_update: bool,
+    // ) -> BoxFuture<'_, Result<Option<Entry>, Error>> {
+    //     let category = category.to_string();
+    //     let name = name.to_string();
+
+    //     Box::pin(async move {
+    //         let (profile_id, key) = acquire_key(&mut *self).await?;
+    //         let (enc_category, enc_name) = unblock({
+    //             let key = key.clone();
+    //             let category = ProfileKey::prepare_input(category.as_bytes());
+    //             let name = ProfileKey::prepare_input(name.as_bytes());
+    //             move || {
+    //                 Result::<_, Error>::Ok((
+    //                     key.encrypt_entry_category(category)?,
+    //                     key.encrypt_entry_name(name)?,
+    //                 ))
+    //             }
+    //         })
+    //         .await?;
+    //         let mut active = acquire_session(&mut *self).await?;
+    //         if let Some(row) = sqlx::query(FETCH_QUERY)
+    //             .bind(profile_id)
+    //             .bind(kind as i16)
+    //             .bind(enc_category)
+    //             .bind(enc_name)
+    //             .fetch_optional(active.connection_mut())
+    //             .await
+    //             .map_err(err_map!(Backend, "Error performing fetch query"))?
+    //         {
+    //             let value = row.try_get(1)?;
+    //             let tags = row.try_get(2)?;
+    //             let (category, name, value, tags) = unblock(move || {
+    //                 let value = key.decrypt_entry_value(category.as_ref(), name.as_ref(), value)?;
+    //                 let enc_tags = decode_tags(tags)
+    //                     .map_err(|_| err_msg!(Unexpected, "Error decoding entry tags"))?;
+    //                 let tags = key.decrypt_entry_tags(enc_tags)?;
+    //                 Result::<_, Error>::Ok((category, name, value, tags))
+    //             })
+    //             .await?;
+    //             Ok(Some(Entry::new(kind, category, name, value, tags)))
+    //         } else {
+    //             Ok(None)
+    //         }
+    //     })
+    // }
+
+    // use serde_json::Value;
+    // fn fetch<'a>(
+    //     &'a mut self,
+    //     kind: EntryKind,
+    //     category: &'a str,
+    //     name: &'a str,
+    //     _for_update: bool,
+    // ) -> BoxFuture<'a, Result<Option<Entry>, Error>> {
+    //     let category_bytes = category.as_bytes();
+    //     let name_bytes = name.as_bytes();
+    //     Box::pin(async move {
+    //         println!("Starting fetch operation...");
+    //         println!("Category: {}", category);
+    //         println!("Name: {}", name);
+    //         println!("Kind: {:?}", kind);
+    //         let mut active = acquire_session(&mut *self).await?;
+    //         println!("Session acquired.");
+            
+    //         let rows = sqlx::query(FETCH_QUERY_ALL)
+    //         .fetch_all(active.connection_mut())
+    //         .await
+    //         .map_err(err_map!(Backend, "Error performing fetch all query"))?;
+
+    //     println!("Fetched rows count: {}", rows.len());
+    //     for (index, row) in rows.iter().enumerate() {
+    //         let id: i32 = row.try_get("id").unwrap_or(-1);
+    //         let value_bytes: Vec<u8> = row.try_get("value").unwrap_or_else(|_| Vec::new());
+    //         let value_string = String::from_utf8(value_bytes.clone())
+    //                             .unwrap_or_else(|_| encode(&value_bytes)); // Convert non-UTF-8 data to Base64
+
+    //         let category: String = row.try_get("category").unwrap_or("N/A".to_string());
+    //         let name: String = row.try_get("name").unwrap_or("N/A".to_string());
+    //         let tags: String = row.try_get("tags").unwrap_or("N/A".to_string());
+    //         let profile = row.try_get("profile_id").unwrap_or(-1);
+
+    //         println!("Row {}: ID: {}, Value: '{}', Category: '{}', Name: '{}', Tags: '{}', Profile ID: {}", 
+    //                  index, id, value_string, category, name, tags, profile);
+    //     }
+
+    // //     const FETCH_QUERY: &str = "SELECT i.id, i.value,
+    // // (SELECT GROUP_CONCAT(it.plaintext || ':' || HEX(it.name) || ':' || HEX(it.value))
+    // //     FROM items_tags it WHERE it.item_id = i.id) AS tags
+    // // FROM items i WHERE i.profile_id = ?1 AND i.kind = ?2
+    // // AND i.category = ?3 AND i.name = ?4
+    // // AND (i.expiry IS NULL OR i.expiry > DATETIME('now'))";
+    //     #[derive(sqlx::FromRow, Debug)]
+    //     struct Entry {
+    //         id: i64,
+    //         value: Vec<u8>, // Assuming binary data; adjust as needed.
+    //         category: String,
+    //         name: String,
+    //         tags: String, // Assuming tags are aggregated into a single string.
+    //     }
+
+    //     println!("Fetching row with kind: {:?}, category: '{}', name: '{}'", kind as i16, category, name);
+    //         // Now, try to fetch a specific optional row using the correct type
+    //         if let Some(row) = sqlx::query_as::<_, Entry>(FETCH_QUERY)
+    //             .bind(kind as i16)
+    //             .bind(category)
+    //             .bind(name)
+    //             .fetch_optional(active.connection_mut())
+    //             .await
+    //             .map_err(err_map!(Backend, "Error performing fetch query"))?
+    //         {
+    //             let value = row.try_get::<i32, _>(0)?;  // Correct type for value
+    //             let tags_value = row.try_get::<i32, _>(1)?;  // Correct type for tags
+    
+    //             println!("Fetched value: {}", value);
+    //             println!("Fetched tags value: {}", tags_value);
+    
+    //             // Convert integers to strings or handle appropriately
+    //             let value_bytes = value.to_string().into_bytes();
+    //             let tags_string = format!("{}", tags_value);
+    
+    //             let tags = if !tags_string.is_empty() {
+    //                 vec![EntryTag::Plaintext(tags_string.clone(), tags_string)]
+    //             } else {
+    //                 vec![]
+    //             };
+        
+    //             println!("Entry created with kind: {:?}, category: '{}', name: '{}', tags count: {}", kind, category, name, tags.len());
+    //             Ok(Some(Entry::new(kind, category.to_string(), name.to_string(), value_bytes, tags)))
+    //         } else {
+    //             println!("No data found for category '{}' and name '{}'", category, name);
+    //             Ok(None)
+    //         }
+    //     })
+    // }
+
+
+    fn fetch<'a>(
+        &'a mut self,
+        kind: EntryKind,
+        category: &'a str,
+        name: &'a str,
+        _for_update: bool,
+    ) -> BoxFuture<'a, Result<Option<Entry>, Error>> {
         Box::pin(async move {
+            println!("Starting fetch operation...");
+            println!("Category: {}", category);
+            println!("Name: {}", name);
+            println!("Kind: {:?}", kind);
             let (profile_id, key) = acquire_key(&mut *self).await?;
-            let (enc_category, enc_name) = unblock({
-                let key = key.clone();
-                let category = ProfileKey::prepare_input(category.as_bytes());
-                let name = ProfileKey::prepare_input(name.as_bytes());
-                move || {
-                    Result::<_, Error>::Ok((
-                        key.encrypt_entry_category(category)?,
-                        key.encrypt_entry_name(name)?,
-                    ))
-                }
-            })
-            .await?;
             let mut active = acquire_session(&mut *self).await?;
+            println!("Session acquired.");
+    
+            // Assuming FETCH_QUERY_ALL fetches everything without filters
+            // let rows = sqlx::query(FETCH_QUERY_ALL)
+            //     .fetch_all(active.connection_mut())
+            //     .await
+            //     .map_err(err_map!(Backend, "Error performing fetch all query"))?;
+    
+            // println!("Fetched rows count: {}", rows.len());
+            // for (index, row) in rows.iter().enumerate() {
+            //     let id: i32 = row.try_get("id").unwrap_or(-1);
+            //     let value_bytes: Vec<u8> = row.try_get("value").unwrap_or_else(|_| Vec::new());
+            //     let value_string = String::from_utf8(value_bytes.clone())
+            //                         .unwrap_or_else(|_| encode(&value_bytes)); // Convert non-UTF-8 data to Base64
+            //     let category: String = row.try_get("category").unwrap_or("N/A".to_string());
+            //     let name: String = row.try_get("name").unwrap_or("N/A".to_string());
+            //     let tags: String = row.try_get("tags").unwrap_or("N/A".to_string());
+            //     let profile_id: i32 = row.try_get("profile_id").unwrap_or(-1);
+    
+            //     println!("Row {}: ID: {}, Value: '{}', Category: '{}', Name: '{}', Tags: '{}', Profile ID: {}", 
+            //              index, id, value_string, category, name, tags, profile_id);
+            // }
+    //         const FETCH_QUERY: &str = "SELECT i.id, i.value,
+    // (SELECT GROUP_CONCAT(it.plaintext || ':' || HEX(it.name) || ':' || HEX(it.value))
+    //     FROM items_tags it WHERE it.item_id = i.id) AS tags
+    // FROM items i WHERE i.profile_id = ?1 AND i.kind = ?2
+    // AND i.category = ?3 AND i.name = ?4
+    // AND (i.expiry IS NULL OR i.expiry > DATETIME('now'))";
+            // Now, try to fetch a specific optional row using the correct type
+            println!("Fetching row with kind: {:?}, category: '{}', name: '{}'", kind as i16, category, name);
             if let Some(row) = sqlx::query(FETCH_QUERY)
                 .bind(profile_id)
                 .bind(kind as i16)
-                .bind(enc_category)
-                .bind(enc_name)
+                .bind(category)
+                .bind(name)
                 .fetch_optional(active.connection_mut())
                 .await
                 .map_err(err_map!(Backend, "Error performing fetch query"))?
             {
-                let value = row.try_get(1)?;
-                let tags = row.try_get(2)?;
-                let (category, name, value, tags) = unblock(move || {
-                    let value = key.decrypt_entry_value(category.as_ref(), name.as_ref(), value)?;
-                    let enc_tags = decode_tags(tags)
-                        .map_err(|_| err_msg!(Unexpected, "Error decoding entry tags"))?;
-                    let tags = key.decrypt_entry_tags(enc_tags)?;
-                    Result::<_, Error>::Ok((category, name, value, tags))
-                })
-                .await?;
-                Ok(Some(Entry::new(kind, category, name, value, tags)))
+
+                // print whole row
+                for (index, column) in row.columns().iter().enumerate() {
+                    let column_name = column.name();
+                    let value = match column.type_info().name() {
+                        "INTEGER" => {
+                            let val: Result<i64, _> = row.try_get(index);
+                            match val {
+                                Ok(v) => format!("{}", v),
+                                Err(_) => "<unreadable>".to_string(),
+                            }
+                        },
+                        "TEXT" => {
+                            let val: Result<String, _> = row.try_get(index);
+                            match val {
+                                Ok(v) => v,
+                                Err(_) => "<unreadable>".to_string(),
+                            }
+                        },
+                        "BLOB" => {
+                            let val: Result<Vec<u8>, _> = row.try_get(index);
+                            match val {
+                                Ok(v) => format!("{:?}", v),
+                                Err(_) => "<unreadable>".to_string(),
+                            }
+                        },
+                        "NULL" => "NULL".to_string(),
+                        "REAL" => {
+                            let val: Result<f64, _> = row.try_get(index);
+                            match val {
+                                Ok(v) => format!("{}", v),
+                                Err(_) => "<unreadable>".to_string(),
+                            }
+                        },
+                        "BOOLEAN" => {
+                            let val: Result<bool, _> = row.try_get(index);
+                            match val {
+                                Ok(v) => format!("{}", v),
+                                Err(_) => "<unreadable>".to_string(),
+                            }
+                        },
+                        "DATETIME" => {
+                            let val: Result<String, _> = row.try_get(index);
+                            match val {
+                                Ok(v) => v,
+                                Err(_) => "<unreadable>".to_string(),
+                            }
+                        },
+                        "NUMERIC" => {
+                            let val: Result<String, _> = row.try_get(index);
+                            match val {
+                                Ok(v) => v,
+                                Err(_) => "<unreadable>".to_string(),
+                            }
+                        },
+                        "DECIMAL" => {
+                            let val: Result<String, _> = row.try_get(index);
+                            match val {
+                                Ok(v) => v,
+                                Err(_) => "<unreadable>".to_string(),
+                            }
+                        },
+                        "VARCHAR" => {
+                            let val: Result<String, _> = row.try_get(index);
+                            match val {
+                                Ok(v) => v,
+                                Err(_) => "<unreadable>".to_string(),
+                            }
+                        },
+                        "CHAR" => {
+                            let val: Result<String, _> = row.try_get(index);
+                            match val {
+                                Ok(v) => v,
+                                Err(_) => "<unreadable>".to_string(),
+                            }
+                        },
+                        "NVARCHAR" => {
+                            let val: Result<String, _> = row.try_get(index);
+                            match val {
+                                Ok(v) => v,
+                                Err(_) => "<unreadable>".to_string(),
+                            }
+                        },
+                        "NCHAR" => {
+                            let val: Result<String, _> = row.try_get(index);
+                            match val {
+                                Ok(v) => v,
+                                Err(_) => "<unreadable>".to_string(),
+                            }
+                        },
+                        "NVARCHAR2" => {
+                            let val: Result<String, _> = row.try_get(index);
+                            match val {
+                                Ok(v) => v,
+                                Err(_) => "<unreadable>".to_string(),
+                            }
+                        },
+                        "NCHAR2" => {
+                            let val: Result<String, _> = row.try_get(index);
+                            match val {
+                                Ok(v) => v,
+                                Err(_) => "<unreadable>".to_string(),
+                            }
+                        },
+
+
+
+
+                        _ => "<unsupported type>".to_string(),
+                    };
+                    println!("{}: {}", column_name, value);
+                }
+                let id: i64 = row.try_get("id").unwrap_or(-1);
+                let value_bytes: Vec<u8> = row.try_get("value").unwrap_or_else(|_| Vec::new());
+                let value_string = String::from_utf8(value_bytes.clone())
+                                    .unwrap_or_else(|_| encode(&value_bytes));
+                let tags_string: String = row.try_get("tags").unwrap_or_default();
+                // let mut tags: Vec<EntryTag> = tags_string.split(',')
+                //     .map(|s| EntryTag::from(s.trim()))
+                //     .collect();
+                
+                // // Add dummy tags
+                // tags.push(EntryTag { tag: "DummyTag1".to_string() });
+                // tags.push(EntryTag { tag: "DummyTag2".to_string() });
+    
+                println!("Fetched value: '{}'", value_string);
+                println!("Fetched tags: '{}'", tags_string);
+    
+                // Construct your entry directly here
+                let entry = Entry { // Define this inline if Entry is defined elsewhere
+                    kind:kind,
+                    value: value_bytes.into(),
+                    category: category.to_string(),
+                    name: name.to_string(),
+                    tags: vec![],
+                };
+    
+                println!("Entry created with kind: {:?}, category: '{}', name: '{}'", kind, category, name);
+                Ok(Some(entry))
             } else {
+                println!("No data found for category '{}' and name '{}'", category, name);
                 Ok(None)
             }
         })
     }
+    
 
     fn fetch_all<'q>(
         &'q mut self,
@@ -423,6 +729,7 @@ impl BackendSession for DbSession<Sqlite> {
         })
     }
 
+
     fn remove_all<'q>(
         &'q mut self,
         kind: Option<EntryKind>,
@@ -436,23 +743,33 @@ impl BackendSession for DbSession<Sqlite> {
             let mut params = QueryParams::new();
             params.push(profile_id);
             params.push(kind.map(|k| k as i16));
-            let (enc_category, tag_filter) = unblock({
-                let params_len = params.len() + 1; // plus category
-                move || {
-                    Result::<_, Error>::Ok((
-                        enc_category
-                            .map(|c| key.encrypt_entry_category(c))
-                            .transpose()?,
-                        encode_tag_filter::<SqliteBackend>(tag_filter, &key, params_len)?,
-                    ))
-                }
-            })
-            .await?;
-            params.push(enc_category);
+            params.push(category);
+
+            let params_len = params.len();
+            let tag_filter = if let Some(tf) = tag_filter {
+                encode_tag_filter::<SqliteBackend>(Some(tf), &key, params_len)?
+                
+            } else {
+                None
+            };
+            // let (enc_category, tag_filter) = unblock({
+            //     let params_len = params.len() + 1; // plus category
+            //     move || {
+            //         Result::<_, Error>::Ok((
+            //             enc_category
+            //                 .map(|c| key.encrypt_entry_category(c))
+            //                 .transpose()?,
+            //             encode_tag_filter::<SqliteBackend>(tag_filter, &key, params_len)?,
+            //         ))
+            //     }
+            // })
+            // .await?;
+            // params.push(enc_category);
+            // params.push(tag_filter);
             let query = extend_query::<SqliteBackend>(
                 DELETE_ALL_QUERY,
                 &mut params,
-                tag_filter,
+                None,
                 None,
                 None,
             )?;
@@ -466,6 +783,41 @@ impl BackendSession for DbSession<Sqlite> {
         })
     }
 
+    // fn remove_all<'q>(
+    //     &'q mut self,
+    //     kind: Option<EntryKind>,
+    //     category: Option<&'q str>,
+    //     tag_filter: Option<TagFilter>,
+    // ) -> BoxFuture<'q, Result<i64, Error>> {
+    //     Box::pin(async move {
+    //         let mut params = QueryParams::new();
+    //         params.push(kind.map(|k| k as i16));
+    //         params.push(category);  // Directly pushing the category string
+    //         let (profile_id, key) = acquire_key(&mut *self).await?;
+    //         let tag_filter = if let Some(tf) = tag_filter {
+    //             encode_tag_filter::<SqliteBackend>(Som(tf), &key,params.len())? // Adjust if necessary
+    //         } else {
+    //             None
+    //         };
+    //         params.push(tag_filter);
+    
+    //         let query = extend_query::<SqliteBackend>(
+    //             DELETE_ALL_QUERY,
+    //             &mut params,
+    //             None,
+    //             None,
+    //             None,
+    //         )?;
+    
+    //         let mut active = acquire_session(&mut *self).await?;
+    //         let removed = sqlx::query_with(query.as_str(), params)
+    //             .execute(active.connection_mut())
+    //             .await?
+    //             .rows_affected();
+    //         Ok(removed as i64)
+    //     })
+    // }
+
     fn update<'q>(
         &'q mut self,
         kind: EntryKind,
@@ -476,60 +828,79 @@ impl BackendSession for DbSession<Sqlite> {
         tags: Option<&'q [EntryTag]>,
         expiry_ms: Option<i64>,
     ) -> BoxFuture<'q, Result<(), Error>> {
-        let category = ProfileKey::prepare_input(category.as_bytes());
-        let name = ProfileKey::prepare_input(name.as_bytes());
-
+        // let category_bytes = category.as_bytes();
+        // let name_bytes = name;
+    
+        println!("Starting update operation: {:?}", operation);
+        println!("Category: {}, Name: {}", category, name);
+    
         match operation {
-            op @ EntryOperation::Insert | op @ EntryOperation::Replace => {
-                let value = ProfileKey::prepare_input(value.unwrap_or_default());
-                let tags = tags.map(prepare_tags);
+            EntryOperation::Insert | EntryOperation::Replace => {
+                let value = value.unwrap_or_default();
+                println!("Value length: {}", value.len());
                 Box::pin(async move {
-                    let (_, key) = acquire_key(&mut *self).await?;
-                    let (enc_category, enc_name, enc_value, enc_tags) = unblock(move || {
-                        let enc_value =
-                            key.encrypt_entry_value(category.as_ref(), name.as_ref(), value)?;
-                        Result::<_, Error>::Ok((
-                            key.encrypt_entry_category(category)?,
-                            key.encrypt_entry_name(name)?,
-                            enc_value,
-                            tags.transpose()?
-                                .map(|t| key.encrypt_entry_tags(t))
-                                .transpose()?,
-                        ))
-                    })
-                    .await?;
+                    let tags = match tags.map(prepare_tags).transpose() {
+                        Ok(value) => {
+                            println!("Tags prepared successfully.");
+                            value
+                        },
+                        Err(e) => {
+                            println!("Failed to prepare tags: {:?}", e);
+                            return Err(e);
+                        },
+                    };
+    
+                    println!("Acquiring session...");
                     let mut active = acquire_session(&mut *self).await?;
                     let mut txn = active.as_transaction().await?;
-                    perform_insert(
+                    println!("Session and transaction acquired, performing insert...");
+                    // print category_bytes, name_bytes, value, tags, expiry_ms, operation == EntryOperation::Insert
+                    println!("Category bytes: {:?}", category);
+                    println!("Name bytes: {:?}", name);
+                    // print tags 
+                    println!("Tags: {:?}", tags);
+                    match perform_insert(
                         &mut txn,
                         kind,
-                        &enc_category,
-                        &enc_name,
-                        &enc_value,
-                        enc_tags,
+                        category,
+                        name,
+                        value,
+                        tags,  
                         expiry_ms,
-                        op == EntryOperation::Insert,
-                    )
-                    .await?;
+                        operation == EntryOperation::Insert,
+                    ).await {
+                        Ok(_) => println!("Insert operation successful."),
+                        Err(e) => println!("Insert operation failed: {:?}", e),
+                    }
                     txn.commit().await?;
+                    println!("Transaction committed.");
                     Ok(())
                 })
             }
-
             EntryOperation::Remove => Box::pin(async move {
-                let (_, key) = acquire_key(&mut *self).await?;
-                let (enc_category, enc_name) = unblock(move || {
-                    Result::<_, Error>::Ok((
-                        key.encrypt_entry_category(category)?,
-                        key.encrypt_entry_name(name)?,
-                    ))
-                })
-                .await?;
-                let mut active = acquire_session(&mut *self).await?;
-                perform_remove(&mut active, kind, &enc_category, &enc_name, false).await
-            }),
+                println!("Acquiring session for remove operation...");
+                let mut active = match acquire_session(&mut *self).await {
+                    Ok(session) => session,
+                    Err(e) => return Err(e), // Propagate error
+                };
+                println!("Session acquired, performing remove...");
+                match perform_remove(&mut active, kind, category, name, false).await {
+                    Ok(_) => {
+                        println!("Remove operation successful.");
+                        Ok(()) // Return Ok for success
+                    },
+                    Err(e) => {
+                        println!("Remove operation failed: {:?}", e);
+                        Err(e) // Propagate error
+                    },
+                }
+            })
+            ,
         }
     }
+    
+    
+    
 
     fn ping(&mut self) -> BoxFuture<'_, Result<(), Error>> {
         Box::pin(async move {
@@ -613,10 +984,10 @@ async fn resolve_profile_key(
 async fn perform_insert(
     active: &mut DbSessionTxn<'_, Sqlite>,
     kind: EntryKind,
-    enc_category: &[u8],
-    enc_name: &[u8],
+    enc_category: &str,
+    enc_name: &str,
     enc_value: &[u8],
-    enc_tags: Option<Vec<EncEntryTag>>,
+    enc_tags: Option<Vec<EntryTag>>,
     expiry_ms: Option<i64>,
     new_row: bool,
 ) -> Result<(), Error> {
@@ -655,26 +1026,26 @@ async fn perform_insert(
             .map_err(err_map!(Backend, "Error removing existing entry tags"))?;
         row_id
     };
-    if let Some(tags) = enc_tags {
-        for tag in tags {
-            sqlx::query(TAG_INSERT_QUERY)
-                .bind(row_id)
-                .bind(&tag.name)
-                .bind(&tag.value)
-                .bind(tag.plaintext as i16)
-                .execute(active.connection_mut())
-                .await
-                .map_err(err_map!(Backend, "Error inserting entry tags"))?;
-        }
-    }
+    // if let Some(tags) = enc_tags {
+    //     for tag in tags {
+    //         sqlx::query(TAG_INSERT_QUERY)
+    //             .bind(row_id)
+    //             .bind("tag")
+    //             .bind("tag")
+    //             .bind(true as i16)
+    //             .execute(active.connection_mut())
+    //             .await
+    //             .map_err(err_map!(Backend, "Error inserting entry tags"))?;
+    //     }
+    // }
     Ok(())
 }
 
 async fn perform_remove<'q>(
     active: &mut DbSessionActive<'q, Sqlite>,
     kind: EntryKind,
-    enc_category: &[u8],
-    enc_name: &[u8],
+    enc_category: &str,
+    enc_name: &str,
     ignore_error: bool,
 ) -> Result<(), Error> {
     trace!("Remove entry");

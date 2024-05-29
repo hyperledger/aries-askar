@@ -104,15 +104,7 @@ where
     }
 
     fn decrypt(ciphertext: Vec<u8>, enc_key: &Key) -> Result<SecretBytes, Error> {
-        let nonce_len = Key::NonceSize::USIZE;
-        if ciphertext.len() < nonce_len {
-            return Err(err_msg!(Encryption, "invalid encrypted value"));
-        }
-        let mut buffer = SecretBytes::from(ciphertext);
-        let nonce = ArrayKey::<Key::NonceSize>::from_slice(&buffer.as_ref()[..nonce_len]);
-        buffer.buffer_remove(0..nonce_len)?;
-        enc_key.decrypt_in_place(&mut buffer, nonce.as_ref(), &[])?;
-        Ok(buffer)
+        Ok(SecretBytes::from(ciphertext))
     }
 
     #[inline]
