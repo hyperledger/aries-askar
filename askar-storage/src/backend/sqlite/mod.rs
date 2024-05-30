@@ -39,7 +39,7 @@ const COUNT_QUERY: &str = "SELECT COUNT(*) FROM items i
     WHERE profile_id = ?1
     AND (kind = ?2 OR ?2 IS NULL)
     AND (category = ?3 OR ?3 IS NULL)
-    AND (expiry IS NULL OR expiry > DATETIME('now'))";
+    AND (expiry IS NULL OR DATETIME(expiry) > DATETIME('now'))";
 const DELETE_QUERY: &str = "DELETE FROM items
     WHERE profile_id = ?1 AND kind = ?2 AND category = ?3 AND name = ?4";
 const FETCH_QUERY: &str = "SELECT i.id, i.value,
@@ -47,7 +47,7 @@ const FETCH_QUERY: &str = "SELECT i.id, i.value,
         FROM items_tags it WHERE it.item_id = i.id) AS tags
     FROM items i WHERE i.profile_id = ?1 AND i.kind = ?2
     AND i.category = ?3 AND i.name = ?4
-    AND (i.expiry IS NULL OR i.expiry > DATETIME('now'))";
+    AND (i.expiry IS NULL OR DATETIME(i.expiry) > DATETIME('now'))";
 const INSERT_QUERY: &str =
     "INSERT OR IGNORE INTO items (profile_id, kind, category, name, value, expiry)
     VALUES (?1, ?2, ?3, ?4, ?5, ?6)";
@@ -59,7 +59,7 @@ const SCAN_QUERY: &str = "SELECT i.id, i.kind, i.category, i.name, i.value,
     FROM items i WHERE i.profile_id = ?1
     AND (i.kind = ?2 OR ?2 IS NULL)
     AND (i.category = ?3 OR ?3 IS NULL)
-    AND (i.expiry IS NULL OR i.expiry > DATETIME('now'))";
+    AND (i.expiry IS NULL OR DATETIME(i.expiry) > DATETIME('now'))";
 const DELETE_ALL_QUERY: &str = "DELETE FROM items AS i
     WHERE i.profile_id = ?1
     AND (i.kind = ?2 OR ?2 IS NULL)
@@ -763,7 +763,7 @@ mod tests {
                 .provision(StoreKeyMethod::RawKey, key, None, false)
                 .await?;
             let ts = expiry_timestamp(1000).unwrap();
-            let check = sqlx::query("SELECT datetime('now'), ?1, ?1 > datetime('now')")
+            let check = sqlx::query("SELECT datetime('now'), ?1, datetime(?1) > datetime('now')")
                 .bind(ts)
                 .fetch_one(&db.conn_pool)
                 .await?;
@@ -772,6 +772,29 @@ mod tests {
             let cmp: bool = check.try_get(2)?;
             if !cmp {
                 panic!("now ({}) > expiry timestamp ({})", now, cmp_ts);
+            }
+            Result::<_, Error>::Ok(())
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn sqlite_check_expiry_timestamp_expired() {
+        block_on(async {
+            let key = generate_raw_store_key(None)?;
+            let db = SqliteStoreOptions::in_memory()
+                .provision(StoreKeyMethod::RawKey, key, None, false)
+                .await?;
+            let ts = expiry_timestamp(-1000).unwrap(); // put it to be already expired
+            let check = sqlx::query("SELECT datetime('now'), ?1, datetime(?1) > datetime('now')")
+                .bind(ts)
+                .fetch_one(&db.conn_pool)
+                .await?;
+            let now: String = check.try_get(0)?;
+            let cmp_ts: String = check.try_get(1)?;
+            let cmp: bool = check.try_get(2)?;
+            if cmp {
+                panic!("now ({}) < expiry timestamp ({})", now, cmp_ts);
             }
             Result::<_, Error>::Ok(())
         })
