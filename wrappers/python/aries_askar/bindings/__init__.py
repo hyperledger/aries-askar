@@ -1,7 +1,7 @@
 """Low-level interaction with the aries-askar library."""
 
 import asyncio
-import json
+import orjson
 import logging
 
 from ctypes import POINTER, byref, c_int8, c_int32, c_int64
@@ -605,7 +605,7 @@ def key_get_secret_bytes(handle: LocalKeyHandle) -> ByteBuffer:
 def key_from_jwk(jwk: Union[dict, str, bytes]) -> LocalKeyHandle:
     handle = LocalKeyHandle()
     if isinstance(jwk, dict):
-        jwk = json.dumps(jwk)
+        jwk = orjson.dumps(jwk)
     invoke(
         "askar_key_from_jwk",
         (FfiByteBuffer, POINTER(LocalKeyHandle)),

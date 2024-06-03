@@ -1,6 +1,6 @@
 """Handling of Store instances."""
 
-import json
+import orjson
 
 from typing import Optional, Sequence, Union
 
@@ -52,7 +52,7 @@ class Entry:
     @property
     def value_json(self) -> dict:
         """Accessor for the entry value as JSON."""
-        return json.loads(self.value)
+        return orjson.loads(self.value)
 
     @cached_property
     def tags(self) -> dict:
@@ -580,7 +580,7 @@ class Session:
         if not self._handle:
             raise AskarError(AskarErrorCode.WRAPPER, "Cannot update closed session")
         if value is None and value_json is not None:
-            value = json.dumps(value_json)
+            value = orjson.dumps(value_json)
         await bindings.session_update(
             self._handle, EntryOperation.INSERT, category, name, value, tags, expiry_ms
         )
@@ -598,7 +598,7 @@ class Session:
         if not self._handle:
             raise AskarError(AskarErrorCode.WRAPPER, "Cannot update closed session")
         if value is None and value_json is not None:
-            value = json.dumps(value_json)
+            value = orjson.dumps(value_json)
         await bindings.session_update(
             self._handle, EntryOperation.REPLACE, category, name, value, tags, expiry_ms
         )

@@ -1,6 +1,6 @@
 import asyncio
 import indy
-import json
+import orjson
 import time
 
 PERF_ROWS = 10000
@@ -33,8 +33,8 @@ async def perf_test():
             "admin_password": "pgpass",
         }
 
-    config = json.dumps(wallet_config)
-    creds = json.dumps(wallet_creds)
+    config = orjson.dumps(wallet_config).decode()
+    creds = orjson.dumps(wallet_creds).decode()
 
     try:
         await indy.wallet.delete_wallet(config, creds)
@@ -47,7 +47,7 @@ async def perf_test():
 
     insert_start = time.perf_counter()
     for idx in range(PERF_ROWS):
-        tags_json = json.dumps({"~plaintag": "a", "enctag": "b"})
+        tags_json = orjson.dumps({"~plaintag": "a", "enctag": "b"}).decode()
         await indy.non_secrets.add_wallet_record(
             handle, "category", f"name-{idx}", "value", tags_json
         )
@@ -56,19 +56,19 @@ async def perf_test():
 
     rc = 0
     tags = 0
-    options_json = json.dumps(
+    options_json = orjson.dumps(
         {
             "retrieveType": True,
             "retrieveValue": True,
             "retrieveTags": True,
         }
-    )
+    ).decode()
     fetch_start = time.perf_counter()
     for idx in range(PERF_ROWS):
         result_json = await indy.non_secrets.get_wallet_record(
             handle, "category", f"name-{idx}", options_json
         )
-        result = json.loads(result_json)
+        result = orjson.loads(result_json)
         rc += 1
         tags += len(result["tags"])
     dur = time.perf_counter() - fetch_start
@@ -76,7 +76,7 @@ async def perf_test():
 
     rc = 0
     tags = 0
-    options_json = json.dumps(
+    options_json = orjson.dumps(
         {
             "retrieveRecords": True,
             "retrieveTotalCount": False,
@@ -84,7 +84,7 @@ async def perf_test():
             "retrieveValue": True,
             "retrieveTags": True,
         }
-    )
+    ).decode()
     scan_start = time.perf_counter()
     search_handle = await indy.non_secrets.open_wallet_search(
         handle, "category", "{}", options_json
@@ -93,7 +93,7 @@ async def perf_test():
         result_json = await indy.non_secrets.fetch_wallet_search_next_records(
             handle, search_handle, 20
         )
-        results = json.loads(result_json)
+        results = orjson.loads(result_json)
         if results["records"]:
             for row in results["records"]:
                 rc += 1

@@ -1,4 +1,4 @@
-import json
+import orjson
 
 from aries_askar.types import KeyBackend
 import pytest
@@ -79,11 +79,11 @@ def test_ed25519():
     kex = x25519_key.key_exchange(KeyAlg.XC20P, x25519_key_2)
     assert isinstance(kex, Key)
 
-    jwk = json.loads(key.get_jwk_public())
+    jwk = orjson.loads(key.get_jwk_public())
     assert jwk["kty"] == "OKP"
     assert jwk["crv"] == "Ed25519"
 
-    jwk = json.loads(key.get_jwk_secret())
+    jwk = orjson.loads(key.get_jwk_secret())
     assert jwk["kty"] == "OKP"
     assert jwk["crv"] == "Ed25519"
 
@@ -99,13 +99,13 @@ def test_ec_curves(key_alg: KeyAlg):
     sig = key.sign_message(message)
     assert key.verify_signature(message, sig)
 
-    jwk = json.loads(key.get_jwk_public())
+    jwk = orjson.loads(key.get_jwk_public())
     assert jwk["kty"] == "EC"
     assert jwk["crv"]
     assert jwk["x"]
     assert jwk["y"]
 
-    jwk = json.loads(key.get_jwk_secret())
+    jwk = orjson.loads(key.get_jwk_secret())
     assert jwk["kty"] == "EC"
     assert jwk["crv"]
     assert jwk["x"]

@@ -1,7 +1,7 @@
 """Library instance and allocated buffer handling."""
 
 import asyncio
-import json
+import orjson
 import itertools
 import logging
 import os
@@ -280,8 +280,8 @@ class LibLoad:
         )
         if not method(byref(err_json)):
             try:
-                msg = json.loads(err_json.value)
-            except json.JSONDecodeError:
+                msg = orjson.loads(err_json.value)
+            except orjson.JSONDecodeError:
                 LOGGER.warning("JSON decode error for askar_get_current_error")
                 msg = None
             if msg and "message" in msg and "code" in msg:
@@ -540,7 +540,7 @@ class FfiJson:
         if isinstance(value, FfiStr):
             return value
         if isinstance(value, dict):
-            value = json.dumps(value)
+            value = orjson.dumps(value).decode()
         return FfiStr(value)
 
 
@@ -550,12 +550,12 @@ class FfiTagsJson:
         if isinstance(tags, FfiStr):
             return tags
         if tags:
-            tags = json.dumps(
+            tags = orjson.dumps(
                 {
                     name: (list(value) if isinstance(value, set) else value)
                     for name, value in tags.items()
                 }
-            )
+            ).decode()
         else:
             tags = None
         return FfiStr(tags)

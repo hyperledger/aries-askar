@@ -1,6 +1,6 @@
 """Handles for allocated resources."""
 
-import json
+import orjson
 import logging
 
 from ctypes import (
@@ -167,7 +167,7 @@ class EntryListHandle(ArcHandle):
             byref(tags),
         )
         if tags:
-            tags = json.loads(tags.value)
+            tags = orjson.loads(tags.value)
             for t in tags:
                 if isinstance(tags[t], list):
                     tags[t] = set(tags[t])
@@ -227,7 +227,7 @@ class KeyEntryListHandle(ArcHandle):
             index,
             byref(tags),
         )
-        return json.loads(tags.value) if tags else None
+        return orjson.loads(tags.value) if tags else None
 
     def load_key(self, index: int) -> "LocalKeyHandle":
         """Load the key instance."""
