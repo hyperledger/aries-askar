@@ -125,6 +125,7 @@ fn store_copy() {
 
         // Copy the store
         let pass_key_copy = Store::new_raw_key(None).expect(ERR_RAW_KEY);
+        println!("Raw key for copy created successfully.");
         let copied = db
             .copy_to(
                 "sqlite://:memory:",

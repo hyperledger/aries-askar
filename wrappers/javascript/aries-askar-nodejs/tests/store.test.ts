@@ -192,13 +192,14 @@ describe('Store and Session', () => {
     const keyName = 'testKey'
 
     await session.insertKey({ key, name: keyName, metadata: 'metadata', tags: { a: 'b' } })
-
+    console.log("inserted key");
     const fetchedKey1 = await session.fetchKey({ name: keyName })
     expect(fetchedKey1).toMatchObject({
       name: keyName,
       tags: { a: 'b' },
       metadata: 'metadata',
     })
+    console.log("fetched key 1", fetchedKey1);
 
     await session.updateKey({ name: keyName, metadata: 'updated metadata', tags: { a: 'c' } })
     const fetchedKey2 = await session.fetchKey({ name: keyName })
@@ -207,21 +208,23 @@ describe('Store and Session', () => {
       tags: { a: 'c' },
       metadata: 'updated metadata',
     })
-
+    console.log("fetched key 2", fetchedKey2);
     expect(key.jwkThumbprint === fetchedKey1?.key.jwkThumbprint).toBeTruthy()
+    console.log("key.jwkThumbprint === fetchedKey1?.key.jwkThumbprint", key.jwkThumbprint === fetchedKey1?.key.jwkThumbprint);
+    console.log(await session.fetchKey({ name: keyName }))
 
     const found = await session.fetchAllKeys({
       algorithm: KeyAlgs.Ed25519,
       thumbprint: key.jwkThumbprint,
       tagFilter: { a: 'c' },
     })
-
+    console.log("found", found);
     expect(found[0]).toMatchObject({ name: keyName, metadata: 'updated metadata', tags: { a: 'c' } })
-
+    console.log("found[0]", found[0]);
     await session.removeKey({ name: keyName })
-
+    console.log("removed key");
     await expect(session.fetchKey({ name: keyName })).resolves.toBeNull()
-
+    console.log("fetch key resolved");
     await session.close()
 
     // Clear objects

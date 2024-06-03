@@ -607,6 +607,9 @@ pub fn encode_tag_filter<Q: QueryPrepare>(
         );
         if let Some(filter) = enc.encode_query(&tag_query)? {
             let filter = replace_arg_placeholders::<Q>(&filter, (offset as i64) + 1);
+            //print filter and arg
+            println!("Filter: {}", filter);
+            println!("Args: {:?}", enc.arguments);
             Ok(Some((filter, enc.arguments)))
         } else {
             Ok(None)

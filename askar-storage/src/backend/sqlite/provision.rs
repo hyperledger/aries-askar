@@ -400,8 +400,12 @@ async fn open_db(
             }
             "version" => {
                 if row.try_get::<&str, _>(1)? != "1" {
+                    println!("version not ok -------------");
                     return Err(err_msg!(Unsupported, "Unsupported store version"));
                 }
+                println!(
+                    "vesrion ok -------------"
+                );
                 ver_ok = true;
             }
             _ => (),

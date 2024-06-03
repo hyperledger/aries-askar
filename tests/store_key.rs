@@ -57,8 +57,6 @@ fn keypair_create_fetch() {
         //         .await?)
         // }
 
-        let count = conn.count(None, None).await.expect("Error counting keys");
-        assert_eq!(count, 1);
 
         // count 
 

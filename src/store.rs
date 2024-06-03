@@ -465,8 +465,10 @@ impl Session {
         let tag_filter = if query_parts.is_empty() {
             None
         } else {
+            println!("tag filter: {:?}", query_parts);
             Some(TagFilter::all_of(query_parts))
         };
+        println!("starting fetch all");
         let rows = self
             .0
             .fetch_all(
@@ -478,6 +480,7 @@ impl Session {
             )
             .await?;
         let mut entries = Vec::with_capacity(rows.len());
+        println!("fetch all complete with {} rows", rows.len());
         for row in rows {
             entries.push(KeyEntry::from_entry(row)?)
         }
