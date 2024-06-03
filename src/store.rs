@@ -125,6 +125,8 @@ impl Store {
         tag_filter: Option<TagFilter>,
         offset: Option<i64>,
         limit: Option<i64>,
+        order_by: Option<String>,
+        descending: Option<bool>,
     ) -> Result<Scan<'static, Entry>, Error> {
         Ok(self
             .0
@@ -135,6 +137,8 @@ impl Store {
                 tag_filter,
                 offset,
                 limit,
+                order_by,
+                descending,
             )
             .await?)
     }

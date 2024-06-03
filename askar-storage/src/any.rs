@@ -72,9 +72,12 @@ impl<B: Backend> Backend for WrapBackend<B> {
         tag_filter: Option<TagFilter>,
         offset: Option<i64>,
         limit: Option<i64>,
+        order_by: Option<String>,
+        descending: Option<bool>,
     ) -> BoxFuture<'_, Result<Scan<'static, Entry>, Error>> {
-        self.0
-            .scan(profile, kind, category, tag_filter, offset, limit)
+        self.0.scan(
+            profile, kind, category, tag_filter, offset, limit, order_by, descending,
+        )
     }
 
     #[inline]
@@ -142,9 +145,12 @@ impl Backend for AnyBackend {
         tag_filter: Option<TagFilter>,
         offset: Option<i64>,
         limit: Option<i64>,
+        order_by: Option<String>,
+        descending: Option<bool>,
     ) -> BoxFuture<'_, Result<Scan<'static, Entry>, Error>> {
-        self.0
-            .scan(profile, kind, category, tag_filter, offset, limit)
+        self.0.scan(
+            profile, kind, category, tag_filter, offset, limit, order_by, descending,
+        )
     }
 
     #[inline]

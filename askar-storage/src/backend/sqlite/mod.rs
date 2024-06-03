@@ -262,6 +262,8 @@ impl Backend for SqliteBackend {
         tag_filter: Option<TagFilter>,
         offset: Option<i64>,
         limit: Option<i64>,
+        order_by: Option<String>,
+        descending: Option<bool>,
     ) -> BoxFuture<'_, Result<Scan<'static, Entry>, Error>> {
         Box::pin(async move {
             let session = self.session(profile, false)?;
@@ -276,6 +278,8 @@ impl Backend for SqliteBackend {
                 tag_filter,
                 offset,
                 limit,
+                order_by,
+                descending,
             );
             let stream = scan.then(move |enc_rows| {
                 let category = category.clone();
@@ -413,6 +417,8 @@ impl BackendSession for DbSession<Sqlite> {
                 tag_filter,
                 None,
                 limit,
+                None,
+                None,
             );
             pin!(scan);
             let mut enc_rows = vec![];
@@ -703,6 +709,8 @@ fn perform_scan(
     tag_filter: Option<TagFilter>,
     offset: Option<i64>,
     limit: Option<i64>,
+    order_by: Option<String>,
+    descending: Option<bool>,
 ) -> impl Stream<Item = Result<Vec<EncScanEntry>, Error>> + '_ {
     try_stream! {
         let mut params = QueryParams::new();
@@ -720,7 +728,7 @@ fn perform_scan(
             }
         }).await?;
         params.push(enc_category);
-        let query = extend_query::<SqliteBackend>(SCAN_QUERY, &mut params, tag_filter, offset, limit)?;
+        let query = extend_query::<SqliteBackend>(SCAN_QUERY, &mut params, tag_filter, offset, limit, order_by, descending)?;
 
         let mut batch = Vec::with_capacity(PAGE_SIZE);
 

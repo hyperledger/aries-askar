@@ -547,6 +547,8 @@ pub extern "C" fn askar_scan_start(
     tag_filter: FfiStr<'_>,
     offset: i64,
     limit: i64,
+    order_by: Option<String>,
+    descending: Option<bool>,
     cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, handle: ScanHandle)>,
     cb_id: CallbackId,
 ) -> ErrorCode {
@@ -568,7 +570,7 @@ pub extern "C" fn askar_scan_start(
         spawn_ok(async move {
             let result = async {
                 let store = handle.load().await?;
-                let scan = store.scan(profile, category, tag_filter, Some(offset), if limit < 0 { None }else {Some(limit)}).await?;
+                let scan = store.scan(profile, category, tag_filter, Some(offset), if limit < 0 { None }else {Some(limit)}, order_by, descending).await?;
                 Ok(FFI_SCANS.insert(handle, scan).await)
             }.await;
             cb.resolve(result);

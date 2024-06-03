@@ -54,6 +54,8 @@ pub trait Backend: Debug + Send + Sync {
         tag_filter: Option<TagFilter>,
         offset: Option<i64>,
         limit: Option<i64>,
+        order_by: Option<String>,
+        descending: Option<bool>,
     ) -> BoxFuture<'_, Result<Scan<'static, Entry>, Error>>;
 
     /// Create a new session against the store
@@ -185,7 +187,16 @@ pub async fn copy_profile<A: Backend, B: Backend>(
     to_profile: &str,
 ) -> Result<(), Error> {
     let scan = from_backend
-        .scan(Some(from_profile.into()), None, None, None, None, None)
+        .scan(
+            Some(from_profile.into()),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
         .await?;
     if let Err(e) = to_backend.create_profile(Some(to_profile.into())).await {
         if e.kind() != ErrorKind::Duplicate {

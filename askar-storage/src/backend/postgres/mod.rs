@@ -268,6 +268,8 @@ impl Backend for PostgresBackend {
         tag_filter: Option<TagFilter>,
         offset: Option<i64>,
         limit: Option<i64>,
+        order_by: Option<String>,
+        descending: Option<bool>,
     ) -> BoxFuture<'_, Result<Scan<'static, Entry>, Error>> {
         Box::pin(async move {
             let session = self.session(profile, false)?;
@@ -282,6 +284,8 @@ impl Backend for PostgresBackend {
                 tag_filter,
                 offset,
                 limit,
+                order_by,
+                descending,
                 false,
             );
             let stream = scan.then(move |enc_rows| {
@@ -348,7 +352,7 @@ impl BackendSession for DbSession<Postgres> {
             .await?;
             params.push(enc_category);
             let query =
-                extend_query::<PostgresBackend>(COUNT_QUERY, &mut params, tag_filter, None, None)?;
+                extend_query::<PostgresBackend>(COUNT_QUERY, &mut params, tag_filter, None, None, None, None)?;
             let mut active = acquire_session(&mut *self).await?;
             let count = sqlx::query_scalar_with(query.as_str(), params)
                 .fetch_one(active.connection_mut())
@@ -440,6 +444,8 @@ impl BackendSession for DbSession<Postgres> {
                 tag_filter,
                 None,
                 limit,
+                None,
+                None,
                 for_update,
             );
             pin!(scan);
@@ -752,6 +758,8 @@ fn perform_scan(
     tag_filter: Option<TagFilter>,
     offset: Option<i64>,
     limit: Option<i64>,
+    order_by: Option<String>,
+    descending: Option<bool>,
     for_update: bool,
 ) -> impl Stream<Item = Result<Vec<EncScanEntry>, Error>> + '_ {
     try_stream! {
@@ -772,7 +780,7 @@ fn perform_scan(
             }
         }).await?;
         params.push(enc_category);
-        let mut query = extend_query::<PostgresBackend>(SCAN_QUERY, &mut params, tag_filter, offset, limit)?;
+        let mut query = extend_query::<PostgresBackend>(SCAN_QUERY, &mut params, tag_filter, offset, limit, order_by, descending)?;
         if for_update {
             query.push_str(" FOR NO KEY UPDATE");
         }

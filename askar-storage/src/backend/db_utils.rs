@@ -453,6 +453,17 @@ pub trait QueryPrepare {
         }
         query
     }
+
+    fn order_by_query<'q>(mut query: String, order_by: Option<String>, descending: Option<bool>) -> String {
+        if let Some(order_by) = order_by {
+            query.push_str(" ORDER BY ");
+            query.push_str(&order_by);
+            if descending.is_some_and(|x| x) {
+                query.push_str(" DESC");
+            }
+        }
+        query
+    }
 }
 
 pub fn replace_arg_placeholders<Q: QueryPrepare + ?Sized>(
@@ -625,6 +636,8 @@ pub fn extend_query<'q, Q: QueryPrepare>(
     tag_filter: Option<(String, Vec<Vec<u8>>)>,
     offset: Option<i64>,
     limit: Option<i64>,
+    order_by: Option<String>,
+    descending: Option<bool>,
 ) -> Result<String, Error>
 where
     i64: for<'e> Encode<'e, Q::DB> + Type<Q::DB>,
@@ -636,6 +649,7 @@ where
         query.push_str(" AND "); // assumes WHERE already occurs
         query.push_str(&filter_clause);
     };
+    query = Q::order_by_query(query, order_by, descending);
     if offset.is_some() || limit.is_some() {
         query = Q::limit_query(query, args, offset, limit);
     };

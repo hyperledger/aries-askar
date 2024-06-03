@@ -489,6 +489,8 @@ pub async fn db_scan(db: AnyBackend) {
             tag_filter,
             offset,
             limit,
+            order_by,
+            descending,
         )
         .await
         .expect(ERR_SCAN);
@@ -506,6 +508,8 @@ pub async fn db_scan(db: AnyBackend) {
             tag_filter,
             offset,
             limit,
+            order_by,
+            descending,
         )
         .await
         .expect(ERR_SCAN);
@@ -879,7 +883,16 @@ pub async fn db_import_scan(db: AnyBackend) {
     let copy = db.create_profile(None).await.expect(ERR_PROFILE);
     let mut copy_conn = db.session(Some(copy.clone()), true).expect(ERR_SESSION);
     let records = db
-        .scan(None, Some(EntryKind::Item), None, None, None, None)
+        .scan(
+            None,
+            Some(EntryKind::Item),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
         .await
         .expect(ERR_SCAN);
     copy_conn
@@ -889,7 +902,16 @@ pub async fn db_import_scan(db: AnyBackend) {
     copy_conn.close(true).await.expect(ERR_COMMIT);
 
     let mut scan = db
-        .scan(Some(copy), Some(EntryKind::Item), None, None, None, None)
+        .scan(
+            Some(copy),
+            Some(EntryKind::Item),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
         .await
         .expect(ERR_SCAN);
 
