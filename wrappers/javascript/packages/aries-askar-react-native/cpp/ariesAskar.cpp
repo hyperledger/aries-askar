@@ -598,7 +598,7 @@ jsi::Value keyFromSeed(jsi::Runtime &rt, jsi::Object options) {
 
 jsi::Value keyGenerate(jsi::Runtime &rt, jsi::Object options) {
   auto algorithm = jsiToValue<std::string>(rt, options, "algorithm");
-  auto keyBackend = jsiToValue<std::string>(rt, options, "keyBackend");
+  auto keyBackend = jsiToValue<std::string>(rt, options, "keyBackend", true);
   auto ephemeral = jsiToValue<int8_t>(rt, options, "ephemeral");
 
   LocalKeyHandle out;

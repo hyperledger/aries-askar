@@ -5,8 +5,9 @@ macro_rules! catch_err {
             Ok(Err(err)) => { // lib error
                 $crate::ffi::error::set_last_error(Some(err))
             }
-            Err(_) => { // panic error
-                let err: $crate::error::Error = err_msg!(Unexpected, "Panic during execution");
+            Err(e) => { // panic error
+                let panic_msg = e.downcast_ref::<&str>().unwrap_or(&"no message");
+                let err: $crate::error::Error = err_msg!(Unexpected, "Panic during execution: '{panic_msg}'");
                 $crate::ffi::error::set_last_error(Some(err))
             }
         }

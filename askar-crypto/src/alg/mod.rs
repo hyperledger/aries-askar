@@ -274,7 +274,7 @@ pub trait HasKeyAlg: Debug {
 /// A trait for accessing the backend of a key, used when
 /// converting to generic `AnyKey` instances.
 pub trait HasKeyBackend: Debug {
-    /// Get the corresponding key algorithm.
+    /// Get the corresponding key backend.
     fn key_backend(&self) -> KeyBackend {
         KeyBackend::default()
     }
