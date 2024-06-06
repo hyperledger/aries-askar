@@ -495,6 +495,49 @@ pub fn replace_arg_placeholders<Q: QueryPrepare + ?Sized>(
     buffer
 }
 
+// pub(crate) fn decode_tags(tags: Vec<u8>) -> Result<Vec<EncEntryTag>, ()> {
+//     let mut idx = 0;
+//     let mut plaintext;
+//     let mut name_start;
+//     let mut name_end;
+//     let mut enc_tags = vec![];
+//     let end = tags.len();
+//     loop {
+//         if idx >= end {
+//             break;
+//         }
+//         plaintext = tags[idx] == b'1';
+//         // assert ':' at idx + 1
+//         idx += 2;
+//         name_start = idx;
+//         name_end = 0;
+//         loop {
+//             if idx >= end || tags[idx] == b',' {
+//                 if name_end == 0 {
+//                     return Err(());
+//                 }
+//                 let name = hex::decode(&tags[(name_start)..(name_end)]).map_err(|_| ())?;
+//                 let value = hex::decode(&tags[(name_end + 1)..(idx)]).map_err(|_| ())?;
+//                 enc_tags.push(EncEntryTag {
+//                     name,
+//                     value,
+//                     plaintext,
+//                 });
+//                 break;
+//             }
+//             if tags[idx] == b':' {
+//                 if name_end != 0 {
+//                     return Err(());
+//                 }
+//                 name_end = idx;
+//             }
+//             idx += 1;
+//         }
+//         idx += 1;
+//     }
+//     Ok(enc_tags)
+// }
+
 pub(crate) fn decode_tags(tags: Vec<u8>) -> Result<Vec<EncEntryTag>, ()> {
     let mut idx = 0;
     let mut plaintext;
@@ -502,41 +545,40 @@ pub(crate) fn decode_tags(tags: Vec<u8>) -> Result<Vec<EncEntryTag>, ()> {
     let mut name_end;
     let mut enc_tags = vec![];
     let end = tags.len();
-    loop {
-        if idx >= end {
-            break;
-        }
+
+    while idx < end {
         plaintext = tags[idx] == b'1';
         // assert ':' at idx + 1
-        idx += 2;
+        idx += 2; // Skip over the plaintext indicator and the separator
         name_start = idx;
         name_end = 0;
-        loop {
-            if idx >= end || tags[idx] == b',' {
-                if name_end == 0 {
+
+        while idx < end {
+            if tags[idx] == b',' || idx == end - 1 { // Handle end of tags or end of string
+                if name_end == 0 { // No colon found, error
                     return Err(());
                 }
-                let name = hex::decode(&tags[(name_start)..(name_end)]).map_err(|_| ())?;
-                let value = hex::decode(&tags[(name_end + 1)..(idx)]).map_err(|_| ())?;
+                let name = String::from_utf8(tags[name_start..name_end].to_vec()).map_err(|_| ())?;
+                let value = String::from_utf8(tags[name_end + 1..(if tags[idx] == b',' { idx } else { end })].to_vec()).map_err(|_| ())?;
                 enc_tags.push(EncEntryTag {
-                    name,
-                    value,
+                    name: name.into_bytes(),
+                    value: value.into_bytes(),
                     plaintext,
                 });
+                idx += 1; // Move past the comma
                 break;
-            }
-            if tags[idx] == b':' {
-                if name_end != 0 {
+            } else if tags[idx] == b':' {
+                if name_end != 0 { // Multiple colons in one tag, error
                     return Err(());
                 }
-                name_end = idx;
+                name_end = idx; // Set end of name at the colon
             }
             idx += 1;
         }
-        idx += 1;
     }
     Ok(enc_tags)
 }
+
 
 pub fn decrypt_scan_batch(
     category: Option<String>,
@@ -569,23 +611,89 @@ pub fn decrypt_scan_batch(
 //     Ok(batch)
 // }
 
+// pub fn decrypt_scan_entry(
+//     category: Option<&str>,
+//     enc_entry: EncScanEntry,
+//     key: &ProfileKey,
+// ) -> Result<Entry, Error> {
+//     let category = match category {
+//         Some(c) => c.to_owned(),
+//         None => key.decrypt_entry_category(enc_entry.category)?,
+//     };
+//     let name = key.decrypt_entry_name(enc_entry.name)?;
+//     let value = key.decrypt_entry_value(category.as_bytes(), name.as_bytes(), enc_entry.value)?;
+//     let tags = key.decrypt_entry_tags(
+//         decode_tags(enc_entry.tags).map_err(|_| err_msg!(Unexpected, "Error decoding tags"))?,
+//     )?;
+//     Ok(Entry::new(enc_entry.kind, category, name, value, tags))
+// }
+// pub fn decrypt_scan_entry(
+//     category: Option<&str>,
+//     enc_entry: EncScanEntry, 
+//     key: &ProfileKey,
+// ) -> Result<Entry, Error> {
+//     let category = match category{
+//         Some(c) =>c.to_owned(),
+//         None => category.unwrap().to_owned(),
+//     };
+//     let name = String::from_utf8(enc_entry.name)
+//         .map_err(|_| err_msg!(Unexpected, "Invalid UTF-8 sequence in entry name"))?;
+//     let value = String::from_utf8(enc_entry.value)
+//         .map_err(|_| err_msg!(Unexpected, "Invalid UTF-8 sequence in entry value"))?;
+//     let tags = decode_tags(enc_entry.tags)
+//         .map_err(|_| err_msg!(Unexpected, "Error decoding tags from utils"))?;
+//     let tags_not_encrypted: Result<Vec<EntryTag>, Error> = tags.iter().map(|tag| {
+//         let tag_name = String::from_utf8(tag.name.clone())
+//             .map_err(|_| err_msg!(Unexpected, "Invalid UTF-8 sequence in tag name"))?;
+
+//         let tag_value = String::from_utf8(tag.value.clone())
+//             .map_err(|_| err_msg!(Unexpected, "Invalid UTF-8 sequence in tag value"))?;
+
+//         Ok(if tag.plaintext {
+//             EntryTag::Plaintext(tag_name, tag_value)
+//         } else {
+//             EntryTag::Encrypted(tag_name, tag_value)
+//         })
+//     }).collect();
+//     let tags_final = tags_not_encrypted?;
+//     Ok(Entry::new(enc_entry.kind, category, name, value, tags_final))
+// }
 
 pub fn decrypt_scan_entry(
     category: Option<&str>,
-    enc_entry: EncScanEntry,
+    enc_entry: EncScanEntry, 
     key: &ProfileKey,
 ) -> Result<Entry, Error> {
-    let category = match category {
-        Some(c) => c.to_owned(),
-        None => key.decrypt_entry_category(enc_entry.category)?,
-    };
-    let name = key.decrypt_entry_name(enc_entry.name)?;
-    let value = key.decrypt_entry_value(category.as_bytes(), name.as_bytes(), enc_entry.value)?;
-    let tags = key.decrypt_entry_tags(
-        decode_tags(enc_entry.tags).map_err(|_| err_msg!(Unexpected, "Error decoding tags"))?,
-    )?;
-    Ok(Entry::new(enc_entry.kind, category, name, value, tags))
+    let category = match category{
+                Some(c) =>c.to_owned(),
+                None => category.unwrap().to_owned(),
+            };
+        let name = String::from_utf8(enc_entry.name)
+        .map_err(|_| err_msg!(Unexpected, "Invalid UTF-8 sequence in entry name"))?;
+    let value = String::from_utf8(enc_entry.value)
+        .map_err(|_| err_msg!(Unexpected, "Invalid UTF-8 sequence in entry value"))?;
+    let tags = decode_tags(enc_entry.tags)
+        .map_err(|_| err_msg!(Unexpected, "Error decoding tags"))?;
+    let tags_not_encrypted: Result<Vec<EntryTag>, Error> = tags.iter().map(|tag| {
+        let tag_name = String::from_utf8(tag.name.clone())
+            .map_err(|_| err_msg!(Unexpected, "Invalid UTF-8 sequence in tag name"))?;
+
+        let tag_value = String::from_utf8(tag.value.clone())
+            .map_err(|_| err_msg!(Unexpected, "Invalid UTF-8 sequence in tag value"))?;
+        
+        Ok(if tag.plaintext {
+            println!("Plaintext tag: {:?}", tag_value);
+            EntryTag::Plaintext(tag_name, tag_value)
+        } else {
+            println!("Encrypted tag: {:?}", tag_value);
+            EntryTag::Encrypted(tag_name, tag_value)
+        })
+    }).collect();
+    let tags_final = tags_not_encrypted?;
+    Ok(Entry::new(enc_entry.kind, category, name, value, tags_final))
 }
+
+
 
 pub fn expiry_timestamp(expire_ms: i64) -> Result<Expiry, Error> {
     chrono::Utc::now()
@@ -602,14 +710,21 @@ pub fn encode_tag_filter<Q: QueryPrepare>(
     if let Some(tag_filter) = tag_filter {
         let tag_query = tag_query(tag_filter.query)?;
         let mut enc = TagSqlEncoder::new(
-            |name| key.encrypt_tag_name(ProfileKey::prepare_input(name.as_bytes())),
-            |value| key.encrypt_tag_value(ProfileKey::prepare_input(value.as_bytes())),
+            |name| {
+                
+                let enc_name = Ok(name.as_bytes().to_vec());
+                println!("Encrypted name: {:?}", enc_name);
+                enc_name
+            },
+
+            |value| {
+                let enc_val = Ok(value.as_bytes().to_vec());
+                println!("Encrypted value: {:?}", enc_val);
+                enc_val
+            },
         );
         if let Some(filter) = enc.encode_query(&tag_query)? {
             let filter = replace_arg_placeholders::<Q>(&filter, (offset as i64) + 1);
-            //print filter and arg
-            println!("Filter: {}", filter);
-            println!("Args: {:?}", enc.arguments);
             Ok(Some((filter, enc.arguments)))
         } else {
             Ok(None)
@@ -631,12 +746,8 @@ pub fn prepare_tags(tags: &[EntryTag]) -> Result<Vec<EntryTag>, Error> {
     let mut result = Vec::with_capacity(tags.len());
     for tag in tags {
         result.push(match tag {
-            EntryTag::Plaintext(name, value) => {
-                EntryTag::Plaintext(name.clone(), value.clone())
-            }
-            EntryTag::Encrypted(name, value) => {
-                EntryTag::Encrypted(name.clone(), value.clone())
-            }
+            EntryTag::Plaintext(name, value) => EntryTag::Plaintext(name.clone(), value.clone()),
+            EntryTag::Encrypted(name, value) => EntryTag::Encrypted(name.clone(), value.clone()),
         });
     }
     Ok(result)

@@ -1,11 +1,15 @@
+use base64::encode;
+use sqlx::sqlite::SqliteRow;
+use sqlx::sqlite::SqliteValue;
+use sqlx::Column;
+use sqlx::TypeInfo;
 use std::collections::BTreeMap;
 use std::fmt::{self, Debug, Formatter};
 use std::sync::Arc;
 use std::vec;
-use base64::{encode};
-use sqlx::Column;
-use sqlx::TypeInfo;
+
 use async_stream::try_stream;
+
 use futures_lite::{
     pin,
     stream::{Stream, StreamExt},
@@ -51,12 +55,8 @@ const FETCH_QUERY: &str = "SELECT i.id, i.value,
     FROM items i WHERE i.profile_id = ?1 AND i.kind = ?2
     AND i.category = ?3 AND i.name = ?4
     AND (i.expiry IS NULL OR i.expiry > DATETIME('now'))";
-const FETCH_QUERY_ALL: &str = "
-    SELECT *
-    FROM items i;
-    ";
-    
-    const COUNT_QUERY_WITH_TAGS: &str = "
+
+const COUNT_QUERY_WITH_TAGS: &str = "
     SELECT COUNT(*)
     FROM items i
     JOIN items_tags it ON i.id = it.item_id
@@ -66,14 +66,13 @@ const FETCH_QUERY_ALL: &str = "
     AND (i.expiry IS NULL OR i.expiry > DATETIME('now'))
     AND (it.tag = ?4)";
 
-
 const INSERT_QUERY: &str =
     "INSERT OR IGNORE INTO items (profile_id, kind, category, name, value, expiry)
     VALUES (?1, ?2, ?3, ?4, ?5, ?6)";
 const UPDATE_QUERY: &str = "UPDATE items SET value=?5, expiry=?6 WHERE profile_id=?1 AND kind=?2
     AND category=?3 AND name=?4 RETURNING id";
 const SCAN_QUERY: &str = "SELECT i.id, i.kind, i.category, i.name, i.value,
-    (SELECT GROUP_CONCAT(it.plaintext || ':' || HEX(it.name) || ':' || HEX(it.value))
+    (SELECT GROUP_CONCAT(it.plaintext || ':' || it.name || ':' || it.value)
         FROM items_tags it WHERE it.item_id = i.id) AS tags
     FROM items i WHERE i.profile_id = ?1
     AND (i.kind = ?2 OR ?2 IS NULL)
@@ -323,8 +322,6 @@ impl Backend for SqliteBackend {
 }
 
 impl BackendSession for DbSession<Sqlite> {
-    
-
     fn count<'q>(
         &'q mut self,
         kind: Option<EntryKind>,
@@ -337,16 +334,22 @@ impl BackendSession for DbSession<Sqlite> {
             params.push(profile_id);
             params.push(kind.map(|k| k as i16));
             params.push(category);
-    
+
             let query = if let Some(tag_filter) = tag_filter {
                 let params_len = params.len();
-                let tag_filter_query = encode_tag_filter::<SqliteBackend>(Some(tag_filter), &_key, params_len)?;
-                extend_query::<SqliteBackend>(COUNT_QUERY_WITH_TAGS, &mut params, Some(tag_filter_query).expect("REASON"), None, None)?
-                
+                let tag_filter_query =
+                    encode_tag_filter::<SqliteBackend>(Some(tag_filter), &_key, params_len)?;
+                extend_query::<SqliteBackend>(
+                    COUNT_QUERY_WITH_TAGS,
+                    &mut params,
+                    Some(tag_filter_query).expect("REASON"),
+                    None,
+                    None,
+                )?
             } else {
                 extend_query::<SqliteBackend>(COUNT_QUERY, &mut params, None, None, None)?
             };
-    
+
             let mut active = acquire_session(&mut *self).await?;
             let count = sqlx::query_scalar_with(query.as_str(), params)
                 .fetch_one(active.connection_mut())
@@ -370,7 +373,7 @@ impl BackendSession for DbSession<Sqlite> {
             println!("Kind: {:?}", kind);
             let (profile_id, key) = acquire_key(&mut *self).await?;
             let mut active = acquire_session(&mut *self).await?;
-            
+
             if let Some(row) = sqlx::query(FETCH_QUERY)
                 .bind(profile_id)
                 .bind(kind as i16)
@@ -380,34 +383,64 @@ impl BackendSession for DbSession<Sqlite> {
                 .await
                 .map_err(err_map!(Backend, "Error performing fetch query"))?
             {
-
                 let value_bytes: Vec<u8> = row.try_get("value").unwrap_or_else(|_| Vec::new());
                 let tags = row.try_get::<Vec<u8>, _>(2)?.clone();
                 let key_clone = key.clone();
                 let category = category.clone();
                 let name = name.clone();
                 let tags_val = decode_tags(tags)
-                            .map_err(|_| err_msg!(Unexpected, "Error decoding entry tags"))?;
-                let tags_enc = key_clone.decrypt_entry_tags(tags_val)?;
+                    .map_err(|_| err_msg!(Unexpected, "Error decoding entry tags"))?;
+                let tags_not_encrypted: Result<Vec<EntryTag>, Error> = tags_val.iter().map(|tag| {
+                    // Decode hexadecimal string to bytes and then to UTF-8 string for the tag name
+                    let tag_name = hex::decode(&tag.name)
+                        .map_err(|_| err_msg!(Unexpected, "Invalid hexadecimal sequence in tag name"))
+                        .and_then(|bytes| 
+                            String::from_utf8(bytes)
+                                .map_err(|_| err_msg!(Unexpected, "Invalid UTF-8 sequence in tag name"))
+                        )?;
                 
-
-                let entry = Entry { // Define this inline if Entry is defined elsewhere
-                    kind:kind,
+                    // Decode hexadecimal string to bytes and then to UTF-8 string for the tag value
+                    let tag_value = hex::decode(&tag.value)
+                        .map_err(|_| err_msg!(Unexpected, "Invalid hexadecimal sequence in tag value"))
+                        .and_then(|bytes| 
+                            String::from_utf8(bytes)
+                                .map_err(|_| err_msg!(Unexpected, "Invalid UTF-8 sequence in tag value"))
+                        )?;
+                    
+                    // Output the appropriate tag type based on the plaintext flag
+                    Ok(if tag.plaintext {
+                        println!("Plaintext tag: {:?}", tag_value);
+                        EntryTag::Plaintext(tag_name, tag_value)
+                    } else {
+                        println!("Encrypted tag: {:?}", tag_value);
+                        EntryTag::Encrypted(tag_name, tag_value)
+                    })
+                }).collect();  // Collect results into a single Result containing a vector of tags or an error
+                
+                let tags_final = tags_not_encrypted?;
+                let entry = Entry {
+                    // Define this inline if Entry is defined elsewhere
+                    kind: kind,
                     value: value_bytes.into(),
                     category: category.to_string(),
                     name: name.to_string(),
-                    tags: tags_enc,
+                    tags: tags_final,
                 };
-    
-                println!("Entry created with kind: {:?}, category: '{}', name: '{}'", kind, category, name);
+
+                println!(
+                    "Entry created with kind: {:?}, category: '{}', name: '{}'",
+                    kind, category, name
+                );
                 Ok(Some(entry))
             } else {
-                println!("No data found for category '{}' and name '{}'", category, name);
+                println!(
+                    "No data found for category '{}' and name '{}'",
+                    category, name
+                );
                 Ok(None)
             }
         })
     }
-    
 
     // fn fetch_all<'q>(
     //     &'q mut self,
@@ -452,7 +485,7 @@ impl BackendSession for DbSession<Sqlite> {
         Box::pin(async move {
             let mut active = self.borrow_mut();
             let (profile_id, key) = acquire_key(&mut active).await?;
-            // print kind category 
+            // print kind category
             println!("Kind: {:?}", kind);
             println!("Category: {:?}", category);
             println!("Tag Filter: {:?}", tag_filter);
@@ -478,7 +511,6 @@ impl BackendSession for DbSession<Sqlite> {
         })
     }
 
-
     fn remove_all<'q>(
         &'q mut self,
         kind: Option<EntryKind>,
@@ -495,17 +527,11 @@ impl BackendSession for DbSession<Sqlite> {
             let params_len = params.len();
             let tag_filter = if let Some(tf) = tag_filter {
                 encode_tag_filter::<SqliteBackend>(Some(tf), &key, params_len)?
-                
             } else {
                 None
             };
-            let query = extend_query::<SqliteBackend>(
-                DELETE_ALL_QUERY,
-                &mut params,
-                None,
-                None,
-                None,
-            )?;
+            let query =
+                extend_query::<SqliteBackend>(DELETE_ALL_QUERY, &mut params, None, None, None)?;
 
             let mut active = acquire_session(&mut *self).await?;
             let removed = sqlx::query_with(query.as_str(), params)
@@ -527,7 +553,7 @@ impl BackendSession for DbSession<Sqlite> {
         expiry_ms: Option<i64>,
     ) -> BoxFuture<'q, Result<(), Error>> {
         let value_clone = value.unwrap_or(&[]).to_owned();
-    
+
         match operation {
             EntryOperation::Insert | EntryOperation::Replace => {
                 Box::pin(async move {
@@ -536,11 +562,11 @@ impl BackendSession for DbSession<Sqlite> {
                         Ok(value) => {
                             println!("Tags prepared successfully.");
                             value
-                        },
+                        }
                         Err(e) => {
                             println!("Failed to prepare tags: {:?}", e);
                             return Err(e);
-                        },
+                        }
                     };
                     let mut active = acquire_session(&mut *self).await?;
                     let mut txn = active.as_transaction().await?;
@@ -553,7 +579,9 @@ impl BackendSession for DbSession<Sqlite> {
                         tags,
                         expiry_ms,
                         operation == EntryOperation::Insert,
-                    ).await {
+                    )
+                    .await
+                    {
                         Ok(_) => println!("Insert operation successful."),
                         Err(e) => println!("Insert operation failed: {:?}", e),
                     }
@@ -573,19 +601,15 @@ impl BackendSession for DbSession<Sqlite> {
                     Ok(_) => {
                         println!("Remove operation successful.");
                         Ok(())
-                    },
+                    }
                     Err(e) => {
                         println!("Remove operation failed: {:?}", e);
                         Err(e)
-                    },
+                    }
                 }
             }),
         }
     }
-    
-    
-    
-    
 
     fn ping(&mut self) -> BoxFuture<'_, Result<(), Error>> {
         Box::pin(async move {
@@ -675,7 +699,6 @@ async fn perform_insert(
     enc_tags: Option<Vec<EntryTag>>,
     expiry_ms: Option<i64>,
     new_row: bool,
-    
 ) -> Result<(), Error> {
     let row_id = if new_row {
         trace!("Insert entry");
@@ -716,6 +739,8 @@ async fn perform_insert(
         for tag in tags {
             // get the tag name and value
             print!("Tag: {:?}", tag);
+            // print row id 
+            print!("Row ID: {:?}", row_id);
             let tag_name;
             let tag_value;
             let is_plaintext;
@@ -725,12 +750,12 @@ async fn perform_insert(
                     tag_name = name;
                     tag_value = value;
                     is_plaintext = true;
-                },
+                }
                 EntryTag::Encrypted(name, value) => {
                     tag_name = name;
                     tag_value = value;
                     is_plaintext = false;
-                },
+                }
             }
             sqlx::query(TAG_INSERT_QUERY)
                 .bind(row_id)
@@ -779,21 +804,20 @@ fn perform_scan(
     offset: Option<i64>,
     limit: Option<i64>,
 ) -> impl Stream<Item = Result<Vec<EncScanEntry>, Error>> + '_ {
-    // print all the params 
+    // print all the params
     println!("Profile ID: {}", profile_id);
     println!("Kind: {:?}", kind);
     println!("Category: {:?}", category);
     println!("Tag Filter: {:?}", tag_filter);
     println!("Offset: {:?}", offset);
     println!("Limit: {:?}", limit);
-
-
-
+    // try scan query withou tags
+    
     try_stream! {
         let mut params = QueryParams::new();
         params.push(profile_id);
         params.push(kind.map(|k| k as i16));
-        let (enc_category, tag_filter) = unblock({
+        let (_, tag_filter) = unblock({
             let key = key.clone();
             let enc_category = category.as_ref().map(|c| ProfileKey::prepare_input(c.as_bytes()));
             let params_len = params.len() + 1; // plus category
@@ -805,23 +829,52 @@ fn perform_scan(
             }
         }).await?;
         params.push(category.clone());
+        
         let query = extend_query::<SqliteBackend>(SCAN_QUERY, &mut params, tag_filter, offset, limit)?;
 
         let mut batch = Vec::with_capacity(PAGE_SIZE);
 
         let mut acquired = acquire_session(&mut active).await?;
         let mut rows = sqlx::query_with(query.as_str(), params).fetch(acquired.connection_mut());
-        println!("Query: {}", query.as_str());
+        println!("Query: {}", query);
+        
         
         while let Some(row) = rows.try_next().await? {
             for (index, column) in row.columns().iter().enumerate() {
-                println!("Column {}: {:?}", index, column);
+                println!("Column Scan {}: {:?}", index, column);
+                // print the column name ordinal and type
+                println!("Column Name: {:?}", column.name());
+                println!("Column Ordinal: {:?}", column.ordinal());
+                println!("Column Type: {:?}", column.type_info());
+                
+                
             }
             let kind: u32 = row.try_get(1)?;
             let kind = EntryKind::try_from(kind as usize)?;
+            let tags:String = row.try_get(5)?;
+            
+            let _id:i64 = row.try_get(0)?;
+            // print the id
+            println!("ID: {:?}", _id);
+            // print the kind
+            println!("Kind: {:?}", kind);
+            // print the tags
+            println!("Tags: {:?}", tags);
+            // take second tag and print it in string format
+            let __tag = tags.split(":").nth(1).unwrap();
+            // convert the tag to a string
+            
+            println!("Tag: {:?}", __tag);
             batch.push(EncScanEntry {
                 kind, category: row.try_get(2)?, name: row.try_get(3)?, value: row.try_get(4)?, tags: row.try_get(5)?
             });
+            // print the batch
+            for entry in &batch {
+                // convert the tags to a string
+                let tags_str = &entry.tags;
+                // print the entry
+                println!("Entry: {:?}", tags_str);
+            }
             if batch.len() == PAGE_SIZE {
                 yield batch.split_off(0);
             }
@@ -836,7 +889,10 @@ fn perform_scan(
             yield batch;
         }
     }
+
+    
 }
+
 
 #[cfg(test)]
 mod tests {
