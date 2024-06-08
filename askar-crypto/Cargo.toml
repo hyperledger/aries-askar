@@ -101,7 +101,7 @@ p384 = { version = "0.13", default-features = false, features = [
     "ecdh",
 ], optional = true }
 rand = { version = "0.8", default-features = false }
-secure-env = { package = "animo-secure-env", version = "0.3", optional = true }
+secure-env = { package = "animo-secure-env", version = "0.4", optional = true }
 serde = { version = "1.0", default-features = false, features = ["derive"] }
 serde-json-core = { version = "0.5", default-features = false }
 sha2 = { version = "0.10", default-features = false }

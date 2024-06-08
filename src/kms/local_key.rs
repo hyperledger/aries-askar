@@ -4,6 +4,7 @@ use std::str::FromStr;
 use super::enc::{Encrypted, ToDecrypt};
 pub use crate::crypto::{
     alg::KeyAlg,
+    backend::KeyBackend,
     buffer::{SecretBytes, WriteBuffer},
     encrypt::KeyAeadParams,
 };
@@ -23,44 +24,6 @@ use crate::{
 
 #[cfg(feature = "mobile_secure_element")]
 use crate::crypto::alg::p256_hardware::P256HardwareKeyPair;
-
-/// Backend of the key
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub enum KeyBackend {
-    /// Software based keys
-    #[default]
-    Software,
-
-    /// Keys generated and store in the secure element of the device
-    SecureElement,
-}
-
-impl Into<&str> for KeyBackend {
-    fn into(self) -> &'static str {
-        match self {
-            KeyBackend::Software => "software",
-            KeyBackend::SecureElement => "secure_element",
-        }
-    }
-}
-
-impl FromStr for KeyBackend {
-    type Err = Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "software" => Ok(Self::Software),
-            "secure_element" => Ok(Self::SecureElement),
-            s => Err(err_msg!(Input, "'{s}' is not a valid key backend.")),
-        }
-    }
-}
-
-impl core::fmt::Display for KeyBackend {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", <KeyBackend as Into<&str>>::into(self.clone()))
-    }
-}
 
 /// A stored key entry
 #[derive(Debug)]

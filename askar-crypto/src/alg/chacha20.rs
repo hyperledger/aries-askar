@@ -7,7 +7,7 @@ use chacha20poly1305::{ChaCha20Poly1305, XChaCha20Poly1305};
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
-use super::{Chacha20Types, HasKeyAlg, KeyAlg};
+use super::{Chacha20Types, HasKeyAlg, HasKeyBackend, KeyAlg};
 use crate::{
     buffer::{ArrayKey, ResizeBuffer, Writer},
     encrypt::{KeyAeadInPlace, KeyAeadMeta, KeyAeadParams},
@@ -104,6 +104,8 @@ impl<T: Chacha20Type> PartialEq for Chacha20Key<T> {
 }
 
 impl<T: Chacha20Type> Eq for Chacha20Key<T> {}
+
+impl<T: Chacha20Type> HasKeyBackend for Chacha20Key<T> {}
 
 impl<T: Chacha20Type> HasKeyAlg for Chacha20Key<T> {
     fn algorithm(&self) -> KeyAlg {

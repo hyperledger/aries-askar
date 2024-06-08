@@ -1,11 +1,20 @@
-import type { Config } from '@jest/types'
+import type { JestConfigWithTsJest } from 'ts-jest'
 
-import base from './jest.config.base'
-
-const config: Config.InitialOptions = {
-  ...base,
-  roots: ['<rootDir>'],
-  projects: ['<rootDir>/*/jest.config.ts'],
+const config: JestConfigWithTsJest = {
+  preset: 'ts-jest',
+  testEnvironment: 'node',
+  transform: {
+    '^.+\\.ts$': [
+      'ts-jest',
+      {
+        tsconfig: 'tsconfig.test.json',
+        isolatedModules: true,
+      },
+    ],
+  },
+  moduleNameMapper: {
+    '@hyperledger/aries-askar-shared': '<rootDir>/packages/aries-askar-shared/src',
+  },
 }
 
-export default config
+module.exports = config

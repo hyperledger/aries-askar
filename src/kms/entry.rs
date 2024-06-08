@@ -25,11 +25,11 @@ impl From<&str> for KeyReference {
     }
 }
 
-impl Into<String> for KeyReference {
-    fn into(self) -> String {
-        match self {
-            Self::MobileSecureElement => String::from("mobile_secure_element"),
-            Self::Any(s) => s,
+impl From<KeyReference> for String {
+    fn from(key_reference: KeyReference) -> Self {
+        match key_reference {
+            KeyReference::MobileSecureElement => String::from("mobile_secure_element"),
+            KeyReference::Any(s) => s,
         }
     }
 }
@@ -153,22 +153,16 @@ impl KeyEntry {
     pub fn load_local_key(&self) -> Result<LocalKey, Error> {
         if let Some(key_data) = self.params.data.as_ref() {
             match &self.params.reference {
-                Some(r) => match r {
-                    KeyReference::MobileSecureElement => {
-                        let id = self.params.to_id()?;
-                        let alg = self
-                            .alg
-                            .as_ref()
-                            .ok_or(err_msg!(Input, "Algorithm is required to get key by id"))?;
-                        let alg = KeyAlg::from_str(&alg)?;
-                        Ok(LocalKey::from_id(alg, &id)?)
-                    }
-                    _ => Ok(LocalKey {
-                        inner: Box::<AnyKey>::from_jwk_slice(key_data.as_ref())?,
-                        ephemeral: false,
-                    }),
-                },
-                None => Ok(LocalKey {
+                Some(KeyReference::MobileSecureElement) => {
+                    let id = self.params.to_id()?;
+                    let alg = self
+                        .alg
+                        .as_ref()
+                        .ok_or(err_msg!(Input, "Algorithm is required to get key by id"))?;
+                    let alg = KeyAlg::from_str(alg)?;
+                    Ok(LocalKey::from_id(alg, &id)?)
+                }
+                _ => Ok(LocalKey {
                     inner: Box::<AnyKey>::from_jwk_slice(key_data.as_ref())?,
                     ephemeral: false,
                 }),
