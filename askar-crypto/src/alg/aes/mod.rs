@@ -7,7 +7,7 @@ use aes_gcm::{Aes128Gcm, Aes256Gcm};
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
-use super::{AesTypes, HasKeyAlg, KeyAlg};
+use super::{AesTypes, HasKeyAlg, HasKeyBackend, KeyAlg};
 use crate::{
     buffer::{ArrayKey, ResizeBuffer, Writer},
     encrypt::{KeyAeadInPlace, KeyAeadMeta, KeyAeadParams},
@@ -79,6 +79,8 @@ impl<T: AesType> PartialEq for AesKey<T> {
 }
 
 impl<T: AesType> Eq for AesKey<T> {}
+
+impl<T: AesType> HasKeyBackend for AesKey<T> {}
 
 impl<T: AesType> HasKeyAlg for AesKey<T> {
     fn algorithm(&self) -> KeyAlg {

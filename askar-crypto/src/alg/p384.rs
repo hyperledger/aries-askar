@@ -16,7 +16,7 @@ use p384::{
 };
 use subtle::ConstantTimeEq;
 
-use super::{ec_common, EcCurves, HasKeyAlg, KeyAlg};
+use super::{ec_common, EcCurves, HasKeyAlg, HasKeyBackend, KeyAlg};
 use crate::{
     buffer::{ArrayKey, WriteBuffer},
     error::Error,
@@ -104,6 +104,8 @@ impl P384KeyPair {
         }
     }
 }
+
+impl HasKeyBackend for P384KeyPair {}
 
 impl HasKeyAlg for P384KeyPair {
     fn algorithm(&self) -> KeyAlg {

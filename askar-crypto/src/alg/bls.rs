@@ -18,7 +18,7 @@ use crate::generic_array::{
     ArrayLength,
 };
 
-use super::{BlsCurves, HasKeyAlg, KeyAlg};
+use super::{BlsCurves, HasKeyAlg, HasKeyBackend, KeyAlg};
 use crate::{
     buffer::ArrayKey,
     error::Error,
@@ -90,6 +90,8 @@ impl<Pk: BlsPublicKeyType> PartialEq for BlsKeyPair<Pk> {
 }
 
 impl<Pk: BlsPublicKeyType> Eq for BlsKeyPair<Pk> {}
+
+impl<Pk: BlsPublicKeyType> HasKeyBackend for BlsKeyPair<Pk> {}
 
 impl<Pk: BlsPublicKeyType> HasKeyAlg for BlsKeyPair<Pk> {
     fn algorithm(&self) -> KeyAlg {

@@ -1,12 +1,12 @@
 {
   "extends": "./tsconfig.build.json",
   "compilerOptions": {
-    "baseUrl": ".",
     "paths": {
-      "@hyperledger/aries-askar-shared": ["aries-askar-shared/src"],
-      "@hyperledger/aries-askar-react-native": ["aries-askar-react-native/src"],
-      "@hyperledger/aries-askar-nodejs": ["aries-askar-nodejs/src"]
+      "@hyperledger/*": ["packages/*/src"]
     }
   },
-  "exclude": ["node_modules", "**/build/**", "build"]
+  "ts-node": {
+    "require": ["tsconfig-paths/register"],
+    "files": true
+  }
 }

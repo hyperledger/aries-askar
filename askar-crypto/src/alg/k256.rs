@@ -14,7 +14,7 @@ use k256::{
 };
 use subtle::ConstantTimeEq;
 
-use super::{ec_common, EcCurves, HasKeyAlg, KeyAlg};
+use super::{ec_common, EcCurves, HasKeyAlg, HasKeyBackend, KeyAlg};
 use crate::{
     buffer::{ArrayKey, WriteBuffer},
     error::Error,
@@ -102,6 +102,8 @@ impl K256KeyPair {
         }
     }
 }
+
+impl HasKeyBackend for K256KeyPair {}
 
 impl HasKeyAlg for K256KeyPair {
     fn algorithm(&self) -> KeyAlg {
