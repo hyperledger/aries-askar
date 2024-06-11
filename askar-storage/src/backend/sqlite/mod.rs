@@ -1,4 +1,5 @@
 use base64::encode;
+use sqlx::query;
 use sqlx::sqlite::SqliteRow;
 use sqlx::sqlite::SqliteValue;
 use sqlx::Column;
@@ -15,12 +16,6 @@ use futures_lite::{
     stream::{Stream, StreamExt},
 };
 
-use sqlx::{
-    pool::PoolConnection,
-    sqlite::{Sqlite, SqlitePool},
-    Acquire, Database, Error as SqlxError, Row, TransactionManager,
-};
-
 use super::{
     db_utils::{
         decode_tags, decrypt_scan_batch, encode_profile_key, encode_tag_filter, expiry_timestamp,
@@ -30,11 +25,18 @@ use super::{
     },
     Backend, BackendSession,
 };
+use crate::wql::tags::TagQuery;
+use crate::wql::AbstractQuery;
 use crate::{
     entry::{EncEntryTag, Entry, EntryKind, EntryOperation, EntryTag, Scan, TagFilter},
     error::Error,
     future::{unblock, BoxFuture},
     protect::{EntryEncryptor, KeyCache, PassKey, ProfileId, ProfileKey, StoreKeyMethod},
+};
+use sqlx::{
+    pool::PoolConnection,
+    sqlite::{Sqlite, SqlitePool},
+    Acquire, Database, Error as SqlxError, Row, TransactionManager,
 };
 
 mod provision;
@@ -390,33 +392,42 @@ impl BackendSession for DbSession<Sqlite> {
                 let name = name.clone();
                 let tags_val = decode_tags(tags)
                     .map_err(|_| err_msg!(Unexpected, "Error decoding entry tags"))?;
-                let tags_not_encrypted: Result<Vec<EntryTag>, Error> = tags_val.iter().map(|tag| {
-                    // Decode hexadecimal string to bytes and then to UTF-8 string for the tag name
-                    let tag_name = hex::decode(&tag.name)
-                        .map_err(|_| err_msg!(Unexpected, "Invalid hexadecimal sequence in tag name"))
-                        .and_then(|bytes| 
-                            String::from_utf8(bytes)
-                                .map_err(|_| err_msg!(Unexpected, "Invalid UTF-8 sequence in tag name"))
-                        )?;
-                
-                    // Decode hexadecimal string to bytes and then to UTF-8 string for the tag value
-                    let tag_value = hex::decode(&tag.value)
-                        .map_err(|_| err_msg!(Unexpected, "Invalid hexadecimal sequence in tag value"))
-                        .and_then(|bytes| 
-                            String::from_utf8(bytes)
-                                .map_err(|_| err_msg!(Unexpected, "Invalid UTF-8 sequence in tag value"))
-                        )?;
-                    
-                    // Output the appropriate tag type based on the plaintext flag
-                    Ok(if tag.plaintext {
-                        println!("Plaintext tag: {:?}", tag_value);
-                        EntryTag::Plaintext(tag_name, tag_value)
-                    } else {
-                        println!("Encrypted tag: {:?}", tag_value);
-                        EntryTag::Encrypted(tag_name, tag_value)
+                let tags_not_encrypted: Result<Vec<EntryTag>, Error> = tags_val
+                    .iter()
+                    .map(|tag| {
+                        // Decode hexadecimal string to bytes and then to UTF-8 string for the tag name
+                        let tag_name = hex::decode(&tag.name)
+                            .map_err(|_| {
+                                err_msg!(Unexpected, "Invalid hexadecimal sequence in tag name")
+                            })
+                            .and_then(|bytes| {
+                                String::from_utf8(bytes).map_err(|_| {
+                                    err_msg!(Unexpected, "Invalid UTF-8 sequence in tag name")
+                                })
+                            })?;
+
+                        // Decode hexadecimal string to bytes and then to UTF-8 string for the tag value
+                        let tag_value = hex::decode(&tag.value)
+                            .map_err(|_| {
+                                err_msg!(Unexpected, "Invalid hexadecimal sequence in tag value")
+                            })
+                            .and_then(|bytes| {
+                                String::from_utf8(bytes).map_err(|_| {
+                                    err_msg!(Unexpected, "Invalid UTF-8 sequence in tag value")
+                                })
+                            })?;
+
+                        // Output the appropriate tag type based on the plaintext flag
+                        Ok(if tag.plaintext {
+                            println!("Plaintext tag: {:?}", tag_value);
+                            EntryTag::Plaintext(tag_name, tag_value)
+                        } else {
+                            println!("Encrypted tag: {:?}", tag_value);
+                            EntryTag::Encrypted(tag_name, tag_value)
+                        })
                     })
-                }).collect();  // Collect results into a single Result containing a vector of tags or an error
-                
+                    .collect(); // Collect results into a single Result containing a vector of tags or an error
+
                 let tags_final = tags_not_encrypted?;
                 let entry = Entry {
                     // Define this inline if Entry is defined elsewhere
@@ -739,7 +750,7 @@ async fn perform_insert(
         for tag in tags {
             // get the tag name and value
             print!("Tag: {:?}", tag);
-            // print row id 
+            // print row id
             print!("Row ID: {:?}", row_id);
             let tag_name;
             let tag_value;
@@ -794,6 +805,144 @@ async fn perform_remove<'q>(
 }
 
 #[allow(clippy::too_many_arguments)]
+// fn perform_scan(
+//     mut active: DbSessionRef<'_, Sqlite>,
+//     profile_id: ProfileId,
+//     key: Arc<ProfileKey>,
+//     kind: Option<EntryKind>,
+//     category: Option<String>,
+//     tag_filter: Option<TagFilter>,
+//     offset: Option<i64>,
+//     limit: Option<i64>,
+// ) -> impl Stream<Item = Result<Vec<EncScanEntry>, Error>> + '_ {
+//     try_stream! {
+//         let mut params = QueryParams::new();
+//         params.push(profile_id);
+//         params.push(kind.map(|k| k as i16));
+//         let (enc_category, tag_filter) = unblock({
+//             let key = key.clone();
+//             let enc_category = category.as_ref().map(|c| ProfileKey::prepare_input(c.as_bytes()));
+//             let params_len = params.len() + 1; // plus category
+//             move || {
+//                 Result::<_, Error>::Ok((
+//                     enc_category.map(|c| key.encrypt_entry_category(c)).transpose()?,
+//                     encode_tag_filter::<SqliteBackend>(tag_filter, &key, params_len)?
+//                 ))
+//             }
+//         }).await?;
+//         params.push(enc_category);
+//         let query = extend_query::<SqliteBackend>(SCAN_QUERY, &mut params, tag_filter, offset, limit)?;
+
+//         let mut batch = Vec::with_capacity(PAGE_SIZE);
+
+//         let mut acquired = acquire_session(&mut active).await?;
+//         let mut rows = sqlx::query_with(query.as_str(), params).fetch(acquired.connection_mut());
+//         while let Some(row) = rows.try_next().await? {
+//             let kind: u32 = row.try_get(1)?;
+//             let kind = EntryKind::try_from(kind as usize)?;
+//             batch.push(EncScanEntry {
+//                 kind, category: row.try_get(2)?, name: row.try_get(3)?, value: row.try_get(4)?, tags: row.try_get(5)?
+//             });
+//             if batch.len() == PAGE_SIZE {
+//                 yield batch.split_off(0);
+//             }
+//         }
+//         drop(rows);
+//         if active.is_owned() {
+//             active.close(false).await?;
+//         }
+//         drop(active);
+
+//         if !batch.is_empty() {
+//             yield batch;
+//         }
+//     }
+// }
+
+// fn perform_scan(
+//     mut active: DbSessionRef<'_, Sqlite>,
+//     profile_id: ProfileId,
+//     key: Arc<ProfileKey>,
+//     kind: Option<EntryKind>,
+//     category: Option<String>,
+//     tag_filter: Option<TagFilter>,
+//     offset: Option<i64>,
+//     limit: Option<i64>,
+// ) -> impl Stream<Item = Result<Vec<EncScanEntry>, Error>> + '_ {
+//     // Convert TagFilter to a JSON string
+//     let tag_condition_json = tag_filter.map(|tf| tf.to_string()).transpose()?;
+
+//     // Placeholder for the dynamic WHERE clause and additional parameters
+//     let mut extra_sql_conditions = String::new();
+//     let mut extra_params = vec![];
+
+//     if let Some(json_str) = tag_condition_json {
+//         let tag_data: serde_json::Value = serde_json::from_str(&json_str)?;
+//         if let Some(tag_array) = tag_data.as_array() {
+//             for tag in tag_array {
+//                 if let (Some(name), Some(value)) = (tag["name"].as_str(), tag["value"].as_str()) {
+//                     extra_sql_conditions.push_str(" AND name = ? AND value = ?");
+//                     extra_params.push(name.to_owned());
+//                     extra_params.push(value.to_owned());
+//                 }
+//             }
+//         }
+//     }
+
+//     let query = format!(
+//         "{} AND (i.kind = ?2 OR ?2 IS NULL) AND (i.category = ?3 OR ?3 IS NULL){} ORDER BY i.id ASC LIMIT ?5 OFFSET ?4",
+//         SCAN_QUERY,
+//         extra_sql_conditions
+//     );
+
+//     // Stream that handles scanning
+//     try_stream! {
+//         let mut params = QueryParams::new();
+//         params.push(profile_id);
+//         params.push(kind.map(|k| k as i16));
+//         params.push(category);
+
+//         // Append dynamically added parameters from tag conditions
+//         for param in extra_params {
+//             params.push(param);
+//         }
+
+//         if let Some(limit) = limit {
+//             params.push(limit);
+//         }
+//         if let Some(offset) = offset {
+//             params.push(offset);
+//         }
+
+//         let mut acquired = acquire_session(&mut active).await?;
+//         let mut rows = sqlx::query_with(query.as_str(), params).fetch(acquired.connection_mut());
+
+//         let mut batch = Vec::with_capacity(PAGE_SIZE);
+
+//         while let Some(row) = rows.try_next().await? {
+//             let kind: u32 = row.try_get(1)?;
+//             let kind = EntryKind::try_from(kind as usize)?;
+//             let tags: String = row.try_get(5)?;
+
+//             let entry = EncScanEntry {
+//                 kind,
+//                 category: row.try_get(2)?,
+//                 name: row.try_get(3)?,
+//                 value: row.try_get(4)?,
+//                 tags
+//             };
+//             batch.push(entry);
+
+//             if batch.len() == PAGE_SIZE {
+//                 yield batch.split_off(0);
+//             }
+//         }
+//         if !batch.is_empty() {
+//             yield batch;
+//         }
+//     }
+// }
+
 fn perform_scan(
     mut active: DbSessionRef<'_, Sqlite>,
     profile_id: ProfileId,
@@ -808,91 +957,162 @@ fn perform_scan(
     println!("Profile ID: {}", profile_id);
     println!("Kind: {:?}", kind);
     println!("Category: {:?}", category);
-    println!("Tag Filter: {:?}", tag_filter);
+    let string_tag_filter = tag_filter.clone().map(|tf| tf.to_string());
+    println!("Tag Filter: {:?}", string_tag_filter);
     println!("Offset: {:?}", offset);
     println!("Limit: {:?}", limit);
     // try scan query withou tags
-    
+    let mut query = String::from("SELECT i.id, i.kind, i.category, i.name, i.value, \
+        (SELECT GROUP_CONCAT(it.plaintext || ':' || it.name || ':' || it.value) \
+        FROM items_tags it WHERE it.item_id = i.id) AS tags \
+        FROM items i WHERE i.profile_id = ?1
+        AND (i.kind = ?2 OR ?2 IS NULL)
+        AND (i.category = ?3 OR ?3 IS NULL)")
+        
+        ;
     try_stream! {
-        let mut params = QueryParams::new();
-        params.push(profile_id);
-        params.push(kind.map(|k| k as i16));
-        let (_, tag_filter) = unblock({
-            let key = key.clone();
-            let enc_category = category.as_ref().map(|c| ProfileKey::prepare_input(c.as_bytes()));
-            let params_len = params.len() + 1; // plus category
-            move || {
-                Result::<_, Error>::Ok((
-                    enc_category.map(|c| key.encrypt_entry_category(c)).transpose()?,
-                    encode_tag_filter::<SqliteBackend>(tag_filter, &key, params_len)?
-                ))
-            }
-        }).await?;
-        params.push(category.clone());
-        
-        let query = extend_query::<SqliteBackend>(SCAN_QUERY, &mut params, tag_filter, offset, limit)?;
+            let mut params = QueryParams::new();
+            params.push(profile_id);
+            params.push(kind.map(|k| k as i16));
 
-        let mut batch = Vec::with_capacity(PAGE_SIZE);
-
-        let mut acquired = acquire_session(&mut active).await?;
-        let mut rows = sqlx::query_with(query.as_str(), params).fetch(acquired.connection_mut());
-        println!("Query: {}", query);
+            params.push(category.clone());
+            if let Some(tag_filter) = tag_filter {
+                let queries = match tag_filter.query {
+                    AbstractQuery::Eq(name, value) => vec![(name, value)],
+                    AbstractQuery::And(queries) => queries.iter().filter_map(|q| {
+                        if let AbstractQuery::Eq(name, value) = q {
+                            Some((name.clone(), value.clone()))
+                        } else {
+                            None
+                        }
+                    }).collect::<Vec<_>>(),
+                    _ => vec![],
+                };
         
-        
-        while let Some(row) = rows.try_next().await? {
-            for (index, column) in row.columns().iter().enumerate() {
-                println!("Column Scan {}: {:?}", index, column);
-                // print the column name ordinal and type
-                println!("Column Name: {:?}", column.name());
-                println!("Column Ordinal: {:?}", column.ordinal());
-                println!("Column Type: {:?}", column.type_info());
-                
-                
+                for (name, value) in queries {
+                    let name_index = params.len() + 1;  
+                    let value_index = name_index + 1;
+                    println!("Name Index: {:?}", name_index);
+                    println!("Value Index: {:?}", value_index);
+                    println!("Name: {:?}", name);
+                    println!("Value: {:?}", value);
+                    query.push_str(&format!(" AND (i.name = ?{} AND i.value = ?{})", name_index, value_index));
+                    params.push(name);  // Push name to params
+                    params.push(value);  // Push value to params
+                }
             }
-            let kind: u32 = row.try_get(1)?;
-            let kind = EntryKind::try_from(kind as usize)?;
-            let tags:String = row.try_get(5)?;
+            // for param in &tag_filter {
+            //     println!("Tag Filter Param: {:?}", param);
+            //     let query = &param.query;
+            //     println!("Query: {:?}", query);
+            //     let values = match query {
+            //         AbstractQuery::Eq(name, value) => {
+            //             println!("Name: {:?}", name);
+            //             println!("Value: {:?}", value);
+            //             vec![name, value]
+            //         },
+            //         AbstractQuery::And(queries) => {
+            //             println!("Queries: {:?}", queries);
+            //             queries.iter().flat_map(|q| {
+            //                 match q {
+            //                     AbstractQuery::Eq(name, value) => {
+            //                         vec![name, value]
+            //                     },
+            //                     _ => {
+            //                         println!("No match");
+            //                         vec![]
+            //                     }
+            //                 }
+            //             }).collect()
+            //         },
+            //         _ => {
+            //             println!("No match");
+            //             vec![]
+            //         }
+
+            //     };
+            //     for value in &values {
+            //         let new_value = value.to_owned().replace("user:", "");
+            //         println!("New Value: {:?}", new_value);
+            //     }
+            //     println!("Values: {:?}", values);
+
+            // }
+
+            let (_, tag_filter) = unblock({
+                let key = key.clone();
+                let enc_category = category.as_ref().map(|c| ProfileKey::prepare_input(c.as_bytes()));
+                let params_len = params.len() + 1; // plus category
+                move || {
+                    Result::<_, Error>::Ok((
+                        enc_category.map(|c| key.encrypt_entry_category(c)).transpose()?,
+                        encode_tag_filter::<SqliteBackend>(tag_filter, &key, params_len)?
+                    ))
+                }
+            }).await?;
+            // get the string tag filter
+
+
+            let query = extend_query::<SqliteBackend>(SCAN_QUERY, &mut params, tag_filter, offset, limit)?;
+
+            let mut batch = Vec::with_capacity(PAGE_SIZE);
+
+            let mut acquired = acquire_session(&mut active).await?;
+            let mut rows = sqlx::query_with(query.as_str(), params).fetch(acquired.connection_mut());
+            println!("Query: {}", query);
             
-            let _id:i64 = row.try_get(0)?;
-            // print the id
-            println!("ID: {:?}", _id);
-            // print the kind
-            println!("Kind: {:?}", kind);
-            // print the tags
-            println!("Tags: {:?}", tags);
-            // take second tag and print it in string format
-            let __tag = tags.split(":").nth(1).unwrap();
-            // convert the tag to a string
-            
-            println!("Tag: {:?}", __tag);
-            batch.push(EncScanEntry {
-                kind, category: row.try_get(2)?, name: row.try_get(3)?, value: row.try_get(4)?, tags: row.try_get(5)?
-            });
-            // print the batch
-            for entry in &batch {
-                // convert the tags to a string
-                let tags_str = &entry.tags;
-                // print the entry
-                println!("Entry: {:?}", tags_str);
-            }
-            if batch.len() == PAGE_SIZE {
-                yield batch.split_off(0);
-            }
-        }
-        drop(rows);
-        if active.is_owned() {
-            active.close(false).await?;
-        }
-        drop(active);
 
-        if !batch.is_empty() {
-            yield batch;
-        }
-    }
+            while let Some(row) = rows.try_next().await? {
+                for (index, column) in row.columns().iter().enumerate() {
+                    println!("Column Scan {}: {:?}", index, column);
+                    // print the column name ordinal and type
+                    println!("Column Name: {:?}", column.name());
+                    println!("Column Ordinal: {:?}", column.ordinal());
+                    println!("Column Type: {:?}", column.type_info());
 
-    
+
+                }
+                let kind: u32 = row.try_get(1)?;
+                let kind = EntryKind::try_from(kind as usize)?;
+                let tags:String = row.try_get(5)?;
+
+                let _id:i64 = row.try_get(0)?;
+                // print the id
+                println!("ID: {:?}", _id);
+                // print the kind
+                println!("Kind: {:?}", kind);
+                // print the tags
+                println!("Tags: {:?}", tags);
+                // take second tag and print it in string format
+                let __tag = tags.split(":").nth(1).unwrap();
+                // convert the tag to a string
+
+                println!("Tag: {:?}", __tag);
+                batch.push(EncScanEntry {
+                    kind, category: row.try_get(2)?, name: row.try_get(3)?, value: row.try_get(4)?, tags: row.try_get(5)?
+                });
+                // print the batch
+                for entry in &batch {
+                    // convert the tags to a string
+                    let tags_str = &entry.tags;
+                    // print the entry
+                    println!("Entry: {:?}", tags_str);
+                }
+                if batch.len() == PAGE_SIZE {
+                    yield batch.split_off(0);
+                }
+            }
+            drop(rows);
+            if active.is_owned() {
+                active.close(false).await?;
+            }
+            drop(active);
+
+            if !batch.is_empty() {
+                yield batch;
+            }
+        }
 }
-
 
 #[cfg(test)]
 mod tests {

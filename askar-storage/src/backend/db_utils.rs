@@ -682,7 +682,7 @@ pub fn decrypt_scan_entry(
             .map_err(|_| err_msg!(Unexpected, "Invalid UTF-8 sequence in tag value"))?;
         
         Ok(if tag.plaintext {
-            println!("Plaintext tag: {:?}", tag_value);
+            println!("Plaintext tag: {:?}", tag_name);
             EntryTag::Plaintext(tag_name, tag_value)
         } else {
             println!("Encrypted tag: {:?}", tag_value);
