@@ -1,6 +1,6 @@
 {
   "name": "@hyperledger/aries-askar-react-native",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "license": "Apache-2.0",
   "description": "React Native wrapper for Aries Askar",
   "main": "build/index",
@@ -51,7 +51,7 @@
   "binary": {
     "module_name": "aries_askar",
     "module_path": "native",
-    "remote_path": "v0.3.1",
+    "remote_path": "v0.3.2",
     "host": "https://github.com/hyperledger/aries-askar/releases/download/",
     "package_name": "library-ios-android.tar.gz"
   }
