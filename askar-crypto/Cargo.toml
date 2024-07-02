@@ -32,7 +32,7 @@ std = ["alloc", "serde/std", "serde-json-core/std", "std_rng", "uuid/std"]
 std_rng = ["getrandom", "rand/std", "rand/std_rng"]
 
 [dev-dependencies]
-base64 = { version = "0.21", default-features = false, features = ["alloc"] }
+base64 = { version = "0.22", default-features = false, features = ["alloc"] }
 criterion = "0.5"
 hex-literal = "0.4"
 serde-json-core = { version = "0.5", default-features = false, features = [
@@ -59,7 +59,7 @@ argon2 = { version = "0.5", default-features = false, features = [
     "alloc",
     "password-hash",
 ], optional = true }
-base64 = { version = "0.21", default-features = false }
+base64 = { version = "0.22", default-features = false }
 blake2 = { version = "0.10", default-features = false }
 block-modes = { version = "0.9", default-features = false, optional = true }
 bls12_381 = { version = "0.8", default-features = false, features = [
