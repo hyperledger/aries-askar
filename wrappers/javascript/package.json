@@ -26,7 +26,6 @@
     "test:local-build": "LIB_ARIES_ASKAR_PATH=../../target/release pnpm test",
     "release": "lerna publish from-package --no-push --no-private --yes --no-git-tag-version",
     "release:alpha": "pnpm release --dist-tag=alpha"
-
   },
   "devDependencies": {
     "@pnpm/eslint-config": "^1.1.0",
