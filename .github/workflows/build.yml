@@ -356,7 +356,7 @@ jobs:
           pip install setuptools wheel twine auditwheel
 
       - name: Install dependencies
-        run: pnpm install
+        run: pnpm install --frozen-lockfile
 
       - name: Build
         run: pnpm build
@@ -392,9 +392,9 @@ jobs:
           (github.event_name == 'workflow_dispatch' && github.event.inputs.publish-javascript-wrapper == 'true')
         run: |
           if [[ $(cat lerna.json | grep version | head -1 | grep dev) ]]; then
-            npx lerna publish from-package --no-push --no-private --yes --no-git-tag-version --dist-tag=alpha
+            pnpm release:alpha
           else
-            npx lerna publish from-package --no-push --no-private --yes --no-git-tag-version
+            pnpm release
           fi
 
   build-ios:
