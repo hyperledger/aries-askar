@@ -8,7 +8,7 @@ use super::{
     EcCurves, HasKeyAlg, HasKeyBackend, KeyAlg, KeyBackend,
 };
 use crate::{
-    buffer::WriteBuffer,
+    buffer::{SecretBytes, WriteBuffer},
     error::{Error, ErrorKind},
     generic_array::typenum::{U32, U33, U65},
     jwk::ToJwk,
@@ -50,17 +50,23 @@ impl From<SecureEnvError> for Error {
 
 /// A P-256 (secp256r1) reference to a key pair stored in hardware
 #[derive(Debug)]
-pub struct P256HardwareKeyPair(P256HardwareKeyReference);
+pub struct P256HardwareKeyPair {
+    pub(crate) inner: P256HardwareKeyReference,
+    pub(crate) key_id: SecretBytes,
+}
 
 impl P256HardwareKeyPair {
     pub(crate) fn get_p256_keypair(&self) -> Result<P256KeyPair, Error> {
-        let public_key = self.0.get_public_key()?;
+        let public_key = self.inner.get_public_key()?;
         P256KeyPair::from_public_bytes(&public_key)
     }
 
     /// Sign a message with the secret key
     pub fn sign(&self, message: &[u8]) -> Option<[u8; ES256_SIGNATURE_LENGTH]> {
-        self.0.sign(message).ok().and_then(|s| s.try_into().ok())
+        self.inner
+            .sign(message)
+            .ok()
+            .and_then(|s| s.try_into().ok())
     }
 
     /// Verify a signature with the public key
@@ -75,12 +81,18 @@ impl P256HardwareKeyPair {
     /// For this method the `rng` source is disregarded and the Secure Elements source will be
     /// used.
     pub fn generate(id: &str) -> Result<Self, Error> {
-        Ok(Self(SecureEnvironment::generate_keypair(id)?))
+        Ok(Self {
+            inner: SecureEnvironment::generate_keypair(id)?,
+            key_id: SecretBytes::from_slice(id.as_bytes()),
+        })
     }
 
     /// Fetch the keypair from the Secure Element via the id
     pub fn from_id(id: &str) -> Result<Self, Error> {
-        Ok(Self(SecureEnvironment::get_keypair_by_id(id)?))
+        Ok(Self {
+            inner: SecureEnvironment::get_keypair_by_id(id)?,
+            key_id: SecretBytes::from_slice(id.as_bytes()),
+        })
     }
 }
 
@@ -90,7 +102,7 @@ impl ToPublicBytes for P256HardwareKeyPair {
     }
 
     fn write_public_bytes(&self, out: &mut dyn WriteBuffer) -> Result<(), Error> {
-        let public_key = self.0.get_public_key()?;
+        let public_key = self.inner.get_public_key()?;
         out.buffer_write(&public_key)
     }
 }
