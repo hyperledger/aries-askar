@@ -583,10 +583,7 @@ fn get_key_id_any(key: &AnyKey) -> Result<SecretBytes, Error> {
             Ok(key.assume::<P256HardwareKeyPair>().key_id.clone())
         }
         #[allow(unreachable_patterns)]
-        _ => Err(err_msg!(
-            Unsupported,
-            "Unsupported key conversion operation"
-        )),
+        _ => Err(err_msg!(Unsupported, "Unsupported get key id operation")),
     }
 }
 

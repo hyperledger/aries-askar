@@ -597,7 +597,6 @@ pub extern "C" fn askar_key_get_supported_backends(out: *mut StringListHandle) -
 
         let string_list = StringListHandle::create(FfiStringList::from(backends));
 
-
         unsafe { *out = string_list };
 
         Ok(ErrorCode::Success)
