@@ -43,7 +43,7 @@ use super::p256_hardware::P256HardwareKeyPair;
 use super::{HasKeyAlg, HasKeyBackend, KeyAlg};
 use crate::{
     backend::KeyBackend,
-    buffer::{ResizeBuffer, WriteBuffer},
+    buffer::{ResizeBuffer, SecretBytes, WriteBuffer},
     encrypt::{KeyAeadInPlace, KeyAeadParams},
     error::Error,
     jwk::{FromJwk, JwkEncoder, JwkParts, ToJwk},
@@ -91,6 +91,11 @@ impl AnyKey {
     #[inline]
     pub fn key_type_id(&self) -> TypeId {
         self.0.as_any().type_id()
+    }
+
+    #[inline]
+    pub fn key_id(&self) -> Result<SecretBytes, Error> {
+        get_key_id_any(self)
     }
 }
 
@@ -567,6 +572,18 @@ fn convert_key_any<R: AllocKey>(key: &AnyKey, alg: KeyAlg) -> Result<R, Error> {
             Unsupported,
             "Unsupported key conversion operation"
         )),
+    }
+}
+
+#[inline]
+fn get_key_id_any(key: &AnyKey) -> Result<SecretBytes, Error> {
+    match key.algorithm() {
+        #[cfg(feature = "p256_hardware")]
+        KeyAlg::EcCurve(EcCurves::Secp256r1) => {
+            Ok(key.assume::<P256HardwareKeyPair>().key_id.clone())
+        }
+        #[allow(unreachable_patterns)]
+        _ => Err(err_msg!(Unsupported, "Unsupported get key id operation")),
     }
 }
 

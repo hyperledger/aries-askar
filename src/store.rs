@@ -345,7 +345,11 @@ impl Session {
         tags: Option<&[EntryTag]>,
         expiry_ms: Option<i64>,
     ) -> Result<(), Error> {
-        let data = key.encode()?;
+        let data = if key.is_hardware_backed() {
+            key.inner.key_id()?
+        } else {
+            key.encode()?
+        };
         let params = KeyParams {
             metadata: metadata.map(str::to_string),
             reference,
