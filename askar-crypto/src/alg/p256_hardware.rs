@@ -62,11 +62,12 @@ impl P256HardwareKeyPair {
     }
 
     /// Sign a message with the secret key
-    pub fn sign(&self, message: &[u8]) -> Option<[u8; ES256_SIGNATURE_LENGTH]> {
-        self.inner
-            .sign(message)
-            .ok()
-            .and_then(|s| s.try_into().ok())
+    pub fn sign(&self, message: &[u8]) -> Result<[u8; ES256_SIGNATURE_LENGTH], Error> {
+        let signature = self.inner.sign(message)?;
+        signature.as_slice().try_into().map_err(err_map!(
+            Unexpected,
+            "Could not convert signature into correct length"
+        ))
     }
 
     /// Verify a signature with the public key
@@ -82,7 +83,7 @@ impl P256HardwareKeyPair {
     /// used.
     pub fn generate(id: &str) -> Result<Self, Error> {
         Ok(Self {
-            inner: SecureEnvironment::generate_keypair(id)?,
+            inner: SecureEnvironment::generate_keypair(id, true)?,
             key_id: SecretBytes::from_slice(id.as_bytes()),
         })
     }
@@ -131,12 +132,9 @@ impl KeySign for P256HardwareKeyPair {
     ) -> Result<(), Error> {
         match sig_type {
             None | Some(SignatureType::ES256) => {
-                if let Some(sig) = self.sign(message) {
-                    out.buffer_write(&sig[..])?;
-                    Ok(())
-                } else {
-                    Err(err_msg!(Unsupported, "Undefined secret key"))
-                }
+                let sig = self.sign(message)?;
+                out.buffer_write(&sig[..])?;
+                Ok(())
             }
             #[allow(unreachable_patterns)]
             _ => Err(err_msg!(Unsupported, "Unsupported signature type")),
