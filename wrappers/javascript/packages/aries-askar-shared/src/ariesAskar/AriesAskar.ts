@@ -211,6 +211,8 @@ export type ScanStartOptions = {
   tagFilter?: Record<string, unknown>
   offset?: number
   limit?: number
+  orderBy?: string
+  descending: boolean
 }
 
 export type SessionCloseOptions = {

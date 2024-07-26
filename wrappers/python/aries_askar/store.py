@@ -247,9 +247,20 @@ class Scan:
         tag_filter: Union[str, dict] = None,
         offset: int = None,
         limit: int = None,
+        order_by: Optional[str] = None,
+        descending: bool = False,
     ):
         """Initialize the Scan instance."""
-        self._params = (store, profile, category, tag_filter, offset, limit)
+        self._params = (
+            store,
+            profile,
+            category,
+            tag_filter,
+            offset,
+            limit,
+            order_by,
+            descending,
+        )
         self._handle: ScanHandle = None
         self._buffer: IterEntryList = None
 
@@ -265,14 +276,30 @@ class Scan:
     async def __anext__(self):
         """Fetch the next scan result during async iteration."""
         if self._handle is None:
-            (store, profile, category, tag_filter, offset, limit) = self._params
+            (
+                store,
+                profile,
+                category,
+                tag_filter,
+                offset,
+                limit,
+                order_by,
+                descending,
+            ) = self._params
             self._params = None
             if not store.handle:
                 raise AskarError(
                     AskarErrorCode.WRAPPER, "Cannot scan from closed store"
                 )
             self._handle = await bindings.scan_start(
-                store.handle, profile, category, tag_filter, offset, limit
+                store.handle,
+                profile,
+                category,
+                tag_filter,
+                offset,
+                limit,
+                order_by,
+                descending,
             )
             list_handle = await bindings.scan_next(self._handle)
             self._buffer = iter(EntryList(list_handle)) if list_handle else None
@@ -428,9 +455,13 @@ class Store:
         offset: int = None,
         limit: int = None,
         profile: str = None,
+        order_by: Optional[str] = None,
+        descending: bool = False,
     ) -> Scan:
         """Start a new record scan."""
-        return Scan(self, profile, category, tag_filter, offset, limit)
+        return Scan(
+            self, profile, category, tag_filter, offset, limit, order_by, descending
+        )
 
     def session(self, profile: str = None) -> "OpenSession":
         """Open a new session on the store without starting a transaction."""

@@ -120,6 +120,8 @@ export class Store {
     tagFilter?: Record<string, unknown>
     offset?: number
     limit?: number
+    orderBy?: string
+    descending: boolean
     profile?: string
   }) {
     return new Scan({ ...options, store: this })

@@ -547,9 +547,14 @@ pub extern "C" fn askar_scan_start(
     tag_filter: FfiStr<'_>,
     offset: i64,
     limit: i64,
+    order_by: FfiStr<'_>,
+    descending: i8,
     cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, handle: ScanHandle)>,
     cb_id: CallbackId,
 ) -> ErrorCode {
+    let order_by = order_by.into_opt_string();
+    let descending = descending != 0; // Convert to bool
+
     catch_err! {
         trace!("Scan store start");
         let cb = cb.ok_or_else(|| err_msg!("No callback provided"))?;
@@ -568,7 +573,7 @@ pub extern "C" fn askar_scan_start(
         spawn_ok(async move {
             let result = async {
                 let store = handle.load().await?;
-                let scan = store.scan(profile, category, tag_filter, Some(offset), if limit < 0 { None }else {Some(limit)}).await?;
+                let scan = store.scan(profile, category, tag_filter, Some(offset), if limit < 0 { None }else {Some(limit)}, order_by, descending).await?;
                 Ok(FFI_SCANS.insert(handle, scan).await)
             }.await;
             cb.resolve(result);
