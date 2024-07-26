@@ -126,7 +126,7 @@ impl Store {
         offset: Option<i64>,
         limit: Option<i64>,
         order_by: Option<String>,
-        descending: Option<bool>,
+        descending: bool,
     ) -> Result<Scan<'static, Entry>, Error> {
         Ok(self
             .0

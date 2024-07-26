@@ -55,7 +55,7 @@ pub trait Backend: Debug + Send + Sync {
         offset: Option<i64>,
         limit: Option<i64>,
         order_by: Option<String>,
-        descending: Option<bool>,
+        descending: bool,
     ) -> BoxFuture<'_, Result<Scan<'static, Entry>, Error>>;
 
     /// Create a new session against the store
@@ -195,7 +195,7 @@ pub async fn copy_profile<A: Backend, B: Backend>(
             None,
             None,
             None,
-            None,
+            false,
         )
         .await?;
     if let Err(e) = to_backend.create_profile(Some(to_profile.into())).await {

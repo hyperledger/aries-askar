@@ -263,7 +263,7 @@ impl Backend for SqliteBackend {
         offset: Option<i64>,
         limit: Option<i64>,
         order_by: Option<String>,
-        descending: Option<bool>,
+        descending: bool,
     ) -> BoxFuture<'_, Result<Scan<'static, Entry>, Error>> {
         Box::pin(async move {
             let session = self.session(profile, false)?;
@@ -334,8 +334,15 @@ impl BackendSession for DbSession<Sqlite> {
             })
             .await?;
             params.push(enc_category);
-            let query =
-                extend_query::<SqliteBackend>(COUNT_QUERY, &mut params, tag_filter, None, None)?;
+            let query = extend_query::<SqliteBackend>(
+                COUNT_QUERY,
+                &mut params,
+                tag_filter,
+                None,
+                None,
+                None,
+                false,
+            )?;
             let mut active = acquire_session(&mut *self).await?;
             let count = sqlx::query_scalar_with(query.as_str(), params)
                 .fetch_one(active.connection_mut())
@@ -418,7 +425,7 @@ impl BackendSession for DbSession<Sqlite> {
                 None,
                 limit,
                 None,
-                None,
+                false,
             );
             pin!(scan);
             let mut enc_rows = vec![];
@@ -461,6 +468,8 @@ impl BackendSession for DbSession<Sqlite> {
                 tag_filter,
                 None,
                 None,
+                None,
+                false,
             )?;
 
             let mut active = acquire_session(&mut *self).await?;
@@ -710,7 +719,7 @@ fn perform_scan(
     offset: Option<i64>,
     limit: Option<i64>,
     order_by: Option<String>,
-    descending: Option<bool>,
+    descending: bool,
 ) -> impl Stream<Item = Result<Vec<EncScanEntry>, Error>> + '_ {
     try_stream! {
         let mut params = QueryParams::new();

@@ -269,7 +269,7 @@ impl Backend for PostgresBackend {
         offset: Option<i64>,
         limit: Option<i64>,
         order_by: Option<String>,
-        descending: Option<bool>,
+        descending: bool,
     ) -> BoxFuture<'_, Result<Scan<'static, Entry>, Error>> {
         Box::pin(async move {
             let session = self.session(profile, false)?;
@@ -358,7 +358,7 @@ impl BackendSession for DbSession<Postgres> {
                 None,
                 None,
                 None,
-                None,
+                false,
             )?;
             let mut active = acquire_session(&mut *self).await?;
             let count = sqlx::query_scalar_with(query.as_str(), params)
@@ -452,7 +452,7 @@ impl BackendSession for DbSession<Postgres> {
                 None,
                 limit,
                 None,
-                None,
+                false,
                 for_update,
             );
             pin!(scan);
@@ -496,6 +496,8 @@ impl BackendSession for DbSession<Postgres> {
                 tag_filter,
                 None,
                 None,
+                None,
+                false,
             )?;
 
             let mut active = acquire_session(&mut *self).await?;
@@ -766,7 +768,7 @@ fn perform_scan(
     offset: Option<i64>,
     limit: Option<i64>,
     order_by: Option<String>,
-    descending: Option<bool>,
+    descending: bool,
     for_update: bool,
 ) -> impl Stream<Item = Result<Vec<EncScanEntry>, Error>> + '_ {
     try_stream! {

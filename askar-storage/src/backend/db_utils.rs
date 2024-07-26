@@ -454,15 +454,11 @@ pub trait QueryPrepare {
         query
     }
 
-    fn order_by_query<'q>(
-        mut query: String,
-        order_by: Option<String>,
-        descending: Option<bool>,
-    ) -> String {
+    fn order_by_query<'q>(mut query: String, order_by: Option<String>, descending: bool) -> String {
         if let Some(order_by) = order_by {
             query.push_str(" ORDER BY ");
             query.push_str(&order_by);
-            if descending.is_some_and(|x| x) {
+            if descending {
                 query.push_str(" DESC");
             }
         }
@@ -641,7 +637,7 @@ pub fn extend_query<'q, Q: QueryPrepare>(
     offset: Option<i64>,
     limit: Option<i64>,
     order_by: Option<String>,
-    descending: Option<bool>,
+    descending: bool,
 ) -> Result<String, Error>
 where
     i64: for<'e> Encode<'e, Q::DB> + Type<Q::DB>,

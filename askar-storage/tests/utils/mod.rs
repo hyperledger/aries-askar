@@ -891,7 +891,7 @@ pub async fn db_import_scan(db: AnyBackend) {
             None,
             None,
             None,
-            None,
+            false,
         )
         .await
         .expect(ERR_SCAN);
@@ -910,7 +910,7 @@ pub async fn db_import_scan(db: AnyBackend) {
             None,
             None,
             None,
-            None,
+            false,
         )
         .await
         .expect(ERR_SCAN);
