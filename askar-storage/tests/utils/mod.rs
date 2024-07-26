@@ -489,8 +489,8 @@ pub async fn db_scan(db: AnyBackend) {
             tag_filter,
             offset,
             limit,
-            order_by,
-            descending,
+            None,
+            false,
         )
         .await
         .expect(ERR_SCAN);
@@ -508,8 +508,8 @@ pub async fn db_scan(db: AnyBackend) {
             tag_filter,
             offset,
             limit,
-            order_by,
-            descending,
+            None,
+            false,
         )
         .await
         .expect(ERR_SCAN);
