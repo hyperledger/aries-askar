@@ -547,11 +547,14 @@ pub extern "C" fn askar_scan_start(
     tag_filter: FfiStr<'_>,
     offset: i64,
     limit: i64,
-    order_by: Option<String>,
-    descending: Option<bool>,
+    order_by: FfiStr<'_>,
+    descending: i8,
     cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, handle: ScanHandle)>,
     cb_id: CallbackId,
 ) -> ErrorCode {
+    let order_by = order_by.into_opt_string();
+    let descending = descending != 0; // Convert to bool
+
     catch_err! {
         trace!("Scan store start");
         let cb = cb.ok_or_else(|| err_msg!("No callback provided"))?;
