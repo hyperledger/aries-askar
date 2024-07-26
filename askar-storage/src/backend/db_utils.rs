@@ -454,7 +454,11 @@ pub trait QueryPrepare {
         query
     }
 
-    fn order_by_query<'q>(mut query: String, order_by: Option<String>, descending: Option<bool>) -> String {
+    fn order_by_query<'q>(
+        mut query: String,
+        order_by: Option<String>,
+        descending: Option<bool>,
+    ) -> String {
         if let Some(order_by) = order_by {
             query.push_str(" ORDER BY ");
             query.push_str(&order_by);

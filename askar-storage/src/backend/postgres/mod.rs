@@ -351,8 +351,15 @@ impl BackendSession for DbSession<Postgres> {
             })
             .await?;
             params.push(enc_category);
-            let query =
-                extend_query::<PostgresBackend>(COUNT_QUERY, &mut params, tag_filter, None, None, None, None)?;
+            let query = extend_query::<PostgresBackend>(
+                COUNT_QUERY,
+                &mut params,
+                tag_filter,
+                None,
+                None,
+                None,
+                None,
+            )?;
             let mut active = acquire_session(&mut *self).await?;
             let count = sqlx::query_scalar_with(query.as_str(), params)
                 .fetch_one(active.connection_mut())
