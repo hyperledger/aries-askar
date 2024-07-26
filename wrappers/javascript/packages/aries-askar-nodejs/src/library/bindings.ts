@@ -136,7 +136,18 @@ export const nativeBindings = {
   askar_scan_next: [FFI_ERROR_CODE, [FFI_SCAN_HANDLE, FFI_CALLBACK_PTR, FFI_CALLBACK_ID]],
   askar_scan_start: [
     FFI_ERROR_CODE,
-    [FFI_STORE_HANDLE, FFI_STRING, FFI_STRING, FFI_STRING, FFI_INT64, FFI_INT64, FFI_CALLBACK_PTR, FFI_CALLBACK_ID],
+    [
+      FFI_STORE_HANDLE,
+      FFI_STRING,
+      FFI_STRING,
+      FFI_STRING,
+      FFI_INT64,
+      FFI_INT64,
+      FFI_STRING,
+      FFI_INT8,
+      FFI_CALLBACK_PTR,
+      FFI_CALLBACK_ID,
+    ],
   ],
 
   askar_session_close: [FFI_ERROR_CODE, [FFI_SESSION_HANDLE, FFI_INT8, FFI_CALLBACK_PTR, FFI_CALLBACK_ID]],

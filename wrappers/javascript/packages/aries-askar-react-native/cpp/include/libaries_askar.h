@@ -440,6 +440,8 @@ ErrorCode askar_scan_start(StoreHandle handle,
                            FfiStr tag_filter,
                            int64_t offset,
                            int64_t limit,
+                           FfiStr order_by,
+                           int8_t descending,
                            void (*cb)(CallbackId cb_id, ErrorCode err, ScanHandle handle),
                            CallbackId cb_id);
 
