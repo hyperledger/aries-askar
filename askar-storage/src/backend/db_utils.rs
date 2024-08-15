@@ -456,13 +456,13 @@ pub trait QueryPrepare {
         query
     }
 
-    fn order_by_query<'q>(mut query: String, order_by: Option<String>, descending: bool) -> String {
-        if let Some(order_by) = order_by {
+    fn order_by_query<'q>(mut query: String, order_by: OrderBy, descending: bool) -> String {
             query.push_str(" ORDER BY ");
-            query.push_str(&order_by);
+        match order_by {
+            OrderBy::Id => query.push_str("id"),
+        }
             if descending {
                 query.push_str(" DESC");
-            }
         }
         query
     }
