@@ -457,12 +457,12 @@ pub trait QueryPrepare {
     }
 
     fn order_by_query<'q>(mut query: String, order_by: OrderBy, descending: bool) -> String {
-            query.push_str(" ORDER BY ");
+        query.push_str(" ORDER BY ");
         match order_by {
             OrderBy::Id => query.push_str("id"),
         }
-            if descending {
-                query.push_str(" DESC");
+        if descending {
+            query.push_str(" DESC");
         }
         query
     }
@@ -651,10 +651,16 @@ where
         query.push_str(" AND "); // assumes WHERE already occurs
         query.push_str(&filter_clause);
     };
-    query = Q::order_by_query(query, order_by, descending);
-    if offset.is_some() || limit.is_some() {
-        query = Q::limit_query(query, args, offset, limit);
-    };
+    // Only add ordering, and limit/offset, if the query starts with SELECT
+    if query.trim_start().to_uppercase().starts_with("SELECT") {
+        if let Some(order_by_value) = order_by {
+            query = Q::order_by_query(query, order_by_value, descending);
+        };
+
+        if offset.is_some() || limit.is_some() {
+            query = Q::limit_query(query, args, offset, limit);
+        };
+    }
     Ok(query)
 }
 
