@@ -4,6 +4,7 @@ use std::{fmt::Debug, sync::Arc};
 
 use super::{Backend, BackendSession, ManageBackend};
 use crate::{
+    backend::OrderBy,
     entry::{Entry, EntryKind, EntryOperation, EntryTag, Scan, TagFilter},
     error::Error,
     future::BoxFuture,
@@ -72,7 +73,7 @@ impl<B: Backend> Backend for WrapBackend<B> {
         tag_filter: Option<TagFilter>,
         offset: Option<i64>,
         limit: Option<i64>,
-        order_by: Option<String>,
+        order_by: Option<OrderBy>,
         descending: bool,
     ) -> BoxFuture<'_, Result<Scan<'static, Entry>, Error>> {
         self.0.scan(
@@ -145,7 +146,7 @@ impl Backend for AnyBackend {
         tag_filter: Option<TagFilter>,
         offset: Option<i64>,
         limit: Option<i64>,
-        order_by: Option<String>,
+        order_by: Option<OrderBy>,
         descending: bool,
     ) -> BoxFuture<'_, Result<Scan<'static, Entry>, Error>> {
         self.0.scan(

@@ -25,6 +25,7 @@ use super::{
     Backend, BackendSession,
 };
 use crate::{
+    backend::OrderBy,
     entry::{EncEntryTag, Entry, EntryKind, EntryOperation, EntryTag, Scan, TagFilter},
     error::Error,
     future::{unblock, BoxFuture},
@@ -268,7 +269,7 @@ impl Backend for PostgresBackend {
         tag_filter: Option<TagFilter>,
         offset: Option<i64>,
         limit: Option<i64>,
-        order_by: Option<String>,
+        order_by: Option<OrderBy>,
         descending: bool,
     ) -> BoxFuture<'_, Result<Scan<'static, Entry>, Error>> {
         Box::pin(async move {
@@ -767,7 +768,7 @@ fn perform_scan(
     tag_filter: Option<TagFilter>,
     offset: Option<i64>,
     limit: Option<i64>,
-    order_by: Option<String>,
+    order_by: Option<OrderBy>,
     descending: bool,
     for_update: bool,
 ) -> impl Stream<Item = Result<Vec<EncScanEntry>, Error>> + '_ {

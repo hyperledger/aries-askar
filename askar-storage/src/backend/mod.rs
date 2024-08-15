@@ -22,6 +22,18 @@ pub mod postgres;
 /// Sqlite database support
 pub mod sqlite;
 
+/// Enum to support custom ordering in record queries
+#[derive(Debug)]
+pub enum OrderBy {
+    /// Order by ID field
+    Id,
+}
+
+impl Default for OrderBy {
+    fn default() -> Self {
+        OrderBy::Id
+    }
+}
 /// Represents a generic backend implementation
 pub trait Backend: Debug + Send + Sync {
     /// The type of session managed by this backend
@@ -54,7 +66,7 @@ pub trait Backend: Debug + Send + Sync {
         tag_filter: Option<TagFilter>,
         offset: Option<i64>,
         limit: Option<i64>,
-        order_by: Option<String>,
+        order_by: Option<OrderBy>,
         descending: bool,
     ) -> BoxFuture<'_, Result<Scan<'static, Entry>, Error>>;
 

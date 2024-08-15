@@ -18,6 +18,8 @@ use crate::{
     },
 };
 
+use super::OrderBy;
+
 /// cbindgen:ignore
 pub const PAGE_SIZE: usize = 32;
 
@@ -636,7 +638,7 @@ pub fn extend_query<'q, Q: QueryPrepare>(
     tag_filter: Option<(String, Vec<Vec<u8>>)>,
     offset: Option<i64>,
     limit: Option<i64>,
-    order_by: Option<String>,
+    order_by: Option<OrderBy>,
     descending: bool,
 ) -> Result<String, Error>
 where

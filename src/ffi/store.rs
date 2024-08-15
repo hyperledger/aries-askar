@@ -1,5 +1,6 @@
 use std::{collections::BTreeMap, ffi::CString, os::raw::c_char, ptr, str::FromStr, sync::Arc};
 
+use askar_storage::backend::OrderBy;
 use async_lock::{Mutex as TryMutex, MutexGuardArc as TryMutexGuard, RwLock};
 use ffi_support::{rust_string_to_c, ByteBuffer, FfiStr};
 use once_cell::sync::Lazy;
@@ -552,7 +553,12 @@ pub extern "C" fn askar_scan_start(
     cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, handle: ScanHandle)>,
     cb_id: CallbackId,
 ) -> ErrorCode {
-    let order_by = order_by.into_opt_string();
+    let order_by_str = order_by.as_opt_str().map(|s| s.to_lowercase());
+    let order_by = match order_by_str.as_deref() {
+        Some("id") => Some(OrderBy::Id),
+        Some(_) => return ErrorCode::Unsupported,
+        None => None,
+    };
     let descending = descending != 0; // Convert to bool
 
     catch_err! {

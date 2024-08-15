@@ -1,4 +1,4 @@
-use askar_storage::backend::copy_profile;
+use askar_storage::backend::{copy_profile, OrderBy};
 
 use crate::{
     error::Error,
@@ -125,7 +125,7 @@ impl Store {
         tag_filter: Option<TagFilter>,
         offset: Option<i64>,
         limit: Option<i64>,
-        order_by: Option<String>,
+        order_by: Option<OrderBy>,
         descending: bool,
     ) -> Result<Scan<'static, Entry>, Error> {
         Ok(self
