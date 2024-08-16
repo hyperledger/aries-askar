@@ -69,8 +69,8 @@ export class Session {
     category: string
     tagFilter?: Record<string, unknown>
     limit?: number
-    orderBy?: string,
-    descending: boolean,
+    orderBy?: string
+    descending: boolean
     forUpdate?: boolean
     isJson?: boolean
   }) {

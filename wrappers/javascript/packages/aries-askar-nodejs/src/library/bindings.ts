@@ -170,7 +170,7 @@ export const nativeBindings = {
       FFI_INT8,
       FFI_INT8,
       FFI_CALLBACK_PTR,
-      FFI_CALLBACK_ID
+      FFI_CALLBACK_ID,
     ],
   ],
   askar_session_fetch_all_keys: [
