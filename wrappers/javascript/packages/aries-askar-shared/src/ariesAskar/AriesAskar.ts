@@ -235,6 +235,8 @@ export type SessionFetchAllOptions = {
   category: string
   tagFilter?: Record<string, unknown>
   limit?: number
+  orderBy?: string
+  descending: boolean
   forUpdate: boolean
 }
 export type SessionFetchAllKeysOptions = {

@@ -308,16 +308,20 @@ async def session_fetch_all(
     category: Optional[str] = None,
     tag_filter: Optional[Union[str, dict]] = None,
     limit: Optional[int] = None,
+    order_by: Optional[str] = None,
+    descending: bool = False,
     for_update: bool = False,
 ) -> EntryListHandle:
     """Fetch all matching rows in the Store."""
     return await invoke_async(
         "askar_session_fetch_all",
-        (SessionHandle, FfiStr, FfiJson, c_int64, c_int8),
+        (SessionHandle, FfiStr, FfiJson, c_int64, c_int8, FfiStr, c_int8),
         handle,
         category,
         tag_filter,
         limit if limit is not None else -1,
+        order_by,
+        descending,
         for_update,
         return_type=EntryListHandle,
     )

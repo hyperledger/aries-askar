@@ -224,6 +224,8 @@ impl Session {
         category: Option<&str>,
         tag_filter: Option<TagFilter>,
         limit: Option<i64>,
+        order_by: Option<OrderBy>,
+        descending: bool,
         for_update: bool,
     ) -> Result<Vec<Entry>, Error> {
         Ok(self
@@ -233,6 +235,8 @@ impl Session {
                 category,
                 tag_filter,
                 limit,
+                order_by,
+                descending,
                 for_update,
             )
             .await?)
@@ -453,6 +457,8 @@ impl Session {
                 Some(KmsCategory::CryptoKey.as_str()),
                 tag_filter,
                 limit,
+                None,
+                false,
                 for_update,
             )
             .await?;

@@ -838,7 +838,7 @@ export class NodeJSAriesAskar implements AriesAskar {
   }
 
   public async sessionFetchAll(options: SessionFetchAllOptions): Promise<EntryListHandle | null> {
-    const { forUpdate, sessionHandle, tagFilter, limit, category } = serializeArguments(options)
+    const { forUpdate, sessionHandle, tagFilter, limit, orderBy, descending, category } = serializeArguments(options)
 
     const handle = await this.promisifyWithResponse<Uint8Array>(
       (cb, cbId) =>
@@ -847,6 +847,8 @@ export class NodeJSAriesAskar implements AriesAskar {
           category,
           tagFilter,
           +limit || -1,
+          orderBy,
+          descending,
           forUpdate,
           cb,
           cbId,

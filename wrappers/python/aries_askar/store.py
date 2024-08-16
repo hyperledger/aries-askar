@@ -548,6 +548,8 @@ class Session:
         tag_filter: Union[str, dict] = None,
         limit: int = None,
         *,
+        order_by: Optional[str] = None,
+        descending: bool = False,
         for_update: bool = False,
     ) -> EntryList:
         """Fetch all records matching a category and tag filter."""
@@ -555,7 +557,13 @@ class Session:
             raise AskarError(AskarErrorCode.WRAPPER, "Cannot fetch from closed session")
         return EntryList(
             await bindings.session_fetch_all(
-                self._handle, category, tag_filter, limit, for_update
+                self._handle,
+                category,
+                tag_filter,
+                limit,
+                order_by,
+                descending,
+                for_update,
             )
         )
 

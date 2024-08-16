@@ -136,6 +136,8 @@ pub trait BackendSession: Debug + Send {
         category: Option<&'q str>,
         tag_filter: Option<TagFilter>,
         limit: Option<i64>,
+        order_by: Option<OrderBy>,
+        descending: bool,
         for_update: bool,
     ) -> BoxFuture<'q, Result<Vec<Entry>, Error>>;
 

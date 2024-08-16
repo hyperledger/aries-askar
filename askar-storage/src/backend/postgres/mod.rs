@@ -436,6 +436,8 @@ impl BackendSession for DbSession<Postgres> {
         category: Option<&'q str>,
         tag_filter: Option<TagFilter>,
         limit: Option<i64>,
+        order_by: Option<OrderBy>,
+        descending: bool,
         for_update: bool,
     ) -> BoxFuture<'q, Result<Vec<Entry>, Error>> {
         let category = category.map(|c| c.to_string());
@@ -452,8 +454,8 @@ impl BackendSession for DbSession<Postgres> {
                 tag_filter,
                 None,
                 limit,
-                None,
-                false,
+                order_by,
+                descending,
                 for_update,
             );
             pin!(scan);

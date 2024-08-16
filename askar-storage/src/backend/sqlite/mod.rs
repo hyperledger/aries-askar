@@ -410,6 +410,8 @@ impl BackendSession for DbSession<Sqlite> {
         category: Option<&'q str>,
         tag_filter: Option<TagFilter>,
         limit: Option<i64>,
+        order_by: Option<OrderBy>,
+        descending: bool,
         _for_update: bool,
     ) -> BoxFuture<'q, Result<Vec<Entry>, Error>> {
         let category = category.map(|c| c.to_string());
@@ -425,8 +427,8 @@ impl BackendSession for DbSession<Sqlite> {
                 tag_filter,
                 None,
                 limit,
-                None,
-                false,
+                order_by,
+                descending,
             );
             pin!(scan);
             let mut enc_rows = vec![];

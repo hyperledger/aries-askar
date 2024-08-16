@@ -744,10 +744,20 @@ pub extern "C" fn askar_session_fetch_all(
     category: FfiStr<'_>,
     tag_filter: FfiStr<'_>,
     limit: i64,
+    order_by: FfiStr<'_>,
+    descending: i8,
     for_update: i8,
     cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, results: EntryListHandle)>,
     cb_id: CallbackId,
 ) -> ErrorCode {
+    let order_by_str = order_by.as_opt_str().map(|s| s.to_lowercase());
+    let order_by = match order_by_str.as_deref() {
+        Some("id") => Some(OrderBy::Id),
+        Some(_) => return ErrorCode::Unsupported,
+        None => None,
+    };
+    let descending = descending != 0; // Convert to bool
+
     catch_err! {
         trace!("Count from store");
         let cb = cb.ok_or_else(|| err_msg!("No callback provided"))?;
@@ -766,7 +776,7 @@ pub extern "C" fn askar_session_fetch_all(
         spawn_ok(async move {
             let result = async {
                 let mut session = FFI_SESSIONS.borrow(handle).await?;
-                session.fetch_all(category.as_deref(), tag_filter, limit, for_update != 0).await
+                session.fetch_all(category.as_deref(), tag_filter, limit, order_by, descending, for_update != 0).await
             }.await;
             cb.resolve(result);
         });
