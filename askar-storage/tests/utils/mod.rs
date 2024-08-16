@@ -89,6 +89,8 @@ pub async fn db_insert_fetch(db: AnyBackend) {
             Some(&test_row.category),
             None,
             None,
+            None,
+            false,
             false,
         )
         .await
@@ -732,6 +734,8 @@ pub async fn db_txn_fetch_for_update(db: AnyBackend) {
             Some(&test_row.category),
             None,
             Some(2),
+            None,
+            false,
             true,
         )
         .await
