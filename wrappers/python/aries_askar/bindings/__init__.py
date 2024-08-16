@@ -315,7 +315,7 @@ async def session_fetch_all(
     """Fetch all matching rows in the Store."""
     return await invoke_async(
         "askar_session_fetch_all",
-        (SessionHandle, FfiStr, FfiJson, c_int64, c_int8, FfiStr, c_int8),
+        (SessionHandle, FfiStr, FfiJson, c_int64, FfiStr, c_int8, c_int8),
         handle,
         category,
         tag_filter,
