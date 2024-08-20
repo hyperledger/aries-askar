@@ -5,9 +5,9 @@ import runpy
 
 from setuptools import find_packages, setup
 
-PACKAGE_NAME = "aries_askar"
+PACKAGE_NAME = "aries_askar_jamshale"
 version_meta = runpy.run_path("./{}/version.py".format(PACKAGE_NAME))
-VERSION = version_meta["__version__"]
+VERSION = "0.3.3b0"
 
 with open(os.path.abspath("./README.md"), "r") as fh:
     long_description = fh.read()
