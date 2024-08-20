@@ -25,6 +25,7 @@ use super::{
     Backend, BackendSession,
 };
 use crate::{
+    backend::OrderBy,
     entry::{EncEntryTag, Entry, EntryKind, EntryOperation, EntryTag, Scan, TagFilter},
     error::Error,
     future::{unblock, BoxFuture},
@@ -268,6 +269,8 @@ impl Backend for PostgresBackend {
         tag_filter: Option<TagFilter>,
         offset: Option<i64>,
         limit: Option<i64>,
+        order_by: Option<OrderBy>,
+        descending: bool,
     ) -> BoxFuture<'_, Result<Scan<'static, Entry>, Error>> {
         Box::pin(async move {
             let session = self.session(profile, false)?;
@@ -282,6 +285,8 @@ impl Backend for PostgresBackend {
                 tag_filter,
                 offset,
                 limit,
+                order_by,
+                descending,
                 false,
             );
             let stream = scan.then(move |enc_rows| {
@@ -347,8 +352,15 @@ impl BackendSession for DbSession<Postgres> {
             })
             .await?;
             params.push(enc_category);
-            let query =
-                extend_query::<PostgresBackend>(COUNT_QUERY, &mut params, tag_filter, None, None)?;
+            let query = extend_query::<PostgresBackend>(
+                COUNT_QUERY,
+                &mut params,
+                tag_filter,
+                None,
+                None,
+                None,
+                false,
+            )?;
             let mut active = acquire_session(&mut *self).await?;
             let count = sqlx::query_scalar_with(query.as_str(), params)
                 .fetch_one(active.connection_mut())
@@ -424,6 +436,8 @@ impl BackendSession for DbSession<Postgres> {
         category: Option<&'q str>,
         tag_filter: Option<TagFilter>,
         limit: Option<i64>,
+        order_by: Option<OrderBy>,
+        descending: bool,
         for_update: bool,
     ) -> BoxFuture<'q, Result<Vec<Entry>, Error>> {
         let category = category.map(|c| c.to_string());
@@ -440,6 +454,8 @@ impl BackendSession for DbSession<Postgres> {
                 tag_filter,
                 None,
                 limit,
+                order_by,
+                descending,
                 for_update,
             );
             pin!(scan);
@@ -483,6 +499,8 @@ impl BackendSession for DbSession<Postgres> {
                 tag_filter,
                 None,
                 None,
+                None,
+                false,
             )?;
 
             let mut active = acquire_session(&mut *self).await?;
@@ -752,6 +770,8 @@ fn perform_scan(
     tag_filter: Option<TagFilter>,
     offset: Option<i64>,
     limit: Option<i64>,
+    order_by: Option<OrderBy>,
+    descending: bool,
     for_update: bool,
 ) -> impl Stream<Item = Result<Vec<EncScanEntry>, Error>> + '_ {
     try_stream! {
@@ -772,7 +792,7 @@ fn perform_scan(
             }
         }).await?;
         params.push(enc_category);
-        let mut query = extend_query::<PostgresBackend>(SCAN_QUERY, &mut params, tag_filter, offset, limit)?;
+        let mut query = extend_query::<PostgresBackend>(SCAN_QUERY, &mut params, tag_filter, offset, limit, order_by, descending)?;
         if for_update {
             query.push_str(" FOR NO KEY UPDATE");
         }

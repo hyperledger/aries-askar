@@ -22,6 +22,18 @@ pub mod postgres;
 /// Sqlite database support
 pub mod sqlite;
 
+/// Enum to support custom ordering in record queries
+#[derive(Debug)]
+pub enum OrderBy {
+    /// Order by ID field
+    Id,
+}
+
+impl Default for OrderBy {
+    fn default() -> Self {
+        OrderBy::Id
+    }
+}
 /// Represents a generic backend implementation
 pub trait Backend: Debug + Send + Sync {
     /// The type of session managed by this backend
@@ -54,6 +66,8 @@ pub trait Backend: Debug + Send + Sync {
         tag_filter: Option<TagFilter>,
         offset: Option<i64>,
         limit: Option<i64>,
+        order_by: Option<OrderBy>,
+        descending: bool,
     ) -> BoxFuture<'_, Result<Scan<'static, Entry>, Error>>;
 
     /// Create a new session against the store
@@ -122,6 +136,8 @@ pub trait BackendSession: Debug + Send {
         category: Option<&'q str>,
         tag_filter: Option<TagFilter>,
         limit: Option<i64>,
+        order_by: Option<OrderBy>,
+        descending: bool,
         for_update: bool,
     ) -> BoxFuture<'q, Result<Vec<Entry>, Error>>;
 
@@ -185,7 +201,16 @@ pub async fn copy_profile<A: Backend, B: Backend>(
     to_profile: &str,
 ) -> Result<(), Error> {
     let scan = from_backend
-        .scan(Some(from_profile.into()), None, None, None, None, None)
+        .scan(
+            Some(from_profile.into()),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            false,
+        )
         .await?;
     if let Err(e) = to_backend.create_profile(Some(to_profile.into())).await {
         if e.kind() != ErrorKind::Duplicate {

@@ -333,6 +333,8 @@ jsi::Value sessionFetchAll(jsi::Runtime &rt, jsi::Object options) {
   auto category = jsiToValue<std::string>(rt, options, "category");
   auto tagFilter = jsiToValue<std::string>(rt, options, "tagFilter", true);
   int64_t limit = jsiToValue<int64_t>(rt, options, "limit", true);
+  auto orderBy = jsiToValue<std::string>(rt, options, "orderBy", true);
+  auto descending = jsiToValue<int8_t>(rt, options, "descending");
   int8_t forUpdate = jsiToValue<int8_t>(rt, options, "forUpdate");
 
   jsi::Function cb = options.getPropertyAsFunction(rt, "cb");
@@ -341,8 +343,8 @@ jsi::Value sessionFetchAll(jsi::Runtime &rt, jsi::Object options) {
 
   ErrorCode code = askar_session_fetch_all(
       sessionHandle, category.c_str(),
-      tagFilter.length() ? tagFilter.c_str() : nullptr, limit, forUpdate,
-      callbackWithResponse, CallbackId(state));
+      tagFilter.length() ? tagFilter.c_str() : nullptr, limit, orderBy, descending,
+      forUpdate, callbackWithResponse, CallbackId(state));
 
   return createReturnValue(rt, code, nullptr);
 }
@@ -502,6 +504,8 @@ jsi::Value scanStart(jsi::Runtime &rt, jsi::Object options) {
   auto profile = jsiToValue<std::string>(rt, options, "profile", true);
   auto offset = jsiToValue<int64_t>(rt, options, "offset", true);
   auto limit = jsiToValue<int64_t>(rt, options, "limit", true);
+  auto orderBy = jsiToValue<std::string>(rt, options, "orderBy", true);
+  auto descending = jsiToValue<int8_t>(rt, options, "descending");
 
   jsi::Function cb = options.getPropertyAsFunction(rt, "cb");
   State *state = new State(&cb);
@@ -510,7 +514,7 @@ jsi::Value scanStart(jsi::Runtime &rt, jsi::Object options) {
   ErrorCode code = askar_scan_start(
       storeHandle, profile.length() ? profile.c_str() : nullptr,
       category.c_str(), tagFilter.length() ? tagFilter.c_str() : nullptr,
-      offset, limit, callbackWithResponse, CallbackId(state));
+      offset, limit, orderBy, descending, callbackWithResponse, CallbackId(state));
 
   return createReturnValue(rt, code, nullptr);
 };

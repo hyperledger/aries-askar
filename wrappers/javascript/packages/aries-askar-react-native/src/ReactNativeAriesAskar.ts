@@ -517,10 +517,19 @@ export class ReactNativeAriesAskar implements AriesAskar {
   }
 
   public async sessionFetchAll(options: SessionFetchAllOptions) {
-    const { category, sessionHandle, forUpdate, limit, tagFilter } = serializeArguments(options)
+    const { category, sessionHandle, forUpdate, limit, orderBy, descending, tagFilter } = serializeArguments(options)
     const handle = await this.promisifyWithResponse<string>((cb) =>
       this.handleError(
-        this.ariesAskar.sessionFetchAll({ cb, category, sessionHandle, forUpdate, limit: limit || -1, tagFilter }),
+        this.ariesAskar.sessionFetchAll({
+          cb,
+          category,
+          sessionHandle,
+          forUpdate,
+          limit: limit || -1,
+          orderBy,
+          descending,
+          tagFilter,
+        }),
       ),
     )
 

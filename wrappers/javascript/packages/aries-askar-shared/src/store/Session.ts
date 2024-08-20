@@ -61,12 +61,16 @@ export class Session {
     category,
     forUpdate = false,
     limit,
+    orderBy,
+    descending = false,
     tagFilter,
     isJson,
   }: {
     category: string
     tagFilter?: Record<string, unknown>
     limit?: number
+    orderBy?: string
+    descending: boolean
     forUpdate?: boolean
     isJson?: boolean
   }) {
@@ -74,6 +78,8 @@ export class Session {
     const handle = await ariesAskar.sessionFetchAll({
       forUpdate,
       limit,
+      orderBy,
+      descending,
       tagFilter,
       sessionHandle: this.handle,
       category,

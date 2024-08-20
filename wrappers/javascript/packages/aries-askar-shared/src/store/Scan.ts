@@ -16,11 +16,15 @@ export class Scan {
   private tagFilter?: Record<string, unknown>
   private offset?: number
   private limit?: number
+  private orderBy?: string
+  private descending: boolean
 
   public constructor({
     category,
     limit,
     offset,
+    orderBy,
+    descending,
     profile,
     tagFilter,
     store,
@@ -30,6 +34,8 @@ export class Scan {
     tagFilter?: Record<string, unknown>
     offset?: number
     limit?: number
+    orderBy?: string
+    descending: boolean
     store: Store
   }) {
     this.category = category
@@ -37,6 +43,8 @@ export class Scan {
     this.tagFilter = tagFilter
     this.offset = offset
     this.limit = limit
+    this.orderBy = orderBy
+    this.descending = descending
     this.store = store
   }
 
@@ -51,6 +59,8 @@ export class Scan {
         storeHandle: this.store.handle,
         limit: this.limit,
         offset: this.offset,
+        orderBy: this.orderBy,
+        descending: this.descending,
         tagFilter: this.tagFilter,
         profile: this.profile,
         category: this.category,

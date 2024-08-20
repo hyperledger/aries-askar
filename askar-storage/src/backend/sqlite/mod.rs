@@ -24,6 +24,7 @@ use super::{
     Backend, BackendSession,
 };
 use crate::{
+    backend::OrderBy,
     entry::{EncEntryTag, Entry, EntryKind, EntryOperation, EntryTag, Scan, TagFilter},
     error::Error,
     future::{unblock, BoxFuture},
@@ -262,6 +263,8 @@ impl Backend for SqliteBackend {
         tag_filter: Option<TagFilter>,
         offset: Option<i64>,
         limit: Option<i64>,
+        order_by: Option<OrderBy>,
+        descending: bool,
     ) -> BoxFuture<'_, Result<Scan<'static, Entry>, Error>> {
         Box::pin(async move {
             let session = self.session(profile, false)?;
@@ -276,6 +279,8 @@ impl Backend for SqliteBackend {
                 tag_filter,
                 offset,
                 limit,
+                order_by,
+                descending,
             );
             let stream = scan.then(move |enc_rows| {
                 let category = category.clone();
@@ -330,8 +335,15 @@ impl BackendSession for DbSession<Sqlite> {
             })
             .await?;
             params.push(enc_category);
-            let query =
-                extend_query::<SqliteBackend>(COUNT_QUERY, &mut params, tag_filter, None, None)?;
+            let query = extend_query::<SqliteBackend>(
+                COUNT_QUERY,
+                &mut params,
+                tag_filter,
+                None,
+                None,
+                None,
+                false,
+            )?;
             let mut active = acquire_session(&mut *self).await?;
             let count = sqlx::query_scalar_with(query.as_str(), params)
                 .fetch_one(active.connection_mut())
@@ -398,6 +410,8 @@ impl BackendSession for DbSession<Sqlite> {
         category: Option<&'q str>,
         tag_filter: Option<TagFilter>,
         limit: Option<i64>,
+        order_by: Option<OrderBy>,
+        descending: bool,
         _for_update: bool,
     ) -> BoxFuture<'q, Result<Vec<Entry>, Error>> {
         let category = category.map(|c| c.to_string());
@@ -413,6 +427,8 @@ impl BackendSession for DbSession<Sqlite> {
                 tag_filter,
                 None,
                 limit,
+                order_by,
+                descending,
             );
             pin!(scan);
             let mut enc_rows = vec![];
@@ -455,6 +471,8 @@ impl BackendSession for DbSession<Sqlite> {
                 tag_filter,
                 None,
                 None,
+                None,
+                false,
             )?;
 
             let mut active = acquire_session(&mut *self).await?;
@@ -703,6 +721,8 @@ fn perform_scan(
     tag_filter: Option<TagFilter>,
     offset: Option<i64>,
     limit: Option<i64>,
+    order_by: Option<OrderBy>,
+    descending: bool,
 ) -> impl Stream<Item = Result<Vec<EncScanEntry>, Error>> + '_ {
     try_stream! {
         let mut params = QueryParams::new();
@@ -720,7 +740,7 @@ fn perform_scan(
             }
         }).await?;
         params.push(enc_category);
-        let query = extend_query::<SqliteBackend>(SCAN_QUERY, &mut params, tag_filter, offset, limit)?;
+        let query = extend_query::<SqliteBackend>(SCAN_QUERY, &mut params, tag_filter, offset, limit, order_by, descending)?;
 
         let mut batch = Vec::with_capacity(PAGE_SIZE);
 

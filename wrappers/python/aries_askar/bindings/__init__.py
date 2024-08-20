@@ -308,16 +308,20 @@ async def session_fetch_all(
     category: Optional[str] = None,
     tag_filter: Optional[Union[str, dict]] = None,
     limit: Optional[int] = None,
+    order_by: Optional[str] = None,
+    descending: bool = False,
     for_update: bool = False,
 ) -> EntryListHandle:
     """Fetch all matching rows in the Store."""
     return await invoke_async(
         "askar_session_fetch_all",
-        (SessionHandle, FfiStr, FfiJson, c_int64, c_int8),
+        (SessionHandle, FfiStr, FfiJson, c_int64, FfiStr, c_int8, c_int8),
         handle,
         category,
         tag_filter,
         limit if limit is not None else -1,
+        order_by,
+        descending,
         for_update,
         return_type=EntryListHandle,
     )
@@ -455,17 +459,21 @@ async def scan_start(
     tag_filter: Optional[Union[str, dict]] = None,
     offset: Optional[int] = None,
     limit: Optional[int] = None,
+    order_by: Optional[str] = None,
+    descending: bool = False,
 ) -> ScanHandle:
     """Create a new Scan against the Store."""
     return await invoke_async(
         "askar_scan_start",
-        (StoreHandle, FfiStr, FfiStr, FfiJson, c_int64, c_int64),
+        (StoreHandle, FfiStr, FfiStr, FfiJson, c_int64, c_int64, FfiStr, c_int8),
         handle,
         profile,
         category,
         tag_filter,
         offset or 0,
         limit if limit is not None else -1,
+        order_by,
+        descending,
         return_type=ScanHandle,
     )
 

@@ -787,7 +787,8 @@ export class NodeJSAriesAskar implements AriesAskar {
   }
 
   public async scanStart(options: ScanStartOptions): Promise<ScanHandle> {
-    const { category, limit, offset, profile, storeHandle, tagFilter } = serializeArguments(options)
+    const { category, descending, limit, offset, orderBy, profile, storeHandle, tagFilter } =
+      serializeArguments(options)
     const handle = await this.promisifyWithResponse<number>(
       (cb, cbId) =>
         this.nativeAriesAskar.askar_scan_start(
@@ -797,6 +798,8 @@ export class NodeJSAriesAskar implements AriesAskar {
           tagFilter,
           +offset || 0,
           +limit || -1,
+          orderBy,
+          descending,
           cb,
           cbId,
         ),
@@ -835,7 +838,7 @@ export class NodeJSAriesAskar implements AriesAskar {
   }
 
   public async sessionFetchAll(options: SessionFetchAllOptions): Promise<EntryListHandle | null> {
-    const { forUpdate, sessionHandle, tagFilter, limit, category } = serializeArguments(options)
+    const { forUpdate, sessionHandle, tagFilter, limit, orderBy, descending, category } = serializeArguments(options)
 
     const handle = await this.promisifyWithResponse<Uint8Array>(
       (cb, cbId) =>
@@ -844,6 +847,8 @@ export class NodeJSAriesAskar implements AriesAskar {
           category,
           tagFilter,
           +limit || -1,
+          orderBy,
+          descending,
           forUpdate,
           cb,
           cbId,

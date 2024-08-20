@@ -89,6 +89,8 @@ pub async fn db_insert_fetch(db: AnyBackend) {
             Some(&test_row.category),
             None,
             None,
+            None,
+            false,
             false,
         )
         .await
@@ -489,6 +491,8 @@ pub async fn db_scan(db: AnyBackend) {
             tag_filter,
             offset,
             limit,
+            None,
+            false,
         )
         .await
         .expect(ERR_SCAN);
@@ -506,6 +510,8 @@ pub async fn db_scan(db: AnyBackend) {
             tag_filter,
             offset,
             limit,
+            None,
+            false,
         )
         .await
         .expect(ERR_SCAN);
@@ -728,6 +734,8 @@ pub async fn db_txn_fetch_for_update(db: AnyBackend) {
             Some(&test_row.category),
             None,
             Some(2),
+            None,
+            false,
             true,
         )
         .await
@@ -879,7 +887,16 @@ pub async fn db_import_scan(db: AnyBackend) {
     let copy = db.create_profile(None).await.expect(ERR_PROFILE);
     let mut copy_conn = db.session(Some(copy.clone()), true).expect(ERR_SESSION);
     let records = db
-        .scan(None, Some(EntryKind::Item), None, None, None, None)
+        .scan(
+            None,
+            Some(EntryKind::Item),
+            None,
+            None,
+            None,
+            None,
+            None,
+            false,
+        )
         .await
         .expect(ERR_SCAN);
     copy_conn
@@ -889,7 +906,16 @@ pub async fn db_import_scan(db: AnyBackend) {
     copy_conn.close(true).await.expect(ERR_COMMIT);
 
     let mut scan = db
-        .scan(Some(copy), Some(EntryKind::Item), None, None, None, None)
+        .scan(
+            Some(copy),
+            Some(EntryKind::Item),
+            None,
+            None,
+            None,
+            None,
+            None,
+            false,
+        )
         .await
         .expect(ERR_SCAN);
 

@@ -18,6 +18,8 @@ use crate::{
     },
 };
 
+use super::OrderBy;
+
 /// cbindgen:ignore
 pub const PAGE_SIZE: usize = 32;
 
@@ -453,6 +455,17 @@ pub trait QueryPrepare {
         }
         query
     }
+
+    fn order_by_query<'q>(mut query: String, order_by: OrderBy, descending: bool) -> String {
+        query.push_str(" ORDER BY ");
+        match order_by {
+            OrderBy::Id => query.push_str("id"),
+        }
+        if descending {
+            query.push_str(" DESC");
+        }
+        query
+    }
 }
 
 pub fn replace_arg_placeholders<Q: QueryPrepare + ?Sized>(
@@ -625,6 +638,8 @@ pub fn extend_query<'q, Q: QueryPrepare>(
     tag_filter: Option<(String, Vec<Vec<u8>>)>,
     offset: Option<i64>,
     limit: Option<i64>,
+    order_by: Option<OrderBy>,
+    descending: bool,
 ) -> Result<String, Error>
 where
     i64: for<'e> Encode<'e, Q::DB> + Type<Q::DB>,
@@ -636,9 +651,16 @@ where
         query.push_str(" AND "); // assumes WHERE already occurs
         query.push_str(&filter_clause);
     };
-    if offset.is_some() || limit.is_some() {
-        query = Q::limit_query(query, args, offset, limit);
-    };
+    // Only add ordering, and limit/offset, if the query starts with SELECT
+    if query.trim_start().to_uppercase().starts_with("SELECT") {
+        if let Some(order_by_value) = order_by {
+            query = Q::order_by_query(query, order_by_value, descending);
+        };
+
+        if offset.is_some() || limit.is_some() {
+            query = Q::limit_query(query, args, offset, limit);
+        };
+    }
     Ok(query)
 }
 

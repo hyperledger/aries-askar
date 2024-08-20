@@ -1,4 +1,4 @@
-use askar_storage::backend::copy_profile;
+use askar_storage::backend::{copy_profile, OrderBy};
 
 use crate::{
     error::Error,
@@ -125,6 +125,8 @@ impl Store {
         tag_filter: Option<TagFilter>,
         offset: Option<i64>,
         limit: Option<i64>,
+        order_by: Option<OrderBy>,
+        descending: bool,
     ) -> Result<Scan<'static, Entry>, Error> {
         Ok(self
             .0
@@ -135,6 +137,8 @@ impl Store {
                 tag_filter,
                 offset,
                 limit,
+                order_by,
+                descending,
             )
             .await?)
     }
@@ -220,6 +224,8 @@ impl Session {
         category: Option<&str>,
         tag_filter: Option<TagFilter>,
         limit: Option<i64>,
+        order_by: Option<OrderBy>,
+        descending: bool,
         for_update: bool,
     ) -> Result<Vec<Entry>, Error> {
         Ok(self
@@ -229,6 +235,8 @@ impl Session {
                 category,
                 tag_filter,
                 limit,
+                order_by,
+                descending,
                 for_update,
             )
             .await?)
@@ -449,6 +457,8 @@ impl Session {
                 Some(KmsCategory::CryptoKey.as_str()),
                 tag_filter,
                 limit,
+                None,
+                false,
                 for_update,
             )
             .await?;
