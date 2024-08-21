@@ -316,8 +316,7 @@ jobs:
     
     strategy:
       matrix:
-        architecture:
-          [linux-aarch64, linux-x86_64, darwin-universal]
+        architecture: [linux-aarch64, linux-x86_64, darwin-universal]
         include:
           - os: ubuntu-latest
             architecture: linux-aarch64
