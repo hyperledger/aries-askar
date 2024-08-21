@@ -1,12 +1,10 @@
 """Module setup."""
 
 import os
-import runpy
 
 from setuptools import find_packages, setup
 
 PACKAGE_NAME = "aries_askar_jamshale"
-version_meta = runpy.run_path("./{}/version.py".format(PACKAGE_NAME))
 VERSION = "0.3.3b6"
 
 with open(os.path.abspath("./README.md"), "r") as fh:
