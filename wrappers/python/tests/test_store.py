@@ -1,16 +1,9 @@
 import asyncio
 import os
 
-from pytest import mark, raises
 import pytest_asyncio
-
-from aries_askar import (
-    AskarError,
-    KeyAlg,
-    Key,
-    Store,
-)
-
+from aries_askar import AskarError, Key, KeyAlg, Store
+from pytest import mark, raises
 
 TEST_STORE_URI = os.getenv("TEST_STORE_URI", "sqlite://:memory:")
 TEST_ENTRY = {
