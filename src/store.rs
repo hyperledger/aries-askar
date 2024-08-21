@@ -88,16 +88,25 @@ impl Store {
         key_method: StoreKeyMethod,
         pass_key: PassKey<'_>,
         recreate: bool,
+        tenant_profile: &str,
     ) -> Result<Self, Error> {
-        let default_profile = self.get_default_profile().await?;
-        let profile_ids = self.list_profiles().await?;
-        let target = target_url
-            .provision_backend(key_method, pass_key, Some(default_profile), recreate)
-            .await?;
-        for profile in profile_ids {
-            copy_profile(&self.0, &target, &profile, &profile).await?;
+        if !tenant_profile.is_empty() {
+            let target = target_url
+                .provision_backend(key_method, pass_key, Some(tenant_profile.to_string()), recreate)
+                .await?;
+            copy_profile(&self.0, &target, &tenant_profile, &tenant_profile).await?;
+            Ok(Self::new(target))
+        } else {
+            let default_profile = self.get_default_profile().await?;
+            let profile_ids = self.list_profiles().await?;
+            let target = target_url
+                .provision_backend(key_method, pass_key, Some(default_profile), recreate)
+                .await?;
+            for profile in profile_ids {
+                copy_profile(&self.0, &target, &profile, &profile).await?;
+            }
+            Ok(Self::new(target))
         }
-        Ok(Self::new(target))
     }
 
     /// Create a new profile with the given profile name
