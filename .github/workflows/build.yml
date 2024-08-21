@@ -247,10 +247,10 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install setuptools wheel twine auditwheel
+      - name: Set up Poetry
+        uses: abatilo/actions-poetry@v3
+        with:
+          poetry-version: "1.8.3"
 
       - name: Fetch library artifacts
         uses: actions/download-artifact@v4
@@ -269,7 +269,8 @@ jobs:
       - name: Build wheel package
         shell: sh
         run: |
-          python setup.py bdist_wheel --python-tag=py3 --plat-name=${{ matrix.plat-name }}
+          poetry install --no-dev
+          python -m build --wheel --plat-name=${{ matrix.plat-name }}
         working-directory: wrappers/python
 
       - name: Run tests
@@ -278,14 +279,14 @@ jobs:
         if: ${{ matrix.architecture != 'linux-aarch64' }}
         shell: sh
         run: |
-          pip install pytest pytest-asyncio dist/*
+          poetry install
           echo "-- Test SQLite in-memory --"
-          python -m pytest --log-cli-level=WARNING -k "not contention"
+          poetry run pytest --log-cli-level=WARNING -k "not contention"
           echo "-- Test SQLite file DB --"
-          TEST_STORE_URI=sqlite://test.db python -m pytest --log-cli-level=WARNING -k "not contention"
+          TEST_STORE_URI=sqlite://test.db poetry run pytest --log-cli-level=WARNING -k "not contention"
           if [ -n "$POSTGRES_URL" ]; then
             echo "-- Test Postgres DB --"
-            TEST_STORE_URI="$POSTGRES_URL" python -m pytest --log-cli-level=WARNING -k "not contention"
+            TEST_STORE_URI="$POSTGRES_URL" poetry run pytest --log-cli-level=WARNING -k "not contention"
           fi
         working-directory: wrappers/python
         env:
@@ -313,7 +314,7 @@ jobs:
   build-javascript:
     name: Build and test JavaScript wrapper
     needs: [build-release]
-    
+
     strategy:
       matrix:
         architecture: [linux-aarch64, linux-x86_64, darwin-universal]
@@ -326,7 +327,7 @@ jobs:
             architecture: darwin-universal
 
     runs-on: ${{ matrix.os }}
-    
+
     defaults:
       run:
         working-directory: wrappers/javascript
