@@ -92,7 +92,12 @@ impl Store {
     ) -> Result<Self, Error> {
         if !tenant_profile.is_empty() {
             let target = target_url
-                .provision_backend(key_method, pass_key, Some(tenant_profile.to_string()), recreate)
+                .provision_backend(
+                    key_method,
+                    pass_key,
+                    Some(tenant_profile.to_string()),
+                    recreate,
+                )
                 .await?;
             copy_profile(&self.0, &target, &tenant_profile, &tenant_profile).await?;
             Ok(Self::new(target))
