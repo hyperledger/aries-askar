@@ -3,12 +3,19 @@
 import asyncio
 import json
 import logging
-
 from ctypes import POINTER, byref, c_int8, c_int32, c_int64
 from typing import Optional, Sequence, Union
 
 from ..types import EntryOperation, KeyAlg, KeyBackend, SeedMethod
-
+from .handle import (
+    EntryListHandle,
+    KeyEntryListHandle,
+    LocalKeyHandle,
+    ScanHandle,
+    SessionHandle,
+    StoreHandle,
+    StringListHandle,
+)
 from .lib import (
     AeadParams,
     ByteBuffer,
@@ -20,16 +27,6 @@ from .lib import (
     Lib,
     StrBuffer,
 )
-from .handle import (
-    EntryListHandle,
-    KeyEntryListHandle,
-    LocalKeyHandle,
-    ScanHandle,
-    SessionHandle,
-    StoreHandle,
-    StringListHandle,
-)
-
 
 LIB = Lib()
 LOGGER = logging.getLogger(__name__)
@@ -228,16 +225,18 @@ async def store_copy(
     key_method: Optional[str] = None,
     pass_key: Optional[str] = None,
     recreate: bool = False,
+    tenant_profile: Optional[str] = None,
 ) -> StoreHandle:
     """Copy the Store contents to a new location."""
     return await invoke_async(
         "askar_store_copy",
-        (StoreHandle, FfiStr, FfiStr, FfiStr, c_int8),
+        (StoreHandle, FfiStr, FfiStr, FfiStr, c_int8, FfiStr),
         handle,
         target_uri,
         key_method and key_method.lower(),
         pass_key,
         recreate,
+        tenant_profile,
         return_type=StoreHandle,
     )
 

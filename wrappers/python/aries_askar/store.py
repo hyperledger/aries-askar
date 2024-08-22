@@ -1,7 +1,6 @@
 """Handling of Store instances."""
 
 import json
-
 from typing import Optional, Sequence, Union
 
 from cached_property import cached_property
@@ -439,11 +438,12 @@ class Store:
         pass_key: str = None,
         *,
         recreate: bool = False,
+        tenant_profile: str = None,
     ) -> "Store":
         """Copy the store contents to a new location."""
         return Store(
             await bindings.store_copy(
-                self._handle, target_uri, key_method, pass_key, recreate
+                self._handle, target_uri, key_method, pass_key, recreate, tenant_profile
             ),
             target_uri,
         )

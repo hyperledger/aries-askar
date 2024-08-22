@@ -470,6 +470,7 @@ pub extern "C" fn askar_store_copy(
     key_method: FfiStr<'_>,
     pass_key: FfiStr<'_>,
     recreate: i8,
+    tenant_profile: FfiStr<'_>,
     cb: Option<extern "C" fn(cb_id: CallbackId, err: ErrorCode, handle: StoreHandle)>,
     cb_id: CallbackId,
 ) -> ErrorCode {
@@ -482,6 +483,7 @@ pub extern "C" fn askar_store_copy(
             None => StoreKeyMethod::default()
         };
         let pass_key = PassKey::from(pass_key.as_opt_str()).into_owned();
+        let tenant_profile_str = tenant_profile.into_opt_string();
         let cb = EnsureCallback::new(move |result|
             match result {
                 Ok(handle) => cb(cb_id, ErrorCode::Success, handle),
@@ -491,7 +493,7 @@ pub extern "C" fn askar_store_copy(
         spawn_ok(async move {
             let result = async move {
                 let store = handle.load().await?;
-                let copied = store.copy_to(target_uri.as_str(), key_method, pass_key.as_ref(), recreate != 0).await?;
+                let copied = store.copy_to(target_uri.as_str(), key_method, pass_key.as_ref(), recreate != 0, tenant_profile_str).await?;
                 debug!("Copied store {}", handle);
                 Ok(StoreHandle::create(copied).await)
             }.await;

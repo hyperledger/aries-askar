@@ -88,16 +88,27 @@ impl Store {
         key_method: StoreKeyMethod,
         pass_key: PassKey<'_>,
         recreate: bool,
+        tenant_profile: Option<String>,
     ) -> Result<Self, Error> {
-        let default_profile = self.get_default_profile().await?;
-        let profile_ids = self.list_profiles().await?;
-        let target = target_url
-            .provision_backend(key_method, pass_key, Some(default_profile), recreate)
+        if tenant_profile.as_ref().map_or(false, |s| s.is_empty()) {
+            let tenant = tenant_profile.unwrap_or_else(|| String::from("default value"));
+            let tenant_copy = tenant.clone();
+            let target = target_url
+            .provision_backend(key_method, pass_key, Some(tenant), recreate)
             .await?;
-        for profile in profile_ids {
-            copy_profile(&self.0, &target, &profile, &profile).await?;
+            copy_profile(&self.0, &target, &tenant_copy, &tenant_copy).await?;
+            Ok(Self::new(target))
+        } else {
+            let default_profile = self.get_default_profile().await?;
+            let profile_ids = self.list_profiles().await?;
+            let target = target_url
+                .provision_backend(key_method, pass_key, Some(default_profile), recreate)
+                .await?;
+            for profile in profile_ids {
+                copy_profile(&self.0, &target, &profile, &profile).await?;
+            }
+            Ok(Self::new(target))
         }
-        Ok(Self::new(target))
     }
 
     /// Create a new profile with the given profile name

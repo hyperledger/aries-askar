@@ -51,6 +51,7 @@ fn store_copy() {
                 StoreKeyMethod::RawKey,
                 pass_key_copy,
                 true,
+                None
             )
             .await
             .expect("Error copying store");
