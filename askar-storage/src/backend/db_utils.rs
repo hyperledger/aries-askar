@@ -456,7 +456,7 @@ pub trait QueryPrepare {
         query
     }
 
-    fn order_by_query<'q>(mut query: String, order_by: OrderBy, descending: bool) -> String {
+    fn order_by_query(mut query: String, order_by: OrderBy, descending: bool) -> String {
         query.push_str(" ORDER BY ");
         match order_by {
             OrderBy::Id => query.push_str("id"),
