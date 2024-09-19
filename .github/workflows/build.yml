@@ -464,7 +464,8 @@ jobs:
 
       - name: Build
         run: |
-          cargo install --bins --git https://github.com/rust-embedded/cross --locked --tag v${{ env.CROSS_VERSION }} cross
+          # Using a fixed pre-release tag with a fix for NDK 25 support
+          cargo install --git https://github.com/cross-rs/cross.git --rev 085092c cross
           # Required for compatibility with manylinux2014:
           # https://github.com/briansmith/ring/issues/1728
           if [ "${{ matrix.target }}" = "aarch64-linux-android" ]; then
