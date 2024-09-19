@@ -433,7 +433,6 @@ jobs:
     needs: [checks]
 
     env:
-      RUST_VERSION: "1.67"
       FEATURES: "mobile_secure_element"
 
     runs-on: ubuntu-latest
