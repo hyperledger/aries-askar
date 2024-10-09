@@ -18,6 +18,9 @@ use super::postgres;
 #[cfg(feature = "sqlite")]
 use super::sqlite;
 
+#[cfg(feature = "odbc")]
+use super::odbc;
+
 /// A dynamic store backend instance
 #[derive(Clone, Debug)]
 pub struct AnyBackend(Arc<dyn Backend<Session = AnyBackendSession>>);
@@ -288,6 +291,13 @@ impl<'a> ManageBackend<'a> for &'a str {
                     Ok(into_any_backend(mgr))
                 }
 
+                #[cfg(feature = "odbc")]
+                "odbc" => {
+                    let opts = odbc::OdbcStoreOptions::new(opts)?;
+                    let mgr = opts.open(method, pass_key, profile).await?;
+                    Ok(into_any_backend(mgr))
+                }
+
                 _ => Err(err_msg!(
                     Unsupported,
                     "Unsupported backend: {}",
@@ -323,6 +333,13 @@ impl<'a> ManageBackend<'a> for &'a str {
                     Ok(into_any_backend(mgr))
                 }
 
+                #[cfg(feature = "odbc")]
+                "odbc" => {
+                    let opts = odbc::OdbcStoreOptions::new(opts)?;
+                    let mgr = opts.provision(method, pass_key, profile, recreate).await?;
+                    Ok(into_any_backend(mgr))
+                }
+
                 _ => Err(err_msg!(
                     Unsupported,
                     "Unsupported backend: {}",
@@ -347,6 +364,12 @@ impl<'a> ManageBackend<'a> for &'a str {
                 #[cfg(feature = "sqlite")]
                 "sqlite" => {
                     let opts = sqlite::SqliteStoreOptions::new(opts)?;
+                    Ok(opts.remove().await?)
+                }
+
+                #[cfg(feature = "odbc")]
+                "odbc" => {
+                    let opts = odbc::OdbcStoreOptions::new(opts)?;
                     Ok(opts.remove().await?)
                 }
 
