@@ -37,6 +37,7 @@ mobile_secure_element = ["askar-crypto/p256_hardware"]
 pg_test = ["askar-storage/pg_test"]
 postgres = ["askar-storage/postgres"]
 sqlite = ["askar-storage/sqlite"]
+odbc = ["askar-storage/odbc"]
 
 [dependencies]
 async-lock = "3.0"
