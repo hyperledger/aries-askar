@@ -16,10 +16,38 @@ use crate::{
 mod provision;
 pub use self::provision::OdbcStoreOptions;
 
+mod r2d2_connection_pool;
+use crate::odbc::r2d2_connection_pool::OdbcConnectionManager;
+
 #[cfg(any(test, feature = "odbc_test"))]
 mod test_db;
 #[cfg(any(test, feature = "odbc_test"))]
 pub use self::test_db::TestDB;
+
+/*
+The following queries will need to be updated:
+
+    CONFIG_UPDATE_QUERY:
+        - change to retrieve and then either insert or update (2 queries)
+
+    FETCH_QUERY:
+        - change to use an inner join
+
+    UPDATE_QUERY:
+        - change to two queies, one to update and another to retrieve the id
+
+    SCAN_QUERY:
+        - change to use an inner join
+
+    CONFIG_FETCH_QUERY:
+    COUNT_QUERY:
+    DELETE_QUERY:
+    INSERT_QUERY:
+    DELETE_ALL_QUERY:
+    TAG_INSERT_QUERY:
+    TAG_DELETE_QUERY:
+        - standard query
+*/
 
 /*
 const CONFIG_FETCH_QUERY: &str = "SELECT value FROM config WHERE name = $1";

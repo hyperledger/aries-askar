@@ -1,28 +1,44 @@
-/*
-use ibm_db::{
-    create_environment_v3,
-    safe::AutocommitOn,
-    Connection, ODBCConnectionManager,
-    ResultSetState::{Data, NoData},
-    Statement,
-};
-*/
-use odbc_api::{ConnectionOptions, Environment};
-use r2d2;
-use r2d2_odbc_api;
-use r2d2_odbc_api::ODBCConnectionManager;
 use std::borrow::Cow;
 use std::time::Duration;
+use odbc_api::Cursor;
 
 use crate::{
     backend::ManageBackend,
     error::Error,
     future::BoxFuture,
     options::IntoOptions,
-    protect::{PassKey, StoreKeyMethod},
+    protect::{PassKey, StoreKeyMethod}
 };
 
 use super::OdbcBackend;
+use crate::odbc::OdbcConnectionManager;
+
+fn connect(connection_string: &str) {
+    println!("Using my connection pool...");
+    let manager = OdbcConnectionManager::new(connection_string);
+    let pool = r2d2::Pool::builder()
+        .max_size(5)
+        .build(manager)
+        .unwrap();
+
+    for i in 0..50 {
+        println!("iteration: {i}.");
+        let mut cursor = match pool.get().unwrap().raw().execute("SELECT * FROM profiles", ()) {
+            Ok(cursor) => {
+                let mut unwrapped = cursor.unwrap();
+
+                while let Some(mut row) = unwrapped.next_row().expect("Failed to fetch next row.") {
+                    let mut output_a: i64 = 0;
+                    row.get_data(1, &mut output_a).unwrap();
+                    println!("ID: {output_a}");
+                }
+            }
+            Err(error) => {
+                println!("An error occured: {error}");
+            }
+        };
+    }
+}
 
 const DEFAULT_CONNECT_TIMEOUT: u64 = 30;
 const DEFAULT_IDLE_TIMEOUT: u64 = 300;
@@ -133,6 +149,8 @@ impl OdbcStoreOptions {
         Err(err_msg!(Unsupported, "provision::provision()"))
     }
 
+
+
     /// Open an existing Odbc store from this set of configuration options
     pub async fn open(
         self,
@@ -140,41 +158,11 @@ impl OdbcStoreOptions {
         pass_key: PassKey<'_>,
         profile: Option<String>,
     ) -> Result<OdbcBackend, Error> {
-        println!("wahoo");
-        /*
-        let env = create_environment_v3()
-            .map_err(|e| e.unwrap())
-            .expect("Couldn't create the environment!");
-        let conn = env
-            .connect_with_connection_string(
-                "Driver={IBM DB2 ODBC DRIVER};Database=testdb;Hostname=10.10.10.200;Port=50000;Protocol=TCPIP;Uid=db2inst1;Pwd=passw0rd1;"
-            )
-            .expect("Couldn't connect....");
-        // let conn = env.connect("dbname", "dbuser", "dbpass").unwrap();
-        */
-        /*
-               let manager = ODBCConnectionManager::new(
-                   "Driver=/tmp/clidriver/lib/libdb2.so.1;Database=testdb;Hostname=10.10.10.200;Port=50000;Protocol=TCPIP;Uid=db2inst1;Pwd=passw0rd1;Security=;",
-               );
-               let pool = r2d2::Pool::new(manager).unwrap();
-        */
-        let connection_string = "Driver=/tmp/clidriver/lib/libdb2.so.1;Database=testdb;Hostname=10.10.10.200;Port=50000;Protocol=TCPIP;Uid=db2inst1;Pwd=passw0rd1;Security=;";
-        /*
-        let env = Environment::new().expect("Couldn't create the environment!");
+        let connection_string = "Driver=/tmp/clidriver/lib/libdb2o.so.1;Database=testdb;Hostname=10.10.10.200;Port=50000;Protocol=TCPIP;Uid=db2inst1;Pwd=passw0rd1;Security=;";
 
-        let mut conn = env
-            .connect_with_connection_string(connection_string, ConnectionOptions::default())
-            .expect("Failed to connect");
-        */
+        connect(connection_string);
 
-        let max_pool_size = 10;
-        let manager = ODBCConnectionManager::new(connection_string, max_pool_size);
-        let pool = r2d2::Pool::builder()
-            .max_size(max_pool_size)
-            .build(manager)
-            .unwrap();
-
-        Err(err_msg!(Unsupported, "provision::open()"))
+        Err(err_msg!(Unsupported, "provision::open() expected failure!"))
     }
 
     /// Remove an existing Odbc store defined by these configuration options
@@ -209,6 +197,7 @@ impl<'a> ManageBackend<'a> for OdbcStoreOptions {
         Box::pin(self.remove())
     }
 }
+
 
 /// Validate a ODBC identifier.
 /// Any character except NUL is allowed in an identifier. Double quotes must be escaped,
