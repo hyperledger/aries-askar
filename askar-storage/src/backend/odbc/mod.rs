@@ -19,11 +19,6 @@ pub use self::provision::OdbcStoreOptions;
 mod r2d2_connection_pool;
 use crate::odbc::r2d2_connection_pool::OdbcConnectionManager;
 
-#[cfg(any(test, feature = "odbc"))]
-mod test_db;
-#[cfg(any(test, feature = "odbc"))]
-pub use self::test_db::TestDB;
-
 /*
 The following queries will need to be updated:
 
