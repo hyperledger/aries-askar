@@ -19,9 +19,9 @@ pub use self::provision::OdbcStoreOptions;
 mod r2d2_connection_pool;
 use crate::odbc::r2d2_connection_pool::OdbcConnectionManager;
 
-#[cfg(any(test, feature = "odbc_test"))]
+#[cfg(any(test, feature = "odbc"))]
 mod test_db;
-#[cfg(any(test, feature = "odbc_test"))]
+#[cfg(any(test, feature = "odbc"))]
 pub use self::test_db::TestDB;
 
 /*
@@ -100,24 +100,21 @@ const TAG_DELETE_QUERY: &str = "DELETE FROM items_tags
 
 /// A ODBC database store
 pub struct OdbcBackend {
+    pool: r2d2::Pool<OdbcConnectionManager>,
     active_profile: String,
     key_cache: Arc<KeyCache>,
-    host: String,
-    name: String,
 }
 
 impl OdbcBackend {
     pub(crate) fn new(
+        pool: r2d2::Pool<OdbcConnectionManager>,
         active_profile: String,
         key_cache: KeyCache,
-        host: String,
-        name: String,
     ) -> Self {
         Self {
+            pool,
             active_profile,
             key_cache: Arc::new(key_cache),
-            host,
-            name,
         }
     }
 }
@@ -185,8 +182,6 @@ impl Debug for OdbcBackend {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         f.debug_struct("OdbcStore")
             .field("active_profile", &self.active_profile)
-            .field("host", &self.host)
-            .field("name", &self.name)
             .finish()
     }
 }

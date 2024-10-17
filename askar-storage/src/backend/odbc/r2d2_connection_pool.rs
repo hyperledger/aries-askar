@@ -9,8 +9,8 @@ use odbc_api::{
 
 use lazy_static::lazy_static;
 
-/// We create a static ODBC environment reference so that
-/// it never goes out of scope.
+// We create a static ODBC environment reference so that
+// it never goes out of scope.
 lazy_static! {
     static ref ENV: Environment = Environment::new().unwrap();
 }
@@ -84,7 +84,7 @@ impl r2d2::ManageConnection for OdbcConnectionManager {
     /// the ODBC is_dead function, which will return true if a request to the
     /// database server failed.
     fn is_valid(&self, _conn: &mut Self::Connection) -> std::result::Result<(), Self::Error> {
-        if (_conn.0.is_dead()?) {
+        if _conn.0.is_dead()? {
             Err(OdbcError("The connection to the database is no longer valid.".into()))
         } else {
             Ok(())
