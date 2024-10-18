@@ -1,15 +1,22 @@
 use std::fmt::{self, Debug, Formatter};
 use std::sync::Arc;
 
+use odbc_api::{
+    buffers::{RowVec},
+    Cursor,
+    IntoParameter,
+    parameter::{VarCharArray}
+};
+
 use super::{
-    db_utils::random_profile_name,
+    db_utils::{random_profile_name, encode_profile_key},
     Backend, BackendSession,
 };
 use crate::{
     backend::OrderBy,
     entry::{Entry, EntryKind, EntryOperation, EntryTag, Scan, TagFilter},
     error::Error,
-    future::BoxFuture,
+    future::{BoxFuture, unblock},
     protect::{EntryEncryptor, KeyCache, PassKey, ProfileKey, StoreKeyMethod},
 };
 
@@ -44,55 +51,6 @@ The following queries will need to be updated:
         - standard query
 */
 
-/*
-const CONFIG_FETCH_QUERY: &str = "SELECT value FROM config WHERE name = $1";
-const CONFIG_UPDATE_QUERY: &str = "INSERT INTO config (name, value) VALUES ($1, $2)
-    ON CONFLICT(name) DO UPDATE SET value = excluded.value";
-const COUNT_QUERY: &str = "SELECT COUNT(*) FROM items i
-    WHERE profile_id = $1
-    AND (kind = $2 OR $2 IS NULL)
-    AND (category = $3 OR $3 IS NULL)
-    AND (expiry IS NULL OR expiry > CURRENT_TIMESTAMP)";
-const DELETE_QUERY: &str = "DELETE FROM items
-    WHERE profile_id = $1 AND kind = $2 AND category = $3 AND name = $4";
-const FETCH_QUERY: &str = "SELECT id, value,
-    (SELECT ARRAY_TO_STRING(ARRAY_AGG(it.plaintext || ':'
-        || ENCODE(it.name, 'hex') || ':' || ENCODE(it.value, 'hex')), ',')
-        FROM items_tags it WHERE it.item_id = i.id) tags
-    FROM items i
-    WHERE profile_id = $1 AND kind = $2 AND category = $3 AND name = $4
-    AND (expiry IS NULL OR expiry > CURRENT_TIMESTAMP)";
-const FETCH_QUERY_UPDATE: &str = "SELECT id, value,
-    (SELECT ARRAY_TO_STRING(ARRAY_AGG(it.plaintext || ':'
-        || ENCODE(it.name, 'hex') || ':' || ENCODE(it.value, 'hex')), ',')
-        FROM items_tags it WHERE it.item_id = i.id) tags
-    FROM items i
-    WHERE profile_id = $1 AND kind = $2 AND category = $3 AND name = $4
-    AND (expiry IS NULL OR expiry > CURRENT_TIMESTAMP) FOR NO KEY UPDATE";
-const INSERT_QUERY: &str = "INSERT INTO items (profile_id, kind, category, name, value, expiry)
-    VALUES ($1, $2, $3, $4, $5, $6)
-    ON CONFLICT DO NOTHING RETURNING id";
-const UPDATE_QUERY: &str = "UPDATE items SET value=$5, expiry=$6
-    WHERE profile_id=$1 AND kind=$2 AND category=$3 AND name=$4
-    RETURNING id";
-const SCAN_QUERY: &str = "SELECT id, kind, category, name, value,
-    (SELECT ARRAY_TO_STRING(ARRAY_AGG(it.plaintext || ':'
-        || ENCODE(it.name, 'hex') || ':' || ENCODE(it.value, 'hex')), ',')
-        FROM items_tags it WHERE it.item_id = i.id) tags
-    FROM items i WHERE profile_id = $1
-    AND (kind = $2 OR $2 IS NULL)
-    AND (category = $3 OR $3 IS NULL)
-    AND (expiry IS NULL OR expiry > CURRENT_TIMESTAMP)";
-const DELETE_ALL_QUERY: &str = "DELETE FROM items i
-    WHERE profile_id = $1
-    AND (kind = $2 OR $2 IS NULL)
-    AND (category = $3 OR $3 IS NULL)";
-const TAG_INSERT_QUERY: &str = "INSERT INTO items_tags
-    (item_id, name, value, plaintext) VALUES ($1, $2, $3, $4)";
-const TAG_DELETE_QUERY: &str = "DELETE FROM items_tags
-    WHERE item_id=$1";
- */
-
 /// A ODBC database store
 pub struct OdbcBackend {
     pool: r2d2::Pool<OdbcConnectionManager>,
@@ -119,7 +77,37 @@ impl Backend for OdbcBackend {
 
     fn create_profile(&self, name: Option<String>) -> BoxFuture<'_, Result<String, Error>> {
         let name = name.unwrap_or_else(random_profile_name);
-        Box::pin(async move { Err(err_msg!(Unsupported, "mod::create_profile()")) })
+        Box::pin(async move {
+            // Create the profile key.
+            let store_key = self.key_cache.store_key.clone();
+            let (profile_key, enc_key) = unblock(move || {
+                let profile_key = ProfileKey::new()?;
+                let enc_key = encode_profile_key(&profile_key, &store_key)?;
+                Result::<_, Error>::Ok((profile_key, enc_key))
+            })
+            .await?;
+
+            // Store the profile name and key.
+            self.pool.get().unwrap().raw().execute("INSERT INTO profiles (name, profile_key) VALUES (?, ?)",
+                (&name.clone().into_parameter(), &enc_key.clone().into_parameter()))?;
+
+            // Retrieve the profile ID from the table.
+            let mut pid: i64 = 0;
+
+            self.pool.get().unwrap().raw().execute(
+                "SELECT id from profiles WHERE name=? and profile_key=?",
+                (&name.clone().into_parameter(), &enc_key.clone().into_parameter()))
+            .unwrap().unwrap()
+            .next_row().unwrap().unwrap()
+            .get_data(1, &mut pid)?;
+
+            // Add the details to the key cache.
+            self.key_cache
+                    .add_profile(name.clone(), pid, Arc::new(profile_key))
+                    .await;
+
+            Ok(name)
+        })
     }
 
     fn get_active_profile(&self) -> String {
@@ -127,19 +115,74 @@ impl Backend for OdbcBackend {
     }
 
     fn get_default_profile(&self) -> BoxFuture<'_, Result<String, Error>> {
-        Box::pin(async move { Err(err_msg!(Unsupported, "mod::get_default_profile()")) })
+        Box::pin(async move {
+            let mut profile_buf = Vec::new();
+
+            self.pool.get().unwrap().raw().execute(
+                    "SELECT value FROM config WHERE name='default_profile'", ())
+                .unwrap().unwrap()
+                .next_row().unwrap().unwrap()
+                .get_text(1, &mut profile_buf)?;
+
+            Ok(String::from_utf8(profile_buf).unwrap())
+        })
     }
 
     fn set_default_profile(&self, profile: String) -> BoxFuture<'_, Result<(), Error>> {
-        Box::pin(async move { Err(err_msg!(Unsupported, "mod::set_default_profile()")) })
+        Box::pin(async move {
+            self.pool.get().unwrap().raw().execute("UPDATE config SET value = ? WHERE name='default_profile'",
+                    (&profile.into_parameter()))?;
+            Ok(())
+        })
     }
 
     fn list_profiles(&self) -> BoxFuture<'_, Result<Vec<String>, Error>> {
-        Box::pin(async move { Err(err_msg!(Unsupported, "mod::list_profiles()")) })
+        Box::pin(async move {
+            let mut names: Vec<String> = Vec::new();
+
+            match self.pool.get().unwrap().raw().execute("SELECT name FROM profiles", ()) {
+                Ok(cursor) => {
+                    let row_set_buffer = RowVec::<(VarCharArray<1024>,)>::new(10);
+                    let mut block_cursor = cursor.unwrap().bind_buffer(row_set_buffer).unwrap();
+                    let batch = block_cursor.fetch().unwrap().unwrap();
+
+                    for idx in 0..batch.num_rows() {
+                        names.push(batch[idx].0.as_str().unwrap().unwrap().to_string());
+                    }
+                }
+                Err(_error) => {
+                    return Err(err_msg!(Unsupported, "Configuration data not found"));
+                }
+            };
+            Ok(names)
+        })
     }
 
     fn remove_profile(&self, name: String) -> BoxFuture<'_, Result<bool, Error>> {
-        Box::pin(async move { Err(err_msg!(Unsupported, "mod::remove_profile()")) })
+        Box::pin(async move {
+            let mut ret = false;
+
+            // Determine whether the profile currently exists.  We use this to
+            // determine whether to delete the profile, along with the return
+            // value from this function (true == deleted / false == unknown profile).
+            let mut count: i64 = 0;
+
+            self.pool.get().unwrap().raw().execute(
+                    "SELECT COUNT(name) from profiles WHERE name=?",
+                        (&name.clone().into_parameter()))
+                .unwrap().unwrap()
+                .next_row().unwrap().unwrap()
+                .get_data(1, &mut count)?;
+
+            if count > 0 {
+                self.pool.get().unwrap().raw().execute("DELETE FROM profiles WHERE name=?",
+                    (&name.into_parameter()))?;
+
+                ret = true;
+            }
+
+            Ok(ret)
+        })
     }
 
     fn rekey(
@@ -148,6 +191,7 @@ impl Backend for OdbcBackend {
         pass_key: PassKey<'_>,
     ) -> BoxFuture<'_, Result<(), Error>> {
         Box::pin(async move { Err(err_msg!(Unsupported, "mod::rekey()")) })
+        // XXX: Need to use preallocate to allocate a statement: https://docs.rs/odbc-api/latest/odbc_api/struct.Connection.html#method.preallocate
     }
 
     fn scan(
@@ -169,7 +213,7 @@ impl Backend for OdbcBackend {
     }
 
     fn close(&self) -> BoxFuture<'_, Result<(), Error>> {
-        Box::pin(async move { Err(err_msg!(Unsupported, "mod::close()")) })
+        Box::pin(async move { Ok(()) })
     }
 }
 

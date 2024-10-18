@@ -328,7 +328,7 @@ impl OdbcStoreOptions {
         let table_names: [&str; 4] = ["items_tags", "items", "profiles", "config"];
 
         for table_name in &table_names {
-            pool.get().unwrap().raw().execute(format!("DROP TABLE {}", table_name).as_str(), ())?;
+            pool.get().unwrap().raw().execute(format!("DROP TABLE {}", table_name).as_str(), ());
         }
 
         Ok(())
