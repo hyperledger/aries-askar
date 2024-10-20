@@ -1,5 +1,6 @@
 use std::fmt::{self, Debug, Formatter};
 use std::sync::Arc;
+use std::collections::BTreeMap;
 
 use odbc_api::{
     buffers::{RowVec},
@@ -17,7 +18,7 @@ use crate::{
     entry::{Entry, EntryKind, EntryOperation, EntryTag, Scan, TagFilter},
     error::Error,
     future::{BoxFuture, unblock},
-    protect::{EntryEncryptor, KeyCache, PassKey, ProfileKey, StoreKeyMethod},
+    protect::{EntryEncryptor, KeyCache, PassKey, ProfileId, ProfileKey, StoreKeyMethod},
 };
 
 mod provision;
@@ -190,8 +191,55 @@ impl Backend for OdbcBackend {
         method: StoreKeyMethod,
         pass_key: PassKey<'_>,
     ) -> BoxFuture<'_, Result<(), Error>> {
-        Box::pin(async move { Err(err_msg!(Unsupported, "mod::rekey()")) })
-        // XXX: Need to use preallocate to allocate a statement: https://docs.rs/odbc-api/latest/odbc_api/struct.Connection.html#method.preallocate
+        let pass_key = pass_key.into_owned();
+        Box::pin(async move {
+            let (store_key, store_key_ref) = unblock(move || method.resolve(pass_key)).await?;
+            let store_key = Arc::new(store_key);
+            let binding = self.pool.get().unwrap();
+            let mut upd_keys = BTreeMap::<ProfileId, Vec<u8>>::new();
+
+            // Retrieve and temporarily store the current keys for each
+            // of the profiles.
+            match binding.raw().execute(
+                "SELECT id, profile_key FROM profiles", ()) {
+                Ok(cursor) => {
+                    let mut unwrapped = cursor.unwrap();
+
+                    while let Some(mut row) = unwrapped.next_row()? {
+                        let mut pid: i64 = 0;
+                        let mut enc_key = Vec::new();
+
+                        row.get_data(1, &mut pid)?;
+                        row.get_binary(2, &mut enc_key).unwrap();
+
+                        upd_keys.insert(pid, enc_key);
+                    }
+                }
+                Err(_error) => {
+                    return Err(err_msg!(Unsupported, "Configuration data not found"));
+                }
+            };
+
+            // Iterate over the cached keys, updating the profile with the new
+            // key.
+            for (pid, key) in upd_keys {
+                let profile_key = self.key_cache.load_key(key).await?;
+                let upd_key = unblock({
+                    let store_key = store_key.clone();
+                    move || encode_profile_key(&profile_key, &store_key)
+                })
+                .await?;
+
+                binding.raw().execute("UPDATE profiles SET profile_key=? WHERE id=?",
+                    (&upd_key.into_parameter(), &pid.into_parameter()))?;
+            }
+
+            // We finally need to save the new store key.
+            binding.raw().execute("UPDATE config SET value=? WHERE name='key'",
+                    (&store_key_ref.into_uri().into_parameter()))?;
+
+            Ok(())
+        })
     }
 
     fn scan(
