@@ -9,8 +9,10 @@ use odbc_api::{
     parameter::{VarCharArray}
 };
 
+use odbc_api::sys;
+
 use super::{
-    db_utils::{random_profile_name, encode_profile_key},
+    db_utils::{expiry_timestamp, random_profile_name, encode_profile_key, DbSessionKey, prepare_tags},
     Backend, BackendSession,
 };
 use crate::{
@@ -21,36 +23,38 @@ use crate::{
     protect::{EntryEncryptor, KeyCache, PassKey, ProfileId, ProfileKey, StoreKeyMethod},
 };
 
+use r2d2::PooledConnection;
+
 mod provision;
 pub use self::provision::OdbcStoreOptions;
 
 mod r2d2_connection_pool;
 use crate::odbc::r2d2_connection_pool::OdbcConnectionManager;
 
-/*
-The following queries will need to be updated:
+// All of our SQL queries.  Each of these queries conform to the SQL-92 standard.
+const UPDATE_CONFIG_PROFILE: &str = "UPDATE config SET value = ? WHERE name='default_profile'";
+const UPDATE_CONFIG_KEY: &str = "UPDATE config SET value=? WHERE name='key'";
+const GET_DEFAULT_PROFILE: &str = "SELECT value FROM config WHERE name='default_profile'";
 
-    CONFIG_UPDATE_QUERY:
-        - change to retrieve and then either insert or update (2 queries)
+const GET_PROFILE_ID: &str = "SELECT id from profiles WHERE name=? and profile_key=?";
+const GET_PROFILE_NAMES: &str = "SELECT name FROM profiles";
+const GET_PROFILE_COUNT_FOR_NAME: &str = "SELECT COUNT(name) from profiles WHERE name=?";
+const GET_PROFILES: &str = "SELECT id, profile_key FROM profiles";
+const GET_PROFILE: &str = "SELECT id, profile_key FROM profiles WHERE name=?";
+const INSERT_PROFILE: &str = "INSERT INTO profiles (name, profile_key) VALUES (?, ?)";
+const UPDATE_PROFILE: &str = "UPDATE profiles SET profile_key=? WHERE id=?";
+const DELETE_PROFILE: &str = "DELETE FROM profiles WHERE name=?";
 
-    FETCH_QUERY:
-        - change to use an inner join
+const GET_ITEM_ID: &str = "SELECT id FROM items WHERE profile_id=? AND kind=? AND category=? AND name=?";
+const INSERT_ITEM: &str = "INSERT INTO items (profile_id, kind, category, name, value, expiry) VALUES (?, ?, ?, ?, ?, NULL)";
+const INSERT_ITEM_WITH_EXPIRY: &str = "INSERT INTO items (profile_id, kind, category, name, value, expiry) VALUES (?, ?, ?, ?, ?, ?)";
+const UPDATE_ITEM: &str = "UPDATE items SET value=?, expiry=NULL WHERE profile_id=? AND kind=?
+    AND category=? AND name=?";
+const UPDATE_ITEM_WITH_EXPIRY: &str = "UPDATE items SET value=?, expiry=? WHERE profile_id=? AND kind=?
+    AND category=? AND name=?";
+const DELETE_ITEM: &str = "DELETE FROM items WHERE profile_id = ? AND kind = ? AND category = ? AND name = ?";
 
-    UPDATE_QUERY:
-        - change to two queies, one to update and another to retrieve the id
-
-    SCAN_QUERY:
-        - change to use an inner join
-
-    CONFIG_FETCH_QUERY:
-    COUNT_QUERY:
-    DELETE_QUERY:
-    INSERT_QUERY:
-    DELETE_ALL_QUERY:
-    TAG_INSERT_QUERY:
-    TAG_DELETE_QUERY:
-        - standard query
-*/
+const INSERT_TAG: &str = "INSERT INTO items_tags (item_id, name, value, plaintext) VALUES (?, ?, ?, ?)";
 
 /// A ODBC database store
 pub struct OdbcBackend {
@@ -89,14 +93,13 @@ impl Backend for OdbcBackend {
             .await?;
 
             // Store the profile name and key.
-            self.pool.get().unwrap().raw().execute("INSERT INTO profiles (name, profile_key) VALUES (?, ?)",
+            self.pool.get().unwrap().raw().execute(INSERT_PROFILE,
                 (&name.clone().into_parameter(), &enc_key.clone().into_parameter()))?;
 
             // Retrieve the profile ID from the table.
             let mut pid: i64 = 0;
 
-            self.pool.get().unwrap().raw().execute(
-                "SELECT id from profiles WHERE name=? and profile_key=?",
+            self.pool.get().unwrap().raw().execute(GET_PROFILE_ID,
                 (&name.clone().into_parameter(), &enc_key.clone().into_parameter()))
             .unwrap().unwrap()
             .next_row().unwrap().unwrap()
@@ -119,8 +122,7 @@ impl Backend for OdbcBackend {
         Box::pin(async move {
             let mut profile_buf = Vec::new();
 
-            self.pool.get().unwrap().raw().execute(
-                    "SELECT value FROM config WHERE name='default_profile'", ())
+            self.pool.get().unwrap().raw().execute(GET_DEFAULT_PROFILE, ())
                 .unwrap().unwrap()
                 .next_row().unwrap().unwrap()
                 .get_text(1, &mut profile_buf)?;
@@ -131,7 +133,7 @@ impl Backend for OdbcBackend {
 
     fn set_default_profile(&self, profile: String) -> BoxFuture<'_, Result<(), Error>> {
         Box::pin(async move {
-            self.pool.get().unwrap().raw().execute("UPDATE config SET value = ? WHERE name='default_profile'",
+            self.pool.get().unwrap().raw().execute(UPDATE_CONFIG_PROFILE,
                     (&profile.into_parameter()))?;
             Ok(())
         })
@@ -141,7 +143,7 @@ impl Backend for OdbcBackend {
         Box::pin(async move {
             let mut names: Vec<String> = Vec::new();
 
-            match self.pool.get().unwrap().raw().execute("SELECT name FROM profiles", ()) {
+            match self.pool.get().unwrap().raw().execute(GET_PROFILE_NAMES, ()) {
                 Ok(cursor) => {
                     let row_set_buffer = RowVec::<(VarCharArray<1024>,)>::new(10);
                     let mut block_cursor = cursor.unwrap().bind_buffer(row_set_buffer).unwrap();
@@ -168,15 +170,14 @@ impl Backend for OdbcBackend {
             // value from this function (true == deleted / false == unknown profile).
             let mut count: i64 = 0;
 
-            self.pool.get().unwrap().raw().execute(
-                    "SELECT COUNT(name) from profiles WHERE name=?",
+            self.pool.get().unwrap().raw().execute(GET_PROFILE_COUNT_FOR_NAME,
                         (&name.clone().into_parameter()))
                 .unwrap().unwrap()
                 .next_row().unwrap().unwrap()
                 .get_data(1, &mut count)?;
 
             if count > 0 {
-                self.pool.get().unwrap().raw().execute("DELETE FROM profiles WHERE name=?",
+                self.pool.get().unwrap().raw().execute(DELETE_PROFILE,
                     (&name.into_parameter()))?;
 
                 ret = true;
@@ -200,8 +201,7 @@ impl Backend for OdbcBackend {
 
             // Retrieve and temporarily store the current keys for each
             // of the profiles.
-            match binding.raw().execute(
-                "SELECT id, profile_key FROM profiles", ()) {
+            match binding.raw().execute(GET_PROFILES, ()) {
                 Ok(cursor) => {
                     let mut unwrapped = cursor.unwrap();
 
@@ -230,12 +230,12 @@ impl Backend for OdbcBackend {
                 })
                 .await?;
 
-                binding.raw().execute("UPDATE profiles SET profile_key=? WHERE id=?",
+                binding.raw().execute(UPDATE_PROFILE,
                     (&upd_key.into_parameter(), &pid.into_parameter()))?;
             }
 
             // We finally need to save the new store key.
-            binding.raw().execute("UPDATE config SET value=? WHERE name='key'",
+            binding.raw().execute(UPDATE_CONFIG_KEY,
                     (&store_key_ref.into_uri().into_parameter()))?;
 
             Ok(())
@@ -253,11 +253,20 @@ impl Backend for OdbcBackend {
         order_by: Option<OrderBy>,
         descending: bool,
     ) -> BoxFuture<'_, Result<Scan<'static, Entry>, Error>> {
+        // XXX: Still to be done
         Box::pin(async move { Err(err_msg!(Unsupported, "mod::scan()")) })
     }
 
     fn session(&self, profile: Option<String>, transaction: bool) -> Result<Self::Session, Error> {
-        return Err(err_msg!(Unsupported, "mod::session()"));
+        if transaction {
+            // XXX: Still to be done
+            return Err(err_msg!(Unsupported, "The ODBC backend does not currently support transactions"))
+        }
+        Ok(OdbcSession::new(
+            self.key_cache.clone(),
+            profile.unwrap_or_else(|| self.active_profile.clone()),
+            self.pool.get().unwrap(),
+        ))
     }
 
     fn close(&self) -> BoxFuture<'_, Result<(), Error>> {
@@ -275,9 +284,53 @@ impl Debug for OdbcBackend {
 
 /// A ODBC session
 #[derive(Debug)]
-pub struct OdbcSession {}
+pub struct OdbcSession {
+    cache: Arc<KeyCache>,
+    profile: String,
+    connection: PooledConnection<OdbcConnectionManager>,
+}
 
-impl OdbcSession {}
+impl OdbcSession {
+    pub(crate) fn new(
+        cache: Arc<KeyCache>,
+        profile: String,
+        connection: PooledConnection<OdbcConnectionManager>,
+    ) -> Self
+    {
+        Self {
+            cache: cache,
+            profile: profile,
+            connection: connection,
+        }
+    }
+
+    async fn acquire_key(&mut self) -> Result<(ProfileId, Arc<ProfileKey>), Error> {
+        // Check to see whether the key already exists in our cache...
+        if let Some((pid, key)) = self.cache.get_profile(self.profile.as_str()).await {
+            Ok((pid, key))
+        } else {
+            // The key isn't already cached and so we need to try and load the key
+            // from the database.
+            let mut pid: i64 = 0;
+            let mut enc_key = Vec::new();
+
+            if let Some(mut cursor) = self.connection.raw().execute(GET_PROFILE, (&self.profile.clone().into_parameter()))?
+            {
+                let mut row = cursor.next_row().unwrap().unwrap();
+                row.get_data(1, &mut pid)?;
+                row.get_binary(2, &mut enc_key)?;
+            } else {
+                return Err(err_msg!(NotFound, "Profile not found"));
+            }
+
+            // Load and cache the key.
+            let key = Arc::new(self.cache.load_key(enc_key).await?);
+            self.cache.add_profile(self.profile.clone(), pid, key.clone()).await;
+
+            Ok((pid, key))
+        }
+    }
+}
 
 impl BackendSession for OdbcSession {
     fn count<'q>(
@@ -286,6 +339,7 @@ impl BackendSession for OdbcSession {
         category: Option<&'q str>,
         tag_filter: Option<TagFilter>,
     ) -> BoxFuture<'q, Result<i64, Error>> {
+        // XXX: Still to be done
         let enc_category = category.map(|c| ProfileKey::prepare_input(c.as_bytes()));
 
         Box::pin(async move { Ok(5) })
@@ -298,6 +352,7 @@ impl BackendSession for OdbcSession {
         name: &str,
         for_update: bool,
     ) -> BoxFuture<'_, Result<Option<Entry>, Error>> {
+        // XXX: Still to be done
         let category = category.to_string();
         let name = name.to_string();
 
@@ -314,6 +369,7 @@ impl BackendSession for OdbcSession {
         descending: bool,
         for_update: bool,
     ) -> BoxFuture<'q, Result<Vec<Entry>, Error>> {
+        // XXX: Still to be done
         let category = category.map(|c| c.to_string());
         Box::pin(async move { Err(err_msg!(Unsupported, "mod::fetch_all()")) })
     }
@@ -324,6 +380,7 @@ impl BackendSession for OdbcSession {
         category: Option<&'q str>,
         tag_filter: Option<TagFilter>,
     ) -> BoxFuture<'q, Result<i64, Error>> {
+        // XXX: Still to be done
         let enc_category = category.map(|c| ProfileKey::prepare_input(c.as_bytes()));
 
         Box::pin(async move { Err(err_msg!(Unsupported, "mod::remove_all()")) })
@@ -342,16 +399,159 @@ impl BackendSession for OdbcSession {
         let category = ProfileKey::prepare_input(category.as_bytes());
         let name = ProfileKey::prepare_input(name.as_bytes());
 
-        Box::pin(async move { Err(err_msg!(Unsupported, "mod::update()")) })
+        // XXX: Can we use a transaction here???
+        match operation {
+            op @ EntryOperation::Insert | op @ EntryOperation::Replace => {
+                let value = ProfileKey::prepare_input(value.unwrap_or_default());
+                let tags = tags.map(prepare_tags);
+                Box::pin(async move {
+                    // Locate the correct key and then encrypt our various fields.
+                    let (pid, key) = self.acquire_key().await?;
+                    let (enc_category, enc_name, enc_value, enc_tags) = unblock(move || {
+                        let enc_value =
+                            key.encrypt_entry_value(category.as_ref(), name.as_ref(), value)?;
+                        Result::<_, Error>::Ok((
+                            key.encrypt_entry_category(category)?,
+                            key.encrypt_entry_name(name)?,
+                            enc_value,
+                            tags.transpose()?
+                                .map(|t| key.encrypt_entry_tags(t))
+                                .transpose()?,
+                        ))
+                    })
+                    .await?;
+
+                    // Work out the expiry time.
+                    let mut expiryStr: String = String::new();
+
+                    if let Some(mut expiry) = expiry_ms.map(expiry_timestamp).transpose()? {
+                        // ODBC expects the time stamp to be in a string, of the format:
+                        //   YYYY-MM-DD HH:MM:SS.MSEC
+                        expiryStr = format!("{}", expiry.format("%Y-%m-%d %H:%M:%S.%6f"));
+                    }
+
+                    // Now we need to store the fields in the database.
+                    if op == EntryOperation::Insert {
+                        if expiryStr.is_empty() {
+                            self.connection.raw().execute(INSERT_ITEM,
+                                (
+                                    &pid.into_parameter(),
+                                    &(kind as i16).into_parameter(),
+                                    &enc_category.clone().into_parameter(),
+                                    &enc_name.clone().into_parameter(),
+                                    &enc_value.into_parameter()
+                                ))?;
+                        } else {
+                            self.connection.raw().execute(INSERT_ITEM_WITH_EXPIRY,
+                                (
+                                    &pid.into_parameter(),
+                                    &(kind as i16).into_parameter(),
+                                    &enc_category.clone().into_parameter(),
+                                    &enc_name.clone().into_parameter(),
+                                    &enc_value.into_parameter(),
+                                    &expiryStr.into_parameter()
+                                ))?;
+                        }
+                    } else {
+                        if expiryStr.is_empty() {
+                            self.connection.raw().execute(UPDATE_ITEM,
+                                (
+                                    &enc_value.into_parameter(),
+                                    &pid.into_parameter(),
+                                    &(kind as i16).into_parameter(),
+                                    &enc_category.clone().into_parameter(),
+                                    &enc_name.clone().into_parameter()
+                                ))?;
+                        } else {
+                            self.connection.raw().execute(UPDATE_ITEM_WITH_EXPIRY,
+                                (
+                                    &enc_value.into_parameter(),
+                                    &expiryStr.into_parameter(),
+                                    &pid.into_parameter(),
+                                    &(kind as i16).into_parameter(),
+                                    &enc_category.clone().into_parameter(),
+                                    &enc_name.clone().into_parameter()
+                                ))?;
+                        }
+
+                        /* XXX:
+                        sqlx::query(TAG_DELETE_QUERY)
+                        .bind(row_id)
+                        .execute(active.connection_mut())
+                        .await
+                        .map_err(err_map!(Backend, "Error removing existing entry tags"))?;
+                        */
+                    }
+
+                    // Now we need to update the tags table.
+                    if let Some(tags) = enc_tags {
+                        // Retrieve the item identifier.
+                        let mut item_id: i64 = 0;
+
+                        self.connection.raw().execute(GET_ITEM_ID,
+                            (
+                                &pid.into_parameter(),
+                                &(kind as i16).into_parameter(),
+                                &enc_category.clone().into_parameter(),
+                                &enc_name.clone().into_parameter()
+                            ))
+                            .unwrap().unwrap()
+                            .next_row().unwrap().unwrap()
+                            .get_data(1, &mut item_id)?;
+
+                        // Update each of the tags.
+                        for tag in tags {
+                            self.connection.raw().execute(INSERT_TAG,
+                                (
+                                    &item_id.into_parameter(),
+                                    &tag.name.into_parameter(),
+                                    &tag.value.into_parameter(),
+                                    &(tag.plaintext as i16).into_parameter()
+                                ))?;
+                        }
+                    }
+
+                    Ok(())
+                })
+            }
+
+            EntryOperation::Remove => Box::pin(async move {
+                // Create the encrypted category and name.
+                let (pid, key) = self.acquire_key().await?;
+                let (enc_category, enc_name) = unblock(move || {
+                    Result::<_, Error>::Ok((
+                        key.encrypt_entry_category(category)?,
+                        key.encrypt_entry_name(name)?,
+                    ))
+                })
+                .await?;
+
+                // Issue the delete.  We don't return an error if the
+                // item doesn't currently exist.
+                self.connection.raw().execute(DELETE_ITEM,
+                    (
+                        &pid.into_parameter(),
+                        &(kind as i16).into_parameter(),
+                        &enc_category.into_parameter(),
+                        &enc_name.into_parameter()
+                    ))?;
+
+                Ok(())
+            }),
+        }
     }
 
     fn ping(&mut self) -> BoxFuture<'_, Result<(), Error>> {
-        Box::pin(async move { Err(err_msg!(Unsupported, "mod::ping()")) })
+        // XXX: Still to be done
+        Box::pin(async move {
+            Ok(())
+        })
     }
 
     fn close(&mut self, commit: bool) -> BoxFuture<'_, Result<(), Error>> {
         Box::pin(self.close(commit))
     }
+
 }
 
 #[cfg(test)]
