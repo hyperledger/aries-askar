@@ -55,6 +55,7 @@ const UPDATE_ITEM_WITH_EXPIRY: &str = "UPDATE items SET value=?, expiry=? WHERE 
 const DELETE_ITEM: &str = "DELETE FROM items WHERE profile_id = ? AND kind = ? AND category = ? AND name = ?";
 
 const INSERT_TAG: &str = "INSERT INTO items_tags (item_id, name, value, plaintext) VALUES (?, ?, ?, ?)";
+const DELETE_TAG: &str = "DELETE FROM items_tags WHERE item_id=?";
 
 /// A ODBC database store
 pub struct OdbcBackend {
@@ -82,6 +83,7 @@ impl Backend for OdbcBackend {
 
     fn create_profile(&self, name: Option<String>) -> BoxFuture<'_, Result<String, Error>> {
         let name = name.unwrap_or_else(random_profile_name);
+
         Box::pin(async move {
             // Create the profile key.
             let store_key = self.key_cache.store_key.clone();
@@ -193,6 +195,7 @@ impl Backend for OdbcBackend {
         pass_key: PassKey<'_>,
     ) -> BoxFuture<'_, Result<(), Error>> {
         let pass_key = pass_key.into_owned();
+
         Box::pin(async move {
             let (store_key, store_key_ref) = unblock(move || method.resolve(pass_key)).await?;
             let store_key = Arc::new(store_key);
@@ -421,6 +424,8 @@ impl BackendSession for OdbcSession {
                     })
                     .await?;
 
+                    let mut statement = self.connection.raw().preallocate().unwrap();
+
                     // Work out the expiry time.
                     let mut expiryStr: String = String::new();
 
@@ -433,7 +438,7 @@ impl BackendSession for OdbcSession {
                     // Now we need to store the fields in the database.
                     if op == EntryOperation::Insert {
                         if expiryStr.is_empty() {
-                            self.connection.raw().execute(INSERT_ITEM,
+                            statement.execute(INSERT_ITEM,
                                 (
                                     &pid.into_parameter(),
                                     &(kind as i16).into_parameter(),
@@ -442,7 +447,7 @@ impl BackendSession for OdbcSession {
                                     &enc_value.into_parameter()
                                 ))?;
                         } else {
-                            self.connection.raw().execute(INSERT_ITEM_WITH_EXPIRY,
+                            statement.execute(INSERT_ITEM_WITH_EXPIRY,
                                 (
                                     &pid.into_parameter(),
                                     &(kind as i16).into_parameter(),
@@ -454,7 +459,7 @@ impl BackendSession for OdbcSession {
                         }
                     } else {
                         if expiryStr.is_empty() {
-                            self.connection.raw().execute(UPDATE_ITEM,
+                            statement.execute(UPDATE_ITEM,
                                 (
                                     &enc_value.into_parameter(),
                                     &pid.into_parameter(),
@@ -463,7 +468,7 @@ impl BackendSession for OdbcSession {
                                     &enc_name.clone().into_parameter()
                                 ))?;
                         } else {
-                            self.connection.raw().execute(UPDATE_ITEM_WITH_EXPIRY,
+                            statement.execute(UPDATE_ITEM_WITH_EXPIRY,
                                 (
                                     &enc_value.into_parameter(),
                                     &expiryStr.into_parameter(),
@@ -474,13 +479,11 @@ impl BackendSession for OdbcSession {
                                 ))?;
                         }
 
-                        /* XXX:
-                        sqlx::query(TAG_DELETE_QUERY)
-                        .bind(row_id)
-                        .execute(active.connection_mut())
-                        .await
-                        .map_err(err_map!(Backend, "Error removing existing entry tags"))?;
-                        */
+                        // We also want to delete all existing tags for this
+                        // item.
+
+                        statement.execute(DELETE_TAG,
+                            (&pid.into_parameter()))?;
                     }
 
                     // Now we need to update the tags table.
@@ -488,7 +491,7 @@ impl BackendSession for OdbcSession {
                         // Retrieve the item identifier.
                         let mut item_id: i64 = 0;
 
-                        self.connection.raw().execute(GET_ITEM_ID,
+                        statement.execute(GET_ITEM_ID,
                             (
                                 &pid.into_parameter(),
                                 &(kind as i16).into_parameter(),
@@ -500,8 +503,10 @@ impl BackendSession for OdbcSession {
                             .get_data(1, &mut item_id)?;
 
                         // Update each of the tags.
+                        let mut prepared = self.connection.raw().prepare(INSERT_TAG).unwrap();
+
                         for tag in tags {
-                            self.connection.raw().execute(INSERT_TAG,
+                            prepared.execute(
                                 (
                                     &item_id.into_parameter(),
                                     &tag.name.into_parameter(),
