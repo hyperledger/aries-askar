@@ -6,7 +6,8 @@ use odbc_api::{
     buffers::{RowVec},
     Cursor,
     IntoParameter,
-    parameter::{InputParameter, VarCharArray}
+    parameter::{InputParameter, VarCharArray},
+    Preallocated,
 };
 
 use odbc_api::sys;
@@ -22,7 +23,7 @@ use super::{
 };
 use crate::{
     backend::OrderBy,
-    entry::{Entry, EntryKind, EntryOperation, EntryTag, Scan, TagFilter},
+    entry::{EncEntryTag, Entry, EntryKind, EntryOperation, EntryTag, Scan, TagFilter},
     error::Error,
     future::{BoxFuture, unblock},
     protect::{EntryEncryptor, KeyCache, PassKey, ProfileId, ProfileKey, StoreKeyMethod},
@@ -67,9 +68,14 @@ const COUNT_ITEMS: &str = "SELECT COUNT(*) FROM items i
     AND (kind = ? OR ? IS NULL)
     AND (category = ? OR ? IS NULL)
     AND (expiry IS NULL OR expiry > CURRENT_TIMESTAMP)";
+const GET_ITEM: &str = "SELECT id, value
+    FROM items WHERE profile_id = ? AND kind = ?
+    AND category = ? AND name = ?
+    AND (expiry IS NULL OR expiry > CURRENT_TIMESTAMP)";
 
 const INSERT_TAG: &str = "INSERT INTO items_tags (item_id, name, value, plaintext) VALUES (?, ?, ?, ?)";
 const DELETE_TAG: &str = "DELETE FROM items_tags WHERE item_id=?";
+const GET_TAGS_FOR_ITEM: &str = "select name, value, plaintext from items_tags where item_id = ?";
 
 // XXX: Still to be done
 //      - clean all warnings!
@@ -352,6 +358,38 @@ impl OdbcSession {
             Ok((pid, key))
         }
     }
+
+    fn getDecodedTags(&self, item_id: i64, mut statement: &mut Preallocated<'_>, mut key: &Arc<ProfileKey>) -> Result<Vec<EntryTag>, Error> {
+        // Retrieve the tags from the database.
+        if let Some(mut cursor) = statement.execute(GET_TAGS_FOR_ITEM, &item_id)? {
+            // We use a RowVec buffer to iterate over the rows as it is more efficent
+            // than retrieving the rows one at a time.  This just means that we need
+            // to limit the size of the name and value columns to 1K.
+            type Row = (VarCharArray<1024>, VarCharArray<1024>, i32);
+            let max_rows_in_batch = 50;
+            let buffer = RowVec::<Row>::new(max_rows_in_batch);
+
+            let mut block_cursor = cursor.bind_buffer(buffer)?;
+
+            let mut enc_tags: Vec<EncEntryTag> = vec![];
+            while let Some(batch) = block_cursor.fetch()? {
+                // Iterate over each row, retrieving the name, value and
+                // plaintext fields.
+                for (name, value, plaintext) in batch.iter() {
+                    enc_tags.push(EncEntryTag {
+                        name: name.as_bytes().ok_or_else(|| err_msg!(Unexpected, "Failed to retrieve the tag name"))?.to_vec(),
+                        value: value.as_bytes().ok_or_else(|| err_msg!(Unexpected, "Failed to retrieve the tag value"))?.to_vec(),
+                        plaintext: (*plaintext == 1),
+                    });
+                }
+            }
+
+            Ok(key.decrypt_entry_tags(enc_tags)?)
+        } else {
+            let tags: Vec<EntryTag> = Vec::new();
+            Ok(tags)
+        }
+    }
 }
 
 impl BackendSession for OdbcSession {
@@ -416,11 +454,49 @@ impl BackendSession for OdbcSession {
         name: &str,
         for_update: bool,
     ) -> BoxFuture<'_, Result<Option<Entry>, Error>> {
-        // XXX: Still to be done
         let category = category.to_string();
         let name = name.to_string();
 
-        Box::pin(async move { Ok(None) })
+        Box::pin(async move {
+            // Create the 'select' fields.
+            let (pid, key) = self.acquire_key().await?;
+            let (enc_category, enc_name) = unblock({
+                let key = key.clone();
+                let category = ProfileKey::prepare_input(category.as_bytes());
+                let name = ProfileKey::prepare_input(name.as_bytes());
+                move || {
+                    Result::<_, Error>::Ok((
+                        key.encrypt_entry_category(category)?,
+                        key.encrypt_entry_name(name)?,
+                    ))
+                }
+            })
+            .await?;
+
+            let mut statement = self.connection.raw().preallocate().unwrap();
+
+            // Retrieve the item from the database.
+            let mut item_id: i64 = 0;
+            let mut value: Vec<u8> = Vec::new();
+
+            if let Ok(Some(mut row)) = statement.execute(GET_ITEM, (
+                &pid.into_parameter(),
+                &(kind as i16).into_parameter(),
+                &enc_category.clone().into_parameter(),
+                &enc_name.clone().into_parameter()
+            ))?.unwrap().next_row() {
+                row.get_binary(2, &mut value).unwrap();
+                row.get_data(1, &mut item_id)?;
+            } else {
+                return Ok(None);
+            }
+
+            // Build up the response.
+            let dvalue = key.decrypt_entry_value(category.as_ref(), name.as_ref(), value)?;
+            let tags: Vec<EntryTag> = self.getDecodedTags(item_id, &mut statement, &key)?;
+
+            Ok(Some(Entry::new(kind, category, name, dvalue, tags)))
+        })
     }
 
     fn fetch_all<'q>(
