@@ -6,13 +6,18 @@ use odbc_api::{
     buffers::{RowVec},
     Cursor,
     IntoParameter,
-    parameter::{VarCharArray}
+    parameter::{InputParameter, VarCharArray}
 };
 
 use odbc_api::sys;
 
 use super::{
-    db_utils::{expiry_timestamp, random_profile_name, encode_profile_key, DbSessionKey, prepare_tags},
+    db_utils::{
+        encode_profile_key,
+        expiry_timestamp,
+        prepare_tags,
+        random_profile_name
+    },
     Backend, BackendSession,
 };
 use crate::{
@@ -21,6 +26,10 @@ use crate::{
     error::Error,
     future::{BoxFuture, unblock},
     protect::{EntryEncryptor, KeyCache, PassKey, ProfileId, ProfileKey, StoreKeyMethod},
+    wql::{
+        sql::TagSqlEncoder,
+        tags::{tag_query, TagQueryEncoder},
+    },
 };
 
 use r2d2::PooledConnection;
@@ -53,9 +62,17 @@ const UPDATE_ITEM: &str = "UPDATE items SET value=?, expiry=NULL WHERE profile_i
 const UPDATE_ITEM_WITH_EXPIRY: &str = "UPDATE items SET value=?, expiry=? WHERE profile_id=? AND kind=?
     AND category=? AND name=?";
 const DELETE_ITEM: &str = "DELETE FROM items WHERE profile_id = ? AND kind = ? AND category = ? AND name = ?";
+const COUNT_ITEMS: &str = "SELECT COUNT(*) FROM items i
+    WHERE profile_id = ?
+    AND (kind = ? OR ? IS NULL)
+    AND (category = ? OR ? IS NULL)
+    AND (expiry IS NULL OR expiry > CURRENT_TIMESTAMP)";
 
 const INSERT_TAG: &str = "INSERT INTO items_tags (item_id, name, value, plaintext) VALUES (?, ?, ?, ?)";
 const DELETE_TAG: &str = "DELETE FROM items_tags WHERE item_id=?";
+
+// XXX: Still to be done
+//      - clean all warnings!
 
 /// A ODBC database store
 pub struct OdbcBackend {
@@ -345,7 +362,50 @@ impl BackendSession for OdbcSession {
         // XXX: Still to be done
         let enc_category = category.map(|c| ProfileKey::prepare_input(c.as_bytes()));
 
-        Box::pin(async move { Ok(5) })
+        Box::pin(async move {
+            // Create the tag filter and parameters.
+            let (profile_id, key) = self.acquire_key().await?;
+            let (enc_category, tag_filter) = unblock({
+                move || {
+                    Result::<_, Error>::Ok((
+                        enc_category
+                            .map(|c| key.encrypt_entry_category(c))
+                            .transpose()?,
+                        encode_odbc_tag_filter(tag_filter, &key)?,
+                    ))
+                }
+            })
+            .await?;
+
+            // Construct the full list of parameters for the query.
+            let sql_kind = kind.map(|k| k as i64).unwrap();
+            let mut count: i64 = 0;
+
+            let mut params: Vec<Box<dyn InputParameter>> = vec![
+                Box::new(profile_id.clone().into_parameter()),
+                Box::new(sql_kind),
+                Box::new(sql_kind),
+                Box::new(enc_category.clone().into_parameter()),
+                Box::new(enc_category.clone().into_parameter()),
+            ];
+
+            // Construct the full query.
+            let query = extend_odbc_query(
+                COUNT_ITEMS,
+                &mut params,
+                tag_filter,
+                None,
+                false,
+            )?;
+
+            // Execute the query.
+            self.connection.raw().execute(&query, params.as_slice())
+                .unwrap().unwrap()
+                .next_row().unwrap().unwrap()
+                .get_data(1, &mut count)?;
+
+            Ok(count)
+        })
     }
 
     fn fetch(
@@ -402,7 +462,6 @@ impl BackendSession for OdbcSession {
         let category = ProfileKey::prepare_input(category.as_bytes());
         let name = ProfileKey::prepare_input(name.as_bytes());
 
-        // XXX: Can we use a transaction here???
         match operation {
             op @ EntryOperation::Insert | op @ EntryOperation::Replace => {
                 let value = ProfileKey::prepare_input(value.unwrap_or_default());
@@ -547,9 +606,19 @@ impl BackendSession for OdbcSession {
     }
 
     fn ping(&mut self) -> BoxFuture<'_, Result<(), Error>> {
-        // XXX: Still to be done
         Box::pin(async move {
-            Ok(())
+            let mut count: i64 = 0;
+
+            self.connection.raw().execute(GET_PROFILE_COUNT_FOR_NAME,
+                        (&self.profile.clone().into_parameter()))
+                .unwrap().unwrap()
+                .next_row().unwrap().unwrap()
+                .get_data(1, &mut count)?;
+            if count == 0 {
+                Err(err_msg!(NotFound, "Session profile has been removed"))
+            } else {
+                Ok(())
+            }
         })
     }
 
@@ -559,18 +628,109 @@ impl BackendSession for OdbcSession {
 
 }
 
+fn encode_odbc_tag_filter(
+    tag_filter: Option<TagFilter>,
+    key: &ProfileKey,
+) -> Result<Option<(String, Vec<Vec<u8>>)>, Error> {
+    if let Some(tag_filter) = tag_filter {
+        let tag_query = tag_query(tag_filter.query)?;
+        let mut enc = TagSqlEncoder::new(
+            |name| key.encrypt_tag_name(ProfileKey::prepare_input(name.as_bytes())),
+            |value| key.encrypt_tag_value(ProfileKey::prepare_input(value.as_bytes())),
+        );
+        if let Some(filter) = enc.encode_query(&tag_query)? {
+            let filter = replace_odbc_arg_placeholders(&filter);
+            Ok(Some((filter, enc.arguments)))
+        } else {
+            Ok(None)
+        }
+    } else {
+        Ok(None)
+    }
+}
+
+fn replace_odbc_arg_placeholders(
+    filter: &str,
+) -> String {
+    let mut buffer: String = String::with_capacity(filter.len());
+    let mut remain = filter;
+    while let Some(start_offs) = remain.find('$') {
+        let mut iter = remain[(start_offs + 1)..].chars();
+        if let Some((end_offs)) = iter.next().and_then(|c| match c {
+            '$' => Some(start_offs + 2),
+            '0'..='9' => {
+                let mut end_offs = start_offs + 2;
+                for c in iter {
+                    if c.is_ascii_digit() {
+                        end_offs += 1;
+                    } else {
+                        break;
+                    }
+                }
+                Some(
+                    end_offs,
+                )
+            }
+            _ => None,
+        }) {
+            buffer.push_str(&remain[..start_offs]);
+            buffer.push_str("?");
+            remain = &remain[end_offs..];
+        } else {
+            buffer.push_str(&remain[..=start_offs]);
+            remain = &remain[(start_offs + 1)..];
+        }
+    }
+    buffer.push_str(remain);
+    buffer
+}
+
+fn extend_odbc_query(
+    query: &str,
+    args: &mut Vec<Box<dyn InputParameter>>,
+    tag_filter: Option<(String, Vec<Vec<u8>>)>,
+    order_by: Option<OrderBy>,
+    descending: bool,
+) -> Result<String, Error>
+{
+    let mut query = query.to_string();
+    if let Some((filter_clause, filter_args)) = tag_filter {
+        for arg in filter_args.iter() {
+            args.push(Box::new(arg.clone().into_parameter()));
+        }
+        query.push_str(" AND "); // assumes WHERE already occurs
+        query.push_str(&filter_clause);
+    };
+
+    // Only add ordering if the query starts with SELECT
+    if query.trim_start().to_uppercase().starts_with("SELECT") {
+        if let Some(order_by_value) = order_by {
+            query = order_by_odbc_query(query, order_by_value, descending);
+        };
+    }
+    Ok(query)
+}
+
+fn order_by_odbc_query(mut query: String, order_by: OrderBy, descending: bool) -> String {
+    query.push_str(" ORDER BY ");
+    match order_by {
+        OrderBy::Id => query.push_str("id"),
+    }
+    if descending {
+        query.push_str(" DESC");
+    }
+    query
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::backend::db_utils::replace_arg_placeholders;
 
-    /*
     #[test]
     fn odbc_simple_and_convert_args_works() {
         assert_eq!(
-            &replace_arg_placeholders::<OdbcBackend>("This $$ is $10 a $$ string!", 3),
-            "This $3 is $12 a $5 string!",
+            &replace_odbc_arg_placeholders("This $1 is $2 a $3 string!"),
+            "This ? is ? a ? string!",
         );
     }
-    */
 }
