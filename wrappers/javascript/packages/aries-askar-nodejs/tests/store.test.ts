@@ -226,7 +226,6 @@ describe('Store and Session', () => {
 
   test('Profile', async () => {
     const session = await store.openSession()
-    await session.insert(firstEntry)
     await session.close()
 
     const profile = await store.createProfile()
