@@ -70,7 +70,7 @@ export class Session {
     tagFilter?: Record<string, unknown>
     limit?: number
     orderBy?: string
-    descending: boolean
+    descending?: boolean
     forUpdate?: boolean
     isJson?: boolean
   }) {

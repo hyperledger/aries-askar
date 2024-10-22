@@ -212,7 +212,7 @@ export type ScanStartOptions = {
   offset?: number
   limit?: number
   orderBy?: string
-  descending: boolean
+  descending?: boolean
 }
 
 export type SessionCloseOptions = {
@@ -236,7 +236,7 @@ export type SessionFetchAllOptions = {
   tagFilter?: Record<string, unknown>
   limit?: number
   orderBy?: string
-  descending: boolean
+  descending?: boolean
   forUpdate: boolean
 }
 export type SessionFetchAllKeysOptions = {
