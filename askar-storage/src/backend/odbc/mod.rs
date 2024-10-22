@@ -278,14 +278,11 @@ impl Backend for OdbcBackend {
     }
 
     fn session(&self, profile: Option<String>, transaction: bool) -> Result<Self::Session, Error> {
-        if transaction {
-            // XXX: Still to be done
-            return Err(err_msg!(Unsupported, "The ODBC backend does not currently support transactions"))
-        }
         Ok(OdbcSession::new(
             self.key_cache.clone(),
             profile.unwrap_or_else(|| self.active_profile.clone()),
             self.pool.get().unwrap(),
+            transaction,
         ))
     }
 
@@ -308,6 +305,7 @@ pub struct OdbcSession {
     cache: Arc<KeyCache>,
     profile: String,
     connection: PooledConnection<OdbcConnectionManager>,
+    transaction: bool,
 }
 
 impl OdbcSession {
@@ -315,12 +313,16 @@ impl OdbcSession {
         cache: Arc<KeyCache>,
         profile: String,
         connection: PooledConnection<OdbcConnectionManager>,
+        transaction: bool,
     ) -> Self
     {
+        connection.raw().set_autocommit(!transaction);
+
         Self {
             cache: cache,
             profile: profile,
             connection: connection,
+            transaction: transaction,
         }
     }
 
@@ -359,7 +361,6 @@ impl BackendSession for OdbcSession {
         category: Option<&'q str>,
         tag_filter: Option<TagFilter>,
     ) -> BoxFuture<'q, Result<i64, Error>> {
-        // XXX: Still to be done
         let enc_category = category.map(|c| ProfileKey::prepare_input(c.as_bytes()));
 
         Box::pin(async move {
@@ -623,9 +624,18 @@ impl BackendSession for OdbcSession {
     }
 
     fn close(&mut self, commit: bool) -> BoxFuture<'_, Result<(), Error>> {
-        Box::pin(self.close(commit))
+        Box::pin(async move {
+            if self.transaction {
+                if commit {
+                    self.connection.raw().commit()?;
+                } else {
+                    self.connection.raw().rollback()?;
+                }
+                self.connection.raw().set_autocommit(true);
+            }
+            Ok(())
+        })
     }
-
 }
 
 fn encode_odbc_tag_filter(
