@@ -8,6 +8,7 @@ use odbc_api::{
     IntoParameter,
     parameter::{InputParameter, VarCharArray},
     Preallocated,
+    handles::{AsStatementRef, Statement},
 };
 
 use odbc_api::sys;
@@ -68,6 +69,10 @@ const COUNT_ITEMS: &str = "SELECT COUNT(*) FROM items i
     AND (kind = ? OR ? IS NULL)
     AND (category = ? OR ? IS NULL)
     AND (expiry IS NULL OR expiry > CURRENT_TIMESTAMP)";
+const DELETE_ALL_ITEMS: &str = "DELETE FROM items AS i
+    WHERE i.profile_id = ?
+    AND (i.kind = ? OR ? IS NULL)
+    AND (i.category = ? OR ? IS NULL)";
 const GET_ITEM: &str = "SELECT id, value
     FROM items WHERE profile_id = ? AND kind = ?
     AND category = ? AND name = ?
@@ -118,13 +123,19 @@ impl Backend for OdbcBackend {
             .await?;
 
             // Store the profile name and key.
-            self.pool.get().unwrap().raw().execute(INSERT_PROFILE,
-                (&name.clone().into_parameter(), &enc_key.clone().into_parameter()))?;
+            let mut connection = self.pool.get().unwrap();
+
+            if let Some(mut cursor) = connection.raw().execute(INSERT_PROFILE,
+                (&name.clone().into_parameter(), &enc_key.clone().into_parameter()))? {
+                if cursor.as_stmt_ref().row_count().unwrap() == 0 {
+                    return Err(err_msg!(Duplicate, "Duplicate profile name"));
+                }
+            }
 
             // Retrieve the profile ID from the table.
             let mut pid: i64 = 0;
 
-            self.pool.get().unwrap().raw().execute(GET_PROFILE_ID,
+            connection.raw().execute(GET_PROFILE_ID,
                 (&name.clone().into_parameter(), &enc_key.clone().into_parameter()))
             .unwrap().unwrap()
             .next_row().unwrap().unwrap()
@@ -170,7 +181,7 @@ impl Backend for OdbcBackend {
 
             match self.pool.get().unwrap().raw().execute(GET_PROFILE_NAMES, ()) {
                 Ok(cursor) => {
-                    let row_set_buffer = RowVec::<(VarCharArray<1024>,)>::new(10);
+                    let row_set_buffer = RowVec::<(VarCharArray<1024>,)>::new(64);
                     let mut block_cursor = cursor.unwrap().bind_buffer(row_set_buffer).unwrap();
                     let batch = block_cursor.fetch().unwrap().unwrap();
 
@@ -188,25 +199,12 @@ impl Backend for OdbcBackend {
 
     fn remove_profile(&self, name: String) -> BoxFuture<'_, Result<bool, Error>> {
         Box::pin(async move {
-            let mut ret = false;
+            let binding = self.pool.get().unwrap();
+            let mut statement = binding.raw().preallocate().unwrap();
 
-            // Determine whether the profile currently exists.  We use this to
-            // determine whether to delete the profile, along with the return
-            // value from this function (true == deleted / false == unknown profile).
-            let mut count: i64 = 0;
+            statement.execute(DELETE_PROFILE, &name.into_parameter())?;
 
-            self.pool.get().unwrap().raw().execute(GET_PROFILE_COUNT_FOR_NAME,
-                        (&name.clone().into_parameter()))
-                .unwrap().unwrap()
-                .next_row().unwrap().unwrap()
-                .get_data(1, &mut count)?;
-
-            if count > 0 {
-                self.pool.get().unwrap().raw().execute(DELETE_PROFILE,
-                    (&name.into_parameter()))?;
-
-                ret = true;
-            }
+            let ret = statement.row_count()?.unwrap() != 0;
 
             Ok(ret)
         })
@@ -263,6 +261,8 @@ impl Backend for OdbcBackend {
             // We finally need to save the new store key.
             binding.raw().execute(UPDATE_CONFIG_KEY,
                     (&store_key_ref.into_uri().into_parameter()))?;
+
+            self.key_cache = Arc::new(KeyCache::new(store_key));
 
             Ok(())
         })
@@ -520,10 +520,52 @@ impl BackendSession for OdbcSession {
         category: Option<&'q str>,
         tag_filter: Option<TagFilter>,
     ) -> BoxFuture<'q, Result<i64, Error>> {
-        // XXX: Still to be done
         let enc_category = category.map(|c| ProfileKey::prepare_input(c.as_bytes()));
 
-        Box::pin(async move { Err(err_msg!(Unsupported, "mod::remove_all()")) })
+        Box::pin(async move {
+           // Create the tag filter and parameters.
+           let (profile_id, key) = self.acquire_key().await?;
+           let (enc_category, tag_filter) = unblock({
+               move || {
+                   Result::<_, Error>::Ok((
+                       enc_category
+                           .map(|c| key.encrypt_entry_category(c))
+                           .transpose()?,
+                       encode_odbc_tag_filter(tag_filter, &key)?,
+                   ))
+               }
+           })
+           .await?;
+
+           // Construct the full list of parameters for the query.
+           let sql_kind = kind.map(|k| k as i64).unwrap();
+           let mut count: i64 = 0;
+
+           let mut params: Vec<Box<dyn InputParameter>> = vec![
+               Box::new(profile_id.clone().into_parameter()),
+               Box::new(sql_kind),
+               Box::new(sql_kind),
+               Box::new(enc_category.clone().into_parameter()),
+               Box::new(enc_category.clone().into_parameter()),
+           ];
+
+           // Construct the full query.
+           let query = extend_odbc_query(
+                DELETE_ALL_ITEMS,
+                &mut params,
+                tag_filter,
+                None,
+                false,
+            )?;
+
+            // Execute the query.
+            let mut statement = self.connection.raw().preallocate().unwrap();
+            statement.execute(&query, params.as_slice())?;
+
+            let removed = statement.row_count()?.unwrap();
+
+            Ok(removed as i64)
+        })
     }
 
     fn update<'q>(
@@ -592,6 +634,10 @@ impl BackendSession for OdbcSession {
                                     &enc_value.into_parameter(),
                                     &expiryStr.into_parameter()
                                 ))?;
+                        }
+
+                        if statement.row_count()?.unwrap() == 0 {
+                            return Err(err_msg!(Duplicate, "Duplicate entry"));
                         }
                     } else {
                         if expiryStr.is_empty() {
@@ -669,13 +715,21 @@ impl BackendSession for OdbcSession {
 
                 // Issue the delete.  We don't return an error if the
                 // item doesn't currently exist.
-                self.connection.raw().execute(DELETE_ITEM,
+                let mut statement = self.connection.raw().preallocate().unwrap();
+
+                statement.execute(DELETE_ITEM,
                     (
                         &pid.into_parameter(),
                         &(kind as i16).into_parameter(),
                         &enc_category.into_parameter(),
                         &enc_name.into_parameter()
                     ))?;
+
+                let deleted = statement.row_count()?.unwrap();
+
+                if deleted == 0 {
+                    return Err(err_msg!(NotFound, "Entry not found"));
+                }
 
                 Ok(())
             }),
