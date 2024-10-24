@@ -185,6 +185,12 @@ impl From<std::str::Utf8Error> for Error {
     }
 }
 
+impl From<std::io::Error> for Error {
+    fn from(err: std::io::Error) -> Self {
+        Error::from(ErrorKind::Input).with_cause(err)
+    }
+}
+
 macro_rules! err_msg {
     () => {
         $crate::error::Error::from($crate::error::ErrorKind::Input)

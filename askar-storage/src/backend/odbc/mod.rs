@@ -704,7 +704,7 @@ impl BackendSession for OdbcSession {
         let category = category.map(|c| c.to_string());
 
         Box::pin(async move {
-            let entries = self.perform_scan(
+            Ok(self.perform_scan(
                         kind,
                         category.clone(),
                         tag_filter,
@@ -712,9 +712,7 @@ impl BackendSession for OdbcSession {
                         limit,
                         order_by,
                         descending
-            ).await?;
-
-            Ok(entries)
+            ).await?)
          })
     }
 

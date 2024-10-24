@@ -23,13 +23,6 @@ impl From<odbc_api::Error> for Error {
     }
 }
 
-/// Allow the aries-askar error object to handle std::io errors.
-impl From<std::io::Error> for Error {
-    fn from(err: std::io::Error) -> Self {
-        err_msg!(Backend, "IO Error").with_cause(err)
-    }
-}
-
 /// Allow the aries-askar error object to handle r2d2 errors.
 impl From<r2d2::Error> for Error {
     fn from(err: r2d2::Error) -> Self {
@@ -127,9 +120,9 @@ impl OdbcStoreOptions {
         recreate: bool,
     ) -> Result<OdbcBackend, Error> {
         // Create the pool to the database server.
-        let pool = self.open_pool().await;
+        let pool = self.open_pool().await?;
 
-        if self.config_exists(&pool) {
+        if self.config_exists(&pool)? {
             if !recreate {
                 // If the database has already been created we just open
                 // it now.
@@ -140,20 +133,6 @@ impl OdbcStoreOptions {
         }
 
         // If we get this far it means that the database has not yet been provisioned.
-        // We need to provision the database now.  We do this by applying the database
-        // schema which has been provided in the schema file.  We need to execute each
-        // SQL statement one at a time as the ODBC API does not appear to support the
-        // execution of multiple statements in a single API call.
-        let schema: String = fs::read_to_string(self.schema_file)?;
-
-        let statements = schema.split(";");
-        for statement in statements {
-            let trimmed_statement = statement.trim();
-
-            if trimmed_statement.len() > 0 {
-                pool.get().unwrap().raw().execute(trimmed_statement, ())?;
-            }
-        }
 
         // Initialise the key store.
         let (profile_key, enc_profile_key, store_key, store_key_ref) = unblock({
@@ -165,24 +144,49 @@ impl OdbcStoreOptions {
         // Work out the profile.
         let default_profile = profile.unwrap_or_else(random_profile_name);
 
+        // We need to provision the database now.  We do this by applying the database
+        // schema which has been provided in the schema file.  We need to execute each
+        // SQL statement one at a time as the ODBC API does not appear to support the
+        // execution of multiple statements in a single API call.
+        let schema: String = fs::read_to_string(self.schema_file)?;
+
+        let connection = pool.get()?;
+        let mut statement = connection.raw().preallocate()?;
+
+        let definitions = schema.split(";");
+        for definition in definitions {
+            let trimmed_definition = definition.trim();
+
+            if trimmed_definition.len() > 0 {
+                statement.execute(trimmed_definition, ())?;
+            }
+        }
+
         // Save the configuration information.
-        pool.get().unwrap().raw().execute("INSERT INTO config (name, value) VALUES
+        statement.execute("INSERT INTO config (name, value) VALUES
                 ('default_profile', ?),
                 ('key', ?),
-                ('version', ?)",
-            (&default_profile.clone().into_parameter(), &store_key_ref.into_parameter(), &"1".into_parameter()))?;
+                ('version', ?)", (
+            &default_profile.clone().into_parameter(),
+            &store_key_ref.into_parameter(),
+            &"1".into_parameter()
+        ))?;
 
-        pool.get().unwrap().raw().execute("INSERT INTO profiles (name, profile_key) VALUES (?, ?)",
-            (&default_profile.clone().into_parameter(), &enc_profile_key.clone().into_parameter()))?;
+        statement.execute("INSERT INTO profiles (name, profile_key) VALUES (?, ?)", (
+            &default_profile.clone().into_parameter(),
+            &enc_profile_key.clone().into_parameter()
+        ))?;
 
         // Retrieve the profile ID from the table.
         let mut profile_id: i64 = 0;
 
-        pool.get().unwrap().raw().execute(
-                "SELECT id from profiles WHERE name=? and profile_key=?",
-                (&default_profile.clone().into_parameter(), &enc_profile_key.clone().into_parameter()))
-            .unwrap().unwrap()
-            .next_row().unwrap().unwrap()
+        statement.execute(
+                "SELECT id from profiles WHERE name=? and profile_key=?", (
+                    &default_profile.clone().into_parameter(),
+                    &enc_profile_key.clone().into_parameter()
+                ))?
+            .unwrap()
+            .next_row()?.unwrap()
             .get_data(1, &mut profile_id)?;
 
         let mut key_cache = KeyCache::new(store_key);
@@ -196,8 +200,6 @@ impl OdbcStoreOptions {
         ))
     }
 
-
-
     /// Open an existing Odbc store from this set of configuration options
     pub async fn open(
         self,
@@ -206,7 +208,7 @@ impl OdbcStoreOptions {
         profile: Option<String>,
     ) -> Result<OdbcBackend, Error> {
         // Create the pool to the database server.
-        let pool = self.open_pool().await;
+        let pool = self.open_pool().await?;
 
         // We need to retrieve the profile, key and version from the
         // config table.
@@ -214,7 +216,7 @@ impl OdbcStoreOptions {
         let mut default_profile: Option<String> = None;
         let mut store_key_ref: Option<String> = None;
 
-        match pool.get().unwrap().raw().execute(
+        match pool.get()?.raw().execute(
                 "SELECT name, value FROM config WHERE name IN ('default_profile', 'key', 'version')", ()) {
             Ok(cursor) => {
                 let mut unwrapped = cursor.unwrap();
@@ -223,11 +225,11 @@ impl OdbcStoreOptions {
                     // Retrieve the name and value in the row.
                     let mut name_buf = Vec::new();
                     row.get_text(1, &mut name_buf)?;
-                    let name = String::from_utf8(name_buf).unwrap();
+                    let name = String::from_utf8(name_buf)?;
 
                     let mut value_buf = Vec::new();
                     row.get_text(2, &mut value_buf)?;
-                    let value = String::from_utf8(value_buf).unwrap();
+                    let value = String::from_utf8(value_buf)?;
 
                     // Check the name and process the value.
                     match name.as_str() {
@@ -281,13 +283,13 @@ impl OdbcStoreOptions {
         let mut profile_id: i64 = 0;
         let mut profile_key_buf = Vec::new();
 
-        if let Ok(Some(mut cursor)) = pool.get().unwrap().raw().execute(
+        if let Ok(Some(mut cursor)) = pool.get()?.raw().execute(
             "SELECT id, profile_key from profiles WHERE name=?",
             &profile.clone().into_parameter()) {
-            let mut row = cursor.next_row().unwrap().unwrap();
+            let mut row = cursor.next_row()?.unwrap();
 
             row.get_data(1, &mut profile_id)?;
-            row.get_binary(2, &mut profile_key_buf).unwrap();
+            row.get_binary(2, &mut profile_key_buf)?;
         }
 
         let mut key_cache = KeyCache::new(store_key);
@@ -307,10 +309,10 @@ impl OdbcStoreOptions {
     /// Remove an existing Odbc store defined by these configuration options
     pub async fn remove(self) -> Result<bool, Error> {
         // Create the pool to the database server.
-        let pool = self.open_pool().await;
+        let pool = self.open_pool().await?;
 
         // If the config table exists we attempt to drop all of the tables now.
-        if self.config_exists(&pool) {
+        if self.config_exists(&pool)? {
             self.drop_tables(&pool)?;
         }
 
@@ -318,16 +320,15 @@ impl OdbcStoreOptions {
     }
 
     /// Create a pool of connections to the database server.
-    async fn open_pool(&self) -> r2d2::Pool<OdbcConnectionManager> {
+    async fn open_pool(&self) -> Result<r2d2::Pool<OdbcConnectionManager>, Error> {
         let manager = OdbcConnectionManager::new(self.connection_string.clone());
-        r2d2::Pool::builder()
+        Ok(r2d2::Pool::builder()
             .max_size(self.max_connections)
             .min_idle(Some(self.min_connections))
             .max_lifetime(Some(self.max_lifetime))
             .connection_timeout(self.connect_timeout)
             .idle_timeout(Some(self.idle_timeout))
-            .build(manager)
-            .unwrap()
+            .build(manager)?)
     }
 
     // Drop all of our tables from the database server.
@@ -335,16 +336,16 @@ impl OdbcStoreOptions {
         let table_names: [&str; 4] = ["items_tags", "items", "profiles", "config"];
 
         for table_name in &table_names {
-            let _ = pool.get().unwrap().raw().execute(format!("DROP TABLE {}", table_name).as_str(), ());
+            let _ = pool.get()?.raw().execute(format!("DROP TABLE {}", table_name).as_str(), ())?;
         }
 
         Ok(())
     }
 
     // Check to see whether our config table exists or not.
-    fn config_exists(&self, pool: &r2d2::Pool<OdbcConnectionManager>) -> bool {
+    fn config_exists(&self, pool: &r2d2::Pool<OdbcConnectionManager>) -> Result<bool, Error> {
         // Check to see if the config table currently exists.
-        pool.get().unwrap().raw().execute("select count(name) from config", ()).is_ok()
+        Ok(pool.get()?.raw().execute("select count(name) from config", ()).is_ok())
     }
 
 }
