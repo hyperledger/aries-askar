@@ -173,6 +173,18 @@ impl From<CryptoError> for Error {
     }
 }
 
+impl From<std::string::FromUtf8Error> for Error {
+    fn from(err: std::string::FromUtf8Error) -> Self {
+        Error::from(ErrorKind::Backend).with_cause(err)
+    }
+}
+
+impl From<std::str::Utf8Error> for Error {
+    fn from(err: std::str::Utf8Error) -> Self {
+        Error::from(ErrorKind::Backend).with_cause(err)
+    }
+}
+
 macro_rules! err_msg {
     () => {
         $crate::error::Error::from($crate::error::ErrorKind::Input)

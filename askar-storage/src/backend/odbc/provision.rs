@@ -30,6 +30,13 @@ impl From<std::io::Error> for Error {
     }
 }
 
+/// Allow the aries-askar error object to handle r2d2 errors.
+impl From<r2d2::Error> for Error {
+    fn from(err: r2d2::Error) -> Self {
+        err_msg!(Backend, "Error returned from the database pool").with_cause(err)
+    }
+}
+
 /// Defaults.
 const DEFAULT_CONNECT_TIMEOUT: u64 = 30;
 const DEFAULT_IDLE_TIMEOUT: u64 = 300;
@@ -328,7 +335,7 @@ impl OdbcStoreOptions {
         let table_names: [&str; 4] = ["items_tags", "items", "profiles", "config"];
 
         for table_name in &table_names {
-            pool.get().unwrap().raw().execute(format!("DROP TABLE {}", table_name).as_str(), ());
+            let _ = pool.get().unwrap().raw().execute(format!("DROP TABLE {}", table_name).as_str(), ());
         }
 
         Ok(())
