@@ -17,7 +17,7 @@ export class Scan {
   private offset?: number
   private limit?: number
   private orderBy?: string
-  private descending: boolean
+  private descending?: boolean
 
   public constructor({
     category,
@@ -35,7 +35,7 @@ export class Scan {
     offset?: number
     limit?: number
     orderBy?: string
-    descending: boolean
+    descending?: boolean
     store: Store
   }) {
     this.category = category

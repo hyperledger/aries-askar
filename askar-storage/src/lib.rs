@@ -36,6 +36,9 @@ pub use self::backend::postgres;
 #[cfg(feature = "sqlite")]
 pub use self::backend::sqlite;
 
+#[cfg(feature = "odbc")]
+pub use self::backend::odbc;
+
 pub mod entry;
 
 #[doc(hidden)]

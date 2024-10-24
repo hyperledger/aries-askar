@@ -144,7 +144,12 @@ impl From<ErrorKind> for Error {
 
 // FIXME would be preferable to remove this auto-conversion and handle
 // all sqlx errors manually, to ensure there is some context around the error
-#[cfg(any(feature = "indy_compat", feature = "postgres", feature = "sqlite"))]
+#[cfg(any(
+    feature = "indy_compat",
+    feature = "postgres",
+    feature = "sqlite",
+    feature = "odbc"
+))]
 impl From<sqlx::Error> for Error {
     fn from(err: sqlx::Error) -> Self {
         Error::from(ErrorKind::Backend).with_cause(err)
@@ -165,6 +170,24 @@ impl From<CryptoError> for Error {
             CryptoErrorKind::Unsupported => ErrorKind::Unsupported,
         };
         Error::from_msg(kind, err.message())
+    }
+}
+
+impl From<std::string::FromUtf8Error> for Error {
+    fn from(err: std::string::FromUtf8Error) -> Self {
+        Error::from(ErrorKind::Backend).with_cause(err)
+    }
+}
+
+impl From<std::str::Utf8Error> for Error {
+    fn from(err: std::str::Utf8Error) -> Self {
+        Error::from(ErrorKind::Backend).with_cause(err)
+    }
+}
+
+impl From<std::io::Error> for Error {
+    fn from(err: std::io::Error) -> Self {
+        Error::from(ErrorKind::Input).with_cause(err)
     }
 }
 

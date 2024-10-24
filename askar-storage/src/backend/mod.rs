@@ -9,7 +9,7 @@ use crate::{
     protect::{PassKey, StoreKeyMethod},
 };
 
-#[cfg(any(feature = "postgres", feature = "sqlite"))]
+#[cfg(any(feature = "postgres", feature = "sqlite", feature = "odbc"))]
 pub(crate) mod db_utils;
 
 #[cfg(feature = "postgres")]
@@ -21,6 +21,11 @@ pub mod postgres;
 #[cfg_attr(docsrs, doc(cfg(feature = "sqlite")))]
 /// Sqlite database support
 pub mod sqlite;
+
+#[cfg(feature = "odbc")]
+#[cfg_attr(docsrs, doc(cfg(feature = "odbc")))]
+/// odbc database support
+pub mod odbc;
 
 /// Enum to support custom ordering in record queries
 #[derive(Debug)]
