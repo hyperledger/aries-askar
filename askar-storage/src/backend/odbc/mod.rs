@@ -28,7 +28,7 @@ use async_stream::try_stream;
 use futures_lite::Stream;
 
 use odbc_api::{
-    buffers::{RowVec},
+    buffers::RowVec,
     Cursor,
     IntoParameter,
     parameter::{InputParameter, VarCharArray},
