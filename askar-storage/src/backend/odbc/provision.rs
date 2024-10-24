@@ -148,7 +148,8 @@ impl OdbcStoreOptions {
         // schema which has been provided in the schema file.  We need to execute each
         // SQL statement one at a time as the ODBC API does not appear to support the
         // execution of multiple statements in a single API call.
-        let schema: String = fs::read_to_string(self.schema_file)?;
+        let schema: String = fs::read_to_string(self.schema_file)
+            .map_err(err_map!(Backend, "Failed to read the schema file"))?;
 
         let connection = pool.get()?;
         let mut statement = connection.raw().preallocate()?;
@@ -170,12 +171,14 @@ impl OdbcStoreOptions {
             &default_profile.clone().into_parameter(),
             &store_key_ref.into_parameter(),
             &"1".into_parameter()
-        ))?;
+        ))
+        .map_err(err_map!(Backend, "Failed to insert the configuration data"))?;
 
         statement.execute("INSERT INTO profiles (name, profile_key) VALUES (?, ?)", (
             &default_profile.clone().into_parameter(),
             &enc_profile_key.clone().into_parameter()
-        ))?;
+        ))
+        .map_err(err_map!(Backend, "Failed to insert the default profile"))?;
 
         // Retrieve the profile ID from the table.
         let mut profile_id: i64 = 0;
@@ -184,9 +187,12 @@ impl OdbcStoreOptions {
                 "SELECT id from profiles WHERE name=? and profile_key=?", (
                     &default_profile.clone().into_parameter(),
                     &enc_profile_key.clone().into_parameter()
-                ))?
+                ))
+            .map_err(err_map!(Backend, "Failed to retrieve the default profile"))?
             .unwrap()
-            .next_row()?.unwrap()
+            .next_row()
+            .map_err(err_map!(Backend, "Failed to retrieve the default profile"))?
+            .unwrap()
             .get_data(1, &mut profile_id)?;
 
         let mut key_cache = KeyCache::new(store_key);
@@ -328,7 +334,8 @@ impl OdbcStoreOptions {
             .max_lifetime(Some(self.max_lifetime))
             .connection_timeout(self.connect_timeout)
             .idle_timeout(Some(self.idle_timeout))
-            .build(manager)?)
+            .build(manager)
+            .map_err(err_map!(Backend, "Failed to open the database pool"))?)
     }
 
     // Drop all of our tables from the database server.
@@ -336,7 +343,8 @@ impl OdbcStoreOptions {
         let table_names: [&str; 4] = ["items_tags", "items", "profiles", "config"];
 
         for table_name in &table_names {
-            let _ = pool.get()?.raw().execute(format!("DROP TABLE {}", table_name).as_str(), ())?;
+            let _ = pool.get()?.raw().execute(format!("DROP TABLE {}", table_name).as_str(), ())
+                .map_err(err_map!(Backend, "Failed to drop a database table"))?;
         }
 
         Ok(())

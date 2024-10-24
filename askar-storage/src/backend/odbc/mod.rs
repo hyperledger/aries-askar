@@ -33,7 +33,6 @@ use odbc_api::{
     IntoParameter,
     parameter::{InputParameter, VarCharArray},
     Preallocated,
-    handles::{AsStatementRef, Statement},
 };
 
 use super::{
@@ -135,6 +134,14 @@ impl OdbcBackend {
     }
 }
 
+impl Debug for OdbcBackend {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.debug_struct("OdbcStore")
+            .field("active_profile", &self.active_profile)
+            .finish()
+    }
+}
+
 impl Backend for OdbcBackend {
     type Session = OdbcSession;
 
@@ -151,24 +158,31 @@ impl Backend for OdbcBackend {
             })
             .await?;
 
-            // Store the profile name and key.
-            let connection = self.pool.get()?;
-
-            if let Some(mut cursor) = connection.raw().execute(INSERT_PROFILE,
-                (&name.clone().into_parameter(), &enc_key.clone().into_parameter()))? {
-                if cursor.as_stmt_ref().row_count().unwrap() == 0 {
-                    return Err(err_msg!(Duplicate, "Duplicate profile name"));
-                }
-            }
-
-            // Retrieve the profile ID from the table.
             let mut pid: i64 = 0;
 
-            connection.raw().execute(GET_PROFILE_ID,
-                (&name.clone().into_parameter(), &enc_key.clone().into_parameter()))?
-            .unwrap()
-            .next_row()?.unwrap()
-            .get_data(1, &mut pid)?;
+            // Store the profile name and key.
+            {
+                let connection = self.pool.get()?;
+                let mut statement = connection.raw().preallocate()?;
+
+                statement.execute(INSERT_PROFILE,
+                    (&name.clone().into_parameter(), &enc_key.clone().into_parameter()))
+                    .map_err(err_map!(Backend, "Error inserting profile"))?;
+
+                if statement.row_count()?.unwrap() == 0 {
+                    return Err(err_msg!(Duplicate, "Duplicate profile name"));
+                }
+
+                // Retrieve the profile ID from the table.
+                statement.execute(GET_PROFILE_ID,
+                    (&name.clone().into_parameter(), &enc_key.clone().into_parameter()))
+                .map_err(err_map!(Backend, "Error retrieving profile"))?
+                .unwrap()
+                .next_row()
+                .map_err(err_map!(Backend, "Error retrieving profile"))?
+                .unwrap()
+                .get_data(1, &mut pid)?;
+            }
 
             // Add the details to the key cache.
             self.key_cache
@@ -187,9 +201,12 @@ impl Backend for OdbcBackend {
         Box::pin(async move {
             let mut profile_buf = Vec::new();
 
-            self.pool.get()?.raw().execute(GET_DEFAULT_PROFILE, ())?
+            self.pool.get()?.raw().execute(GET_DEFAULT_PROFILE, ())
+                .map_err(err_map!(Backend, "Error fetching default profile name"))?
                 .unwrap()
-                .next_row()?.unwrap()
+                .next_row()
+                .map_err(err_map!(Backend, "Error fetching default profile name"))?
+                .unwrap()
                 .get_text(1, &mut profile_buf)?;
 
             Ok(String::from_utf8(profile_buf)?)
@@ -198,8 +215,8 @@ impl Backend for OdbcBackend {
 
     fn set_default_profile(&self, profile: String) -> BoxFuture<'_, Result<(), Error>> {
         Box::pin(async move {
-            self.pool.get()?.raw().execute(UPDATE_CONFIG_PROFILE,
-                    &profile.into_parameter())?;
+            self.pool.get()?.raw().execute(UPDATE_CONFIG_PROFILE, &profile.into_parameter())
+                .map_err(err_map!(Backend, "Error setting default profile name"))?;
             Ok(())
         })
     }
@@ -219,7 +236,7 @@ impl Backend for OdbcBackend {
                     }
                 }
                 Err(_error) => {
-                    return Err(err_msg!(Unsupported, "Configuration data not found"));
+                    return Err(err_msg!(Backend, "Error fetching profile list"));
                 }
             };
             Ok(names)
@@ -231,7 +248,8 @@ impl Backend for OdbcBackend {
             let binding = self.pool.get()?;
             let mut statement = binding.raw().preallocate()?;
 
-            statement.execute(DELETE_PROFILE, &name.into_parameter())?;
+            statement.execute(DELETE_PROFILE, &name.into_parameter())
+                .map_err(err_map!(Backend, "Error removing profile"))?;
 
             let ret = statement.row_count()?.unwrap() != 0;
 
@@ -269,7 +287,7 @@ impl Backend for OdbcBackend {
                     }
                 }
                 Err(_error) => {
-                    return Err(err_msg!(Unsupported, "Configuration data not found"));
+                    return Err(err_msg!(NotFound, "Configuration data not found"));
                 }
             };
 
@@ -289,7 +307,8 @@ impl Backend for OdbcBackend {
 
             // We finally need to save the new store key.
             binding.raw().execute(UPDATE_CONFIG_KEY,
-                    &store_key_ref.into_uri().into_parameter())?;
+                    &store_key_ref.into_uri().into_parameter())
+                    .map_err(err_map!(Backend, "Error updating the store key"))?;
 
             self.key_cache = Arc::new(KeyCache::new(store_key));
 
@@ -356,14 +375,6 @@ impl Backend for OdbcBackend {
     }
 }
 
-impl Debug for OdbcBackend {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.debug_struct("OdbcStore")
-            .field("active_profile", &self.active_profile)
-            .finish()
-    }
-}
-
 /// A ODBC session
 #[derive(Debug)]
 pub struct OdbcSession {
@@ -401,9 +412,12 @@ impl OdbcSession {
             let mut pid: i64 = 0;
             let mut enc_key = Vec::new();
 
-            if let Some(mut cursor) = self.connection.raw().execute(GET_PROFILE, &self.profile.clone().into_parameter())?
+            if let Some(mut cursor) = self.connection.raw().execute(GET_PROFILE, &self.profile.clone().into_parameter())
+                    .map_err(err_map!(Backend, "Error fetching profile key"))?
             {
-                let mut row = cursor.next_row()?.unwrap();
+                let mut row = cursor.next_row()
+                    .map_err(err_map!(Backend, "Error fetching profile key"))?
+                    .unwrap();
                 row.get_data(1, &mut pid)?;
                 row.get_binary(2, &mut enc_key)?;
             } else {
@@ -436,8 +450,8 @@ impl OdbcSession {
                 // plaintext fields.
                 for (name, value, plaintext) in batch.iter() {
                     enc_tags.push(EncEntryTag {
-                        name: name.as_bytes().ok_or_else(|| err_msg!(Unexpected, "Failed to retrieve the tag name"))?.to_vec(),
-                        value: value.as_bytes().ok_or_else(|| err_msg!(Unexpected, "Failed to retrieve the tag value"))?.to_vec(),
+                        name: name.as_bytes().ok_or_else(|| err_msg!(Backend, "Failed to retrieve the tag name"))?.to_vec(),
+                        value: value.as_bytes().ok_or_else(|| err_msg!(Backend, "Failed to retrieve the tag value"))?.to_vec(),
                         plaintext: (*plaintext == 1),
                     });
                 }
@@ -630,9 +644,12 @@ impl BackendSession for OdbcSession {
             let mut count: i64 = 0;
 
             // Execute the query.
-            self.connection.raw().execute(&query, params.as_slice())?
+            self.connection.raw().execute(&query, params.as_slice())
+                .map_err(err_map!(Backend, "Error performing count query"))?
                 .unwrap()
-                .next_row()?.unwrap()
+                .next_row()
+                .map_err(err_map!(Backend, "Error performing count query"))?
+                .unwrap()
                 .get_data(1, &mut count)?;
 
             Ok(count)
@@ -676,7 +693,8 @@ impl BackendSession for OdbcSession {
                 &(kind as i16).into_parameter(),
                 &enc_category.clone().into_parameter(),
                 &enc_name.clone().into_parameter()
-            ))?.unwrap().next_row() {
+            )).map_err(err_map!(Backend, "Error performing fetch query"))?
+            .unwrap().next_row() {
                 row.get_binary(2, &mut value)?;
                 row.get_data(1, &mut item_id)?;
             } else {
@@ -739,7 +757,8 @@ impl BackendSession for OdbcSession {
 
             // Execute the query.
             let mut statement = self.connection.raw().preallocate()?;
-            statement.execute(&query, params.as_slice())?;
+            statement.execute(&query, params.as_slice())
+                .map_err(err_map!(Backend, "Error removing entry"))?;
 
             let removed = statement.row_count()?.unwrap();
 
@@ -802,7 +821,7 @@ impl BackendSession for OdbcSession {
                                     &enc_category.clone().into_parameter(),
                                     &enc_name.clone().into_parameter(),
                                     &enc_value.into_parameter()
-                                ))?;
+                                )).map_err(err_map!(Backend, "Error inserting new entry"))?;
                         } else {
                             statement.execute(INSERT_ITEM_WITH_EXPIRY,
                                 (
@@ -812,7 +831,7 @@ impl BackendSession for OdbcSession {
                                     &enc_name.clone().into_parameter(),
                                     &enc_value.into_parameter(),
                                     &expiry_str.into_parameter()
-                                ))?;
+                                )).map_err(err_map!(Backend, "Error inserting new entry"))?;
                         }
 
                         if statement.row_count()?.unwrap() == 0 {
@@ -827,7 +846,7 @@ impl BackendSession for OdbcSession {
                                     &(kind as i16).into_parameter(),
                                     &enc_category.clone().into_parameter(),
                                     &enc_name.clone().into_parameter()
-                                ))?;
+                                )).map_err(|_| err_msg!(NotFound, "Error updating existing entry"))?;
                         } else {
                             statement.execute(UPDATE_ITEM_WITH_EXPIRY,
                                 (
@@ -837,13 +856,14 @@ impl BackendSession for OdbcSession {
                                     &(kind as i16).into_parameter(),
                                     &enc_category.clone().into_parameter(),
                                     &enc_name.clone().into_parameter()
-                                ))?;
+                                )).map_err(|_| err_msg!(NotFound, "Error updating existing entry"))?;
                         }
 
                         // We also want to delete all existing tags for this
                         // item.
 
-                        statement.execute(DELETE_TAG, &pid.into_parameter())?;
+                        statement.execute(DELETE_TAG, &pid.into_parameter())
+                            .map_err(err_map!(Backend, "Error removing existing entry tags"))?;
                     }
 
                     // Now we need to update the tags table.
@@ -857,9 +877,12 @@ impl BackendSession for OdbcSession {
                                 &(kind as i16).into_parameter(),
                                 &enc_category.clone().into_parameter(),
                                 &enc_name.clone().into_parameter()
-                            ))?
+                            ))
+                            .map_err(err_map!(Backend, "Error retrieving item"))?
                             .unwrap()
-                            .next_row()?.unwrap()
+                            .next_row()
+                            .map_err(err_map!(Backend, "Error retrieving item"))?
+                            .unwrap()
                             .get_data(1, &mut item_id)?;
 
                         // Update each of the tags.
@@ -872,7 +895,7 @@ impl BackendSession for OdbcSession {
                                     &tag.name.into_parameter(),
                                     &tag.value.into_parameter(),
                                     &(tag.plaintext as i16).into_parameter()
-                                ))?;
+                                )).map_err(err_map!(Backend, "Error inserting entry tags"))?;
                         }
                     }
 
@@ -901,7 +924,8 @@ impl BackendSession for OdbcSession {
                         &(kind as i16).into_parameter(),
                         &enc_category.into_parameter(),
                         &enc_name.into_parameter()
-                    ))?;
+                    ))
+                    .map_err(err_map!(Backend, "Error deleting item"))?;
 
                 let deleted = statement.row_count()?.unwrap();
 
@@ -919,9 +943,12 @@ impl BackendSession for OdbcSession {
             let mut count: i64 = 0;
 
             self.connection.raw().execute(GET_PROFILE_COUNT_FOR_NAME,
-                        &self.profile.clone().into_parameter())?
+                        &self.profile.clone().into_parameter())
+                .map_err(err_map!(Backend, "Error pinging session"))?
                 .unwrap()
-                .next_row()?.unwrap()
+                .next_row()
+                .map_err(err_map!(Backend, "Error pinging session"))?
+                .unwrap()
                 .get_data(1, &mut count)?;
             if count == 0 {
                 Err(err_msg!(NotFound, "Session profile has been removed"))
