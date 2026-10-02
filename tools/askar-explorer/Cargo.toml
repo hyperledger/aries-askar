@@ -1,0 +1,19 @@
+[package]
+name = "askar-explorer"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+anyhow = "1"
+askar-storage = { path = "../../askar-storage", default-features = false, features = ["any", "inspect", "sqlite", "postgres"] }
+chrono = "0.4"
+clap = { version = "4", features = ["derive", "env"] }
+dotenvy = "0.15"
+rpassword = "7"
+sha2 = "0.10"
+sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "sqlite", "postgres"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+
+[dev-dependencies]
+tempfile = "3"

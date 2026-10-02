@@ -1,0 +1,31 @@
+services:
+  dev:
+    build:
+      context: ..
+      dockerfile: .devcontainer/Dockerfile
+    volumes:
+      - ..:/workspace:cached
+    working_dir: /workspace
+    command: sleep infinity
+    environment:
+      CARGO_TARGET_DIR: /tmp/askar-target
+      POSTGRES_URL: postgres://postgres:postgres@postgres:5432/test-db
+    depends_on:
+      postgres:
+        condition: service_healthy
+    extra_hosts:
+      - host.docker.internal:host-gateway
+
+  postgres:
+    image: postgres:16
+    ports:
+      - "127.0.0.1:55432:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: test-db
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d test-db"]
+      interval: 2s
+      timeout: 2s
+      retries: 30

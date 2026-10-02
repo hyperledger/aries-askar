@@ -1,0 +1,164 @@
+# Askar Explorer
+
+Export an Askar SQLite or PostgreSQL store to a **plaintext SQLite database** for
+inspection with DBeaver or another SQL client. The source store is opened
+read-only. Exports include expired items, their tags, and per-field decryption
+errors. Key-manager (KMS) records are excluded unless explicitly requested.
+
+## Export
+
+From the repository root:
+
+```sh
+cargo run -p askar-explorer -- export \
+  --uri 'sqlite:///path/to/store.db' --out ./inspection.db
+```
+
+For PostgreSQL, use an Askar URI such as
+`postgres://user:password@host:5432/database?schema=wallet_schema`. To avoid
+exposing connection credentials in shell history or process arguments, put the
+URI in `.env` instead (see below). The command prompts for the store pass key
+unless the key method is `none` or a pass key environment variable is set.
+The output file must not already exist.
+
+To include private key material, add `--include-kms` explicitly. Handle that
+export with particular care.
+
+## Configuration
+
+The explorer reads `.env` from the **current working directory** if present.
+For `cargo run` from the repository root, place it at the repository root.
+For a command run from `tools/askar-explorer`, place it in that directory.
+`.env` files are gitignored throughout this repository.
+
+```dotenv
+ASKAR_EXPLORER_URI='postgres://user:password@localhost:5432/wallet?schema=wallet_schema'
+ASKAR_EXPLORER_OUT='./inspection.db'
+ASKAR_EXPLORER_PASS_KEY='your-store-pass-key'
+```
+
+```sh
+cargo run -p askar-explorer -- export
+```
+
+`ASKAR_EXPLORER_PASS_KEY` is optional; omit it to be prompted securely. For
+scripts that already keep a pass key under another variable name, use
+`--pass-key-env VARIABLE_NAME` instead. Explicit `--uri` and `--out` flags
+override environment variables; existing shell variables override `.env`
+values. Neither the pass key nor its variable name needs to appear in a URI.
+Protect `.env` with filesystem permissions as well as `.gitignore` (for example,
+`chmod 600 .env`); ignore rules do not protect files already committed to Git.
+
+## Inspect in DBeaver
+
+Connect DBeaver to the exported SQLite file. The `profiles`, `items`, and
+`item_tags` tables contain decrypted data. `items.id` is the source Askar ID;
+`items.row_id` is the editable file's local ID. Tags reference `items.row_id`
+through `item_tags.item_row_id`. `items.value` is a BLOB, and
+`readable_items.value_text` casts it to text for JSON/text values:
+
+```sql
+SELECT p.name AS profile, i.category, i.name, i.value_text, i.expiry
+FROM readable_items AS i
+JOIN profiles AS p ON p.id = i.profile_id;
+```
+
+For failed decryptions, inspect `category_error`, `name_error`, and
+`value_error` in `items`, and `error` in `item_tags`. A failed profile-key
+unlock stops the export and reports an incomplete output file.
+
+## Edit and apply
+
+**Back up the source database before a commit.** For a live SQLite store use
+`sqlite3 store.db ".backup 'store.backup.db'"`; for PostgreSQL use `pg_dump`
+with the appropriate connection details and a secure destination. Do not use
+the plaintext export as a backup of encrypted data.
+
+Edit the **tables**, not the `readable_items` view, in DBeaver. Examples:
+
+```sql
+-- Update an existing value and one of its tags.
+UPDATE items SET value = CAST('{"fixed":true}' AS BLOB) WHERE category = 'records' AND name = 'broken';
+UPDATE item_tags SET value = 'resolved' WHERE item_row_id =
+  (SELECT row_id FROM items WHERE category = 'records' AND name = 'broken') AND name = 'status';
+
+-- Delete an item and its tags. Remove tags explicitly if your SQLite client has foreign keys disabled.
+DELETE FROM item_tags WHERE item_row_id = (SELECT row_id FROM items WHERE category = 'records' AND name = 'old');
+DELETE FROM items WHERE category = 'records' AND name = 'old';
+
+-- Add an ordinary item (kind defaults to 2); choose the profile from the profiles table.
+INSERT INTO items (profile_id, category, name, value)
+  SELECT id, 'records', 'new', CAST('{"created":true}' AS BLOB) FROM profiles WHERE name = 'main';
+INSERT INTO item_tags (item_row_id, name, value, plaintext)
+  SELECT row_id, 'status', 'new', 1 FROM items WHERE category = 'records' AND name = 'new';
+```
+
+For tags, `plaintext = 1` means a searchable plaintext value; `0` stores its
+value encrypted. Tag names are always encrypted in Askar. Use `items.expiry`
+as a UTC timestamp (`YYYY-MM-DD HH:MM:SS`), or `NULL` for no expiry. Leave
+`items.row_id`, existing `items.id`, and the `original_*` and `export_meta`
+tables alone; the latter are the baseline used to detect edits. New rows need
+no `id`. To rename an entry, update its category/name; apply removes the old
+identity and inserts the new one.
+
+Review the proposed changes (no write to the source):
+
+```sh
+cargo run -p askar-explorer -- apply --uri 'sqlite:///path/to/store.db' --edits ./inspection.db
+```
+
+After confirming a recoverable backup, apply them through Askar's encrypted
+storage API:
+
+```sh
+cargo run -p askar-explorer -- apply --uri 'sqlite:///path/to/store.db' \
+  --edits ./inspection.db --commit --confirm-backup
+```
+
+As with export, the URI can come from `ASKAR_EXPLORER_URI` in `.env`; apply's
+`--edits` defaults to `ASKAR_EXPLORER_OUT`. The pass key uses the same prompt,
+`ASKAR_EXPLORER_PASS_KEY`, or `--pass-key-env` as export. No source write occurs
+without `--commit --confirm-backup`. Apply checks that the source profiles and
+key match the export and that changed existing values/tags have not changed
+since export. A conflict rolls back that profile's transaction. Each profile
+commits separately, so a later profile's failure cannot undo earlier profile
+commits. **Re-export after a successful apply**; repeating the same export may
+fail or conflict. Rows with decryption errors and expired rows cannot be
+modified through this API. Apply loads the export into memory to compare it;
+on very large stores, limit the export size using a separate copied store.
+
+## Dev container
+
+Open the repository in VS Code and choose **Dev Containers: Reopen in
+Container**. The container includes the current stable Rust toolchain, Clippy,
+rustfmt, Python 3, Poetry, `psql`, `pg_dump`, and `sqlite3`. A disposable PostgreSQL 16
+service starts alongside it, reachable from the container as `postgres`;
+`POSTGRES_URL` is preconfigured for the repository's `pg_test` tests:
+
+```sh
+cargo test -p askar-explorer
+cargo test -p askar-storage --features pg_test
+```
+
+For the Python wrapper, build the native library, then install and test with
+Poetry from the mounted workspace:
+
+```sh
+cargo build
+cp "$CARGO_TARGET_DIR/debug/libaries_askar.so" wrappers/python/aries_askar/
+cd wrappers/python
+poetry install
+poetry run pytest -k 'not contention'
+```
+
+The repository is mounted at `/workspace`. To inspect a Postgres service
+running on your host, use `host.docker.internal` instead of `localhost` in
+`ASKAR_EXPLORER_URI`. Do not put production credentials in the devcontainer
+configuration. The bundled Postgres credentials are for local tests only. From
+the host, its test-only service is available on `localhost:55432`.
+
+**The output is unencrypted.** It is created with owner-only permissions on
+Unix, but restrict access to its containing directory and delete the file
+when finished. SQLite may create temporary sidecar files. Editing the exported
+database alone does **not** change the Askar store; only `apply --commit
+--confirm-backup` does.

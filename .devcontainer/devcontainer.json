@@ -1,0 +1,12 @@
+{
+  "name": "Askar storage and explorer",
+  "dockerComposeFile": "compose.yaml",
+  "service": "dev",
+  "workspaceFolder": "/workspace",
+  "remoteUser": "vscode",
+  "customizations": {
+    "vscode": {
+      "extensions": ["rust-lang.rust-analyzer", "ms-python.python"]
+    }
+  }
+}
