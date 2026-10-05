@@ -88,6 +88,33 @@ whose authorizer allows only reads and functions, so `CREATE`, `DROP`, `ATTACH`,
 `PRAGMA` and writes are rejected, and only one statement is accepted. The store
 itself is opened read-only.
 
+## Understand a category
+
+`describe` summarizes what one category looks like, so you (or an agent) can plan
+queries without reading entries:
+
+```sh
+askar-explorer describe connections --sample 1000
+```
+
+It prints counts for the whole category (entries, expired), facts about the
+sampled entries (JSON documents, plain-text and binary values, size range), and
+one row per JSON path and per tag:
+
+| column | meaning |
+| --- | --- |
+| `types` | JSON types seen at the path (`string`, `number`, `object`, ...) or the tag kind |
+| `count`, `present_pct` | occurrences, and the share of documents (or entries, for tags) that have it |
+| `distinct` | number of different values, so you can spot identifiers versus enumerations |
+| `length` | string length range, or array size range |
+| `values` | the most common values with counts, **only** for paths and tags the policy lists |
+
+Object keys that look like identifiers are grouped under `*`, as in `*.status`.
+The command decrypts values in memory but prints only these aggregates, so it is
+safe to hand to an agent; the same `policy.toml` as `--redact` controls which values
+are shown. Booleans are always shown. The sample is the first `--sample` entries by id,
+not a random draw, so check `entries` against `sampled` before generalizing.
+
 ## Redacted view for AI agents
 
 `ls`, `get` and `sql` take `--redact` to show structure and patterns without data.

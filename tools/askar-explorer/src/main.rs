@@ -6,7 +6,8 @@ use std::{
 use anyhow::{bail, Context, Result};
 use askar_explorer::{
     commands::{self, Format, ListOptions},
-    redact::{Redactor, View},
+    describe::DescribeOptions,
+    redact::{Policy, Redactor, View},
     source::{Query, Source, TagCondition},
 };
 use askar_storage::inspect::ExpiryFilter;
@@ -135,6 +136,22 @@ enum Command {
         id: i64,
         #[command(flatten)]
         visibility: Visibility,
+    },
+    /// Summarize the structure of one category: fields, types, counts and tags.
+    Describe {
+        #[command(flatten)]
+        connection: Connection,
+        /// Category to describe.
+        category: String,
+        /// Only this profile.
+        #[arg(long)]
+        profile: Option<String>,
+        /// How many entries to inspect, in id order.
+        #[arg(long, default_value_t = 500)]
+        sample: usize,
+        /// Policy file listing which values may be shown.
+        #[arg(long, env = "ASKAR_EXPLORER_POLICY")]
+        policy: Option<PathBuf>,
     },
     /// Run a read-only SQL query against the `items` table.
     Sql {
@@ -285,6 +302,31 @@ async fn main() -> Result<()> {
                 connection.format,
             )
             .await
+        }
+        Command::Describe {
+            connection,
+            category,
+            profile,
+            sample,
+            policy,
+        } => {
+            let policy = Policy::load(
+                policy
+                    .as_deref()
+                    .unwrap_or_else(|| Path::new(".askar-explorer/policy.toml")),
+            )?;
+            let mut source =
+                Source::open(&connection.uri, connection.pass_key_env.as_deref()).await?;
+            let options = DescribeOptions { profile, sample };
+            let description =
+                askar_explorer::describe::describe(&mut source, &category, &options, &policy)
+                    .await?;
+            commands::print_rows(
+                description.columns,
+                description.rows,
+                &mut stdout().lock(),
+                connection.format,
+            )
         }
         Command::Sql {
             connection,
