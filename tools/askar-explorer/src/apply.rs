@@ -249,12 +249,8 @@ async fn source_fingerprint(uri: &str) -> Result<(String, String)> {
     }
 }
 
-pub(super) async fn run(
-    uri: &str,
-    edits: &Path,
-    commit: bool,
-    pass_key_env: Option<&str>,
-) -> Result<()> {
+/// Show the changes made to an export and, with `commit`, write them to the store.
+pub async fn run(uri: &str, edits: &Path, commit: bool, pass_key_env: Option<&str>) -> Result<()> {
     ensure!(
         uri.starts_with("sqlite:")
             || uri.starts_with("postgres:")
