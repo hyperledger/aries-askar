@@ -149,6 +149,26 @@ the policy once at startup; if an agent could edit that file it could list any p
 as shown and restart the server. Likewise, do not give agents the pass key, the
 database credentials or a way to run the explorer with `--reveal`.
 
+## MCP server for agents
+
+`askar-explorer mcp` speaks the Model Context Protocol on stdio, so an AI agent (for
+example VS Code's agent mode) can use the store as a set of tools. It holds no keys and
+no data: each tool call is forwarded to the agent API, which applies the redacted view.
+
+```sh
+askar-explorer mcp --agent-url http://explorer:7071 --token-file /run/explorer/agent.token
+```
+
+Tools: `list_profiles`, `category_stats`, `describe_category`, `query`, `list_entries`
+and `get_entry`. All are read-only; there is no tool that changes data or reveals values.
+A suggested flow for an agent is `category_stats`, then `describe_category` for a category
+of interest, then `query`. Errors, such as a refused filter or a rejected statement, come
+back as tool errors the agent can read. The token file is read on every call, so a
+restarted server's new token is picked up without restarting the agent.
+
+To register it in VS Code outside a dev container, add a stdio server to `mcp.json` that
+runs the command above. Inside the dev container this is configured for you (see below).
+
 ## Redacted view for AI agents
 
 `ls`, `get` and `sql` take `--redact` to show structure and patterns without data.

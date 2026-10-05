@@ -12,6 +12,7 @@ pub mod agent;
 pub mod apply;
 pub mod commands;
 pub mod describe;
+pub mod mcp;
 pub mod redact;
 pub mod source;
 pub mod sql;

@@ -163,6 +163,23 @@ enum Command {
         )]
         token_file: PathBuf,
     },
+    /// Serve MCP on stdio for an AI agent, forwarding to the agent API.
+    Mcp {
+        /// Base URL of the agent API.
+        #[arg(
+            long,
+            env = "ASKAR_EXPLORER_AGENT_URL",
+            default_value = "http://127.0.0.1:7071"
+        )]
+        agent_url: String,
+        /// File holding the agent token, read on every request.
+        #[arg(
+            long,
+            env = "ASKAR_EXPLORER_TOKEN_FILE",
+            default_value = ".askar-explorer/agent.token"
+        )]
+        token_file: PathBuf,
+    },
     /// Summarize the structure of one category: fields, types, counts and tags.
     Describe {
         #[command(flatten)]
@@ -344,6 +361,12 @@ async fn main() -> Result<()> {
                 &token_file,
             )
             .await
+        }
+        Command::Mcp {
+            agent_url,
+            token_file,
+        } => {
+            askar_explorer::mcp::run(&agent_url, askar_explorer::mcp::Token::File(token_file)).await
         }
         Command::Describe {
             connection,
