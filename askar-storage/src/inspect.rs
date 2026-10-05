@@ -120,7 +120,7 @@ macro_rules! impl_raw_reads {
                  ORDER BY i.profile_id, i.kind, items DESC",
                 $expired_sql
             );
-            let rows = sqlx::query(&sql)
+            let rows = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
                 .fetch_all(connection)
                 .await
                 .map_err(err_map!(Backend, "Error reading store statistics"))?;
@@ -152,13 +152,13 @@ mod query {
 
     use super::{ExpiryFilter, RawFilter};
 
-    pub fn scan<'a, DB>(
+    pub fn scan<DB>(
         profile_id: Option<i64>,
         filter: &RawFilter,
         after_id: i64,
         limit: i64,
         expired_sql: &str,
-    ) -> QueryBuilder<'a, DB>
+    ) -> QueryBuilder<DB>
     where
         DB: Database,
         i64: for<'e> Encode<'e, DB> + Type<DB>,
@@ -212,7 +212,7 @@ mod query {
         query
     }
 
-    pub fn tags<'a, DB>(item_ids: &[i64]) -> QueryBuilder<'a, DB>
+    pub fn tags<DB>(item_ids: &[i64]) -> QueryBuilder<DB>
     where
         DB: Database,
         i64: for<'e> Encode<'e, DB> + Type<DB>,

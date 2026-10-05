@@ -137,6 +137,32 @@ enum Command {
         #[command(flatten)]
         visibility: Visibility,
     },
+    /// Run the read-only agent API, which always applies the redacted view.
+    Serve {
+        /// Askar SQLite or PostgreSQL URI.
+        #[arg(long, env = "ASKAR_EXPLORER_URI")]
+        uri: String,
+        /// Read the store pass key from this environment variable instead of prompting.
+        #[arg(long)]
+        pass_key_env: Option<String>,
+        /// Redaction policy; agents must not be able to write this file.
+        #[arg(long, env = "ASKAR_EXPLORER_POLICY")]
+        policy: Option<PathBuf>,
+        /// Address for the agent API; expose it only to the agents' network.
+        #[arg(
+            long,
+            env = "ASKAR_EXPLORER_AGENT_LISTEN",
+            default_value = "127.0.0.1:7071"
+        )]
+        agent_listen: std::net::SocketAddr,
+        /// Where to write the access token that agents present.
+        #[arg(
+            long,
+            env = "ASKAR_EXPLORER_TOKEN_FILE",
+            default_value = ".askar-explorer/agent.token"
+        )]
+        token_file: PathBuf,
+    },
     /// Summarize the structure of one category: fields, types, counts and tags.
     Describe {
         #[command(flatten)]
@@ -300,6 +326,22 @@ async fn main() -> Result<()> {
                 &view,
                 &mut stdout().lock(),
                 connection.format,
+            )
+            .await
+        }
+        Command::Serve {
+            uri,
+            pass_key_env,
+            policy,
+            agent_listen,
+            token_file,
+        } => {
+            askar_explorer::agent::run(
+                &uri,
+                pass_key_env.as_deref(),
+                policy.as_deref(),
+                agent_listen,
+                &token_file,
             )
             .await
         }

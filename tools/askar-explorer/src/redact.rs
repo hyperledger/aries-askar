@@ -18,8 +18,8 @@ use std::{
 
 use anyhow::{bail, Context, Result};
 use askar_storage::inspect::InspectedItem;
-use hmac::{Hmac, Mac};
-use rand::{rngs::OsRng, RngCore};
+use hmac::{Hmac, KeyInit, Mac};
+use rand::RngExt;
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
 use sha2::Sha256;
@@ -154,6 +154,11 @@ impl Redactor {
         ))
     }
 
+    /// The policy this redactor applies.
+    pub fn policy(&self) -> &Policy {
+        &self.policy
+    }
+
     /// A stable, keyed token standing in for a value.
     pub fn pseudonym(&self, value: &str) -> String {
         let mut mac = Hmac::<Sha256>::new_from_slice(&self.key).expect("HMAC accepts any key size");
@@ -259,7 +264,7 @@ fn load_or_create_key(path: &Path) -> Result<[u8; 32]> {
         }
         Err(error) if error.kind() == ErrorKind::NotFound => {
             let mut key = [0u8; 32];
-            OsRng.fill_bytes(&mut key);
+            rand::rng().fill(&mut key);
             if let Some(directory) = path.parent() {
                 fs::create_dir_all(directory)?;
             }

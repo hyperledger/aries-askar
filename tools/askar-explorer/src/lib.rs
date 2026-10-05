@@ -8,6 +8,7 @@ use askar_storage::{
 use sha2::{Digest, Sha256};
 use sqlx::{sqlite::SqliteConnectOptions, Connection, SqliteConnection};
 
+pub mod agent;
 pub mod apply;
 pub mod commands;
 pub mod describe;
@@ -92,7 +93,8 @@ pub async fn export(
     Ok(())
 }
 
-/// Read the store pass key from the named variable, `ASKAR_EXPLORER_PASS_KEY`, or a prompt.
+/// Read the store pass key from the named variable, `ASKAR_EXPLORER_PASS_KEY`, the file named
+/// by `ASKAR_EXPLORER_PASS_KEY_FILE` (for container secrets), or a prompt.
 pub fn read_pass_key(key_reference: &str, env_name: Option<&str>) -> Result<PassKey<'static>> {
     if key_reference == "none" {
         return Ok(PassKey::empty());
@@ -103,7 +105,21 @@ pub fn read_pass_key(key_reference: &str, env_name: Option<&str>) -> Result<Pass
         }
         None => match std::env::var("ASKAR_EXPLORER_PASS_KEY") {
             Ok(pass_key) => pass_key,
-            Err(std::env::VarError::NotPresent) => rpassword::prompt_password("Askar pass key: ")?,
+            Err(std::env::VarError::NotPresent) => {
+                match std::env::var("ASKAR_EXPLORER_PASS_KEY_FILE") {
+                    Ok(path) => {
+                        let text = std::fs::read_to_string(&path)
+                            .with_context(|| format!("Cannot read the pass key file {path}"))?;
+                        text.trim_end_matches(['\r', '\n']).to_owned()
+                    }
+                    Err(std::env::VarError::NotPresent) => {
+                        rpassword::prompt_password("Askar pass key: ")?
+                    }
+                    Err(error) => {
+                        return Err(error).context("Invalid ASKAR_EXPLORER_PASS_KEY_FILE")
+                    }
+                }
+            }
             Err(error) => return Err(error).context("Invalid ASKAR_EXPLORER_PASS_KEY"),
         },
     };
@@ -119,7 +135,7 @@ pub fn fingerprint(key_reference: &str, profiles: &[RawProfile]) -> String {
         hash.update(profile.name.as_bytes());
         hash.update(profile.profile_key.as_deref().unwrap_or_default());
     }
-    format!("{:x}", hash.finalize())
+    hex::encode(hash.finalize())
 }
 
 async fn finish_export(target: &mut SqliteConnection, fingerprint: &str) -> Result<()> {

@@ -115,6 +115,40 @@ safe to hand to an agent; the same `policy.toml` as `--redact` controls which va
 are shown. Booleans are always shown. The sample is the first `--sample` entries by id,
 not a random draw, so check `entries` against `sampled` before generalizing.
 
+## Agent API
+
+`askar-explorer serve` runs a small read-only HTTP API for AI agents. It opens the
+store with the pass key and **always** applies the redacted view: requests cannot
+choose another view, there are no write endpoints, and unknown request fields are
+rejected.
+
+```sh
+askar-explorer serve --uri "$ASKAR_EXPLORER_URI" --policy ~/.askar-explorer/policy.toml \
+  --agent-listen 0.0.0.0:7071 --token-file /run/explorer/agent.token
+```
+
+Clients send `Authorization: Bearer <token>`; the token is regenerated on each start
+and written to `--token-file` (mode 0644, since it only unlocks the redacted view).
+For a container without a terminal, give the pass key through
+`ASKAR_EXPLORER_PASS_KEY_FILE` (a file such as a Docker secret) instead of a prompt.
+
+| Route | Purpose |
+| --- | --- |
+| `GET /v1/profiles`, `GET /v1/stats` | profiles; entries and sizes per category |
+| `POST /v1/describe` `{category, profile?, sample?}` | structure of a category |
+| `POST /v1/query` `{sql, limit?}` | read-only SQL on the redacted `items` table |
+| `POST /v1/entries` `{category?, profile?, kind?, expiry?, tags?, plaintext_tags?, limit?, after_id?}` | list entries |
+| `POST /v1/entry` `{id, profile?}` | one entry |
+
+Responses are `{"columns": [...], "rows": [[...]]}` (`/v1/entry` returns an object).
+Limits apply: 1000 SQL rows, 200 listed entries, a 5000 entry sample, 64 KB request
+bodies and a 60 second timeout.
+
+**Keep the policy and pseudonym key where agents cannot write.** The server reads
+the policy once at startup; if an agent could edit that file it could list any path
+as shown and restart the server. Likewise, do not give agents the pass key, the
+database credentials or a way to run the explorer with `--reveal`.
+
 ## Redacted view for AI agents
 
 `ls`, `get` and `sql` take `--redact` to show structure and patterns without data.

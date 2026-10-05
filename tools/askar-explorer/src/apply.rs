@@ -155,7 +155,10 @@ async fn read_records(
         expiry, (category_error IS NOT NULL OR name_error IS NOT NULL OR value_error IS NOT NULL) AS damaged
         FROM {items}");
     let mut records = BTreeMap::new();
-    for row in sqlx::query(&sql).fetch_all(&mut *db).await? {
+    for row in sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
+        .fetch_all(&mut *db)
+        .await?
+    {
         records.insert(
             row.try_get::<i64, _>("row_id")?,
             Record {
@@ -171,7 +174,10 @@ async fn read_records(
         );
     }
     let sql = format!("SELECT item_row_id, name, value, plaintext, error FROM {tags}");
-    for row in sqlx::query(&sql).fetch_all(&mut *db).await? {
+    for row in sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
+        .fetch_all(&mut *db)
+        .await?
+    {
         let item_row_id: i64 = row.try_get("item_row_id")?;
         let record = records
             .get_mut(&item_row_id)
