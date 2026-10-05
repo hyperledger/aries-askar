@@ -336,6 +336,7 @@ async fn main() -> Result<()> {
         } => {
             let view = visibility.view()?;
             let source = Source::open(&connection.uri, connection.pass_key_env.as_deref()).await?;
+            let source = Arc::new(tokio::sync::Mutex::new(source));
             let result = askar_explorer::sql::query(source, query, view, limit).await?;
             commands::print_rows(
                 result.columns,

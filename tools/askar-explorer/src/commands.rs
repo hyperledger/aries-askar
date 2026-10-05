@@ -40,9 +40,13 @@ pub struct ListOptions {
     pub view: View,
 }
 
-struct Table {
-    columns: Vec<String>,
-    rows: Vec<Vec<Value>>,
+/// Result rows with their column names.
+#[derive(Debug)]
+pub struct Table {
+    /// Column names.
+    pub columns: Vec<String>,
+    /// One value per column in each row.
+    pub rows: Vec<Vec<Value>>,
 }
 
 impl Table {
@@ -53,7 +57,8 @@ impl Table {
         }
     }
 
-    fn write(&self, out: &mut dyn Write, format: Format) -> Result<()> {
+    /// Print as aligned columns or JSON lines.
+    pub fn write(&self, out: &mut dyn Write, format: Format) -> Result<()> {
         match format {
             Format::Jsonl => {
                 for row in &self.rows {
@@ -217,8 +222,8 @@ pub(crate) fn value_bytes(item: &InspectedItem) -> Value {
         .map_or(Value::Null, |value| json!(value.len()))
 }
 
-/// Print the store's profiles and whether their keys unlocked.
-pub fn profiles(source: &Source, out: &mut dyn Write, format: Format) -> Result<()> {
+/// The store's profiles and whether their keys unlocked.
+pub fn profiles_table(source: &Source) -> Result<Table> {
     let mut table = Table::new(&["id", "profile", "key"]);
     for profile in source.select_profiles(None)? {
         table.rows.push(vec![
@@ -227,16 +232,16 @@ pub fn profiles(source: &Source, out: &mut dyn Write, format: Format) -> Result<
             json!(profile.key_error().unwrap_or("ok")),
         ]);
     }
-    table.write(out, format)
+    Ok(table)
 }
 
-/// Print row counts and encrypted value sizes per category.
-pub async fn stats(
-    source: &mut Source,
-    profile: Option<&str>,
-    out: &mut dyn Write,
-    format: Format,
-) -> Result<()> {
+/// Print the store's profiles and whether their keys unlocked.
+pub fn profiles(source: &Source, out: &mut dyn Write, format: Format) -> Result<()> {
+    profiles_table(source)?.write(out, format)
+}
+
+/// Row counts and encrypted value sizes per category.
+pub async fn stats_table(source: &mut Source, profile: Option<&str>) -> Result<Table> {
     if let Some(name) = profile {
         source.select_profiles(Some(name))?;
     }
@@ -254,16 +259,21 @@ pub async fn stats(
             json!(stat.encrypted_value_bytes),
         ]);
     }
-    table.write(out, format)
+    Ok(table)
 }
 
-/// Print matching entries, up to the limit.
-pub async fn list(
+/// Print row counts and encrypted value sizes per category.
+pub async fn stats(
     source: &mut Source,
-    options: &ListOptions,
+    profile: Option<&str>,
     out: &mut dyn Write,
     format: Format,
 ) -> Result<()> {
+    stats_table(source, profile).await?.write(out, format)
+}
+
+/// Matching entries, up to the limit.
+pub async fn list_table(source: &mut Source, options: &ListOptions) -> Result<Table> {
     if options.limit <= 0 {
         bail!("The limit must be positive");
     }
@@ -317,7 +327,17 @@ pub async fn list(
             }
         }
     }
-    table.write(out, format)
+    Ok(table)
+}
+
+/// Print matching entries, up to the limit.
+pub async fn list(
+    source: &mut Source,
+    options: &ListOptions,
+    out: &mut dyn Write,
+    format: Format,
+) -> Result<()> {
+    list_table(source, options).await?.write(out, format)
 }
 
 fn pretty(text: &str) -> String {
@@ -326,15 +346,13 @@ fn pretty(text: &str) -> String {
         .unwrap_or_else(|_| text.to_owned())
 }
 
-/// Print one entry in full, as far as the view allows.
-pub async fn get(
+/// One entry as a JSON object, as far as the view allows.
+pub async fn get_entry(
     source: &mut Source,
     profile: &Profile,
     id: i64,
     view: &View,
-    out: &mut dyn Write,
-    format: Format,
-) -> Result<()> {
+) -> Result<Value> {
     let Some(item) = source.fetch(profile, id).await? else {
         bail!("No entry with id {id} in profile {}", profile.name);
     };
@@ -346,44 +364,44 @@ pub async fn get(
         )),
         _ => view.value(&item),
     };
-    let name = view.name(&item);
-    let tag_list = tag_labels(&item, view);
-    let error_list = errors(&item);
+    Ok(json!({
+        "profile": profile.name,
+        "id": item.id,
+        "kind": kind_label(item.kind),
+        "category": text_or_marker(&item.category),
+        "name": view.name(&item),
+        "expiry": expiry(&item),
+        "tags": tag_labels(&item, view),
+        "errors": errors(&item),
+        "value": value,
+    }))
+}
+
+/// Print one entry in full, as far as the view allows.
+pub async fn get(
+    source: &mut Source,
+    profile: &Profile,
+    id: i64,
+    view: &View,
+    out: &mut dyn Write,
+    format: Format,
+) -> Result<()> {
+    let entry = get_entry(source, profile, id, view).await?;
     match format {
-        Format::Jsonl => {
-            let object = json!({
-                "profile": profile.name,
-                "id": item.id,
-                "kind": kind_label(item.kind),
-                "category": text_or_marker(&item.category),
-                "name": name,
-                "expiry": expiry(&item),
-                "tags": tag_list,
-                "errors": error_list,
-                "value": value,
-            });
-            writeln!(out, "{object}")?;
-        }
+        Format::Jsonl => writeln!(out, "{entry}")?,
         Format::Table => {
-            writeln!(out, "profile:  {}", profile.name)?;
-            writeln!(out, "id:       {}", item.id)?;
-            writeln!(out, "kind:     {}", kind_label(item.kind))?;
-            writeln!(
-                out,
-                "category: {}",
-                cell(&text_or_marker(&item.category), usize::MAX)
-            )?;
-            writeln!(out, "name:     {}", cell(&name, usize::MAX))?;
-            writeln!(out, "expiry:   {}", cell(&expiry(&item), usize::MAX))?;
-            writeln!(
-                out,
-                "tags:     {}",
-                cell(&Value::Array(tag_list), usize::MAX)
-            )?;
-            for error in &error_list {
+            let field = |name: &str| cell(&entry[name], usize::MAX);
+            writeln!(out, "profile:  {}", field("profile"))?;
+            writeln!(out, "id:       {}", field("id"))?;
+            writeln!(out, "kind:     {}", field("kind"))?;
+            writeln!(out, "category: {}", field("category"))?;
+            writeln!(out, "name:     {}", field("name"))?;
+            writeln!(out, "expiry:   {}", field("expiry"))?;
+            writeln!(out, "tags:     {}", field("tags"))?;
+            for error in entry["errors"].as_array().into_iter().flatten() {
                 writeln!(out, "error:    {}", cell(error, usize::MAX))?;
             }
-            let shown = match &value {
+            let shown = match &entry["value"] {
                 Value::String(text) => pretty(text),
                 other => serde_json::to_string_pretty(other)?,
             };

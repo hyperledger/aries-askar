@@ -49,7 +49,7 @@ const SCHEMA: &str = "CREATE TABLE x(profile TEXT, id INTEGER, kind TEXT, catego
     errors TEXT, ptag HIDDEN, etag HIDDEN, expiry_mode HIDDEN)";
 
 struct Shared {
-    source: Mutex<Source>,
+    source: Arc<Mutex<Source>>,
     handle: Handle,
     view: View,
 }
@@ -378,9 +378,14 @@ pub struct Rows {
 /// Run a read-only SQL statement against the `items` table.
 ///
 /// What the view withholds is NULL; key-manager values always are.
-pub async fn query(source: Source, sql: String, view: View, limit: usize) -> Result<Rows> {
+pub async fn query(
+    source: Arc<Mutex<Source>>,
+    sql: String,
+    view: View,
+    limit: usize,
+) -> Result<Rows> {
     let shared = Arc::new(Shared {
-        source: Mutex::new(source),
+        source,
         handle: Handle::current(),
         view,
     });
