@@ -5,10 +5,12 @@ use askar_storage::{
     Backend, BackendSession, ManageBackend, PassKey, StoreKeyMethod,
 };
 
+type SeedRow<'a> = (EntryKind, &'a str, &'a str, Vec<EntryTag>, Option<i64>);
+
 async fn seed(backend: &impl Backend) {
     let mut session = backend.session(None, false).unwrap();
     let value = SecretBytes::from(b"{}".as_slice());
-    let rows: [(EntryKind, &str, &str, Vec<EntryTag>, Option<i64>); 4] = [
+    let rows: [SeedRow<'_>; 4] = [
         (
             EntryKind::Item,
             "records",
