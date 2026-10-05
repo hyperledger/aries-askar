@@ -7,11 +7,285 @@ use crate::{
     Error,
 };
 
+/// Defines the scan, fetch and stats readers shared by the SQL backends.
+#[cfg(any(feature = "sqlite", feature = "postgres"))]
+macro_rules! impl_raw_reads {
+    ($connection:ty, $db:ty, $expired_sql:expr) => {
+        /// Fetch the next page of rows (with tags) matching `filter`, ordered by ID.
+        pub async fn scan(
+            connection: &mut $connection,
+            profile_id: Option<i64>,
+            filter: &$crate::inspect::RawFilter,
+            after_id: i64,
+            limit: i64,
+        ) -> Result<Vec<$crate::inspect::RawItem>, $crate::Error> {
+            use sqlx::Row;
+            if limit <= 0 {
+                return Err(err_msg!(Input, "Page size must be positive"));
+            }
+            let mut query = $crate::inspect::query::scan::<$db>(
+                profile_id,
+                filter,
+                after_id,
+                limit,
+                $expired_sql,
+            );
+            let rows = query
+                .build()
+                .fetch_all(&mut *connection)
+                .await
+                .map_err(err_map!(Backend, "Error reading items"))?;
+            let mut items = rows
+                .into_iter()
+                .map(|row| {
+                    Ok($crate::inspect::RawItem {
+                        id: row.try_get("id").map_err(err_map!(Backend))?,
+                        kind: row.try_get("kind").map_err(err_map!(Backend))?,
+                        category: row.try_get("category").map_err(err_map!(Backend))?,
+                        name: row.try_get("name").map_err(err_map!(Backend))?,
+                        value: row.try_get("value").map_err(err_map!(Backend))?,
+                        expiry: row.try_get("expiry").map_err(err_map!(Backend))?,
+                        tags: Vec::new(),
+                    })
+                })
+                .collect::<Result<Vec<_>, $crate::Error>>()?;
+            if items.is_empty() {
+                return Ok(items);
+            }
+            let ids: Vec<i64> = items.iter().map(|item| item.id).collect();
+            let mut query = $crate::inspect::query::tags::<$db>(&ids);
+            let tags = query
+                .build()
+                .fetch_all(connection)
+                .await
+                .map_err(err_map!(Backend, "Error reading item tags"))?;
+            for row in tags {
+                let item_id: i64 = row.try_get("item_id").map_err(err_map!(Backend))?;
+                let position = items
+                    .binary_search_by_key(&item_id, |item| item.id)
+                    .map_err(|_| err_msg!(Backend, "Tag has no item in inspection page"))?;
+                let plaintext: i64 = row.try_get("plaintext").map_err(err_map!(Backend))?;
+                items[position].tags.push($crate::inspect::RawTag {
+                    name: row.try_get("name").map_err(err_map!(Backend))?,
+                    value: row.try_get("value").map_err(err_map!(Backend))?,
+                    plaintext: plaintext != 0,
+                });
+            }
+            Ok(items)
+        }
+
+        /// Fetch the next page of every row in a profile, including expired and KMS rows.
+        pub async fn page(
+            connection: &mut $connection,
+            profile_id: i64,
+            after_id: i64,
+            limit: i64,
+        ) -> Result<Vec<$crate::inspect::RawItem>, $crate::Error> {
+            scan(
+                connection,
+                Some(profile_id),
+                &$crate::inspect::RawFilter::default(),
+                after_id,
+                limit,
+            )
+            .await
+        }
+
+        /// Fetch one row by its database ID, regardless of expiry or kind.
+        pub async fn fetch(
+            connection: &mut $connection,
+            profile_id: i64,
+            id: i64,
+        ) -> Result<Option<$crate::inspect::RawItem>, $crate::Error> {
+            let filter = $crate::inspect::RawFilter {
+                id: Some(id),
+                ..Default::default()
+            };
+            Ok(scan(connection, Some(profile_id), &filter, 0, 1)
+                .await?
+                .pop())
+        }
+
+        /// Count rows and value bytes per profile, kind and (encrypted) category.
+        pub async fn stats(
+            connection: &mut $connection,
+        ) -> Result<Vec<$crate::inspect::RawStat>, $crate::Error> {
+            use sqlx::Row;
+            let sql = format!(
+                "SELECT i.profile_id, CAST(i.kind AS BIGINT) AS kind, i.category,
+                    CAST(COUNT(*) AS BIGINT) AS items,
+                    CAST(COALESCE(SUM(LENGTH(i.value)), 0) AS BIGINT) AS value_bytes,
+                    CAST(COALESCE(SUM(CASE WHEN {} THEN 1 ELSE 0 END), 0) AS BIGINT) AS expired
+                 FROM items i GROUP BY i.profile_id, i.kind, i.category
+                 ORDER BY i.profile_id, i.kind, items DESC",
+                $expired_sql
+            );
+            let rows = sqlx::query(&sql)
+                .fetch_all(connection)
+                .await
+                .map_err(err_map!(Backend, "Error reading store statistics"))?;
+            rows.into_iter()
+                .map(|row| {
+                    Ok($crate::inspect::RawStat {
+                        profile_id: row.try_get("profile_id").map_err(err_map!(Backend))?,
+                        kind: row.try_get("kind").map_err(err_map!(Backend))?,
+                        category: row.try_get("category").map_err(err_map!(Backend))?,
+                        items: row.try_get("items").map_err(err_map!(Backend))?,
+                        value_bytes: row.try_get("value_bytes").map_err(err_map!(Backend))?,
+                        expired: row.try_get("expired").map_err(err_map!(Backend))?,
+                    })
+                })
+                .collect()
+        }
+    };
+}
+
 #[cfg(feature = "sqlite")]
 pub mod sqlite;
 
 #[cfg(feature = "postgres")]
 pub mod postgres;
+
+#[cfg(any(feature = "sqlite", feature = "postgres"))]
+mod query {
+    use sqlx::{Database, Encode, QueryBuilder, Type};
+
+    use super::{ExpiryFilter, RawFilter};
+
+    pub fn scan<'a, DB>(
+        profile_id: Option<i64>,
+        filter: &RawFilter,
+        after_id: i64,
+        limit: i64,
+        expired_sql: &str,
+    ) -> QueryBuilder<'a, DB>
+    where
+        DB: Database,
+        i64: for<'e> Encode<'e, DB> + Type<DB>,
+        Vec<u8>: for<'e> Encode<'e, DB> + Type<DB>,
+    {
+        let mut query = QueryBuilder::new(
+            "SELECT i.id, CAST(i.kind AS BIGINT) AS kind, i.category, i.name, i.value, i.expiry \
+             FROM items i WHERE i.id > ",
+        );
+        query.push_bind(after_id);
+        if let Some(profile_id) = profile_id {
+            query.push(" AND i.profile_id = ").push_bind(profile_id);
+        }
+        if let Some(id) = filter.id {
+            query.push(" AND i.id = ").push_bind(id);
+        }
+        if let Some(kind) = filter.kind {
+            query.push(" AND i.kind = ").push_bind(kind);
+        }
+        if let Some(category) = &filter.category {
+            query.push(" AND i.category = ").push_bind(category.clone());
+        }
+        if let Some(name) = &filter.name {
+            query.push(" AND i.name = ").push_bind(name.clone());
+        }
+        match filter.expiry {
+            ExpiryFilter::Any => {}
+            ExpiryFilter::LiveOnly => {
+                query.push(" AND NOT ").push(expired_sql);
+            }
+            ExpiryFilter::ExpiredOnly => {
+                query.push(" AND ").push(expired_sql);
+            }
+        }
+        for tag in &filter.tags {
+            query
+                .push(
+                    " AND EXISTS (SELECT 1 FROM items_tags t WHERE t.item_id = i.id AND t.name = ",
+                )
+                .push_bind(tag.name.clone())
+                .push(" AND t.value = ")
+                .push_bind(tag.value.clone())
+                // literal: the column is a boolean in SQLite and a smallint in Postgres
+                .push(if tag.plaintext {
+                    " AND t.plaintext = 1)"
+                } else {
+                    " AND t.plaintext = 0)"
+                });
+        }
+        query.push(" ORDER BY i.id LIMIT ").push_bind(limit);
+        query
+    }
+
+    pub fn tags<'a, DB>(item_ids: &[i64]) -> QueryBuilder<'a, DB>
+    where
+        DB: Database,
+        i64: for<'e> Encode<'e, DB> + Type<DB>,
+    {
+        let mut query = QueryBuilder::new(
+            "SELECT it.item_id, it.name, it.value, CAST(it.plaintext AS BIGINT) AS plaintext \
+             FROM items_tags it WHERE it.item_id IN (",
+        );
+        let mut ids = query.separated(", ");
+        for id in item_ids {
+            ids.push_bind(*id);
+        }
+        query.push(") ORDER BY it.item_id, it.id");
+        query
+    }
+}
+
+/// Which rows a raw scan returns with respect to their expiry time.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ExpiryFilter {
+    /// Return live and expired rows.
+    #[default]
+    Any,
+    /// Return only rows that have not expired.
+    LiveOnly,
+    /// Return only rows that have expired.
+    ExpiredOnly,
+}
+
+/// A tag condition already encrypted for the profile being scanned.
+#[derive(Clone, Debug)]
+pub struct RawTagFilter {
+    /// Encrypted tag name.
+    pub name: Vec<u8>,
+    /// Encrypted value, or UTF-8 bytes for a plaintext tag.
+    pub value: Vec<u8>,
+    /// Whether the tag value is stored as plaintext.
+    pub plaintext: bool,
+}
+
+/// Equality conditions for a raw scan; unset fields do not restrict the result.
+#[derive(Clone, Debug, Default)]
+pub struct RawFilter {
+    /// Database row identifier.
+    pub id: Option<i64>,
+    /// Entry kind discriminator.
+    pub kind: Option<i64>,
+    /// Encrypted category.
+    pub category: Option<Vec<u8>>,
+    /// Encrypted name.
+    pub name: Option<Vec<u8>>,
+    /// Tags that must all be present on the row.
+    pub tags: Vec<RawTagFilter>,
+    /// Expiry restriction.
+    pub expiry: ExpiryFilter,
+}
+
+/// Row counts for one profile, kind and encrypted category.
+#[derive(Debug)]
+pub struct RawStat {
+    /// Profile row identifier.
+    pub profile_id: i64,
+    /// Stored kind discriminator.
+    pub kind: i64,
+    /// Encrypted category.
+    pub category: Vec<u8>,
+    /// Number of rows, including expired ones.
+    pub items: i64,
+    /// Total size of the encrypted values in bytes.
+    pub value_bytes: i64,
+    /// Number of rows that have already expired.
+    pub expired: i64,
+}
 
 /// A profile with its wrapped key, including profiles with a missing key.
 #[derive(Debug)]
@@ -120,6 +394,45 @@ impl Inspector {
         wrapped_profile_key: Vec<u8>,
     ) -> Result<Self, Error> {
         InspectionKey::resolve(key_reference, pass_key)?.unlock(wrapped_profile_key)
+    }
+
+    /// Encrypt a category so it can be used in a [`RawFilter`].
+    pub fn encrypt_category(&self, category: &str) -> Result<Vec<u8>, Error> {
+        self.key
+            .encrypt_entry_category(ProfileKey::prepare_input(category.as_bytes()))
+    }
+
+    /// Encrypt an entry name so it can be used in a [`RawFilter`].
+    pub fn encrypt_name(&self, name: &str) -> Result<Vec<u8>, Error> {
+        self.key
+            .encrypt_entry_name(ProfileKey::prepare_input(name.as_bytes()))
+    }
+
+    /// Build a tag condition; encrypted tag values can only be matched exactly.
+    pub fn tag_filter(
+        &self,
+        name: &str,
+        value: &str,
+        plaintext: bool,
+    ) -> Result<RawTagFilter, Error> {
+        let value = if plaintext {
+            value.as_bytes().to_vec()
+        } else {
+            self.key
+                .encrypt_tag_value(ProfileKey::prepare_input(value.as_bytes()))?
+        };
+        Ok(RawTagFilter {
+            name: self
+                .key
+                .encrypt_tag_name(ProfileKey::prepare_input(name.as_bytes()))?,
+            value,
+            plaintext,
+        })
+    }
+
+    /// Decrypt a category taken from a [`RawStat`].
+    pub fn decrypt_category(&self, category: Vec<u8>) -> Result<String, Error> {
+        self.key.decrypt_entry_category(category)
     }
 
     /// Decrypt one raw row without losing other fields when a field is damaged.
