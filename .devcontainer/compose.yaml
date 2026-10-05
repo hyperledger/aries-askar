@@ -53,6 +53,36 @@ services:
     extra_hosts:
       - host.docker.internal:host-gateway
 
+  # The web interface for you, with real data. Opt in with
+  # `docker compose --profile explorer-ui up -d --build explorer-ui`, then open
+  # http://localhost:7070 and type the store pass key. It gets no pass key from the host, is
+  # published on the host's loopback only, and sits on a network the dev container is not
+  # attached to, so agents cannot reach it by service name.
+  explorer-ui:
+    profiles: [explorer-ui]
+    build:
+      context: ..
+      dockerfile: .devcontainer/explorer.Dockerfile
+    command: ["ui"]
+    env_file:
+      - path: ${ASKAR_EXPLORER_HOME:-${HOME}/.askar-explorer}/explorer.env
+        required: true
+    environment:
+      ASKAR_EXPLORER_UI_LISTEN: 0.0.0.0:7070
+      ASKAR_EXPLORER_UI_HOSTS: localhost:7070,127.0.0.1:7070
+    volumes:
+      - ${ASKAR_EXPLORER_HOME:-${HOME}/.askar-explorer}:/config
+    ports:
+      - "127.0.0.1:7070:7070"
+    networks: [human]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    restart: "no"
+    extra_hosts:
+      - host.docker.internal:host-gateway
+
   postgres:
     image: postgres:16
     ports:
@@ -70,3 +100,5 @@ services:
 volumes:
   explorer-shared:
   explorer-proposals:
+networks:
+  human:
