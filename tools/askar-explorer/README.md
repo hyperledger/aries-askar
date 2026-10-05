@@ -218,6 +218,64 @@ the pass key, or read the database and key files, can use `--reveal`. Detection 
 identifier-like keys is heuristic, so review a sample of the redacted output before
 handing it over, and list sensitive field names rather than relying on defaults.
 
+## Dev container with an agent boundary
+
+The dev container (see `.devcontainer/`) is where agents work, so it is built **not** to
+hold the pass key, the database credentials, the policy or any plaintext. The explorer
+runs as a separate, opt-in service that does hold them:
+
+| | dev container (agents) | `explorer` service (you start it) |
+| --- | --- | --- |
+| pass key, database URI, policy, pseudonym key | never mounted | mounted from your host |
+| agent token | read-only | writes it |
+| Docker socket, exports | none | none |
+| network | outbound, and `http://explorer:7071` | outbound to your database; port 7071 is not published to the host |
+
+Set it up once on your host (not inside the workspace):
+
+```sh
+mkdir -p ~/.askar-explorer && chmod 700 ~/.askar-explorer
+cd ~/.askar-explorer
+echo 'ASKAR_EXPLORER_URI=postgres://readonly_user:secret@db.example.com:5432/mediator?sslmode=require' > explorer.env
+printf 'show_tags = ["state"]\nshow_paths = ["state", "role"]\n' > policy.toml
+printf '%s' 'your-store-pass-key' > pass.key      # omit for stores without a pass key
+chmod 644 pass.key explorer.env                   # the service runs as uid 10001; see below
+```
+
+Then, from the repository on your host:
+
+```sh
+docker compose -f .devcontainer/compose.yaml --profile explorer up -d --build explorer
+```
+
+Use `ASKAR_EXPLORER_HOME=/some/dir` to keep these files elsewhere. In the dev container the
+MCP server `askar-explorer` is registered for VS Code agent mode, and the CLI environment
+is preconfigured (`ASKAR_EXPLORER_AGENT_URL`, `ASKAR_EXPLORER_TOKEN_FILE`), so an agent can
+also run `askar-explorer mcp` or call the HTTP API directly. To reach a database on your
+laptop (an SSH tunnel or `kubectl port-forward`), use `host.docker.internal` in the URI.
+
+To try it without a real database, create a fake store and point the service at it:
+
+```sh
+cargo run -p askar-explorer --example seed_demo -- sqlite://$HOME/.askar-explorer/store.db
+echo 'ASKAR_EXPLORER_URI=sqlite:///config/store.db' > ~/.askar-explorer/explorer.env
+chmod 755 ~/.askar-explorer && chmod 666 ~/.askar-explorer/store.db   # demo only
+```
+
+**Limits of this boundary.**
+
+- The files in `~/.askar-explorer` must be readable by the service's user (uid 10001), so
+  on a shared machine other local users could read them. Prefer a single-user machine, or
+  a Docker secret for `pass.key`.
+- The token only unlocks the redacted view, so it is world-readable inside the shared
+  volume by design.
+- Rebuild the explorer image only from source you have reviewed: agents can edit the
+  workspace, and the image is built from it.
+- Anything that can run a shell **on your host** (including an agent started from a host
+  terminal) is outside this boundary. Keep agents in the dev container.
+- Use a read-only database role for `ASKAR_EXPLORER_URI`. The agent API never writes, but
+  the role makes that a database guarantee.
+
 ## Configuration
 
 The explorer reads `.env` from the **current working directory** if present.

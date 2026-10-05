@@ -1,0 +1,9 @@
+target
+.git
+.env
+.askar-explorer
+.vscode
+**/*.db
+**/*.db-shm
+**/*.db-wal
+wrappers/python/.venv
