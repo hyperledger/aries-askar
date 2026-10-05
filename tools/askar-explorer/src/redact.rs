@@ -28,9 +28,9 @@ use crate::commands::value_text;
 
 const DEFAULT_POLICY: &str = ".askar-explorer/policy.toml";
 const KEY_FILE: &str = "pseudonym.key";
-const MAX_DEPTH: usize = 8;
-const MAX_ITEMS: usize = 20;
-const MAX_KEYS: usize = 100;
+pub(crate) const MAX_DEPTH: usize = 8;
+pub(crate) const MAX_ITEMS: usize = 20;
+pub(crate) const MAX_KEYS: usize = 100;
 
 /// Per-category additions to the global policy.
 #[derive(Debug, Default, Deserialize)]
@@ -83,12 +83,36 @@ impl Policy {
         }
     }
 
-    fn shows_path(&self, category: &str, path: &str) -> bool {
+    /// Whether real values at this JSON path may be shown.
+    pub fn shows_path(&self, category: &str, path: &str) -> bool {
         self.show_paths.contains(path)
             || self
                 .category
                 .get(category)
                 .is_some_and(|policy| policy.show_paths.contains(path))
+    }
+
+    /// Whether values of this tag may be shown and searched.
+    pub fn shows_tag(&self, name: &str) -> bool {
+        self.show_tags.contains(name)
+    }
+
+    /// Whether an object key reads as a field name rather than data such as an identifier.
+    pub fn is_structure_key(&self, key: &str) -> bool {
+        if self.safe_keys.contains(key) {
+            return true;
+        }
+        let mut chars = key.chars();
+        let starts_like_a_name = chars
+            .next()
+            .is_some_and(|first| first.is_ascii_alphabetic() || first == '_');
+        let only_name_characters = chars.all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-');
+        // Long mixed-case alphanumerics look like encoded identifiers, not field names.
+        let looks_encoded = key.len() > 20
+            && key.chars().any(|c| c.is_ascii_digit())
+            && key.chars().any(|c| c.is_ascii_uppercase())
+            && key.chars().any(|c| c.is_ascii_lowercase());
+        starts_like_a_name && only_name_characters && key.len() <= 40 && !looks_encoded
     }
 
     fn pseudonymizes_path(&self, category: &str, path: &str) -> bool {
@@ -140,7 +164,7 @@ impl Redactor {
 
     /// Whether the policy allows searching by this tag's value.
     pub fn shows_tag(&self, name: &str) -> bool {
-        self.policy.show_tags.contains(name)
+        self.policy.shows_tag(name)
     }
 
     /// A tag value: real when the policy lists the tag, a pseudonym otherwise.
@@ -163,23 +187,6 @@ impl Redactor {
         }
     }
 
-    fn is_structure_key(&self, key: &str) -> bool {
-        if self.policy.safe_keys.contains(key) {
-            return true;
-        }
-        let mut chars = key.chars();
-        let starts_like_a_name = chars
-            .next()
-            .is_some_and(|first| first.is_ascii_alphabetic() || first == '_');
-        let only_name_characters = chars.all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-');
-        // Long mixed-case alphanumerics look like encoded identifiers, not field names.
-        let looks_encoded = key.len() > 20
-            && key.chars().any(|c| c.is_ascii_digit())
-            && key.chars().any(|c| c.is_ascii_uppercase())
-            && key.chars().any(|c| c.is_ascii_lowercase());
-        starts_like_a_name && only_name_characters && key.len() <= 40 && !looks_encoded
-    }
-
     fn shape(&self, category: &str, value: &Value, path: &str, depth: usize) -> Value {
         if depth > MAX_DEPTH {
             return json!("<…>");
@@ -188,7 +195,7 @@ impl Redactor {
             Value::Object(map) => {
                 let mut shaped = Map::new();
                 for (key, child) in map.iter().take(MAX_KEYS) {
-                    let (shown, segment) = if self.is_structure_key(key) {
+                    let (shown, segment) = if self.policy.is_structure_key(key) {
                         (key.clone(), key.as_str())
                     } else {
                         (self.pseudonym(key), "*")
@@ -441,10 +448,11 @@ mod tests {
         let uuid = br#"{"3fa85f64-5717-4562-b3fc-2c963f66afa6":1}"#;
         assert!(!redactor.value("c", uuid).to_string().contains("3fa85f64"));
         assert!(
-            redactor.is_structure_key("created_at") && redactor.is_structure_key("connection-id")
+            redactor.policy.is_structure_key("created_at")
+                && redactor.policy.is_structure_key("connection-id")
         );
         let encoded = "Hq3VnLd8WfG2xT7yRk9Pb4Zc5Jm1Ns6AeUo";
-        assert!(!redactor.is_structure_key(encoded));
+        assert!(!redactor.policy.is_structure_key(encoded));
     }
 
     #[test]
