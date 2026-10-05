@@ -38,14 +38,14 @@ pub struct ListOptions {
 }
 
 struct Table {
-    columns: Vec<&'static str>,
+    columns: Vec<String>,
     rows: Vec<Vec<Value>>,
 }
 
 impl Table {
-    fn new(columns: &[&'static str]) -> Self {
+    fn new(columns: &[&str]) -> Self {
         Self {
-            columns: columns.to_vec(),
+            columns: columns.iter().map(|column| (*column).to_owned()).collect(),
             rows: Vec::new(),
         }
     }
@@ -57,7 +57,7 @@ impl Table {
                     let object: serde_json::Map<String, Value> = self
                         .columns
                         .iter()
-                        .map(|column| (*column).to_owned())
+                        .cloned()
                         .zip(row.iter().cloned())
                         .collect();
                     writeln!(out, "{}", Value::Object(object))?;
@@ -91,7 +91,7 @@ impl Table {
                     writeln!(out, "{}", padded.join("  ").trim_end())?;
                     Ok(())
                 };
-                line(out, self.columns.to_vec())?;
+                line(out, self.columns.iter().map(String::as_str).collect())?;
                 for row in &cells {
                     line(out, row.iter().map(String::as_str).collect())?;
                 }
@@ -99,6 +99,16 @@ impl Table {
         }
         Ok(())
     }
+}
+
+/// Print arbitrary result rows with the given column names.
+pub fn print_rows(
+    columns: Vec<String>,
+    rows: Vec<Vec<Value>>,
+    out: &mut dyn Write,
+    format: Format,
+) -> Result<()> {
+    Table { columns, rows }.write(out, format)
 }
 
 fn cell(value: &Value, max: usize) -> String {
@@ -121,7 +131,7 @@ fn cell(value: &Value, max: usize) -> String {
     }
 }
 
-fn kind_label(kind: i64) -> &'static str {
+pub(crate) fn kind_label(kind: i64) -> &'static str {
     match kind {
         1 => "kms",
         2 => "item",
@@ -129,7 +139,7 @@ fn kind_label(kind: i64) -> &'static str {
     }
 }
 
-fn text_or_marker(result: &Result<String, askar_storage::Error>) -> Value {
+pub(crate) fn text_or_marker(result: &Result<String, askar_storage::Error>) -> Value {
     match result {
         Ok(text) => json!(text),
         Err(_) => json!("<undecryptable>"),
@@ -147,7 +157,7 @@ fn hex_string(bytes: &[u8]) -> String {
     bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
-fn errors(item: &InspectedItem) -> Vec<Value> {
+pub(crate) fn errors(item: &InspectedItem) -> Vec<Value> {
     let mut errors = Vec::new();
     let mut note = |field: &str, error: Option<&askar_storage::Error>| {
         if let Some(error) = error {
@@ -187,7 +197,7 @@ fn tags(item: &InspectedItem, reveal: bool) -> Vec<Value> {
 }
 
 /// Value text for display; key-manager values are never shown.
-fn value_text(item: &InspectedItem) -> Value {
+pub(crate) fn value_text(item: &InspectedItem) -> Value {
     if item.kind == 1 {
         return json!("<key material hidden>");
     }
@@ -197,12 +207,12 @@ fn value_text(item: &InspectedItem) -> Value {
     }
 }
 
-fn expiry(item: &InspectedItem) -> Value {
+pub(crate) fn expiry(item: &InspectedItem) -> Value {
     item.expiry
         .map_or(Value::Null, |expiry| json!(expiry.to_string()))
 }
 
-fn value_bytes(item: &InspectedItem) -> Value {
+pub(crate) fn value_bytes(item: &InspectedItem) -> Value {
     item.value
         .as_ref()
         .map_or(Value::Null, |value| json!(value.len()))

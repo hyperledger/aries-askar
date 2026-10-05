@@ -110,6 +110,19 @@ enum Command {
         #[arg(long)]
         reveal: bool,
     },
+    /// Run a read-only SQL query against the `items` table.
+    Sql {
+        #[command(flatten)]
+        connection: Connection,
+        /// A single SELECT statement, e.g. "SELECT category, count(*) FROM items GROUP BY 1".
+        query: String,
+        /// Show values and tag values, so queries can use them.
+        #[arg(long)]
+        reveal: bool,
+        /// Maximum number of result rows.
+        #[arg(long, default_value_t = 1000)]
+        limit: usize,
+    },
     /// Export decrypted items to a plaintext SQLite database.
     Export {
         /// Askar SQLite or PostgreSQL URI.
@@ -191,6 +204,7 @@ async fn main() -> Result<()> {
                 conditions.push(TagCondition::parse(spec, true)?);
             }
             let query = Query {
+                id: None,
                 kind: match kind {
                     KindArg::Item => Some(2),
                     KindArg::Kms => Some(1),
@@ -244,6 +258,25 @@ async fn main() -> Result<()> {
                 connection.format,
             )
             .await
+        }
+        Command::Sql {
+            connection,
+            query,
+            reveal,
+            limit,
+        } => {
+            let source = Source::open(&connection.uri, connection.pass_key_env.as_deref()).await?;
+            let result = askar_explorer::sql::query(source, query, reveal, limit).await?;
+            commands::print_rows(
+                result.columns,
+                result.rows,
+                &mut stdout().lock(),
+                connection.format,
+            )?;
+            if result.truncated {
+                eprintln!("Output stopped at {limit} rows; raise --limit to see more.");
+            }
+            Ok(())
         }
         Command::Export {
             uri,

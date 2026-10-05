@@ -11,6 +11,7 @@ use sqlx::{sqlite::SqliteConnectOptions, Connection, SqliteConnection};
 pub mod apply;
 pub mod commands;
 pub mod source;
+pub mod sql;
 
 /// Export a store to a plaintext, editable SQLite file.
 pub async fn export(

@@ -51,6 +51,43 @@ you pass `--reveal`, and key-manager (KMS) values are never printed; use
 `export --include-kms` if you need those. Entries are listed as `item` by
 default; use `--kind kms` or `--kind any` to include key-manager entries.
 
+## SQL over a live store
+
+`askar-explorer sql` runs one read-only `SELECT` against a virtual `items` table
+that decrypts rows as SQLite asks for them, so you can query the store as if it
+were unencrypted:
+
+```sh
+askar-explorer sql "SELECT category, count(*) AS n FROM items GROUP BY category ORDER BY n DESC"
+askar-explorer sql --reveal "SELECT name, json_extract(value, '\$.state') AS state
+                             FROM items WHERE category = 'connections' LIMIT 20"
+askar-explorer sql "SELECT name FROM items WHERE ptag = 'state=active' AND etag = 'owner=alice'"
+```
+
+Columns: `profile`, `id`, `kind` (`item` or `kms`), `category`, `name`, `value`,
+`value_bytes`, `expiry`, `ptags` and `etags` (JSON objects of the plaintext and
+encrypted tags), and `errors` (JSON, set when a field could not be decrypted).
+Output is a table, or JSON lines with `--format jsonl`; `--limit` (default
+1000) caps the rows printed.
+
+**What is fast.** Equality conditions on `profile`, `id`, `kind`, `category`,
+`name` and the hidden columns `ptag` and `etag` (both written `'name=value'`) are
+encrypted and evaluated by the database, using its indexes. `expiry_mode`
+(`any`, `live` or `expired`) selects rows by expiry; expired rows are included
+by default. **Everything else is evaluated after decryption**, for example
+`json_extract(value, ...)`, `LIKE`, ranges and `GROUP BY` on values. On a very
+large profile those read and decrypt every row, so combine them with an
+equality condition on `category` where you can. A `LIMIT` stops reading early
+when no sort or grouping is needed.
+
+**What is hidden.** `value`, and the values inside `ptags` and `etags`, are
+NULL unless you pass `--reveal`; key-manager values are always NULL.
+
+**Safeguards.** The statement runs in a throwaway in-memory SQLite connection
+whose authorizer allows only reads and functions, so `CREATE`, `DROP`, `ATTACH`,
+`PRAGMA` and writes are rejected, and only one statement is accepted. The store
+itself is opened read-only.
+
 ## Configuration
 
 The explorer reads `.env` from the **current working directory** if present.

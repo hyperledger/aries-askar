@@ -82,6 +82,8 @@ impl TagCondition {
 /// Equality conditions that the database can evaluate without decrypting values.
 #[derive(Clone, Debug, Default)]
 pub struct Query {
+    /// Database row identifier.
+    pub id: Option<i64>,
     /// Entry kind: 1 for key-manager entries, 2 for ordinary items.
     pub kind: Option<i64>,
     /// Exact category.
@@ -213,7 +215,7 @@ impl Source {
     ) -> Result<Vec<InspectedItem>> {
         let inspector = profile.inspector()?;
         let filter = RawFilter {
-            id: None,
+            id: query.id,
             kind: query.kind,
             category: query
                 .category
