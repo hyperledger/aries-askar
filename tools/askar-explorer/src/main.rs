@@ -230,6 +230,39 @@ enum Command {
         #[arg(long, env = "ASKAR_EXPLORER_REVIEW_COMMAND")]
         review_command: Option<String>,
     },
+    /// Run the web interface for people. It shows real, decrypted data, so it asks for the
+    /// store pass key before showing anything.
+    Ui {
+        /// Askar SQLite or PostgreSQL URI (read-only access is enough to browse).
+        #[arg(long, env = "ASKAR_EXPLORER_URI")]
+        uri: String,
+        /// Address to listen on; keep it on the loopback interface unless a container
+        /// publishes it there.
+        #[arg(
+            long,
+            env = "ASKAR_EXPLORER_UI_LISTEN",
+            default_value = "127.0.0.1:7070"
+        )]
+        listen: std::net::SocketAddr,
+        /// Host header values to accept (default: localhost and 127.0.0.1 on the port).
+        #[arg(
+            long = "allowed-host",
+            env = "ASKAR_EXPLORER_UI_HOSTS",
+            value_delimiter = ','
+        )]
+        allowed_hosts: Vec<String>,
+        /// Seconds without use before the session locks and its keys are dropped.
+        #[arg(long, env = "ASKAR_EXPLORER_UI_IDLE_SECONDS", default_value_t = 900)]
+        idle_seconds: u64,
+        /// Base seconds that logins are refused after five failures; doubles each time.
+        #[arg(
+            long,
+            env = "ASKAR_EXPLORER_UI_LOCKOUT_SECONDS",
+            default_value_t = 60,
+            hide = true
+        )]
+        lockout_seconds: u64,
+    },
     /// Serve MCP on stdio for an AI agent, forwarding to the agent API.
     Mcp {
         /// Base URL of the agent API.
@@ -431,6 +464,24 @@ async fn main() -> Result<()> {
                 &token_file,
                 &proposals,
                 review_command,
+            )
+            .await
+        }
+        Command::Ui {
+            uri,
+            listen,
+            allowed_hosts,
+            idle_seconds,
+            lockout_seconds,
+        } => {
+            askar_explorer::ui::run(
+                &uri,
+                askar_explorer::ui::Options {
+                    listen,
+                    allowed_hosts,
+                    idle_timeout: std::time::Duration::from_secs(idle_seconds),
+                    login_lockout: std::time::Duration::from_secs(lockout_seconds),
+                },
             )
             .await
         }

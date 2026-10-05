@@ -17,6 +17,7 @@ pub mod mcp;
 pub mod redact;
 pub mod source;
 pub mod sql;
+pub mod ui;
 
 /// Export a store to a plaintext, editable SQLite file.
 pub async fn export(

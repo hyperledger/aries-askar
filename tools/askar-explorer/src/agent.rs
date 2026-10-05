@@ -226,7 +226,7 @@ struct EntriesRequest {
     after_id: Option<i64>,
 }
 
-fn kind_filter(kind: Option<&str>) -> Result<Option<i64>> {
+pub(crate) fn kind_filter(kind: Option<&str>) -> Result<Option<i64>> {
     match kind.unwrap_or("item") {
         "item" => Ok(Some(2)),
         "kms" => Ok(Some(1)),
@@ -235,7 +235,7 @@ fn kind_filter(kind: Option<&str>) -> Result<Option<i64>> {
     }
 }
 
-fn expiry_filter(expiry: Option<&str>) -> Result<ExpiryFilter> {
+pub(crate) fn expiry_filter(expiry: Option<&str>) -> Result<ExpiryFilter> {
     match expiry.unwrap_or("any") {
         "any" => Ok(ExpiryFilter::Any),
         "live" => Ok(ExpiryFilter::LiveOnly),

@@ -6,7 +6,7 @@ publish = false
 
 [dependencies]
 anyhow = "1"
-axum = { version = "0.8", default-features = false, features = ["http1", "json", "query", "tokio"] }
+axum = { version = "0.8", default-features = false, features = ["http1", "json", "query", "form", "tokio"] }
 askar-storage = { path = "../../askar-storage", default-features = false, features = ["any", "inspect", "sqlite", "postgres"] }
 chrono = "0.4"
 clap = { version = "4", features = ["derive", "env"] }
@@ -14,6 +14,7 @@ dotenvy = "0.15"
 hex = "0.4"
 hmac = "0.13"
 rand = "0.10"
+maud = "0.27"
 reqwest = { version = "0.12", default-features = false, features = ["json"] }
 rpassword = "7"
 rusqlite = { version = "0.32", features = ["bundled", "hooks", "vtab"] }

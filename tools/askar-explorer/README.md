@@ -226,6 +226,52 @@ the pass key, or read the database and key files, can use `--reveal`. Detection 
 identifier-like keys is heuristic, so review a sample of the redacted output before
 handing it over, and list sensitive field names rather than relying on defaults.
 
+## Web interface
+
+`askar-explorer ui` serves a browser interface for you, not for agents. It shows **real,
+decrypted data**, so it starts locked and asks for the store pass key before showing
+anything (a store without a pass key gets a one-time login code, printed only in the
+service's output).
+
+```sh
+askar-explorer ui --uri "$ASKAR_EXPLORER_URI"        # http://127.0.0.1:7070
+```
+
+Today it offers a dashboard (profiles and categories) and read-only browsing: filter
+entries by profile, category, exact name, tags, kind and expiry, and open one entry to see
+its decoded value, tags and any decryption problems. Key-manager values are never shown.
+Editing, a SQL console and the proposals inbox are not in the browser yet; use the commands
+above for those.
+
+What protects it:
+
+- **The pass key is the boundary.** Anything that can reach the port, such as an agent in
+  the dev container going through `host.docker.internal`, can load the login form but
+  cannot get past it. The `Host` check below does not stop a program, which can forge it.
+- Five wrong logins lock logins out for a minute, then two, four and so on up to an hour;
+  a successful login clears this. An attacker can keep you locked out the same way;
+  restarting the service resets it.
+- One session at a time, in an `HttpOnly`, `SameSite=Strict` cookie. A new login replaces
+  the old session, **Lock** ends it, and it ends by itself after `--idle-seconds` (default
+  900) of inactivity. The keys are dropped from memory when it ends.
+- Requests need an expected `Host` header (default `localhost:PORT` and `127.0.0.1:PORT`;
+  change with `--allowed-host`), which defeats DNS rebinding from a web page, and
+  cross-origin posts are refused.
+- Pages are rendered on the server with automatic escaping, contain no scripts, and carry a
+  strict Content-Security-Policy and `Cache-Control: no-store`.
+
+It uses plain HTTP and is meant for the loopback interface. In the dev container setup:
+
+```sh
+docker compose -f .devcontainer/compose.yaml --profile explorer-ui up -d --build explorer-ui
+```
+
+then open http://localhost:7070. The `explorer-ui` service reads the same
+`~/.askar-explorer/explorer.env` as the agent service but gets no pass key from the host,
+is published on the host's loopback only, and sits on a network that the dev container is
+not attached to. Because it is on its own network, it cannot reach the Compose `postgres`
+service by name; for a database on your machine use `host.docker.internal` in the URI.
+
 ## Change sets: proposing and applying fixes
 
 Agents never change data. They can only *propose* edits, and a person decides. A proposal
