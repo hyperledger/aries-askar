@@ -117,10 +117,11 @@ not a random draw, so check `entries` against `sampled` before generalizing.
 
 ## Agent API
 
-`askar-explorer serve` runs a small read-only HTTP API for AI agents. It opens the
+`askar-explorer serve` runs a small HTTP API for AI agents. It opens the
 store with the pass key and **always** applies the redacted view: requests cannot
-choose another view, there are no write endpoints, and unknown request fields are
-rejected.
+choose another view, nothing in it writes to the store, and unknown request fields are
+rejected. The only thing an agent can add is a [proposal](#change-sets-proposing-and-applying-fixes)
+that a person reviews.
 
 ```sh
 askar-explorer serve --uri "$ASKAR_EXPLORER_URI" --policy ~/.askar-explorer/policy.toml \
@@ -139,6 +140,12 @@ For a container without a terminal, give the pass key through
 | `POST /v1/query` `{sql, limit?}` | read-only SQL on the redacted `items` table |
 | `POST /v1/entries` `{category?, profile?, kind?, expiry?, tags?, plaintext_tags?, limit?, after_id?}` | list entries |
 | `POST /v1/entry` `{id, profile?}` | one entry |
+| `POST /v1/proposals` `{title, rationale?, ops}` | save a proposal; returns its id and the command a person runs to review it |
+| `GET /v1/proposals` | each proposal's id, title, status and size |
+
+The server keeps proposals in `--proposals` (`ASKAR_EXPLORER_PROPOSALS`). There is no route
+that applies, rejects, reads or deletes one. `ASKAR_EXPLORER_REVIEW_COMMAND` (optional) is
+the text placed before `changes show <id>` in the reply, so an agent can tell you what to run.
 
 Responses are `{"columns": [...], "rows": [[...]]}` (`/v1/entry` returns an object).
 Limits apply: 1000 SQL rows, 200 listed entries, a 5000 entry sample, 64 KB request
@@ -159,8 +166,9 @@ no data: each tool call is forwarded to the agent API, which applies the redacte
 askar-explorer mcp --agent-url http://explorer:7071 --token-file /run/explorer/agent.token
 ```
 
-Tools: `list_profiles`, `category_stats`, `describe_category`, `query`, `list_entries`
-and `get_entry`. All are read-only; there is no tool that changes data or reveals values.
+Tools: `list_profiles`, `category_stats`, `describe_category`, `query`, `list_entries`,
+`get_entry`, `propose_change` and `list_proposals`. The first six only read. `propose_change`
+saves a proposal for a person; no tool applies changes or reveals values.
 A suggested flow for an agent is `category_stats`, then `describe_category` for a category
 of interest, then `query`. Errors, such as a refused filter or a rejected statement, come
 back as tool errors the agent can read. The token file is read on every call, so a
@@ -279,6 +287,7 @@ runs as a separate, opt-in service that does hold them:
 | --- | --- | --- |
 | pass key, database URI, policy, pseudonym key | never mounted | mounted from your host |
 | agent token | read-only | writes it |
+| proposals | never mounted | its own volume, where agents' proposals are kept |
 | Docker socket, exports | none | none |
 | network | outbound, and `http://explorer:7071` | outbound to your database; port 7071 is not published to the host |
 
@@ -312,6 +321,22 @@ cargo run -p askar-explorer --example seed_demo -- sqlite://$HOME/.askar-explore
 echo 'ASKAR_EXPLORER_URI=sqlite:///config/store.db' > ~/.askar-explorer/explorer.env
 chmod 755 ~/.askar-explorer && chmod 666 ~/.askar-explorer/store.db   # demo only
 ```
+
+**Reviewing what an agent proposed.** When an agent calls `propose_change`, it reports a
+proposal id and a command. You run it on your host, in the service that holds the keys:
+
+```sh
+explorer="docker compose -f .devcontainer/compose.yaml --profile explorer exec explorer askar-explorer"
+$explorer changes list
+$explorer changes show p-3fa9c1d07b2e       # real before and after
+$explorer changes apply p-3fa9c1d07b2e --commit --confirm-backup
+```
+
+Applying needs a write connection, which you put in `explorer.env` and which exists only in
+that service: `ASKAR_EXPLORER_WRITE_URI=postgres://writer:secret@db.example.com:5432/mediator`.
+Keep `ASKAR_EXPLORER_URI` read-only. The dev container has neither, and it cannot reach the
+proposals volume; its only route is the agent API, which can add a proposal but not apply,
+reject, read or delete one.
 
 **Limits of this boundary.**
 

@@ -1,8 +1,10 @@
-//! The agent API: read-only HTTP access that always applies the redacted view.
+//! The agent API: HTTP access that always applies the redacted view.
 //!
-//! The view is fixed when the server starts, requests cannot change it, and there are no
-//! write endpoints. Run it where the pass key lives and give agents only the URL and the
-//! token; keep the policy and pseudonym key out of anything an agent can write to.
+//! The view is fixed when the server starts and requests cannot change it. Nothing here
+//! writes to the store: agents can only leave *proposals*, which a person reviews and applies
+//! with `askar-explorer changes`. Run it where the pass key lives and give agents only the URL
+//! and the token; keep the policy, the pseudonym key and the proposals out of anything an
+//! agent can read or write.
 
 use std::{
     fs::{self, OpenOptions},
@@ -29,6 +31,7 @@ use serde_json::{json, Value};
 use tokio::sync::Mutex;
 
 use crate::{
+    changes::{self, ProposalRequest, ProposalStore},
     commands::{self, ListOptions, Table},
     describe::{self, DescribeOptions},
     redact::{Redactor, View},
@@ -48,16 +51,33 @@ pub struct AgentState {
     source: Arc<Mutex<Source>>,
     redactor: Arc<Redactor>,
     token: Arc<String>,
+    proposals: Arc<ProposalStore>,
+    review_command: Arc<Option<String>>,
 }
 
 impl AgentState {
-    /// Serve `source` through `redactor`, accepting requests that present `token`.
-    pub fn new(source: Source, redactor: Redactor, token: String) -> Self {
+    /// Serve `source` through `redactor`, accepting requests that present `token`, and
+    /// keep the proposals that agents make in `proposals`.
+    pub fn new(
+        source: Source,
+        redactor: Redactor,
+        token: String,
+        proposals: ProposalStore,
+    ) -> Self {
         Self {
             source: Arc::new(Mutex::new(source)),
             redactor: Arc::new(redactor),
             token: Arc::new(token),
+            proposals: Arc::new(proposals),
+            review_command: Arc::new(None),
         }
+    }
+
+    /// The command a person runs to review proposals, such as `docker compose exec explorer
+    /// askar-explorer`; it is shown to agents so that they can tell the person what to run.
+    pub fn with_review_command(mut self, command: Option<String>) -> Self {
+        self.review_command = Arc::new(command);
+        self
     }
 
     fn view(&self) -> View {
@@ -278,6 +298,43 @@ async fn entry(State(state): State<AgentState>, Json(request): Json<EntryRequest
     Ok(Json(value))
 }
 
+async fn propose(
+    State(state): State<AgentState>,
+    Json(request): Json<ProposalRequest>,
+) -> ApiResult {
+    let proposal = limited(async {
+        let mut source = state.source.lock().await;
+        changes::propose(&mut source, &state.proposals, request).await
+    })
+    .await?;
+    let review = state
+        .review_command
+        .as_deref()
+        .map(|command| format!("{command} changes show {}", proposal.id))
+        .unwrap_or_else(|| format!("askar-explorer changes show {}", proposal.id));
+    Ok(Json(json!({
+        "id": proposal.id,
+        "status": proposal.status,
+        "title": proposal.title,
+        "ops": proposal.ops.len(),
+        "review_command": review,
+        "note": "Nothing has been changed. A person must review the proposal and apply it.",
+    })))
+}
+
+async fn list_proposals(State(state): State<AgentState>) -> ApiResult {
+    let proposals = state.proposals.list()?;
+    Ok(Json(
+        json!({ "proposals": proposals.iter().map(|proposal| json!({
+        "id": proposal.id,
+        "status": proposal.status,
+        "title": proposal.title,
+        "created_at": proposal.created_at,
+        "ops": proposal.ops.len(),
+    })).collect::<Vec<_>>() }),
+    ))
+}
+
 /// The routes and the authentication in front of them.
 pub fn router(state: AgentState) -> Router {
     Router::new()
@@ -287,6 +344,7 @@ pub fn router(state: AgentState) -> Router {
         .route("/v1/query", post(query))
         .route("/v1/entries", post(entries))
         .route("/v1/entry", post(entry))
+        .route("/v1/proposals", get(list_proposals).post(propose))
         .layer(DefaultBodyLimit::max(MAX_BODY))
         .layer(middleware::from_fn_with_state(state.clone(), authenticate))
         .with_state(state)
@@ -327,6 +385,8 @@ pub async fn run(
     policy: Option<&Path>,
     listen: SocketAddr,
     token_file: &Path,
+    proposals: &Path,
+    review_command: Option<String>,
 ) -> Result<()> {
     let source = Source::open(uri, pass_key_env).await?;
     let redactor = Redactor::open(policy)?;
@@ -336,7 +396,8 @@ pub async fn run(
         .with_context(|| format!("Cannot listen on {listen}"))?;
     println!("Agent API listening on {}", listener.local_addr()?);
     std::io::stdout().flush()?;
-    let state = AgentState::new(source, redactor, token);
+    let state = AgentState::new(source, redactor, token, ProposalStore::new(proposals))
+        .with_review_command(review_command);
     axum::serve(listener, router(state))
         .with_graceful_shutdown(async {
             let _ = tokio::signal::ctrl_c().await;

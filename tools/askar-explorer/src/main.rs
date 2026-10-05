@@ -219,6 +219,16 @@ enum Command {
             default_value = ".askar-explorer/agent.token"
         )]
         token_file: PathBuf,
+        /// Where agents' proposals are kept for a person to review; agents cannot read it.
+        #[arg(
+            long,
+            env = "ASKAR_EXPLORER_PROPOSALS",
+            default_value = ".askar-explorer/proposals"
+        )]
+        proposals: PathBuf,
+        /// How a person runs this tool, shown to agents so they can say what to review.
+        #[arg(long, env = "ASKAR_EXPLORER_REVIEW_COMMAND")]
+        review_command: Option<String>,
     },
     /// Serve MCP on stdio for an AI agent, forwarding to the agent API.
     Mcp {
@@ -410,6 +420,8 @@ async fn main() -> Result<()> {
             policy,
             agent_listen,
             token_file,
+            proposals,
+            review_command,
         } => {
             askar_explorer::agent::run(
                 &uri,
@@ -417,6 +429,8 @@ async fn main() -> Result<()> {
                 policy.as_deref(),
                 agent_listen,
                 &token_file,
+                &proposals,
+                review_command,
             )
             .await
         }

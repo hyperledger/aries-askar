@@ -1,7 +1,7 @@
 //! An MCP (Model Context Protocol) server over stdio that forwards to the agent API.
 //!
 //! It holds no keys and no data: every tool call becomes a request to the agent API, which
-//! applies the redacted view. There are no write tools.
+//! applies the redacted view. Agents can only leave proposals for a person to review.
 
 use std::path::PathBuf;
 
@@ -17,8 +17,10 @@ const INSTRUCTIONS: &str = "This server gives a redacted view of an encrypted As
 You can see its structure, counts and patterns, but never secret values: values appear as \
 shapes such as <string:12>, names and most tag values as pseudonyms such as p-3fa9c1d07b2e \
 (equal values get equal pseudonyms), and key material is never shown. Start with \
-category_stats, then describe_category, then query. You cannot change data; if a change is \
-needed, describe it so that a person can make it.";
+category_stats, then describe_category, then query. You cannot change data. When a change is \
+needed, use propose_change: it saves a proposal that a person reviews, with the real values, \
+and applies or rejects. Edit entries by profile name and id (as listed by list_entries); give \
+clear titles and reasons, then tell the person the review command that the tool returns.";
 
 /// Where the bearer token comes from.
 #[derive(Clone, Debug)]
@@ -58,7 +60,7 @@ fn object(properties: Value, required: &[&str]) -> Value {
     json!({ "type": "object", "properties": properties, "required": required, "additionalProperties": false })
 }
 
-const TOOLS: [Tool; 6] = [
+const TOOLS: [Tool; 8] = [
     Tool {
         name: "list_profiles",
         description: "List the profiles in the store and whether their keys unlocked.",
@@ -150,6 +152,39 @@ kind, expiry and tags the operator's policy lists. Pages by id: pass the last id
                 &["id"],
             )
         },
+    },
+    Tool {
+        name: "propose_change",
+        description: "Propose edits for a person to review. Nothing is changed: the proposal is \
+saved, and a person sees the real before and after and decides. Each op names a profile and an \
+entry id (from list_entries) and has an \"op\": set_json (with \"pointer\", an RFC 6901 JSON \
+Pointer such as /state, and \"value\"), set_tag (\"name\", \"value\", optional \"plaintext\"), \
+remove_tag (\"name\", optional \"plaintext\"), set_expiry (\"expiry\" such as 2030-01-01 00:00:00, or null), remove, \
+or insert (\"category\", \"name\", \"value\", optional \"tags\"; no id). You will not be told \
+whether an edit would change anything, so base proposals on what you observed.",
+        http: Http::Post,
+        path: "/v1/proposals",
+        schema: || {
+            object(
+                json!({
+                    "title": {"type": "string", "description": "Short summary for the reviewer"},
+                    "rationale": {"type": "string", "description": "Why the change is wanted"},
+                    "ops": {
+                        "type": "array",
+                        "maxItems": 100,
+                        "items": {"type": "object", "required": ["op"], "properties": {"op": {"type": "string", "enum": ["set_json", "set_tag", "remove_tag", "set_expiry", "remove", "insert"]}}}
+                    }
+                }),
+                &["title", "ops"],
+            )
+        },
+    },
+    Tool {
+        name: "list_proposals",
+        description: "List proposals with their status: pending, applied or rejected.",
+        http: Http::Get,
+        path: "/v1/proposals",
+        schema: || object(json!({}), &[]),
     },
 ];
 

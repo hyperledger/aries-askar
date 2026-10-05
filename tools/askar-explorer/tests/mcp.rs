@@ -76,6 +76,8 @@ fn explorer() -> Command {
         .env_remove("ASKAR_EXPLORER_URI")
         .env_remove("ASKAR_EXPLORER_PASS_KEY")
         .env_remove("ASKAR_EXPLORER_POLICY")
+        .env_remove("ASKAR_EXPLORER_PROPOSALS")
+        .env_remove("ASKAR_EXPLORER_REVIEW_COMMAND")
         .env_remove("ASKAR_EXPLORER_AGENT_URL")
         .env_remove("ASKAR_EXPLORER_TOKEN_FILE");
     command
@@ -101,6 +103,8 @@ fn start_server(uri: &str, directory: &Path) -> (Process, String, PathBuf) {
         .arg(&policy)
         .arg("--token-file")
         .arg(&token_file)
+        .arg("--proposals")
+        .arg(directory.join("proposals"))
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .spawn()
@@ -229,7 +233,7 @@ async fn mcp_forwards_to_the_agent_api_without_leaking_or_writing() {
         "notifications get no reply"
     );
 
-    // The tool list is read-only.
+    // The tools read, or leave proposals that only a person can apply.
     let tools = client.request("tools/list", json!({}))["result"]["tools"].clone();
     let names: Vec<&str> = tools
         .as_array()
@@ -245,7 +249,9 @@ async fn mcp_forwards_to_the_agent_api_without_leaking_or_writing() {
             "describe_category",
             "query",
             "list_entries",
-            "get_entry"
+            "get_entry",
+            "propose_change",
+            "list_proposals"
         ]
     );
     for tool in tools.as_array().unwrap() {
@@ -282,6 +288,30 @@ async fn mcp_forwards_to_the_agent_api_without_leaking_or_writing() {
     let entry = client.ok("get_entry", json!({"id": id}));
     assert_eq!(entry["value"]["token"], "<string:14>");
 
+    // Proposing saves a request for a person and changes nothing.
+    let proposed = client.ok(
+        "propose_change",
+        json!({
+            "title": "Fix the status",
+            "rationale": "It is wrong",
+            "ops": [{"op": "set_json", "profile": "main", "id": id, "pointer": "/status", "value": "fixed"}]
+        }),
+    );
+    assert_eq!(proposed["status"], "pending");
+    let proposal_id = proposed["id"].as_str().unwrap();
+    assert!(proposed["review_command"]
+        .as_str()
+        .unwrap()
+        .ends_with(&format!("changes show {proposal_id}")));
+    let proposals = client.ok("list_proposals", json!({}));
+    assert_eq!(proposals["proposals"][0]["id"], proposal_id);
+    assert_eq!(proposals["proposals"][0]["status"], "pending");
+    assert_eq!(
+        client.ok("get_entry", json!({"id": id}))["value"]["status"],
+        "ok",
+        "proposing does not change the store"
+    );
+
     // Nothing sensitive crossed the wire.
     for secret in ["MARKER", "4242424242", "alice", "carol"] {
         assert!(
@@ -301,6 +331,11 @@ async fn mcp_forwards_to_the_agent_api_without_leaking_or_writing() {
         ("query", json!({"sql": "SELECT 1", "view": "reveal"})),
         ("list_entries", json!({"tags": ["owner=OWNER-MARKER"]})),
         ("get_entry", json!({"id": 99999})),
+        (
+            "propose_change",
+            json!({"title": "x", "ops": [{"op": "apply", "id": 1}]}),
+        ),
+        ("propose_change", json!({"title": " ", "ops": []})),
     ] {
         let (is_error, text) = client.call(name, arguments.clone());
         assert!(is_error, "{name} {arguments} should fail");

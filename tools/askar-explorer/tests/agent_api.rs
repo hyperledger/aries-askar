@@ -83,6 +83,7 @@ struct Server {
     base: String,
     token: String,
     token_file: std::path::PathBuf,
+    proposals: std::path::PathBuf,
 }
 
 impl Drop for Server {
@@ -100,9 +101,12 @@ fn start(uri: &str, directory: &Path, envs: &[(&str, String)]) -> Server {
     )
     .unwrap();
     let token_file = directory.join("shared").join("agent.token");
+    let proposals = directory.join("proposals");
     let mut command = Command::new(env!("CARGO_BIN_EXE_askar-explorer"));
     command
         .env_remove("ASKAR_EXPLORER_URI")
+        .env_remove("ASKAR_EXPLORER_PROPOSALS")
+        .env_remove("ASKAR_EXPLORER_REVIEW_COMMAND")
         .env_remove("ASKAR_EXPLORER_PASS_KEY")
         .env_remove("ASKAR_EXPLORER_PASS_KEY_FILE")
         .env_remove("ASKAR_EXPLORER_POLICY")
@@ -111,6 +115,8 @@ fn start(uri: &str, directory: &Path, envs: &[(&str, String)]) -> Server {
         .arg(&policy)
         .arg("--token-file")
         .arg(&token_file)
+        .arg("--proposals")
+        .arg(&proposals)
         .stdout(Stdio::piped())
         .stderr(Stdio::null());
     for (name, value) in envs {
@@ -131,6 +137,7 @@ fn start(uri: &str, directory: &Path, envs: &[(&str, String)]) -> Server {
         base: format!("http://{address}"),
         token,
         token_file,
+        proposals,
     }
 }
 
@@ -438,4 +445,199 @@ async fn serve_reads_the_pass_key_from_a_file() {
         .await;
     assert!(status.is_success(), "{body}");
     assert_eq!(body["rows"][0][0], 4);
+}
+
+#[tokio::test]
+async fn agents_can_only_leave_proposals_and_learn_nothing_from_them() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("store.db");
+    let backend = askar_storage::sqlite::SqliteStoreOptions::new(path.to_str().unwrap())
+        .unwrap()
+        .provision_backend(
+            StoreKeyMethod::Unprotected,
+            PassKey::empty(),
+            Some("main".into()),
+            false,
+        )
+        .await
+        .unwrap();
+    seed(&backend).await;
+    backend.close().await.unwrap();
+    let server = start(
+        &format!("sqlite://{}", path.display()),
+        directory.path(),
+        &[(
+            "ASKAR_EXPLORER_REVIEW_COMMAND",
+            "docker compose exec explorer askar-explorer".to_owned(),
+        )],
+    );
+    let client = Client::new();
+
+    // The routes need the token like every other.
+    let url = format!("{}/v1/proposals", server.base);
+    let body = json!({"title": "x", "ops": []});
+    assert_eq!(
+        client.get(&url).send().await.unwrap().status(),
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(
+        client.post(&url).json(&body).send().await.unwrap().status(),
+        StatusCode::UNAUTHORIZED
+    );
+
+    let (_, people) = server
+        .post(&client, "/v1/entries", json!({"category": "people"}))
+        .await;
+    let id = people["rows"][0][1].as_i64().unwrap();
+    let (_, keys) = server
+        .post(
+            &client,
+            "/v1/entries",
+            json!({"category": "keys", "kind": "kms"}),
+        )
+        .await;
+    let key_id = keys["rows"][0][1].as_i64().unwrap();
+    let propose =
+        |title: &str, ops: Value| json!({"title": title, "rationale": "because", "ops": ops});
+    let set_status = |id: i64, value: &str| json!([{"op": "set_json", "profile": "main", "id": id, "pointer": "/status", "value": value}]);
+
+    // A proposal is saved and names the command that a person runs.
+    let (status, made) = server
+        .post(
+            &client,
+            "/v1/proposals",
+            propose("Fix the status", set_status(id, "fixed")),
+        )
+        .await;
+    assert!(status.is_success(), "{status}: {made}");
+    let proposal = made["id"].as_str().unwrap().to_owned();
+    assert_eq!(made["status"], "pending");
+    assert_eq!(made["ops"], 1);
+    assert_eq!(
+        made["review_command"],
+        format!("docker compose exec explorer askar-explorer changes show {proposal}")
+    );
+    assert!(made["note"]
+        .as_str()
+        .unwrap()
+        .contains("Nothing has been changed"));
+
+    // The file holds the request and fingerprints, never the data it was checked against.
+    let file = server.proposals.join(format!("{proposal}.json"));
+    let stored = std::fs::read_to_string(&file).unwrap();
+    assert!(stored.contains("fixed"));
+    for secret in ["MARKER", "4242424242", "alice", "carol"] {
+        assert!(!stored.contains(secret), "{secret} was stored:\n{stored}");
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        assert_eq!(
+            std::fs::metadata(&file).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+    }
+
+    // Listing shows progress and nothing else, and the store is unchanged.
+    let (status, listed) = server.get(&client, "/v1/proposals").await;
+    assert!(status.is_success());
+    let first = listed["proposals"][0].as_object().unwrap();
+    assert_eq!(first["id"], proposal.as_str());
+    assert_eq!(first["status"], "pending");
+    assert_eq!(first["title"], "Fix the status");
+    let mut fields: Vec<_> = first.keys().map(String::as_str).collect();
+    fields.sort_unstable();
+    assert_eq!(fields, ["created_at", "id", "ops", "status", "title"]);
+    let (_, entry) = server.post(&client, "/v1/entry", json!({"id": id})).await;
+    assert_eq!(entry["value"]["status"], "ok", "proposing changes nothing");
+
+    // Proposals do not answer questions about the data: an edit that changes nothing, and
+    // an insert that collides with an existing name, are accepted like any other.
+    let mut answers = String::new();
+    let guesses = [
+        set_status(id, "ok"),
+        json!([{"op": "insert", "profile": "main", "category": "people",
+            "name": "NAME-MARKER-alice", "value": {"status": "new"}}]),
+        json!([{"op": "set_tag", "profile": "main", "id": id, "name": "state", "value": "active", "plaintext": true}]),
+        json!([{"op": "remove_tag", "profile": "main", "id": id, "name": "owner"}]),
+    ];
+    for ops in guesses {
+        let (status, body) = server
+            .post(&client, "/v1/proposals", propose("Guess", ops.clone()))
+            .await;
+        assert!(status.is_success(), "{ops}: {status} {body}");
+        let mut fields: Vec<_> = body
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect();
+        fields.sort_unstable();
+        assert_eq!(
+            fields,
+            ["id", "note", "ops", "review_command", "status", "title"]
+        );
+        answers.push_str(&body.to_string());
+    }
+    for word in [
+        "exist",
+        "already",
+        "collision",
+        "unchanged",
+        "no-op",
+        "MARKER",
+    ] {
+        assert!(!answers.contains(word), "{word}: {answers}");
+    }
+
+    // Bad requests are refused without echoing data.
+    let mut refusals = String::new();
+    for body in [
+        propose("Key material", set_status(key_id, "x")),
+        propose("Nobody", set_status(99999, "x")),
+        propose("  ", set_status(id, "x")),
+        propose("Unknown op", json!([{"op": "apply", "id": id}])),
+        propose(
+            "Wrong shape",
+            json!([{"op": "remove", "profile": "main", "id": id, "reveal": true}]),
+        ),
+        json!({"title": "Extra", "ops": [], "apply": true}),
+        json!({"ops": []}),
+    ] {
+        let (status, answer) = server.post(&client, "/v1/proposals", body.clone()).await;
+        assert!(status.is_client_error(), "{body}: {status} {answer}");
+        refusals.push_str(&answer.to_string());
+    }
+    assert!(!refusals.contains("MARKER"), "{refusals}");
+
+    // There is no way to apply, reject or delete from here.
+    for (method, route) in [
+        ("POST", format!("/v1/proposals/{proposal}/apply")),
+        ("POST", "/v1/apply".to_owned()),
+        ("DELETE", format!("/v1/proposals/{proposal}")),
+        ("PUT", format!("/v1/proposals/{proposal}")),
+        ("DELETE", "/v1/proposals".to_owned()),
+    ] {
+        let url = format!("{}{route}", server.base);
+        let request = match method {
+            "POST" => client.post(url).json(&json!({"commit": true})),
+            "PUT" => client.put(url).json(&json!({})),
+            _ => client.delete(url),
+        };
+        let status = request
+            .bearer_auth(&server.token)
+            .send()
+            .await
+            .unwrap()
+            .status();
+        assert!(status.is_client_error(), "{method} {route}: {status}");
+    }
+    let (_, entry) = server.post(&client, "/v1/entry", json!({"id": id})).await;
+    assert_eq!(entry["value"]["status"], "ok");
+    let (_, listed) = server.get(&client, "/v1/proposals").await;
+    assert!(listed["proposals"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|proposal| proposal["status"] == "pending"));
 }
