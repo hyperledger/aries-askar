@@ -3,11 +3,14 @@
 use std::io::Write;
 
 use anyhow::{bail, Result};
-use askar_storage::{entry::EntryTag, inspect::InspectedItem};
+use askar_storage::inspect::InspectedItem;
 use clap::ValueEnum;
 use serde_json::{json, Value};
 
-use crate::source::{Profile, Query, Source};
+use crate::{
+    redact::View,
+    source::{Profile, Query, Source},
+};
 
 const MAX_CELL: usize = 60;
 const PAGE: i64 = 500;
@@ -33,8 +36,8 @@ pub struct ListOptions {
     pub limit: i64,
     /// Continue after this row ID (applies to each profile).
     pub after_id: i64,
-    /// Show values and tag values.
-    pub reveal: bool,
+    /// How much of the data to show.
+    pub view: View,
 }
 
 struct Table {
@@ -173,25 +176,21 @@ pub(crate) fn errors(item: &InspectedItem) -> Vec<Value> {
     errors
 }
 
-fn tags(item: &InspectedItem, reveal: bool) -> Vec<Value> {
-    item.tags
-        .iter()
-        .filter_map(|tag| tag.as_ref().ok())
+/// Tags as `~plaintext` or `encrypted` labels, with `=value` when the view shows values.
+fn tag_labels(item: &InspectedItem, view: &View) -> Vec<Value> {
+    view.tags(item)
+        .into_iter()
         .map(|tag| {
-            let (name, value, plaintext) = match tag {
-                EntryTag::Plaintext(name, value) => (name, value, true),
-                EntryTag::Encrypted(name, value) => (name, value, false),
-            };
-            let label = if plaintext {
-                format!("~{name}")
+            let label = if tag.plaintext {
+                format!("~{}", tag.name)
             } else {
-                name.clone()
+                tag.name
             };
-            json!(if reveal {
-                format!("{label}={value}")
-            } else {
-                label
-            })
+            match tag.value {
+                Value::Null => json!(label),
+                Value::String(value) => json!(format!("{label}={value}")),
+                other => json!(format!("{label}={other}")),
+            }
         })
         .collect()
 }
@@ -268,6 +267,12 @@ pub async fn list(
     if options.limit <= 0 {
         bail!("The limit must be positive");
     }
+    if options.query.name.is_some() {
+        options.view.check_name_filter()?;
+    }
+    for tag in &options.query.tags {
+        options.view.check_tag_filter(&tag.name)?;
+    }
     let mut columns = vec![
         "profile",
         "id",
@@ -279,7 +284,7 @@ pub async fn list(
         "tags",
         "errors",
     ];
-    if options.reveal {
+    if !matches!(options.view, View::Hidden) {
         columns.push("value");
     }
     let mut table = Table::new(&columns);
@@ -299,14 +304,14 @@ pub async fn list(
                     json!(item.id),
                     json!(kind_label(item.kind)),
                     text_or_marker(&item.category),
-                    text_or_marker(&item.name),
+                    options.view.name(item),
                     value_bytes(item),
                     expiry(item),
-                    Value::Array(tags(item, options.reveal)),
+                    Value::Array(tag_labels(item, &options.view)),
                     Value::Array(errors(item)),
                 ];
-                if options.reveal {
-                    row.push(value_text(item));
+                if !matches!(options.view, View::Hidden) {
+                    row.push(options.view.value(item));
                 }
                 table.rows.push(row);
             }
@@ -321,27 +326,28 @@ fn pretty(text: &str) -> String {
         .unwrap_or_else(|_| text.to_owned())
 }
 
-/// Print one entry in full, hiding values unless `reveal` is set.
+/// Print one entry in full, as far as the view allows.
 pub async fn get(
     source: &mut Source,
     profile: &Profile,
     id: i64,
-    reveal: bool,
+    view: &View,
     out: &mut dyn Write,
     format: Format,
 ) -> Result<()> {
     let Some(item) = source.fetch(profile, id).await? else {
         bail!("No entry with id {id} in profile {}", profile.name);
     };
-    let value = if reveal {
-        value_text(&item)
-    } else {
-        json!(format!(
+    let value = match (view, item.kind) {
+        (_, 1) => json!("<key material hidden>"),
+        (View::Hidden, _) => json!(format!(
             "<{} bytes; use --reveal to show>",
             item.value.as_ref().map_or(0, |value| value.len())
-        ))
+        )),
+        _ => view.value(&item),
     };
-    let tag_list = tags(&item, reveal);
+    let name = view.name(&item);
+    let tag_list = tag_labels(&item, view);
     let error_list = errors(&item);
     match format {
         Format::Jsonl => {
@@ -350,7 +356,7 @@ pub async fn get(
                 "id": item.id,
                 "kind": kind_label(item.kind),
                 "category": text_or_marker(&item.category),
-                "name": text_or_marker(&item.name),
+                "name": name,
                 "expiry": expiry(&item),
                 "tags": tag_list,
                 "errors": error_list,
@@ -367,11 +373,7 @@ pub async fn get(
                 "category: {}",
                 cell(&text_or_marker(&item.category), usize::MAX)
             )?;
-            writeln!(
-                out,
-                "name:     {}",
-                cell(&text_or_marker(&item.name), usize::MAX)
-            )?;
+            writeln!(out, "name:     {}", cell(&name, usize::MAX))?;
             writeln!(out, "expiry:   {}", cell(&expiry(&item), usize::MAX))?;
             writeln!(
                 out,
@@ -381,7 +383,10 @@ pub async fn get(
             for error in &error_list {
                 writeln!(out, "error:    {}", cell(error, usize::MAX))?;
             }
-            let shown = value.as_str().map(pretty).unwrap_or_default();
+            let shown = match &value {
+                Value::String(text) => pretty(text),
+                other => serde_json::to_string_pretty(other)?,
+            };
             writeln!(out, "value:\n{shown}")?;
         }
     }

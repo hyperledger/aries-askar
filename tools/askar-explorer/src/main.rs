@@ -6,10 +6,12 @@ use std::{
 use anyhow::{bail, Context, Result};
 use askar_explorer::{
     commands::{self, Format, ListOptions},
+    redact::{Redactor, View},
     source::{Query, Source, TagCondition},
 };
 use askar_storage::inspect::ExpiryFilter;
 use clap::{Args as ClapArgs, Parser, Subcommand, ValueEnum};
+use std::sync::Arc;
 
 #[derive(Parser)]
 #[command(about = "Inspect Askar storage without modifying the source database")]
@@ -30,6 +32,32 @@ struct Connection {
     /// Output format.
     #[arg(long, value_enum, default_value_t)]
     format: Format,
+}
+
+/// How much of the data a command may show.
+#[derive(ClapArgs)]
+struct Visibility {
+    /// Show real values and tag values (key-manager values stay hidden).
+    #[arg(long, conflicts_with = "redact")]
+    reveal: bool,
+    /// Show only shapes and pseudonyms allowed by the policy; this is the view for AI agents.
+    #[arg(long)]
+    redact: bool,
+    /// Redaction policy file used with --redact.
+    #[arg(long, env = "ASKAR_EXPLORER_POLICY")]
+    policy: Option<PathBuf>,
+}
+
+impl Visibility {
+    fn view(&self) -> Result<View> {
+        Ok(if self.redact {
+            View::Redacted(Arc::new(Redactor::open(self.policy.as_deref())?))
+        } else if self.reveal {
+            View::Reveal
+        } else {
+            View::Hidden
+        })
+    }
 }
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -92,9 +120,8 @@ enum Command {
         /// Continue after this entry id.
         #[arg(long, default_value_t = 0)]
         after_id: i64,
-        /// Show values and tag values.
-        #[arg(long)]
-        reveal: bool,
+        #[command(flatten)]
+        visibility: Visibility,
     },
     /// Show one entry by id.
     Get {
@@ -106,9 +133,8 @@ enum Command {
         /// Entry id, as shown by `ls`.
         #[arg(long)]
         id: i64,
-        /// Show the value and tag values.
-        #[arg(long)]
-        reveal: bool,
+        #[command(flatten)]
+        visibility: Visibility,
     },
     /// Run a read-only SQL query against the `items` table.
     Sql {
@@ -116,9 +142,8 @@ enum Command {
         connection: Connection,
         /// A single SELECT statement, e.g. "SELECT category, count(*) FROM items GROUP BY 1".
         query: String,
-        /// Show values and tag values, so queries can use them.
-        #[arg(long)]
-        reveal: bool,
+        #[command(flatten)]
+        visibility: Visibility,
         /// Maximum number of result rows.
         #[arg(long, default_value_t = 1000)]
         limit: usize,
@@ -194,8 +219,9 @@ async fn main() -> Result<()> {
             expiry,
             limit,
             after_id,
-            reveal,
+            visibility,
         } => {
+            let view = visibility.view()?;
             let mut conditions = Vec::new();
             for spec in &tags {
                 conditions.push(TagCondition::parse(spec, false)?);
@@ -226,7 +252,7 @@ async fn main() -> Result<()> {
                 query,
                 limit,
                 after_id,
-                reveal,
+                view,
             };
             commands::list(
                 &mut source,
@@ -240,8 +266,9 @@ async fn main() -> Result<()> {
             connection,
             profile,
             id,
-            reveal,
+            visibility,
         } => {
+            let view = visibility.view()?;
             let mut source =
                 Source::open(&connection.uri, connection.pass_key_env.as_deref()).await?;
             let mut selected = source.select_profiles(profile.as_deref())?;
@@ -253,7 +280,7 @@ async fn main() -> Result<()> {
                 &mut source,
                 &profile,
                 id,
-                reveal,
+                &view,
                 &mut stdout().lock(),
                 connection.format,
             )
@@ -262,11 +289,12 @@ async fn main() -> Result<()> {
         Command::Sql {
             connection,
             query,
-            reveal,
+            visibility,
             limit,
         } => {
+            let view = visibility.view()?;
             let source = Source::open(&connection.uri, connection.pass_key_env.as_deref()).await?;
-            let result = askar_explorer::sql::query(source, query, reveal, limit).await?;
+            let result = askar_explorer::sql::query(source, query, view, limit).await?;
             commands::print_rows(
                 result.columns,
                 result.rows,

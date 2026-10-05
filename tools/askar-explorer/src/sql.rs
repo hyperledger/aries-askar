@@ -7,10 +7,7 @@
 use std::{collections::VecDeque, marker::PhantomData, os::raw::c_int, sync::Arc};
 
 use anyhow::{bail, Result};
-use askar_storage::{
-    entry::EntryTag,
-    inspect::{ExpiryFilter, InspectedItem},
-};
+use askar_storage::inspect::{ExpiryFilter, InspectedItem};
 use rusqlite::{
     ffi,
     hooks::{AuthAction, AuthContext, Authorization},
@@ -25,7 +22,8 @@ use serde_json::{json, Map, Value};
 use tokio::{runtime::Handle, sync::Mutex};
 
 use crate::{
-    commands::{errors, kind_label, text_or_marker, value_text},
+    commands::{errors, kind_label, text_or_marker},
+    redact::View,
     source::{Profile, Query, Source, TagCondition},
 };
 
@@ -53,7 +51,7 @@ const SCHEMA: &str = "CREATE TABLE x(profile TEXT, id INTEGER, kind TEXT, catego
 struct Shared {
     source: Mutex<Source>,
     handle: Handle,
-    reveal: bool,
+    view: View,
 }
 
 fn module_error(error: impl std::fmt::Display) -> rusqlite::Error {
@@ -186,10 +184,17 @@ impl ItemsCursor<'_> {
                 })
             }
             COL_CATEGORY => self.query.category = Some(text_arg(value, "category")?),
-            COL_NAME => self.query.name = Some(text_arg(value, "name")?),
+            COL_NAME => {
+                self.shared.view.check_name_filter().map_err(module_error)?;
+                self.query.name = Some(text_arg(value, "name")?)
+            }
             COL_PTAG | COL_ETAG => {
                 let spec = text_arg(value, "ptag/etag")?;
                 let tag = TagCondition::parse(&spec, column == COL_PTAG).map_err(module_error)?;
+                self.shared
+                    .view
+                    .check_tag_filter(&tag.name)
+                    .map_err(module_error)?;
                 self.query.tags.push(tag);
             }
             COL_MODE => {
@@ -309,7 +314,7 @@ unsafe impl VTabCursor for ItemsCursor<'_> {
         let Some(item) = self.row.as_ref() else {
             return ctx.set_result(&None::<String>);
         };
-        let reveal = self.shared.reveal;
+        let view = &self.shared.view;
         match column {
             COL_PROFILE => ctx.set_result(&self.row_profile),
             COL_ID => ctx.set_result(&item.id),
@@ -317,16 +322,12 @@ unsafe impl VTabCursor for ItemsCursor<'_> {
             COL_CATEGORY => {
                 ctx.set_result(&text_or_marker(&item.category).as_str().map(str::to_owned))
             }
-            COL_NAME => ctx.set_result(&text_or_marker(&item.name).as_str().map(str::to_owned)),
-            COL_VALUE => ctx.set_result(&if reveal && item.kind != 1 {
-                value_text(item).as_str().map(str::to_owned)
-            } else {
-                None
-            }),
+            COL_NAME => ctx.set_result(&view.name(item).as_str().map(str::to_owned)),
+            COL_VALUE => ctx.set_result(&view.value_as_text(item)),
             COL_VALUE_BYTES => ctx.set_result(&item.value.as_ref().ok().map(|v| v.len() as i64)),
             COL_EXPIRY => ctx.set_result(&item.expiry.map(|expiry| expiry.to_string())),
-            COL_PTAGS => ctx.set_result(&tag_object(item, true, reveal)),
-            COL_ETAGS => ctx.set_result(&tag_object(item, false, reveal)),
+            COL_PTAGS => ctx.set_result(&tag_object(item, true, view)),
+            COL_ETAGS => ctx.set_result(&tag_object(item, false, view)),
             COL_ERRORS => {
                 let errors = errors(item);
                 ctx.set_result(&(!errors.is_empty()).then(|| Value::Array(errors).to_string()))
@@ -340,18 +341,11 @@ unsafe impl VTabCursor for ItemsCursor<'_> {
     }
 }
 
-fn tag_object(item: &InspectedItem, plaintext: bool, reveal: bool) -> String {
+fn tag_object(item: &InspectedItem, plaintext: bool, view: &View) -> String {
     let mut object = Map::new();
-    for tag in item.tags.iter().filter_map(|tag| tag.as_ref().ok()) {
-        let (name, value, is_plain) = match tag {
-            EntryTag::Plaintext(name, value) => (name, value, true),
-            EntryTag::Encrypted(name, value) => (name, value, false),
-        };
-        if is_plain == plaintext {
-            object.insert(
-                name.clone(),
-                if reveal { json!(value) } else { Value::Null },
-            );
+    for tag in view.tags(item) {
+        if tag.plaintext == plaintext {
+            object.insert(tag.name, tag.value);
         }
     }
     Value::Object(object).to_string()
@@ -383,12 +377,12 @@ pub struct Rows {
 
 /// Run a read-only SQL statement against the `items` table.
 ///
-/// Values and tag values are NULL unless `reveal` is set; key-manager values always are.
-pub async fn query(source: Source, sql: String, reveal: bool, limit: usize) -> Result<Rows> {
+/// What the view withholds is NULL; key-manager values always are.
+pub async fn query(source: Source, sql: String, view: View, limit: usize) -> Result<Rows> {
     let shared = Arc::new(Shared {
         source: Mutex::new(source),
         handle: Handle::current(),
-        reveal,
+        view,
     });
     tokio::task::spawn_blocking(move || execute(shared, &sql, limit)).await?
 }

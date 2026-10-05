@@ -328,11 +328,14 @@ impl View {
     }
 
     /// The entry value as text, for SQL columns.
+    ///
+    /// A redacted value is always valid JSON, so `json_extract` returns NULL on rows that are
+    /// not documents instead of failing the whole query.
     pub fn value_as_text(&self, item: &InspectedItem) -> Option<String> {
-        match self.value(item) {
-            Value::Null => None,
-            Value::String(text) => Some(text),
-            other => Some(other.to_string()),
+        match (self.value(item), self) {
+            (Value::Null, _) => None,
+            (Value::String(text), Self::Hidden | Self::Reveal) => Some(text),
+            (other, _) => Some(other.to_string()),
         }
     }
 

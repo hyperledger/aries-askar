@@ -88,6 +88,55 @@ whose authorizer allows only reads and functions, so `CREATE`, `DROP`, `ATTACH`,
 `PRAGMA` and writes are rejected, and only one statement is accepted. The store
 itself is opened read-only.
 
+## Redacted view for AI agents
+
+`ls`, `get` and `sql` take `--redact` to show structure and patterns without data.
+This is the view to give an AI agent or anyone else who should understand a store
+without reading it:
+
+```sh
+askar-explorer ls --redact --category connections --limit 5
+askar-explorer sql --redact "SELECT json_extract(value,'\$.state') AS state, count(*) FROM items
+                             WHERE category='connections' GROUP BY 1"
+```
+
+- **Values** are reduced to their JSON shape: `{"state": "<string:6>", "age": "<number>"}`.
+  Booleans and nulls are shown; text that is not JSON shows its length; binary
+  shows its size. Key-manager values are never shown.
+- **Entry names and tag values** become stable pseudonyms such as `p-3fa9c1d07b2e`:
+  equal values get equal tokens, so you can see that two entries share an owner
+  without learning who it is.
+- **Object keys** stay when they look like field names. Keys that look like
+  identifiers (DIDs, UUIDs, long encoded strings) are pseudonymized too.
+- **Filters that would let a reader test guesses** are refused: `--name`, and
+  tag filters on tags the policy does not list.
+- `category`, tag names, sizes, expiry and counts are visible; `stats` therefore
+  needs no flag.
+
+Choose what may be shown in `.askar-explorer/policy.toml` (or `--policy FILE`, or
+`ASKAR_EXPLORER_POLICY`). Without a file nothing but shapes and pseudonyms is shown:
+
+```toml
+show_tags = ["state"]                 # tag values that may be shown and filtered on
+show_paths = ["state", "role"]        # JSON paths whose values may be shown
+pseudonymize_paths = ["owner"]        # string values replaced by pseudonyms
+safe_keys = ["connection_id"]         # keys that are field names, not data
+
+[category.connections]                # additions for one category
+show_paths = ["created_at", "items[].status"]
+```
+
+Paths are dot-separated, with `[]` for array elements and `*` for a pseudonymized
+key (so `*.status` matches `status` under any identifier key). The pseudonym key
+is created in `.askar-explorer/pseudonym.key` on first use, readable only by you
+and ignored by git; delete it to make all existing pseudonyms unlinkable.
+
+**This is a guardrail, not a security boundary.** It protects data from a reader
+that can only call these commands. A process that can also run the explorer with
+the pass key, or read the database and key files, can use `--reveal`. Detection of
+identifier-like keys is heuristic, so review a sample of the redacted output before
+handing it over, and list sensitive field names rather than relying on defaults.
+
 ## Configuration
 
 The explorer reads `.env` from the **current working directory** if present.
