@@ -10,12 +10,17 @@ askar-storage = { path = "../../askar-storage", default-features = false, featur
 chrono = "0.4"
 clap = { version = "4", features = ["derive", "env"] }
 dotenvy = "0.15"
+hex = "0.4"
+hmac = "0.12"
+rand = "0.8"
 rpassword = "7"
 rusqlite = { version = "0.32", features = ["bundled", "hooks", "vtab"] }
+serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
 sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "sqlite", "postgres"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync"] }
+toml = "0.8"
 
 [dev-dependencies]
 tempfile = "3"

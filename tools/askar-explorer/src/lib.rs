@@ -10,6 +10,7 @@ use sqlx::{sqlite::SqliteConnectOptions, Connection, SqliteConnection};
 
 pub mod apply;
 pub mod commands;
+pub mod redact;
 pub mod source;
 pub mod sql;
 

@@ -5,6 +5,7 @@ target
 *.db-wal
 .DS_Store
 .env
+.askar-explorer/*.key
 *.tgz
 *.so
 out
