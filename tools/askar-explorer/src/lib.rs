@@ -9,6 +9,8 @@ use sha2::{Digest, Sha256};
 use sqlx::{sqlite::SqliteConnectOptions, Connection, SqliteConnection};
 
 pub mod apply;
+pub mod commands;
+pub mod source;
 
 /// Export a store to a plaintext, editable SQLite file.
 pub async fn export(

@@ -24,6 +24,33 @@ The output file must not already exist.
 To include private key material, add `--include-kms` explicitly. Handle that
 export with particular care.
 
+## Browse a live store
+
+These commands read the store directly (read-only) and decrypt as they go, so
+they need no export file. They use the same `--uri`, `.env` and pass key
+handling as `export`:
+
+```sh
+askar-explorer profiles                      # profiles and whether their keys unlock
+askar-explorer stats                         # entries, expired rows and bytes per category
+askar-explorer ls --category connections --limit 20
+askar-explorer ls --ptag state=active        # plaintext tag equal to a value
+askar-explorer ls --tag owner=alice          # encrypted tag, exact match only
+askar-explorer ls --expiry expired           # rows Askar's normal reads skip
+askar-explorer get --id 42 --reveal          # one entry in full
+```
+
+Add `--format jsonl` for one JSON object per line. `ls` pages by entry id: pass
+the last id you saw as `--after-id` to continue. Add `--profile NAME` when the
+store has several profiles.
+
+Filters on category, name and tags are encrypted and evaluated by the database,
+so they stay fast on large stores. Anything that depends on the *contents* of a
+value still requires decrypting rows. Values and tag values are hidden unless
+you pass `--reveal`, and key-manager (KMS) values are never printed; use
+`export --include-kms` if you need those. Entries are listed as `item` by
+default; use `--kind kms` or `--kind any` to include key-manager entries.
+
 ## Configuration
 
 The explorer reads `.env` from the **current working directory** if present.
