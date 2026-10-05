@@ -6,6 +6,7 @@ use anyhow::{anyhow, bail, Result};
 use askar_storage::inspect::{
     self, ExpiryFilter, InspectedItem, InspectionKey, Inspector, RawFilter,
 };
+use askar_storage::PassKey;
 use sqlx::{PgConnection, SqliteConnection};
 
 use crate::read_pass_key;
@@ -128,6 +129,18 @@ impl std::fmt::Debug for Source {
 impl Source {
     /// Connect read-only and unlock every profile key.
     pub async fn open(uri: &str, pass_key_env: Option<&str>) -> Result<Self> {
+        Self::open_with(uri, |key_reference| {
+            read_pass_key(key_reference, pass_key_env)
+        })
+        .await
+    }
+
+    /// Connect read-only and unlock every profile key, asking `pass_key` for the pass key
+    /// once the store's key method is known (`none` means the store has no pass key).
+    pub async fn open_with(
+        uri: &str,
+        pass_key: impl FnOnce(&str) -> Result<PassKey<'static>>,
+    ) -> Result<Self> {
         let mut conn = if uri.starts_with("sqlite:") {
             Conn::Sqlite(inspect::sqlite::open(uri).await?)
         } else if uri.starts_with("postgres:") || uri.starts_with("postgresql:") {
@@ -137,7 +150,7 @@ impl Source {
         };
         let key_reference = on_conn!(&mut conn, reads, c => reads::key_reference(c).await)?;
         let raw = on_conn!(&mut conn, reads, c => reads::profiles(c).await)?;
-        let pass_key = read_pass_key(&key_reference, pass_key_env)?;
+        let pass_key = pass_key(&key_reference)?;
         let key = InspectionKey::resolve(&key_reference, pass_key)?;
         let profiles = raw
             .into_iter()
