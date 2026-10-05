@@ -33,9 +33,15 @@ services:
         required: true
     environment:
       ASKAR_EXPLORER_PASS_KEY_FILE: /config/pass.key
+      # Agents leave proposals here; the dev container never mounts this volume. A person
+      # reviews and applies them with `changes`, which needs ASKAR_EXPLORER_WRITE_URI in
+      # explorer.env.
+      ASKAR_EXPLORER_PROPOSALS: /proposals
+      ASKAR_EXPLORER_REVIEW_COMMAND: docker compose -f .devcontainer/compose.yaml --profile explorer exec explorer askar-explorer
     volumes:
       - ${ASKAR_EXPLORER_HOME:-${HOME}/.askar-explorer}:/config
       - explorer-shared:/shared
+      - explorer-proposals:/proposals
     # Reachable from the dev container, but not published to the host.
     expose:
       - "7071"
@@ -63,3 +69,4 @@ services:
 
 volumes:
   explorer-shared:
+  explorer-proposals:

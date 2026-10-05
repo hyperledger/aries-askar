@@ -9,7 +9,8 @@ RUN cargo build --release --locked -p askar-explorer
 
 FROM debian:bookworm-slim
 RUN useradd --system --uid 10001 --user-group --no-create-home explorer \
-    && mkdir /shared && chown explorer:explorer /shared
+    && mkdir /shared /proposals && chown explorer:explorer /shared /proposals \
+    && chmod 700 /proposals
 COPY --from=build /src/target/release/askar-explorer /usr/local/bin/askar-explorer
 USER explorer
 WORKDIR /config
