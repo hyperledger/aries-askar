@@ -5,7 +5,7 @@ use std::{
 
 use anyhow::{anyhow, bail, ensure, Context, Result};
 use askar_storage::{
-    any::AnyBackendSession,
+    any::{AnyBackend, AnyBackendSession},
     entry::{EntryKind, EntryOperation, EntryTag},
     inspect::{self, RawProfile},
     Backend, BackendSession, ManageBackend,
@@ -16,33 +16,33 @@ use sqlx::{sqlite::SqliteConnectOptions, Connection, Row, SqliteConnection};
 use super::{fingerprint, read_pass_key};
 
 #[derive(Clone, Debug, PartialEq)]
-struct Record {
-    profile_id: i64,
-    kind: i64,
-    category: Option<String>,
-    name: Option<String>,
-    value: Option<Vec<u8>>,
-    expiry: Option<String>,
-    damaged: bool,
-    tags: Vec<Tag>,
+pub(crate) struct Record {
+    pub(crate) profile_id: i64,
+    pub(crate) kind: i64,
+    pub(crate) category: Option<String>,
+    pub(crate) name: Option<String>,
+    pub(crate) value: Option<Vec<u8>>,
+    pub(crate) expiry: Option<String>,
+    pub(crate) damaged: bool,
+    pub(crate) tags: Vec<Tag>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
-struct Tag {
-    name: Option<String>,
-    value: Option<String>,
-    plaintext: bool,
-    error: Option<String>,
+pub(crate) struct Tag {
+    pub(crate) name: Option<String>,
+    pub(crate) value: Option<String>,
+    pub(crate) plaintext: bool,
+    pub(crate) error: Option<String>,
 }
 
-enum Change {
+pub(crate) enum Change {
     Remove(Record),
     Replace(Record, Record),
     Insert(Record),
 }
 
 impl Change {
-    fn record(&self) -> &Record {
+    pub(crate) fn record(&self) -> &Record {
         match self {
             Self::Remove(record) | Self::Insert(record) | Self::Replace(_, record) => record,
         }
@@ -56,7 +56,7 @@ impl Change {
         }
     }
 
-    fn label(&self) -> &'static str {
+    pub(crate) fn label(&self) -> &'static str {
         match self {
             Self::Remove(_) => "remove",
             Self::Replace(..) => "replace",
@@ -66,15 +66,15 @@ impl Change {
 }
 
 impl Record {
-    fn category(&self) -> &str {
+    pub(crate) fn category(&self) -> &str {
         self.category.as_deref().unwrap_or_default()
     }
 
-    fn name(&self) -> &str {
+    pub(crate) fn name(&self) -> &str {
         self.name.as_deref().unwrap_or_default()
     }
 
-    fn kind(&self) -> Result<EntryKind> {
+    pub(crate) fn kind(&self) -> Result<EntryKind> {
         ensure!(
             self.kind == 1 || self.kind == 2,
             "Invalid entry kind {}",
@@ -83,7 +83,7 @@ impl Record {
         Ok(EntryKind::try_from(self.kind as usize)?)
     }
 
-    fn entry_tags(&self) -> Vec<EntryTag> {
+    pub(crate) fn entry_tags(&self) -> Vec<EntryTag> {
         self.tags
             .iter()
             .map(|tag| {
@@ -111,7 +111,7 @@ impl Record {
             .transpose()
     }
 
-    fn describe(&self, profiles: &HashMap<i64, String>) -> String {
+    pub(crate) fn describe(&self, profiles: &HashMap<i64, String>) -> String {
         format!(
             "profile={} kind={} category={:?} name={:?}",
             profiles
@@ -322,9 +322,26 @@ pub async fn run(uri: &str, edits: &Path, commit: bool, pass_key_env: Option<&st
     );
     let pass_key = read_pass_key(&key_reference, pass_key_env)?;
     let store = uri.open_backend(None, pass_key, None).await?;
+    write_all(&store, &changes, &profiles).await?;
+    store.close().await?;
+    println!(
+        "Applied {} change(s). Re-export before further edits.",
+        changes.len()
+    );
+    Ok(())
+}
 
+/// Write changes through Askar, one transaction per profile, checking each existing entry
+/// still matches what was read before it is replaced or removed.
+pub(crate) async fn write_all(
+    store: &AnyBackend,
+    changes: &[Change],
+    profiles: &HashMap<i64, String>,
+) -> Result<()> {
+    let mut ordered: Vec<&Change> = changes.iter().collect();
+    ordered.sort_by_key(|change| change.rank());
     let mut groups: BTreeMap<i64, Vec<&Change>> = BTreeMap::new();
-    for change in &changes {
+    for change in ordered {
         groups
             .entry(change.record().profile_id)
             .or_default()
@@ -334,7 +351,7 @@ pub async fn run(uri: &str, edits: &Path, commit: bool, pass_key_env: Option<&st
     for (profile_id, changes) in groups {
         let profile = profiles.get(&profile_id).context("Unknown profile")?;
         let mut session = store.session(Some(profile.clone()), true)?;
-        let result = write_changes(&mut session, &changes, &profiles).await;
+        let result = write_changes(&mut session, &changes, profiles).await;
         match result {
             Ok(()) => {
                 session.close(true).await?;
@@ -349,11 +366,6 @@ pub async fn run(uri: &str, edits: &Path, commit: bool, pass_key_env: Option<&st
             }
         }
     }
-    store.close().await?;
-    println!(
-        "Applied {} change(s). Re-export before further edits.",
-        changes.len()
-    );
     Ok(())
 }
 
