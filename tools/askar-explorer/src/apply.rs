@@ -35,6 +35,7 @@ pub(crate) struct Tag {
     pub(crate) error: Option<String>,
 }
 
+#[derive(Debug)]
 pub(crate) enum Change {
     Remove(Record),
     Replace(Record, Record),
@@ -241,7 +242,7 @@ fn plan(
     Ok(changes)
 }
 
-async fn source_fingerprint(uri: &str) -> Result<(String, String)> {
+pub(crate) async fn source_fingerprint(uri: &str) -> Result<(String, String)> {
     if uri.starts_with("sqlite:") {
         let mut db = inspect::sqlite::open(uri).await?;
         let key = inspect::sqlite::key_reference(&mut db).await?;

@@ -218,6 +218,57 @@ the pass key, or read the database and key files, can use `--reveal`. Detection 
 identifier-like keys is heuristic, so review a sample of the redacted output before
 handing it over, and list sensitive field names rather than relying on defaults.
 
+## Change sets: proposing and applying fixes
+
+Agents never change data. They can only *propose* edits, and a person decides. A proposal
+lists edits by profile name and entry id, as shown by `ls`:
+
+```json
+{"title": "Close stuck connections", "rationale": "State is 'active' but they expired in March",
+ "ops": [
+   {"op": "set_json", "profile": "main", "id": 12, "pointer": "/state", "value": "completed"},
+   {"op": "set_tag", "profile": "main", "id": 12, "name": "state", "value": "completed", "plaintext": true},
+   {"op": "remove_tag", "profile": "main", "id": 12, "name": "owner"},
+   {"op": "set_expiry", "profile": "main", "id": 12, "expiry": "2030-01-01 00:00:00"},
+   {"op": "remove", "profile": "main", "id": 13},
+   {"op": "insert", "profile": "main", "category": "connections", "name": "new-one", "value": {"state": "new"}}
+ ]}
+```
+
+`set_json` takes an RFC 6901 JSON Pointer (`/a/0/b`; an empty pointer replaces the whole
+value). It replaces an existing value or adds a key to an existing object, and keeps the
+order of the other fields. Removing an entry cannot be combined with other edits to it.
+Key-manager entries and expired entries cannot be changed.
+
+A proposal file records the edits and a fingerprint of each entry it was based on, but
+**never the old values**. Creating a proposal tells the author nothing about the data: a
+guessed name or value that already exists, or an edit that changes nothing, is accepted
+silently, so proposals cannot be used to test guesses. Proposals are limited to 100 edits,
+256 KB of new values and 50 waiting at a time.
+
+You review and apply them with the pass key, from where the explorer runs:
+
+```sh
+askar-explorer changes list
+askar-explorer changes show p-3fa9c1d07b2e        # the real before and after of every change
+askar-explorer changes apply p-3fa9c1d07b2e       # dry run: shows what would be written
+askar-explorer changes apply p-3fa9c1d07b2e --commit --confirm-backup
+askar-explorer changes reject p-3fa9c1d07b2e
+```
+
+Applying is deliberately hard to automate and to do by accident:
+
+- It needs a **write connection** in `ASKAR_EXPLORER_WRITE_URI` (or `--write-uri`), separate
+  from the read-only `ASKAR_EXPLORER_URI`, and it must point at the same store.
+- It needs `--confirm-backup`, so take a backup first (`pg_dump`, or copy the SQLite file).
+- It needs an **interactive terminal** where you type the proposal id. A script or an
+  agent cannot answer it.
+- Every entry must be unchanged since the proposal was made; otherwise nothing is written.
+- Changes are written through Askar's encryption in one transaction per profile.
+
+Proposals live in `--proposals` (`ASKAR_EXPLORER_PROPOSALS`, default
+`.askar-explorer/proposals`); `changes.log` there records each decision without values.
+
 ## Dev container with an agent boundary
 
 The dev container (see `.devcontainer/`) is where agents work, so it is built **not** to

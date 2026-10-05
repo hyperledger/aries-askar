@@ -10,6 +10,7 @@ use sqlx::{sqlite::SqliteConnectOptions, Connection, SqliteConnection};
 
 pub mod agent;
 pub mod apply;
+pub mod changes;
 pub mod commands;
 pub mod describe;
 pub mod mcp;
@@ -114,7 +115,18 @@ pub fn read_pass_key(key_reference: &str, env_name: Option<&str>) -> Result<Pass
                         text.trim_end_matches(['\r', '\n']).to_owned()
                     }
                     Err(std::env::VarError::NotPresent) => {
-                        rpassword::prompt_password("Askar pass key: ")?
+                        // Ask once per process: a change set reads, then writes, the same store.
+                        static PROMPTED: std::sync::Mutex<Option<String>> =
+                            std::sync::Mutex::new(None);
+                        let mut cached = PROMPTED.lock().unwrap_or_else(|e| e.into_inner());
+                        match cached.as_ref() {
+                            Some(pass_key) => pass_key.clone(),
+                            None => {
+                                let pass_key = rpassword::prompt_password("Askar pass key: ")?;
+                                *cached = Some(pass_key.clone());
+                                pass_key
+                            }
+                        }
                     }
                     Err(error) => {
                         return Err(error).context("Invalid ASKAR_EXPLORER_PASS_KEY_FILE")

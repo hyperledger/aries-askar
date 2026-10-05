@@ -76,6 +76,50 @@ enum ExpiryArg {
 }
 
 #[derive(Subcommand)]
+enum ChangesAction {
+    /// List proposals with their status.
+    List,
+    /// Show a proposal and the real before and after of each change.
+    Show {
+        /// Proposal id, such as p-3fa9c1d07b2e.
+        id: String,
+        #[command(flatten)]
+        connection: ReadConnection,
+    },
+    /// Apply a proposal. Without --commit this only shows what would be written.
+    Apply {
+        /// Proposal id.
+        id: String,
+        #[command(flatten)]
+        connection: ReadConnection,
+        /// Connection allowed to write; applying is refused without one.
+        #[arg(long, env = "ASKAR_EXPLORER_WRITE_URI")]
+        write_uri: Option<String>,
+        /// Write the changes after you confirm.
+        #[arg(long)]
+        commit: bool,
+        /// Confirm that a recoverable backup of the store exists.
+        #[arg(long)]
+        confirm_backup: bool,
+    },
+    /// Turn a proposal down.
+    Reject {
+        /// Proposal id.
+        id: String,
+    },
+}
+
+#[derive(ClapArgs)]
+struct ReadConnection {
+    /// Askar SQLite or PostgreSQL URI used to read the store.
+    #[arg(long, env = "ASKAR_EXPLORER_URI")]
+    uri: String,
+    /// Read the store pass key from this environment variable instead of prompting.
+    #[arg(long)]
+    pass_key_env: Option<String>,
+}
+
+#[derive(Subcommand)]
 enum Command {
     /// List profiles and whether their keys unlock.
     Profiles {
@@ -136,6 +180,19 @@ enum Command {
         id: i64,
         #[command(flatten)]
         visibility: Visibility,
+    },
+    /// Review and apply edits that an agent proposed; this is the only way they reach the store.
+    Changes {
+        /// Folder holding the proposals.
+        #[arg(
+            long,
+            env = "ASKAR_EXPLORER_PROPOSALS",
+            default_value = ".askar-explorer/proposals",
+            global = true
+        )]
+        proposals: PathBuf,
+        #[command(subcommand)]
+        action: ChangesAction,
     },
     /// Run the read-only agent API, which always applies the redacted view.
     Serve {
@@ -346,6 +403,7 @@ async fn main() -> Result<()> {
             )
             .await
         }
+        Command::Changes { proposals, action } => changes_command(&proposals, action).await,
         Command::Serve {
             uri,
             pass_key_env,
@@ -427,5 +485,68 @@ async fn main() -> Result<()> {
             pass_key_env,
             ..
         } => askar_explorer::apply::run(&uri, &edits, commit, pass_key_env.as_deref()).await,
+    }
+}
+
+async fn changes_command(directory: &Path, action: ChangesAction) -> Result<()> {
+    use askar_explorer::changes::{self, ApplyOptions, ProposalStore, Status};
+    use std::io::{BufRead, IsTerminal, Write};
+
+    let store = ProposalStore::new(directory);
+    match action {
+        ChangesAction::List => {
+            let proposals = store.list()?;
+            if proposals.is_empty() {
+                println!("No proposals.");
+            }
+            for proposal in proposals {
+                let status = format!("{:?}", proposal.status).to_lowercase();
+                println!(
+                    "{}  {:<9} {}  {}",
+                    proposal.id, status, proposal.created_at, proposal.title
+                );
+            }
+            Ok(())
+        }
+        ChangesAction::Show { id, connection } => {
+            let mut source =
+                Source::open(&connection.uri, connection.pass_key_env.as_deref()).await?;
+            changes::review(&store, &id, &mut source, &mut stdout()).await?;
+            Ok(())
+        }
+        ChangesAction::Apply {
+            id,
+            connection,
+            write_uri,
+            commit,
+            confirm_backup,
+        } => {
+            let options = ApplyOptions {
+                read_uri: &connection.uri,
+                write_uri: write_uri.as_deref(),
+                pass_key_env: connection.pass_key_env.as_deref(),
+                commit,
+                confirm_backup,
+            };
+            // A person must type the id: scripts and agents cannot answer this.
+            let mut confirm = |id: &str| -> Result<bool> {
+                if !std::io::stdin().is_terminal() {
+                    bail!("Applying changes needs an interactive terminal (use docker compose exec without -T)");
+                }
+                eprint!("Type {id} to apply these changes: ");
+                std::io::stderr().flush()?;
+                let mut answer = String::new();
+                std::io::stdin().lock().read_line(&mut answer)?;
+                Ok(answer.trim() == id)
+            };
+            changes::apply_proposal(&store, &id, &options, &mut stdout(), &mut confirm).await?;
+            Ok(())
+        }
+        ChangesAction::Reject { id } => {
+            store.finish(&id, Status::Rejected)?;
+            store.log(&format!("rejected {id}"))?;
+            println!("Rejected {id}.");
+            Ok(())
+        }
     }
 }
