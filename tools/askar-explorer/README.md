@@ -331,9 +331,32 @@ Proposals live in `--proposals` (`ASKAR_EXPLORER_PROPOSALS`, default
 
 ## Dev container with an agent boundary
 
-The dev container (see `.devcontainer/`) is where agents work, so it is built **not** to
-hold the pass key, the database credentials, the policy or any plaintext. The explorer
-runs as a separate, opt-in service that does hold them:
+**Recommended for agent-assisted use: start the devcontainer for the agent, then start the
+separate `explorer` service from a terminal on your host. Do not run `askar-explorer serve`
+inside the devcontainer against a real store.** The devcontainer is where agents work, so it
+is built **not** to hold the pass key, database credentials, policy or decrypted data. The
+separate `explorer` service holds the store connection and pass key, exposes only the
+redacted API to the devcontainer, and stores agent proposals where agents cannot read them.
+
+The flow is:
+
+1. Configure `~/.askar-explorer/explorer.env`, `policy.toml` and (for a keyed store) `pass.key`
+  on your host, as shown below.
+2. Open the repository with **Dev Containers: Reopen in Container**.
+3. In a host terminal at the repository root, start the explorer service:
+
+  ```sh
+  docker compose -f .devcontainer/compose.yaml --profile explorer up -d --build explorer
+  ```
+
+4. Use the preconfigured MCP tools in the devcontainer. Agents see the redacted view and may
+  propose changes; review and apply them from the host with `docker compose ... exec explorer`.
+
+For a person-only browser session, start `explorer-ui` separately as described in
+[Web interface](#web-interface). It also runs outside the devcontainer.
+
+The devcontainer (see `.devcontainer/`) is the agent workspace; the explorer is a separate,
+opt-in service that holds the keys:
 
 | | dev container (agents) | `explorer` service (you start it) |
 | --- | --- | --- |
@@ -354,7 +377,8 @@ printf '%s' 'your-store-pass-key' > pass.key      # omit for stores without a pa
 chmod 644 pass.key explorer.env                   # the service runs as uid 10001; see below
 ```
 
-Then, from the repository on your host:
+After opening the devcontainer, run this from a terminal on your host, at the repository root
+(not in the devcontainer terminal):
 
 ```sh
 docker compose -f .devcontainer/compose.yaml --profile explorer up -d --build explorer
