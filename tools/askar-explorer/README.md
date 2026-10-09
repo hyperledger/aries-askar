@@ -24,11 +24,30 @@ it does not initialize or migrate a PostgreSQL database.
 
 ### Run on the host (recommended for real data)
 
-Prerequisites: Rust stable with Cargo, the platform's C/C++ build tools, CMake,
-Clang/libclang, `pkg-config`, and PostgreSQL client development libraries. For
-macOS, install the Xcode Command Line Tools and the required libraries with your
-usual package manager. The Explorer UI itself needs no Node.js or separate web
-server.
+Prerequisites: Rust stable with Cargo and native build tools. On macOS, install
+the Xcode Command Line Tools and Homebrew if they are not already installed:
+
+```sh
+xcode-select --install
+```
+
+Then install the host packages and Rust toolchain:
+
+```sh
+brew install cmake llvm openssl@3 libpq pkg-config
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source "$HOME/.cargo/env"
+rustup toolchain install stable
+rustup default stable
+rustup component add clippy rustfmt
+rustc --version
+cargo --version
+```
+
+The corresponding Debian/Ubuntu packages are `build-essential`, `clang`,
+`libclang-dev`, `cmake`, `libssl-dev`, `libpq-dev` and `pkg-config`; the
+devcontainer installs these automatically. The Explorer UI itself needs no
+Node.js or separate web server.
 
 1. From the repository root, create the ignored config directory and copy the
   example connection file:
