@@ -6,9 +6,7 @@ target
 .DS_Store
 .env
 .askar-explorer/*.key
-.devcontainer/explorer.env
-.devcontainer/policy.toml
-.devcontainer/pass.key
+.devcontainer/askar-explorer/
 *.tgz
 *.so
 out

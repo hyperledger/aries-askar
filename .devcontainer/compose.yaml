@@ -7,6 +7,9 @@ services:
       - ..:/workspace:cached
       # Only the agent token, read-only: it unlocks the redacted view and nothing else.
       - explorer-shared:/run/explorer:ro
+    # The host keeps credentials under the repo, but agents must not see this workspace path.
+    tmpfs:
+      - /workspace/.devcontainer/askar-explorer
     working_dir: /workspace
     command: sleep infinity
     environment:
@@ -21,15 +24,15 @@ services:
       - host.docker.internal:host-gateway
 
   # Opt in with `docker compose --profile explorer up -d explorer`. It reads its settings
-  # from ~/.askar-explorer (or $ASKAR_EXPLORER_HOME) on the host, which the dev container
-  # never sees: explorer.env (the store URI), policy.toml, and optionally pass.key.
+  # from .devcontainer/askar-explorer (or $ASKAR_EXPLORER_HOME) on the host. The dev
+  # container masks this workspace path with tmpfs, so it never sees these files.
   explorer:
     profiles: [explorer]
     build:
       context: ..
       dockerfile: .devcontainer/explorer.Dockerfile
     env_file:
-      - path: ${ASKAR_EXPLORER_HOME:-${HOME}/.askar-explorer}/explorer.env
+      - path: ${ASKAR_EXPLORER_HOME:-./askar-explorer}/explorer.env
         required: true
     environment:
       ASKAR_EXPLORER_PASS_KEY_FILE: /config/pass.key
@@ -39,7 +42,7 @@ services:
       ASKAR_EXPLORER_PROPOSALS: /proposals
       ASKAR_EXPLORER_REVIEW_COMMAND: docker compose -f .devcontainer/compose.yaml --profile explorer exec explorer askar-explorer
     volumes:
-      - ${ASKAR_EXPLORER_HOME:-${HOME}/.askar-explorer}:/config
+      - ${ASKAR_EXPLORER_HOME:-./askar-explorer}:/config
       - explorer-shared:/shared
       - explorer-proposals:/proposals
     # Reachable from the dev container, but not published to the host.
@@ -65,7 +68,7 @@ services:
       dockerfile: .devcontainer/explorer.Dockerfile
     command: ["ui"]
     env_file:
-      - path: ${ASKAR_EXPLORER_HOME:-${HOME}/.askar-explorer}/explorer.env
+      - path: ${ASKAR_EXPLORER_HOME:-./askar-explorer}/explorer.env
         required: true
     environment:
       ASKAR_EXPLORER_UI_LISTEN: 0.0.0.0:7070

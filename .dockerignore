@@ -2,6 +2,7 @@ target
 .git
 .env
 .askar-explorer
+.devcontainer/askar-explorer
 .vscode
 **/*.db
 **/*.db-shm

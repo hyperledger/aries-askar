@@ -127,7 +127,7 @@ rejected. The only thing an agent can add is a [proposal](#change-sets-proposing
 that a person reviews.
 
 ```sh
-askar-explorer serve --uri "$ASKAR_EXPLORER_URI" --policy ~/.askar-explorer/policy.toml \
+askar-explorer serve --uri "$ASKAR_EXPLORER_URI" --policy .devcontainer/askar-explorer/policy.toml \
   --agent-listen 0.0.0.0:7071 --token-file /run/explorer/agent.token
 ```
 
@@ -270,8 +270,8 @@ docker compose -f .devcontainer/compose.yaml --profile explorer-ui up -d --build
 ```
 
 then open http://localhost:7070. The `explorer-ui` service reads the same
-`~/.askar-explorer/explorer.env` as the agent service, but does not mount the host config
-directory or the `pass.key` file. The pass key is entered in the browser login form. The
+`.devcontainer/askar-explorer/explorer.env` as the agent service, but does not mount the
+config directory or the `pass.key` file. The pass key is entered in the browser login form. The
 service is published on the host's loopback only and sits on a network the dev container is
 not attached to; the host port can still be reached from that container, so protect the UI
 with the pass key. Because it is on its own network, it cannot reach the Compose `postgres`
@@ -340,8 +340,7 @@ redacted API to the devcontainer, and stores agent proposals where agents cannot
 
 The flow is:
 
-1. Configure `~/.askar-explorer/explorer.env`, `policy.toml` and (for a keyed store) `pass.key`
-  on your host, as shown below.
+1. Configure the ignored `.devcontainer/askar-explorer/` directory on your host, as shown below.
 2. Open the repository with **Dev Containers: Reopen in Container**.
 3. In a host terminal at the repository root, start the explorer service:
 
@@ -367,27 +366,30 @@ opt-in service that holds the keys:
 | network | outbound, and `http://explorer:7071` | outbound to your database; port 7071 is not published to the host |
 
 Set it up once on your host, from the repository root. The committed `.example` files are
-templates only; copy them to your private config directory, then replace the placeholder
-URI, database password and pass key. Do not put real values in the examples or commit the
-copied files. The corresponding real-name files under `.devcontainer/` are gitignored, but
-keep credentials in `~/.askar-explorer` rather than in the workspace.
+templates only; copy them into the ignored `.devcontainer/askar-explorer/` directory, then
+replace the placeholder URI, database password and pass key. Do not put real values in the
+examples or commit the copied files. This directory is gitignored, excluded from Docker
+build context, and masked inside the devcontainer so agents cannot read it through the
+workspace mount.
 
 ```sh
-mkdir -p ~/.askar-explorer && chmod 755 ~/.askar-explorer
-cp .devcontainer/explorer.env.example ~/.askar-explorer/explorer.env
-cp .devcontainer/policy.toml.example ~/.askar-explorer/policy.toml
-cp .devcontainer/pass.key.example ~/.askar-explorer/pass.key  # omit for stores without a pass key
-${EDITOR:-vi} ~/.askar-explorer/explorer.env
-${EDITOR:-vi} ~/.askar-explorer/policy.toml
-${EDITOR:-vi} ~/.askar-explorer/pass.key
-chmod 644 ~/.askar-explorer/explorer.env ~/.askar-explorer/pass.key
+mkdir -p .devcontainer/askar-explorer && chmod 755 .devcontainer/askar-explorer
+cp .devcontainer/explorer.env.example .devcontainer/askar-explorer/explorer.env
+cp .devcontainer/policy.toml.example .devcontainer/askar-explorer/policy.toml
+cp .devcontainer/pass.key.example .devcontainer/askar-explorer/pass.key  # omit for stores without a pass key
+${EDITOR:-vi} .devcontainer/askar-explorer/explorer.env
+${EDITOR:-vi} .devcontainer/askar-explorer/policy.toml
+${EDITOR:-vi} .devcontainer/askar-explorer/pass.key
+chmod 644 .devcontainer/askar-explorer/explorer.env .devcontainer/askar-explorer/pass.key
 ```
 
 The pass-key example contains only a placeholder. Replace it with the exact store pass key
 before starting the `explorer` service. The service runs as uid 10001 and must be able to
 traverse the directory and read its files. The example permissions allow other local users
-to read the config, including the pass key; use this setup only on a trusted, single-user
-machine, or arrange host permissions/ACLs for uid 10001 without granting access to others.
+on the host to read the config, including the pass key; use this setup only on a trusted,
+single-user machine, or arrange host permissions/ACLs for uid 10001 without granting access
+to others. The directory is hidden from the devcontainer at
+`/workspace/.devcontainer/askar-explorer`.
 The env example defaults to a read-only database role. Uncomment and configure
 `ASKAR_EXPLORER_WRITE_URI` only if you plan to apply reviewed changes; use a separate
 write-capable role for the same store.
@@ -405,12 +407,13 @@ is preconfigured (`ASKAR_EXPLORER_AGENT_URL`, `ASKAR_EXPLORER_TOKEN_FILE`), so a
 also run `askar-explorer mcp` or call the HTTP API directly. To reach a database on your
 laptop (an SSH tunnel or `kubectl port-forward`), use `host.docker.internal` in the URI.
 
-To try it without a real database, create a fake store and point the service at it:
+To try it without a real database, create a fake store on the host from the repository root
+(with Rust/Cargo installed), then point the service at it:
 
 ```sh
-cargo run -p askar-explorer --example seed_demo -- sqlite://$HOME/.askar-explorer/store.db
-echo 'ASKAR_EXPLORER_URI=sqlite:///config/store.db' > ~/.askar-explorer/explorer.env
-chmod 755 ~/.askar-explorer && chmod 666 ~/.askar-explorer/store.db   # demo only
+cargo run -p askar-explorer --example seed_demo -- sqlite://$PWD/.devcontainer/askar-explorer/store.db
+echo 'ASKAR_EXPLORER_URI=sqlite:///config/store.db' > .devcontainer/askar-explorer/explorer.env
+chmod 666 .devcontainer/askar-explorer/store.db   # demo only
 ```
 
 **Reviewing what an agent proposed.** When an agent calls `propose_change`, it reports a
@@ -431,7 +434,7 @@ reject, read or delete one.
 
 **Limits of this boundary.**
 
-- The files in `~/.askar-explorer` must be readable by the service's user (uid 10001), so
+- The files in `.devcontainer/askar-explorer` must be readable by the service's user (uid 10001), so
   on a shared machine other local users could read them. Prefer a single-user machine, or
   a Docker secret for `pass.key`.
 - The token only unlocks the redacted view, so it is world-readable inside the shared
