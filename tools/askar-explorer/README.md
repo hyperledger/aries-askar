@@ -8,6 +8,84 @@ you explicitly apply a reviewed change set or edited export. Key-manager (KMS)
 records are excluded from exports unless explicitly requested and are never
 revealed by the browser.
 
+## Local PostgreSQL Quickstart
+
+You need an existing Askar PostgreSQL database, its database/schema name, a
+read-only database user, and the store pass key (if the store uses one). The
+connection URI has this form:
+
+```text
+postgres://USER:PASSWORD@HOST:PORT/DATABASE?schema=SCHEMA
+```
+
+URL-encode reserved characters in the password. Include `?schema=SCHEMA` when
+the Askar tables are not in `public`. Explorer can only inspect an Askar store;
+it does not initialize or migrate a PostgreSQL database.
+
+### Run on the host (recommended for real data)
+
+Prerequisites: Rust stable with Cargo, the platform's C/C++ build tools, CMake,
+Clang/libclang, `pkg-config`, and PostgreSQL client development libraries. For
+macOS, install the Xcode Command Line Tools and the required libraries with your
+usual package manager. The Explorer UI itself needs no Node.js or separate web
+server.
+
+1. From the repository root, create the ignored config directory and copy the
+  example connection file:
+
+  ```sh
+  mkdir -p .devcontainer/askar-explorer
+  cp .devcontainer/explorer.env.example .devcontainer/askar-explorer/explorer.env
+  ${EDITOR:-vi} .devcontainer/askar-explorer/explorer.env
+  ```
+
+2. Replace the sample URI with the URI for your local database. From a host
+  process use `127.0.0.1` (or `localhost`) and the port PostgreSQL listens on.
+  Keep a read-only role in `ASKAR_EXPLORER_URI`; leave the optional write URI
+  commented unless you intend to apply reviewed changes.
+
+3. Load the ignored config into the host shell and start the UI:
+
+  ```sh
+  set -a
+  . .devcontainer/askar-explorer/explorer.env
+  set +a
+  cargo run -p askar-explorer -- ui
+  ```
+
+4. Open http://127.0.0.1:7070 and enter the store pass key in the browser.
+  The UI is read-only; press Ctrl-C in the host terminal to stop it. To inspect from that
+  terminal instead, run
+  `cargo run -p askar-explorer -- profiles`, then
+  `cargo run -p askar-explorer -- ls --category connections --limit 20`;
+  CLI commands prompt for the pass key when needed. Add `--reveal` to `ls` or
+  `get` only when you intend to print real values.
+
+### Run the CLI in the devcontainer
+
+Prerequisites: Docker Desktop/Engine and the VS Code Dev Containers extension.
+Choose **Dev Containers: Reopen in Container**; the container installs the Rust
+build tools and builds Explorer when it is created. For a PostgreSQL server on
+your host, it must accept TCP connections from Docker. Use
+`host.docker.internal` in the URI (and the host-mapped port, if applicable),
+not `localhost`; configure PostgreSQL's `listen_addresses`, `pg_hba.conf` and
+host firewall as needed.
+
+In a devcontainer terminal, point the CLI at that database and try a read:
+
+```sh
+export ASKAR_EXPLORER_URI='postgres://readonly_user:URL_ENCODED_PASSWORD@host.docker.internal:5432/mediator?schema=public'
+cargo run -p askar-explorer -- profiles
+cargo run -p askar-explorer -- ls --category connections --limit 20
+```
+
+The CLI prompts for the store pass key if needed. **Only do this directly in
+the devcontainer with disposable or test data and credentials.** Agents can run
+commands there and the URI/pass key are therefore in an agent-accessible
+environment. For real data with agents, use the separate `explorer` service
+described below: it keeps credentials outside the devcontainer and exposes only
+the redacted API/MCP tools to agents.
+
 ## Export
 
 From the repository root:
