@@ -366,16 +366,31 @@ opt-in service that holds the keys:
 | Docker socket, exports | none | none |
 | network | outbound, and `http://explorer:7071` | outbound to your database; port 7071 is not published to the host |
 
-Set it up once on your host (not inside the workspace):
+Set it up once on your host, from the repository root. The committed `.example` files are
+templates only; copy them to your private config directory, then replace the placeholder
+URI, database password and pass key. Do not put real values in the examples or commit the
+copied files. The corresponding real-name files under `.devcontainer/` are gitignored, but
+keep credentials in `~/.askar-explorer` rather than in the workspace.
 
 ```sh
-mkdir -p ~/.askar-explorer && chmod 700 ~/.askar-explorer
-cd ~/.askar-explorer
-echo 'ASKAR_EXPLORER_URI=postgres://readonly_user:secret@db.example.com:5432/mediator?sslmode=require' > explorer.env
-printf 'show_tags = ["state"]\nshow_paths = ["state", "role"]\n' > policy.toml
-printf '%s' 'your-store-pass-key' > pass.key      # omit for stores without a pass key
-chmod 644 pass.key explorer.env                   # the service runs as uid 10001; see below
+mkdir -p ~/.askar-explorer && chmod 755 ~/.askar-explorer
+cp .devcontainer/explorer.env.example ~/.askar-explorer/explorer.env
+cp .devcontainer/policy.toml.example ~/.askar-explorer/policy.toml
+cp .devcontainer/pass.key.example ~/.askar-explorer/pass.key  # omit for stores without a pass key
+${EDITOR:-vi} ~/.askar-explorer/explorer.env
+${EDITOR:-vi} ~/.askar-explorer/policy.toml
+${EDITOR:-vi} ~/.askar-explorer/pass.key
+chmod 644 ~/.askar-explorer/explorer.env ~/.askar-explorer/pass.key
 ```
+
+The pass-key example contains only a placeholder. Replace it with the exact store pass key
+before starting the `explorer` service. The service runs as uid 10001 and must be able to
+traverse the directory and read its files. The example permissions allow other local users
+to read the config, including the pass key; use this setup only on a trusted, single-user
+machine, or arrange host permissions/ACLs for uid 10001 without granting access to others.
+The env example defaults to a read-only database role. Uncomment and configure
+`ASKAR_EXPLORER_WRITE_URI` only if you plan to apply reviewed changes; use a separate
+write-capable role for the same store.
 
 After opening the devcontainer, run this from a terminal on your host, at the repository root
 (not in the devcontainer terminal):
