@@ -127,12 +127,24 @@ fn client() -> Client {
 }
 
 async fn login(ui: &Ui, secret: &str) -> Response {
+    let token = login_csrf(ui).await;
     client()
         .post(format!("{}/login", ui.base))
-        .form(&[("secret", secret)])
+        .form(&[("secret", secret), ("login_csrf", token.as_str())])
         .send()
         .await
         .unwrap()
+}
+
+async fn login_csrf(ui: &Ui) -> String {
+    let (_, page) = get(ui, "/", None).await;
+    page.split("name=\"login_csrf\" value=\"")
+        .nth(1)
+        .unwrap()
+        .split('"')
+        .next()
+        .unwrap()
+        .to_owned()
 }
 
 fn session_cookie(response: &Response) -> String {
@@ -227,10 +239,11 @@ async fn nothing_is_shown_without_the_pass_key_and_the_page_is_hardened() {
         .await
         .unwrap();
     assert_eq!(rebound.status(), StatusCode::MISDIRECTED_REQUEST);
+    let login_csrf = login_csrf(&ui).await;
     let forged = client()
         .post(format!("{}/login", ui.base))
         .header("origin", "http://evil.example")
-        .form(&[("secret", &*key)])
+        .form(&[("secret", &*key), ("login_csrf", login_csrf.as_str())])
         .send()
         .await
         .unwrap();
@@ -240,7 +253,7 @@ async fn nothing_is_shown_without_the_pass_key_and_the_page_is_hardened() {
         client()
             .post(format!("{}/login", ui.base))
             .header("origin", format!("http://127.0.0.1:{}", ui.port))
-            .form(&[("secret", "wrong")])
+            .form(&[("secret", "wrong"), ("login_csrf", login_csrf.as_str())])
             .send()
             .await
             .unwrap()
@@ -248,7 +261,6 @@ async fn nothing_is_shown_without_the_pass_key_and_the_page_is_hardened() {
         StatusCode::UNAUTHORIZED,
         "the page's own origin is accepted"
     );
-
     // Repeated wrong pass keys lock logins out, even for the right one.
     for _ in 0..4 {
         let wrong = login(&ui, "not the pass key").await;
@@ -259,6 +271,33 @@ async fn nothing_is_shown_without_the_pass_key_and_the_page_is_hardened() {
     let blocked = login(&ui, &key).await;
     assert_eq!(blocked.status(), StatusCode::TOO_MANY_REQUESTS);
     assert!(blocked.headers().get("set-cookie").is_none());
+}
+
+#[tokio::test]
+async fn opaque_origin_login_requires_the_form_token() {
+    let directory = tempfile::tempdir().unwrap();
+    let key = generate_raw_store_key(None).unwrap();
+    let uri = raw_store(directory.path(), Some(&key)).await;
+    let ui = start(&uri, &[], false);
+    let token = login_csrf(&ui).await;
+
+    let invalid = client()
+        .post(format!("{}/login", ui.base))
+        .header("origin", "null")
+        .form(&[("secret", &*key), ("login_csrf", "invalid")])
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(invalid.status(), StatusCode::FORBIDDEN);
+
+    let valid = client()
+        .post(format!("{}/login", ui.base))
+        .header("origin", "null")
+        .form(&[("secret", &*key), ("login_csrf", token.as_str())])
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(valid.status(), StatusCode::SEE_OTHER);
 }
 
 #[tokio::test]
@@ -438,29 +477,23 @@ async fn lockouts_get_longer_and_a_successful_login_clears_them() {
     let key = generate_raw_store_key(None).unwrap();
     let uri = raw_store(directory.path(), Some(&key)).await;
     let ui = start(&uri, &["--lockout-seconds", "1"], false);
-    let fail = |ui: &Ui| {
-        let ui = ui.base.clone();
-        async move {
-            client()
-                .post(format!("{ui}/login"))
-                .form(&[("secret", "wrong")])
-                .send()
-                .await
-                .unwrap()
-                .status()
-        }
-    };
     for _ in 0..5 {
-        assert_eq!(fail(&ui).await, StatusCode::UNAUTHORIZED);
+        assert_eq!(login(&ui, "wrong").await.status(), StatusCode::UNAUTHORIZED);
     }
-    assert_eq!(fail(&ui).await, StatusCode::TOO_MANY_REQUESTS);
+    assert_eq!(
+        login(&ui, "wrong").await.status(),
+        StatusCode::TOO_MANY_REQUESTS
+    );
     tokio::time::sleep(std::time::Duration::from_millis(1300)).await;
 
     // The first lockout (1s) is over; five more failures earn a longer one (2s).
     for _ in 0..5 {
-        assert_eq!(fail(&ui).await, StatusCode::UNAUTHORIZED);
+        assert_eq!(login(&ui, "wrong").await.status(), StatusCode::UNAUTHORIZED);
     }
-    assert_eq!(fail(&ui).await, StatusCode::TOO_MANY_REQUESTS);
+    assert_eq!(
+        login(&ui, "wrong").await.status(),
+        StatusCode::TOO_MANY_REQUESTS
+    );
     tokio::time::sleep(std::time::Duration::from_millis(1300)).await;
     assert_eq!(
         login(&ui, &key).await.status(),
@@ -472,9 +505,12 @@ async fn lockouts_get_longer_and_a_successful_login_clears_them() {
 
     // Success starts over: the next lockout is short again.
     for _ in 0..5 {
-        assert_eq!(fail(&ui).await, StatusCode::UNAUTHORIZED);
+        assert_eq!(login(&ui, "wrong").await.status(), StatusCode::UNAUTHORIZED);
     }
-    assert_eq!(fail(&ui).await, StatusCode::TOO_MANY_REQUESTS);
+    assert_eq!(
+        login(&ui, "wrong").await.status(),
+        StatusCode::TOO_MANY_REQUESTS
+    );
     tokio::time::sleep(std::time::Duration::from_millis(1300)).await;
     assert_eq!(login(&ui, &key).await.status(), StatusCode::SEE_OTHER);
 }

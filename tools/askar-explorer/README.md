@@ -359,8 +359,9 @@ What protects it:
   the old session, **Lock** ends it, and it ends by itself after `--idle-seconds` (default
   900) of inactivity. The keys are dropped from memory when it ends.
 - Requests need an expected `Host` header (default `localhost:PORT` and `127.0.0.1:PORT`;
-  change with `--allowed-host`), which defeats DNS rebinding from a web page, and
-  cross-origin posts are refused.
+  change with `--allowed-host`), which helps defeat DNS rebinding from a web page. Cross-origin
+  posts are refused; login forms also require a random CSRF token, including when a browser
+  reports an opaque `Origin: null`.
 - Pages are rendered on the server with automatic escaping, contain no scripts, and carry a
   strict Content-Security-Policy and `Cache-Control: no-store`.
 

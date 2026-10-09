@@ -101,6 +101,7 @@ struct Inner {
     uri: String,
     /// For stores without a pass key: the code that stands in for it.
     login_code: Option<String>,
+    login_csrf: String,
     allowed_hosts: Vec<String>,
     idle_timeout: Duration,
     login_lockout: Duration,
@@ -294,7 +295,13 @@ async fn guard(State(state): State<UiState>, request: Request, next: Next) -> Re
         .allowed_hosts
         .iter()
         .any(|allowed| allowed.eq_ignore_ascii_case(&host));
+    let login_with_opaque_origin = request.uri().path() == "/login"
+        && request
+            .headers()
+            .get(header::ORIGIN)
+            .is_some_and(|origin| origin.as_bytes() == b"null");
     let cross_origin = request.method() != axum::http::Method::GET
+        && !login_with_opaque_origin
         && request
             .headers()
             .get(header::ORIGIN)
@@ -339,6 +346,7 @@ fn login_page(state: &UiState, message: Option<&str>) -> Html<String> {
         html! {
             @if let Some(message) = message { p class="warn" { (message) } }
             form method="post" action="/login" {
+                input type="hidden" name="login_csrf" value=(state.0.login_csrf);
                 label { (label) " " input type="password" name="secret" autocomplete="off" autofocus required; }
                 " "
                 button type="submit" { "Unlock" }
@@ -393,9 +401,13 @@ async fn home(State(state): State<UiState>, headers: HeaderMap) -> Page {
 #[derive(Deserialize)]
 struct LoginForm {
     secret: String,
+    login_csrf: String,
 }
 
 async fn login(State(state): State<UiState>, Form(form): Form<LoginForm>) -> Response {
+    if !constant_time_eq(form.login_csrf.as_bytes(), state.0.login_csrf.as_bytes()) {
+        return (StatusCode::FORBIDDEN, "Missing or invalid login form token").into_response();
+    }
     if let Some(wait) = state.lock_out() {
         let message = format!(
             "Too many failed attempts. Try again in {}s.",
@@ -733,6 +745,7 @@ pub async fn run(uri: &str, options: Options) -> Result<()> {
     let state = UiState(Arc::new(Inner {
         uri: uri.to_owned(),
         login_code: login_code.clone(),
+        login_csrf: random_hex(),
         allowed_hosts,
         idle_timeout: options.idle_timeout,
         login_lockout: options.login_lockout,
