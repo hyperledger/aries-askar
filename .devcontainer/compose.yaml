@@ -70,8 +70,6 @@ services:
     environment:
       ASKAR_EXPLORER_UI_LISTEN: 0.0.0.0:7070
       ASKAR_EXPLORER_UI_HOSTS: localhost:7070,127.0.0.1:7070
-    volumes:
-      - ${ASKAR_EXPLORER_HOME:-${HOME}/.askar-explorer}:/config
     ports:
       - "127.0.0.1:7070:7070"
     networks: [human]

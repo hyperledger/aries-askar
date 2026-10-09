@@ -1,6 +1,4 @@
-//! The web interface for people: unlock a store with its pass key, then browse decrypted data.
-//!
-//! This shows real values, so it is built to be unreachable by anything but its operator:
+//! The local web interface for people: unlock a store with its pass key, then browse decrypted data.
 //!
 //! - There is no way in without the pass key (or, for stores that have none, a login code that
 //!   is printed only in this process's output). Anything that can reach the port, such as an
@@ -12,8 +10,7 @@
 //!   browser. A program can forge it, so it is not a defense against other local programs.
 //! - The session is one random token in an `HttpOnly`, `SameSite=Strict` cookie. Only one
 //!   session exists at a time, and its keys are dropped when it is idle, locked, or replaced.
-//! - Every state change carries a per-session CSRF token and a same-origin `Origin`.
-//! - Repeated failed logins lock logins out for a while.
+//! - State changes carry a per-session CSRF token; cross-origin `Origin` headers are refused.
 //! - Pages are server-rendered with automatic escaping and no scripts, under a strict
 //!   Content-Security-Policy, and are never cached.
 

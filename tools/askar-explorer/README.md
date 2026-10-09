@@ -1,9 +1,12 @@
 # Askar Explorer
 
-Export an Askar SQLite or PostgreSQL store to a **plaintext SQLite database** for
-inspection with DBeaver or another SQL client. The source store is opened
-read-only. Exports include expired items, their tags, and per-field decryption
-errors. Key-manager (KMS) records are excluded unless explicitly requested.
+Inspect and troubleshoot Askar SQLite or PostgreSQL stores. Explorer can browse a
+live store from the CLI or browser, query it with read-only SQL, provide an
+agent-safe redacted API and MCP server, and export a **plaintext SQLite database**
+for DBeaver or another SQL client. Source connections are read-only except when
+you explicitly apply a reviewed change set or edited export. Key-manager (KMS)
+records are excluded from exports unless explicitly requested and are never
+revealed by the browser.
 
 ## Export
 
@@ -267,10 +270,13 @@ docker compose -f .devcontainer/compose.yaml --profile explorer-ui up -d --build
 ```
 
 then open http://localhost:7070. The `explorer-ui` service reads the same
-`~/.askar-explorer/explorer.env` as the agent service but gets no pass key from the host,
-is published on the host's loopback only, and sits on a network that the dev container is
-not attached to. Because it is on its own network, it cannot reach the Compose `postgres`
+`~/.askar-explorer/explorer.env` as the agent service, but does not mount the host config
+directory or the `pass.key` file. The pass key is entered in the browser login form. The
+service is published on the host's loopback only and sits on a network the dev container is
+not attached to; the host port can still be reached from that container, so protect the UI
+with the pass key. Because it is on its own network, it cannot reach the Compose `postgres`
 service by name; for a database on your machine use `host.docker.internal` in the URI.
+Stop it with `docker compose -f .devcontainer/compose.yaml --profile explorer-ui stop explorer-ui`.
 
 ## Change sets: proposing and applying fixes
 
