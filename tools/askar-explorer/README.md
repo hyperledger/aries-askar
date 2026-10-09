@@ -58,10 +58,14 @@ Node.js or separate web server.
   ${EDITOR:-vi} .devcontainer/askar-explorer/explorer.env
   ```
 
-2. Replace the sample URI with the URI for your local database. From a host
-  process use `127.0.0.1` (or `localhost`) and the port PostgreSQL listens on.
-  Keep a read-only role in `ASKAR_EXPLORER_URI`; leave the optional write URI
-  commented unless you intend to apply reviewed changes.
+2. Replace the sample URI with the URI for your local database. For this
+  host-run UI, the hostname must be `127.0.0.1` (or `localhost`) and the port
+  PostgreSQL listens on, for example:
+  `postgres://USER:PASSWORD@127.0.0.1:5432/DATABASE?schema=SCHEMA`.
+  **Do not use `host.docker.internal` here**; that name is for Explorer running
+  inside Docker to connect back to the host. Keep a read-only role in
+  `ASKAR_EXPLORER_URI`; leave the optional write URI commented unless you intend
+  to apply reviewed changes.
 
 3. Load the ignored config into the host shell and start the UI:
 
