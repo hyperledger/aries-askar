@@ -526,6 +526,15 @@ fn short(value: &Value) -> String {
     }
 }
 
+fn pretty_value(value: &Value) -> String {
+    match value {
+        Value::String(text) => serde_json::from_str::<Value>(text)
+            .and_then(|parsed| serde_json::to_string_pretty(&parsed))
+            .unwrap_or_else(|_| text.clone()),
+        other => serde_json::to_string_pretty(other).unwrap_or_default(),
+    }
+}
+
 fn field<'a>(table: &Table, row: &'a [Value], name: &str) -> &'a Value {
     static NULL: Value = Value::Null;
     table
@@ -649,7 +658,12 @@ async fn entries(authed: Authed, UrlQuery(params): UrlQuery<EntriesParams>) -> P
                         td class="num" { (text(field(&table, row, "value_bytes"))) }
                         td { (text(field(&table, row, "expiry"))) }
                         td { (field(&table, row, "tags").as_array().map(|tags| tags.iter().map(text).collect::<Vec<_>>().join(", ")).unwrap_or_default()) }
-                        td { code { (short(field(&table, row, "value"))) } }
+                        td {
+                            details {
+                                summary { code { (short(field(&table, row, "value"))) } }
+                                pre { (pretty_value(field(&table, row, "value"))) }
+                            }
+                        }
                         td { (field(&table, row, "errors").as_array().map(|errors| errors.iter().map(text).collect::<Vec<_>>().join("; ")).unwrap_or_default()) }
                     }
                 }
@@ -679,12 +693,7 @@ async fn entry(authed: Authed, UrlQuery(params): UrlQuery<EntryParams>) -> Page 
         &View::Reveal,
     ))
     .await?;
-    let shown = match &value["value"] {
-        Value::String(text) => serde_json::from_str::<Value>(text)
-            .and_then(|parsed| serde_json::to_string_pretty(&parsed))
-            .unwrap_or_else(|_| text.clone()),
-        other => serde_json::to_string_pretty(other).unwrap_or_default(),
-    };
+    let shown = pretty_value(&value["value"]);
     let body = html! {
         table {
             @for name in ["profile", "id", "kind", "category", "name", "expiry"] {

@@ -47,6 +47,15 @@ async fn seed(backend: &impl Backend) {
             vec![EntryTag::Plaintext("t".into(), XSS.into())],
         ),
         (
+            EntryKind::Item,
+            "large",
+            "large-record".into(),
+            json!({"description": format!("{}FULL-VALUE-END", "x".repeat(240))})
+                .to_string()
+                .into_bytes(),
+            vec![],
+        ),
+        (
             EntryKind::Kms,
             "keys",
             "k".into(),
@@ -336,6 +345,12 @@ async fn a_signed_in_person_browses_real_data_safely() {
     )
     .await;
     assert!(active.contains("NAME-MARKER-alice") && !active.contains("NAME-MARKER-carol"));
+    let (_, large) = get(&ui, "/entries?profile=main&category=large", Some(&cookie)).await;
+    assert!(large.contains("<details>") && large.contains("<pre>"));
+    assert!(
+        large.contains("FULL-VALUE-END"),
+        "full value was truncated: {large}"
+    );
     let (_, owned) = get(
         &ui,
         "/entries?profile=main&category=people&tag=owner%3DOWNER-MARKER",

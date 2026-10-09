@@ -344,6 +344,8 @@ askar-explorer ui --uri "$ASKAR_EXPLORER_URI"        # http://127.0.0.1:7070
 Today it offers a dashboard (profiles and categories) and read-only browsing: filter
 entries by profile, category, exact name, tags, kind and expiry, and open one entry to see
 its decoded value, tags and any decryption problems. Key-manager values are never shown.
+The entries table uses compact value previews; expand a preview to see the complete,
+pretty-printed value without truncation.
 Editing, a SQL console and the proposals inbox are not in the browser yet; use the commands
 above for those.
 
