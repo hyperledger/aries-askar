@@ -635,9 +635,11 @@ mod tests {
         }
         .await;
         let mut connection = sqlx::PgConnection::connect(&base_uri).await?;
-        sqlx::query(&format!("DROP SCHEMA \"{schema}\" CASCADE"))
-            .execute(&mut connection)
-            .await?;
+        sqlx::query(sqlx::AssertSqlSafe(format!(
+            "DROP SCHEMA \"{schema}\" CASCADE"
+        )))
+        .execute(&mut connection)
+        .await?;
         connection.close().await?;
         result
     }

@@ -308,10 +308,12 @@ async fn postgres_sql_when_configured() {
     })
     .await;
     let mut cleanup = sqlx::PgConnection::connect(&base_uri).await.unwrap();
-    sqlx::query(&format!("DROP SCHEMA \"{schema}\" CASCADE"))
-        .execute(&mut cleanup)
-        .await
-        .unwrap();
+    sqlx::query(sqlx::AssertSqlSafe(format!(
+        "DROP SCHEMA \"{schema}\" CASCADE"
+    )))
+    .execute(&mut cleanup)
+    .await
+    .unwrap();
     checked.unwrap();
 }
 

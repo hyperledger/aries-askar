@@ -362,7 +362,8 @@ async fn postgres_redacted_view_leaks_nothing_when_configured() {
     })
     .await;
     let mut cleanup = sqlx::PgConnection::connect(&base_uri).await.unwrap();
-    sqlx::query(&format!("DROP SCHEMA \"{schema}\" CASCADE"))
+    let cleanup_sql = format!("DROP SCHEMA \"{schema}\" CASCADE");
+    sqlx::query(sqlx::AssertSqlSafe(cleanup_sql.as_str()))
         .execute(&mut cleanup)
         .await
         .unwrap();

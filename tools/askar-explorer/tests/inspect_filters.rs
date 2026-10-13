@@ -233,10 +233,12 @@ async fn postgres_filters_expiry_tags_paging_and_stats_when_configured() {
     .await;
     // Drop the schema through the inspection role's own database, then surface any failure.
     let mut cleanup = sqlx::PgConnection::connect(&base_uri).await.unwrap();
-    sqlx::query(&format!("DROP SCHEMA \"{schema}\" CASCADE"))
-        .execute(&mut cleanup)
-        .await
-        .unwrap();
+    sqlx::query(sqlx::AssertSqlSafe(format!(
+        "DROP SCHEMA \"{schema}\" CASCADE"
+    )))
+    .execute(&mut cleanup)
+    .await
+    .unwrap();
     result.unwrap();
 }
 
