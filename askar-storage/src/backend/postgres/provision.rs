@@ -13,7 +13,7 @@ use crate::{
         ManageBackend,
     },
     error::Error,
-    future::{unblock, BoxFuture},
+    future::{timeout, unblock, BoxFuture},
     options::IntoOptions,
     protect::{KeyCache, PassKey, ProfileId, StoreKeyMethod, StoreKeyReference},
 };
@@ -24,8 +24,8 @@ const DEFAULT_CONNECT_TIMEOUT: u64 = 30;
 const DEFAULT_IDLE_TIMEOUT: u64 = 300;
 const DEFAULT_MIN_CONNECTIONS: u32 = 0;
 const DEFAULT_MAX_CONNECTIONS: u32 = 10;
-const DEFAULT_PING_TIMEOUT: u64 = 1;
-const DEFAULT_MIN_IDLE_FOR_PING: u64 = 1;
+const DEFAULT_PING_TIMEOUT: u64 = 3;
+const DEFAULT_MIN_IDLE_FOR_PING: u64 = 5;
 
 /// Configuration options for PostgreSQL stores
 #[derive(Debug)]
@@ -173,9 +173,15 @@ impl PostgresStoreOptions {
                     if meta.idle_for < min_idle_for_ping {
                         return Ok(true);
                     }
-                    match tokio::time::timeout(ping_timeout, conn.ping()).await {
-                        Ok(Ok(())) => Ok(true),
-                        _ => Ok(false),
+                    // Return an error rather than `Ok(false)` so that sqlx closes the
+                    // connection without first sending a Terminate message
+                    match timeout(ping_timeout, conn.ping()).await {
+                        Some(Ok(())) => Ok(true),
+                        Some(Err(err)) => Err(err),
+                        None => Err(SqlxError::Io(std::io::Error::new(
+                            std::io::ErrorKind::TimedOut,
+                            "liveness ping timed out",
+                        ))),
                     }
                 })
             });
