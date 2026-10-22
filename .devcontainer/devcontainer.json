@@ -1,6 +1,6 @@
 {
   "name": "Askar storage and explorer",
-  "dockerComposeFile": "compose.yaml",
+  "dockerComposeFile": ["compose.yaml", "compose.devcontainer.yaml"],
   "service": "dev",
   "workspaceFolder": "/workspace",
   "remoteUser": "vscode",
