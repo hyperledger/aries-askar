@@ -250,16 +250,26 @@ mod tests {
 
     #[test]
     fn parse_unknown_members() {
-        let jwk = r#"{
+        let jwk_with_unknown_members = r#"{
             "kty": "AKP",
             "alg": "ML-DSA-44",
             "pub": "AQ",
             "unknown": "x",
             "unknown_bool": true
         }"#;
-        let parts = JwkParts::try_from_str(jwk).unwrap();
-        assert_eq!(parts.kty, "AKP");
-        assert_eq!(parts.alg, Some("ML-DSA-44"));
+        let jwk_without_unknown_members = r#"{
+            "kty": "AKP",
+            "alg": "ML-DSA-44",
+            "pub": "AQ"
+        }"#;
+
+        let parts_with_unknown_members = JwkParts::try_from_str(jwk_with_unknown_members).unwrap();
+        let parts_without_unknown_members =
+            JwkParts::try_from_str(jwk_without_unknown_members).unwrap();
+
+        assert_eq!(parts_with_unknown_members, parts_without_unknown_members);
+        assert_eq!(parts_with_unknown_members.kty, "AKP");
+        assert_eq!(parts_with_unknown_members.alg, Some("ML-DSA-44"));
     }
 
     #[test]
